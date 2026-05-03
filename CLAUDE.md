@@ -26,6 +26,9 @@ State persists via LangGraph SQLite checkpointers under `~/.local/share/pi-apply
 # Install deps
 uv sync
 
+# One-time browser setup for Crawl4AI job-description fetching
+uv run playwright install chromium
+
 # Run the MCP server (stdio). go-apply binary must be on PATH or set GO_APPLY_BIN.
 GO_APPLY_BIN=/path/to/go-apply uv run python -m pi_apply.server
 
@@ -46,6 +49,14 @@ uv run python scripts/smoke_profile.py
 # Static check for spaghetti (used in CI)
 uv run python scripts/check_spaghetti.py
 ```
+
+## Env Vars
+
+- `PI_APPLY_APPS_DIR`: Override where application PDFs and JSON archives are written.
+- `PI_APPLY_FETCH_PAGE_TIMEOUT_MS`: Override Crawl4AI per-page timeout in milliseconds. Default: `30000`.
+- `PI_APPLY_FETCH_WAIT_UNTIL`: Override Crawl4AI wait strategy. Default: `networkidle`.
+- `PI_APPLY_FETCH_OUTER_TIMEOUT_S`: Override the outer fetch timeout in seconds. Default: `35`.
+- `PI_APPLY_FETCH_MAGIC`: Toggle Crawl4AI stealth mode. Default: `1`; set `0`, `false`, or empty string to disable.
 
 ## Architecture
 

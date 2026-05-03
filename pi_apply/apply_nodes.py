@@ -16,12 +16,16 @@ sentinel values as placeholders. In real implementations, these will:
 
 import json
 import logging
+import asyncio
+from time import perf_counter
 from datetime import datetime, timezone
 from pathlib import Path
 
+from pi_apply.jd_fetcher import JDFetchError, MIN_MARKDOWN_CHARS, fetch_url_to_markdown
 from pi_apply.state import ApplyState
 
 logger = logging.getLogger(__name__)
+jd_fetcher_logger = logging.getLogger("pi_apply.jd_fetcher")
 
 # Module-level constant for applications directory, overridable by env var
 def _get_apps_dir() -> Path:
@@ -37,6 +41,11 @@ def _log_enter(node: str, state: ApplyState) -> None:
     """Log entry to a node with structured JSON."""
     present = [k for k, v in state.model_dump().items() if v is not None]
     logger.info(json.dumps({"node": node, "session_id": state.session_id, "input_fields": present}))
+
+
+def _log_jd_fetch(level: int, event: str, **fields: object) -> None:
+    """Emit one JSON-encoded jd_fetch lifecycle log record."""
+    jd_fetcher_logger.log(level, json.dumps({"event": event, **fields}))
 
 
 def _parse_resume(source_path: str | None) -> str:
@@ -75,19 +84,55 @@ def _score(parsed_text: str | None, keywords: dict | None) -> dict:
 def jd_fetch(state: ApplyState) -> dict:
     """Fetch or accept a job description.
 
-    If jd_url is set, return a sentinel showing fetch attempt.
-    If jd_raw_text is set, return it as-is.
-    If neither, return error.
+    URL input is preferred when present. Raw text is used directly only when no
+    URL is provided, or as the approved fallback for URL I/O failures.
     """
     _log_enter("jd_fetch", state)
 
     if state.jd_url:
-        return {"jd_text": f"<noop:jd_fetch:url:{state.jd_url}>"}
+        start = perf_counter()
+        _log_jd_fetch(logging.INFO, "fetch_start", session_id=state.session_id, jd_url=state.jd_url)
+
+        try:
+            markdown = asyncio.run(fetch_url_to_markdown(state.jd_url))
+        except Exception as exc:
+            duration_ms = int((perf_counter() - start) * 1000)
+            error_fields = {
+                "session_id": state.session_id,
+                "jd_url": state.jd_url,
+                "duration_ms": duration_ms,
+                "error_class": exc.__class__.__name__,
+                "error_msg": str(exc),
+            }
+
+            if state.jd_raw_text:
+                _log_jd_fetch(logging.WARNING, "fallback_used", **error_fields)
+                return {"jd_text": state.jd_raw_text}
+
+            _log_jd_fetch(logging.ERROR, "fetch_error", **error_fields)
+            raise JDFetchError(reason="fetch_failed", url=state.jd_url, cause=exc) from exc
+
+        duration_ms = int((perf_counter() - start) * 1000)
+        byte_count = len(markdown.encode("utf-8"))
+        log_fields = {
+            "session_id": state.session_id,
+            "jd_url": state.jd_url,
+            "bytes": byte_count,
+            "duration_ms": duration_ms,
+        }
+
+        if len(markdown.strip()) <= MIN_MARKDOWN_CHARS:
+            _log_jd_fetch(logging.ERROR, "fetch_empty", **log_fields)
+            raise JDFetchError(reason="empty_result", url=state.jd_url)
+
+        _log_jd_fetch(logging.INFO, "fetch_ok", **log_fields)
+        return {"jd_text": markdown}
 
     if state.jd_raw_text:
         return {"jd_text": state.jd_raw_text}
 
-    return {"error": "neither jd_url nor jd_raw_text provided"}
+    _log_jd_fetch(logging.ERROR, "no_input", session_id=state.session_id)
+    raise ValueError("neither jd_url nor jd_raw_text provided")
 
 
 def keywords_extract(state: ApplyState) -> dict:

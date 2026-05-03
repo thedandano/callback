@@ -12,7 +12,7 @@ finalize, etc.) must be absent.
 import json
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -107,12 +107,32 @@ def test_apply_rejects_missing_jd_input():
     assert result["error"]["code"] == "missing_input"
 
 
-def test_apply_rejects_both_jd_inputs():
-    """Spec: apply with both jd_url and jd_raw_text should reject."""
+def test_apply_accepts_both_jd_inputs(tmp_path, monkeypatch):
+    """Spec: apply accepts jd_url with jd_raw_text as fallback corpus."""
     from pi_apply.server import apply
 
-    result = json.loads(apply(jd_url="https://example.com/job", jd_raw_text="Engineer role"))
-    assert result["status"] == "error"
+    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path))
+    resume_file = tmp_path / "resume.txt"
+    resume_file.write_text("Python developer")
+
+    jd_url = "https://example.test/job"
+    fetch_mock = AsyncMock(
+        return_value=(
+            "# Python Engineer\n\n"
+            "Build Python services, maintain Kubernetes deployments, and own APIs."
+        )
+    )
+    with patch("pi_apply.apply_nodes.fetch_url_to_markdown", fetch_mock):
+        result = json.loads(
+            apply(
+                jd_url=jd_url,
+                jd_raw_text="Python engineer fallback text",
+                resume_path=str(resume_file),
+            )
+        )
+
+    assert result["status"] == "ok"
+    fetch_mock.assert_awaited_once_with(jd_url)
 
 
 def test_apply_accepts_jd_raw_text_with_resume_path(tmp_path):
