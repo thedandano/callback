@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pi-apply — Architecture</title>
+<style>
+/* ── Dracula Pro palette ── */
+:root {
+  --bg:          #08070A;
+  --bg-card:     #131217;
+  --bg-elevated: #17161D;
+  --selection:   #1B1921;
+  --fg:          #F8F8F2;
+  --fg-muted:    #9281BB;
+  --border:      rgba(248,248,242,0.10);
+  --border-sub:  rgba(248,248,242,0.06);
+  /* Dracula signal colors */
+  --green:  #8AFF80;
+  --orange: #FFCA80;
+  --cyan:   #80FFEA;
+  --red:    #FF9580;
+  --purple: #9580FF;
+  --pink:   #FF80BF;
+  --yellow: #FFFF80;
+  --muted:  #9281BB;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── Base ── */
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  background: var(--bg);
+  padding: 40px 24px 64px;
+  color: var(--fg);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Page header ── */
+.page-header { max-width: 1100px; margin: 0 auto 28px; }
+h1 {
+  font-size: 22px; font-weight: 700; letter-spacing: -0.01em;
+  color: var(--fg); margin-bottom: 6px;
+}
+.subtitle { font-size: 12.5px; color: var(--fg-muted); line-height: 1.65; max-width: 740px; }
+
+/* ── Legend ── */
+.legend {
+  display: flex; flex-wrap: wrap; gap: 10px 18px;
+  max-width: 1100px; margin: 0 auto 28px;
+  padding: 14px 18px;
+  background: var(--bg-card);
+  border-radius: 10px; border: 1px solid var(--border);
+}
+.legend-item { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--fg-muted); white-space: nowrap; }
+.legend-swatch { width: 14px; height: 14px; border-radius: 4px; flex-shrink: 0; }
+
+/* ── Container ── */
+.container { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+
+/* ── Panels ── */
+.panel {
+  background: var(--bg-card);
+  border-radius: 12px; padding: 24px 28px;
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.3);
+}
+.panel-title {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.09em; color: rgba(248,248,242,0.40);
+  margin-bottom: 20px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+
+/* ── Spine ── */
+.spine { display: flex; flex-direction: column; }
+.layer-label {
+  font-size: 9.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.1em; color: rgba(248,248,242,0.30); padding: 12px 0 6px;
+}
+.layer-label:first-child { padding-top: 0; }
+
+/* ── Arrows ── */
+.arrow-down { display: flex; flex-direction: column; align-items: center; padding: 4px 0; gap: 0; }
+.arrow-stem { width: 1.5px; height: 14px; background: rgba(248,248,242,0.14); }
+.arrow-head {
+  width: 0; height: 0;
+  border-left: 4px solid transparent; border-right: 4px solid transparent;
+  border-top: 5px solid rgba(248,248,242,0.16); margin-top: -1px;
+}
+.arrow-note { font-size: 9px; color: rgba(248,248,242,0.35); margin-top: 2px; text-align: center; }
+
+/* ── Nodes ── */
+.node { border-radius: 8px; padding: 10px 14px; border-left: 3px solid transparent; }
+.node + .node { margin-top: 8px; }
+.node-title {
+  font-weight: 600; font-size: 12.5px; margin-bottom: 4px;
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap; line-height: 1.3;
+}
+.node-body { font-size: 11px; color: rgba(248,248,242,0.70); line-height: 1.6; }
+.node-body code {
+  font-family: ui-monospace, 'SF Mono', monospace; font-size: 10px;
+  background: var(--selection); padding: 1px 4px; border-radius: 3px;
+  color: var(--cyan);
+}
+.node-file { font-size: 9.5px; font-family: ui-monospace, 'SF Mono', monospace; color: rgba(248,248,242,0.38); font-weight: 400; }
+
+/* ── Layer color system — Dracula Pro signal colors ── */
+.ext   { background: color-mix(in srgb,var(--cyan)   5%,var(--bg-card)); border-color: var(--cyan);   }
+.parse { background: color-mix(in srgb,var(--purple) 5%,var(--bg-card)); border-color: var(--purple); }
+.sched { background: color-mix(in srgb,var(--pink)   5%,var(--bg-card)); border-color: var(--pink);   }
+.logic { background: color-mix(in srgb,var(--orange) 5%,var(--bg-card)); border-color: var(--orange); }
+.store { background: color-mix(in srgb,var(--green)  5%,var(--bg-card)); border-color: var(--green);  }
+.api   { background: color-mix(in srgb,var(--yellow) 5%,var(--bg-card)); border-color: var(--yellow); }
+.tou   { background: color-mix(in srgb,var(--red)    5%,var(--bg-card)); border-color: var(--red);    }
+.cli   { background: color-mix(in srgb,var(--muted)  5%,var(--bg-card)); border-color: var(--muted);  }
+
+/* ── Branch decision block ── */
+.branch-block {
+  margin-top: 4px; padding-left: 24px;
+  border-left: 2px solid rgba(248,248,242,0.14);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.branch-header {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: rgba(248,248,242,0.35); padding: 4px 0 2px;
+}
+.exit { border-radius: 7px; padding: 8px 12px; border-left: 3px solid; }
+.exit-title { font-weight: 700; font-size: 10px; margin-bottom: 3px; }
+.exit-body  { font-size: 10px; color: rgba(248,248,242,0.70); line-height: 1.45; }
+.exit-body code {
+  font-family: ui-monospace, 'SF Mono', monospace; font-size: 9.5px;
+  background: var(--selection); padding: 1px 3px; border-radius: 3px; color: var(--cyan);
+}
+.exit-inserted { background: color-mix(in srgb,var(--green)  8%,var(--bg-card)); border-color: var(--green);  }
+.exit-exists   { background: color-mix(in srgb,var(--yellow) 8%,var(--bg-card)); border-color: var(--yellow); }
+.exit-repair   { background: color-mix(in srgb,var(--cyan)   8%,var(--bg-card)); border-color: var(--cyan);   }
+.exit-toolarge { background: color-mix(in srgb,var(--purple) 8%,var(--bg-card)); border-color: var(--purple); }
+.exit-error    { background: color-mix(in srgb,var(--red)    8%,var(--bg-card)); border-color: var(--red);    }
+
+/* ── Badges ── */
+.badge {
+  display: inline-block; font-size: 9px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  border-radius: 4px; padding: 2px 6px; white-space: nowrap;
+}
+.badge-new  { background: color-mix(in srgb,var(--green)  14%,var(--bg-card)); color: var(--green);  }
+.badge-pure { background: color-mix(in srgb,var(--purple) 14%,var(--bg-card)); color: var(--purple); }
+.badge-once { background: color-mix(in srgb,var(--orange) 14%,var(--bg-card)); color: var(--orange); }
+.badge-cli  { background: color-mix(in srgb,var(--muted)  14%,var(--bg-card)); color: var(--muted);  }
+.badge-bg   { background: color-mix(in srgb,var(--red)    14%,var(--bg-card)); color: var(--red);    }
+
+/* ── Table chips ── */
+.schema-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 7px; }
+.table-chip {
+  font-size: 10px; font-family: ui-monospace, 'SF Mono', monospace;
+  background: var(--selection); border-radius: 4px; padding: 2px 8px;
+  color: rgba(248,248,242,0.70); border: 1px solid rgba(248,248,242,0.12);
+}
+.table-chip.new-t { background: color-mix(in srgb,var(--green) 14%,var(--bg-card)); border-color: color-mix(in srgb,var(--green) 35%,var(--bg-card)); color: var(--green); }
+
+/* ── Concurrent systems grid ── */
+.concurrent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 20px;
+}
+
+/* ── Vertical sub-flow ── */
+.vflow { display: flex; flex-direction: column; gap: 8px; }
+
+/* ── Callout box ── */
+.callout {
+  margin-top: 12px; border-radius: 8px; padding: 10px 14px;
+  font-size: 11px; line-height: 1.6;
+}
+.callout-green { background: color-mix(in srgb,var(--green)  10%,var(--bg-card)); border: 1px solid color-mix(in srgb,var(--green)  30%,var(--bg-card)); color: var(--green);  }
+.callout-blue  { background: color-mix(in srgb,var(--cyan)   10%,var(--bg-card)); border: 1px solid color-mix(in srgb,var(--cyan)   30%,var(--bg-card)); color: var(--cyan);   }
+.callout-amber { background: color-mix(in srgb,var(--orange) 10%,var(--bg-card)); border: 1px solid color-mix(in srgb,var(--orange) 30%,var(--bg-card)); color: var(--orange); }
+
+/* ── Route list ── */
+.route-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.route { display: flex; gap: 8px; align-items: baseline; font-size: 11px; }
+.method {
+  font-size: 9px; font-weight: 700; font-family: ui-monospace, monospace;
+  background: var(--selection); padding: 2px 5px; border-radius: 3px;
+  color: rgba(248,248,242,0.65); min-width: 32px; text-align: center; white-space: nowrap;
+}
+.method.post { background: color-mix(in srgb,var(--orange) 16%,var(--bg-card)); color: var(--orange); }
+.route-path { font-family: ui-monospace, monospace; font-size: 10px; }
+.route-note { font-size: 10px; color: rgba(248,248,242,0.38); }
+
+/* ── Isolation table ── */
+.iso-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 4px; }
+.iso-table th {
+  padding: 6px 10px; text-align: left; font-weight: 600;
+  border-bottom: 2px solid rgba(248,248,242,0.12);
+  background: var(--bg); color: rgba(248,248,242,0.55);
+}
+.iso-table td { padding: 5px 10px; border-bottom: 1px solid var(--border-sub); }
+.iso-table td:last-child { font-weight: 700; }
+.iso-table td.isolated { color: var(--green);  }
+.iso-table td.hub      { color: var(--pink);   }
+.iso-table td.pure     { color: var(--cyan); font-style: italic; }
+.iso-table td code     { font-family: ui-monospace, monospace; font-size: 10px; }
+.iso-note { font-size: 11px; color: rgba(248,248,242,0.40); margin-top: 10px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>pi-apply — Architecture</h1>
+  <p class="subtitle">
+    Python LangGraph MCP server exposing the same 12-tool surface as go-apply.
+    Each of 5 workflow tools advances exactly one graph node via <code style="font-family:ui-monospace,monospace;font-size:11px;background:#1B1921;padding:1px 5px;border-radius:3px;color:#80FFEA">update_state + invoke(None, config)</code>.
+    Sessions persist across server restarts via SqliteSaver at <code style="font-family:ui-monospace,monospace;font-size:11px;background:#1B1921;padding:1px 5px;border-radius:3px;color:#80FFEA">~/.local/share/pi-apply/sessions.db</code>.
+    Walking skeleton: nodes are deterministic stubs. PDF render and ATS survival via Go subprocess bridge deferred.
+  </p>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-swatch" style="background:#80FFEA"></div>External system</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#FFFF80"></div>MCP / API server</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#FF80BF"></div>Orchestration / scheduler</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#FFCA80"></div>Pure logic (node fn)</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#8AFF80"></div>Storage</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#9580FF"></div>Transport / subprocess bridge</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#9281BB"></div>External binary / CLI</div>
+</div>
+
+<div class="container">
+
+  <!-- ── Section A: Main pipeline ── -->
+  <div class="panel">
+    <div class="panel-title">Main workflow pipeline · one MCP tool call = one graph node · interrupt_after each node</div>
+    <div class="spine">
+
+      <div class="layer-label">External caller</div>
+      <div class="node ext">
+        <div class="node-title">Claude LLM Host
+          <span class="node-file">MCP client · stdio</span>
+        </div>
+        <div class="node-body">
+          Agentic orchestrator. Selects and invokes MCP tools in sequence, threading
+          <code>session_id</code> through each call. Each tool returns a JSON envelope
+          with <code>next_action</code> signaling which tool to call next.
+          <code>load_jd</code> mints the UUID; all subsequent calls consume it.
+        </div>
+      </div>
+
+      <div class="arrow-down">
+        <div class="arrow-stem"></div>
+        <div class="arrow-head"></div>
+        <div class="arrow-note">MCP stdio · JSON tool call · {tool_name, args}</div>
+      </div>
+
+      <div class="layer-label">MCP server</div>
+      <div class="node api">
+        <div class="node-title">FastMCP Server
+          <span class="node-file">pi_apply/server.py</span>
+        </div>
+        <div class="node-body">
+          12 tools registered via <code>@mcp.tool()</code>. Emits structured JSON logs
+          (<code>timestamp</code>, <code>level</code>, <code>tool</code>, <code>session_id</code>)
+          to stderr on every call. Returns uniform envelope:
+          <code>{"session_id", "status", "next_action", "data"}</code> or
+          <code>{"status": "error", "error": {stage, code, message, retriable}}</code>.
+          <div class="route-list">
+            <div class="route">
+              <span class="method post">GRAPH</span>
+              <span class="route-path">load_jd · submit_keywords · submit_tailor_t1 · submit_tailor_t2 · finalize</span>
+              <span class="route-note">→ LangGraph node</span>
+            </div>
+            <div class="route">
+              <span class="method">STUB</span>
+              <span class="route-path">onboard_user · add_resume · get_config · update_config · compile_profile · create_story · preview_ats_extraction</span>
+              <span class="route-note">→ direct JSON</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="arrow-down">
+        <div class="arrow-stem"></div>
+        <div class="arrow-head"></div>
+        <div class="arrow-note">workflow tool path only ↓</div>
+      </div>
+
+      <div class="layer-label">Orchestration</div>
+      <div class="node sched">
+        <div class="node-title">Workflow Tool Handler
+          <span class="node-file">pi_apply/server.py · per-tool guard</span>
+        </div>
+        <div class="node-body">
+          Three-step guard before every graph advance:
+          (1) validate input (exclusive args, JSON parse),
+          (2) <code>_session_exists(session_id)</code> via <code>graph.get_state(config)</code>,
+          (3) assert <code>snap.next == ("expected_node",)</code> for ordering.
+          On pass: <code>graph.update_state(config, delta)</code> then
+          <code>graph.invoke(None, config)</code>. No silent fallbacks — every failure
+          returns a typed error envelope with <code>code</code> and <code>retriable</code>.
+        </div>
+      </div>
+
+      <div class="arrow-down">
+        <div class="arrow-stem"></div>
+        <div class="arrow-head"></div>
+        <div class="arrow-note">update_state(config, delta) · invoke(None, config)</div>
+      </div>
+
+      <div class="node sched">
+        <div class="node-title">LangGraph StateGraph
+          <span class="node-file">pi_apply/graph.py · build_graph()</span>
+        </div>
+        <div class="node-body">
+          <code>StateGraph(ApplyState)</code> with edges
+          <code>load_jd → score → tailor_t1 → tailor_t2 → finalize</code>.
+          Compiled with <code>interrupt_after=["load_jd","score","tailor_t1","tailor_t2"]</code>
+          and <code>SqliteSaver(sqlite3.connect(db_path, check_same_thread=False))</code>.
+          <code>thread_id = session_id</code> — no separate lookup table.
+          Each <code>invoke(None, config)</code> runs exactly one node then stops.
+        </div>
+      </div>
+
+      <div class="arrow-down">
+        <div class="arrow-stem"></div>
+        <div class="arrow-head"></div>
+        <div class="arrow-note">executes one node · checkpoints state · returns</div>
+      </div>
+
+      <!-- ── Graph nodes ── -->
+      <div class="layer-label">Graph nodes — pure logic (walking skeleton: deterministic stubs)</div>
+
+      <div class="node logic">
+        <div class="node-title">load_jd node
+          <span class="node-file">pi_apply/nodes.py</span>
+        </div>
+        <div class="node-body">
+          Input: <code>state.jd_raw_text</code>.
+          Output delta: <code>{"jd_text": jd_raw_text}</code>.
+          Copies raw text to typed field. Emits structured node-entry log.
+          ← triggered by <code>mcp::load_jd</code> (first invoke from START).
+        </div>
+      </div>
+
+      <div class="arrow-down">
+        <div class="arrow-stem"></div>
+        <div class="arrow-head"></div>
+        <div class="arrow-note">interrupt · next_action: "extract_keywords" · client calls submit_keywords</div>
+      </div>
+
+      <div class="node logic">
+        <div class="node-title">score node
+          <span class="node-file">pi_apply/nodes.py</span>
+        </div>
+        <div class="node-body">
+          Input: <code>state.keywords</code>, <code>state.resume_content</code>.
+          Output delta: <code>{"scored_resumes": [{label, score, matched[]}]}</code>.
+          Counts required keyword matches in resume text. Skeleton: deterministic string match.
+          Future: semantic embedding scoring via pgvector.
+          ← triggered by <code>mcp::submit_keywords</code> (injects keywords + resume).
+        </div>
+      </div>
+
+      <div class="arrow-down">
+        <div class="arrow-stem"></div>
+        <div class="arrow-head"></div>
+        <div class="arrow-note">interrupt · next_action: "tailor_t1" · client calls submit_tailor_t1</div>
+      </div>
+
+      <div class="node logic">
+        <div class="node-title">tailor_t1 node — skills section
+          <span class="node-file">pi_apply/nodes.py</span>
+        </div>
+        <div class="node-body">
+          Input: <code>state.resume_content</code>, <code>state.edits_t1</code> (JSON patch list).
+          Output delta: <code>{"tailored_t1": str}</code>.
+          Skeleton: appends <code>[T1 edits: ...]</code> block. Future: LLM rewrites skills section.
+          ← triggered by <code>mcp::submit_tailor_t1</code> (injects edits_t1).
+        </div>
+      </div>
+
+      <div class="arrow-down">
+        <div class="arrow-stem"></div>
+        <div class="arrow-head"></div>
+        <div class="arrow-note">interrupt · next_action: "tailor_t2" · client calls submit_tailor_t2</div>
+      </div>
+
+      <div class="node logic">
+        <div class="node-title">tailor_t2 node — experience bullets
+          <span class="node-file">pi_apply/nodes.py</span>
+        </div>
+        <div class="node-body">
+          Input: <code>state.tailored_t1</code>, <code>state.edits_t2</code> (JSON patch list).
+          Output delta: <code>{"tailored_t2": str}</code>.
+          Skeleton: appends <code>[T2 edits: ...]</code> block. Future: LLM rewrites experience bullets.
+          ← triggered by <code>mcp::submit_tailor_t2</code> (injects edits_t2).
+        </div>
+      </div>
+
+      <div class="arrow-down">
+        <div class="arrow-stem"></div>
+        <div class="arrow-head"></div>
+        <div class="arrow-note">no interrupt · next_action: "finalize" · client calls finalize</div>
+      </div>
+
+      <div class="node logic">
+        <div class="node-title">finalize node
+          <span class="node-file">pi_apply/nodes.py</span>
+        </div>
+        <div class="node-body">
+          Input: full state. Output delta: <code>{"finalized": True}</code>.
+          Writes JSON application record to <code>~/.local/share/pi-apply/applications/&lt;session_id&gt;.json</code>.
+          Graph reaches END — no further interrupt.
+          ← triggered by <code>mcp::finalize</code>.
+        </div>
+      </div>
+
+      <div class="branch-block">
+        <div class="branch-header">finalize outputs</div>
+        <div class="exit exit-inserted">
+          <div class="exit-title">JSON application record (implemented)</div>
+          <div class="exit-body">
+            Written to <code>~/.local/share/pi-apply/applications/&lt;session_id&gt;.json</code>.
+            Contains <code>session_id</code>, <code>jd_text</code>, <code>scored_resumes</code>,
+            <code>tailored_t2</code>, <code>finalized: true</code>.
+          </div>
+        </div>
+        <div class="exit exit-error">
+          <div class="exit-title">Missing: tailored PDF + ATS survival rate</div>
+          <div class="exit-body">
+            Next milestone: <code>bridge.run_pdfrender(tailored_t2)</code> → styled PDF file.
+            Then <code>bridge.run_survival(pdf_bytes)</code> → <code>survival_rate</code> metric
+            showing which JD keywords survive ATS render-and-extract.
+            Return PDF path and survival rate in finalize envelope.
+          </div>
+        </div>
+      </div>
+
+      <div class="arrow-down">
+        <div class="arrow-stem"></div>
+        <div class="arrow-head"></div>
+        <div class="arrow-note">checkpoint written after every node · keyed by thread_id = session_id</div>
+      </div>
+
+      <div class="layer-label">Storage</div>
+      <div class="node store">
+        <div class="node-title">SqliteSaver — Session Checkpoints
+          <span class="node-file">~/.local/share/pi-apply/sessions.db</span>
+        </div>
+        <div class="node-body">
+          <code>SqliteSaver(sqlite3.connect(str(db_path), check_same_thread=False))</code>
+          with explicit <code>.setup()</code> before first use.
+          Persists full <code>ApplyState</code> snapshot after every node execution.
+          Session survives server restart — verified: fresh graph instance against same DB
+          recovered session at <code>score</code> node and resumed correctly.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Section B: Concurrent systems ── -->
+  <div class="concurrent-grid">
+
+    <!-- Non-workflow tools -->
+    <div class="panel">
+      <div class="panel-title">
+        Non-workflow tools · bypass graph entirely ·
+        <span class="badge badge-pure">no session_id required</span>
+      </div>
+      <div class="vflow">
+
+        <div class="node api">
+          <div class="node-title">onboard_user
+            <span class="node-file">server.py</span>
+          </div>
+          <div class="node-body">
+            Accepts <code>resume_content</code>, <code>resume_label</code>, <code>skills</code>,
+            <code>accomplishments</code>, <code>sections</code>.
+            Stub — not stored. Returns <code>"not yet implemented"</code>. No graph, no DB write.
+          </div>
+        </div>
+
+        <div class="node api">
+          <div class="node-title">add_resume
+            <span class="node-file">server.py</span>
+          </div>
+          <div class="node-body">
+            Accepts <code>resume_content</code>, <code>resume_label</code>, optional <code>sections</code>.
+            Stub. Logs call. Not persisted to data layer.
+          </div>
+        </div>
+
+        <div class="node api">
+          <div class="node-title">get_config / update_config
+            <span class="node-file">server.py</span>
+          </div>
+          <div class="node-body">
+            <code>get_config</code> returns live <code>{"log_level", "go_apply_bin"}</code> from
+            env and <code>bridge._BIN</code>. <code>update_config(key, value)</code> stub.
+            Both bypass graph entirely.
+          </div>
+        </div>
+
+        <div class="node api">
+          <div class="node-title">preview_ats_extraction
+            <span class="node-file">server.py</span>
+          </div>
+          <div class="node-body">
+            Read-only view into graph state. Calls <code>graph.get_state(config)</code>,
+            returns <code>tailored_t1 or resume_content</code>.
+            Does <em>not</em> advance graph state or write a checkpoint.
+          </div>
+        </div>
+
+        <div class="node api">
+          <div class="node-title">compile_profile / create_story
+            <span class="node-file">server.py</span>
+          </div>
+          <div class="node-body">
+            Profile compilation and SBI story stubs. Full argument surface accepted for API
+            compatibility with go-apply's tool contract. Return stub messages — not yet
+            connected to a data layer.
+          </div>
+        </div>
+
+      </div>
+      <div class="callout callout-blue">
+        All 7 non-workflow tools return plain JSON directly — no session required, no graph state touched,
+        no checkpoint written. They share the same MCP transport but are completely independent of
+        the LangGraph pipeline.
+      </div>
+    </div>
+
+    <!-- Go subprocess bridge -->
+    <div class="panel">
+      <div class="panel-title">
+        Go subprocess bridge ·
+        <span class="badge badge-bg">deferred — wired but not called in skeleton nodes</span>
+      </div>
+      <div class="vflow">
+
+        <div class="node parse">
+          <div class="node-title">bridge.py — subprocess transport
+            <span class="node-file">pi_apply/bridge.py</span>
+          </div>
+          <div class="node-body">
+            Binary resolved at import time (module top level — fail-fast):
+            <code>GO_APPLY_BIN</code> env var → <code>shutil.which("go-apply")</code> → <code>EnvironmentError</code>.
+            <code>_BIN: str = _resolve_binary()</code> — type is <code>str</code>, never <code>None</code>.
+            <br><br>
+            Two transport functions:<br>
+            <code>run_pdfrender(args: list[str]) → bytes</code> — renders tailored resume to PDF<br>
+            <code>run_survival(args: list[str]) → str</code> — ATS round-trip diff, returns JSON with <code>survival_rate</code><br>
+            <br>
+            <code>SubprocessError(cmd, returncode, stderr)</code> raised on non-zero exit.
+          </div>
+        </div>
+
+        <div class="arrow-down">
+          <div class="arrow-stem"></div>
+          <div class="arrow-head"></div>
+          <div class="arrow-note">subprocess · stdin/stdout · args list</div>
+        </div>
+
+        <div class="node cli">
+          <div class="node-title">go-apply binary
+            <span class="node-file">~/.local/bin/go-apply</span>
+          </div>
+          <div class="node-body">
+            Go binary. Exposes <code>pdfrender</code> subcommand (reads resume text, writes styled PDF bytes to stdout)
+            and <code>survival-diff</code> subcommand (renders PDF, extracts text, diffs against original JD keywords,
+            returns <code>survival_rate</code> metric surfacing silent ATS data loss).
+          </div>
+        </div>
+
+      </div>
+      <div class="callout callout-amber">
+        Gap: <code>finalize</code> node should call <code>run_pdfrender(tailored_t2)</code> to produce a
+        styled PDF, then <code>run_survival(pdf_bytes)</code> to compute ATS keyword survival rate.
+        This is the primary gap between the walking skeleton and a production-ready system.
+        The bridge is fully wired and tested — only the node call sites are missing.
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Section C: Component isolation table ── -->
+  <div class="panel">
+    <div class="panel-title">Component isolation map</div>
+    <table class="iso-table">
+      <thead>
+        <tr>
+          <th>Component</th>
+          <th>File(s)</th>
+          <th>Input boundary</th>
+          <th>Output boundary</th>
+          <th>Isolated?</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>ApplyState</td>
+          <td><code>state.py</code></td>
+          <td>Constructor kwargs (session_id required, 13 optional)</td>
+          <td>Pydantic BaseModel instance</td>
+          <td class="pure">✓ pure fn</td>
+        </tr>
+        <tr>
+          <td>bridge.py</td>
+          <td><code>bridge.py</code></td>
+          <td><code>GO_APPLY_BIN</code> env · args list</td>
+          <td><code>bytes</code> / <code>str</code> / <code>EnvironmentError</code></td>
+          <td class="isolated">✓ full</td>
+        </tr>
+        <tr>
+          <td>load_jd node</td>
+          <td><code>nodes.py</code></td>
+          <td><code>state.jd_raw_text: str</code></td>
+          <td><code>{"jd_text": str}</code></td>
+          <td class="pure">✓ pure fn</td>
+        </tr>
+        <tr>
+          <td>score node</td>
+          <td><code>nodes.py</code></td>
+          <td><code>state.keywords</code>, <code>state.resume_content</code></td>
+          <td><code>{"scored_resumes": list[dict]}</code></td>
+          <td class="pure">✓ pure fn</td>
+        </tr>
+        <tr>
+          <td>tailor_t1 node</td>
+          <td><code>nodes.py</code></td>
+          <td><code>state.resume_content</code>, <code>state.edits_t1</code></td>
+          <td><code>{"tailored_t1": str}</code></td>
+          <td class="pure">✓ pure fn</td>
+        </tr>
+        <tr>
+          <td>tailor_t2 node</td>
+          <td><code>nodes.py</code></td>
+          <td><code>state.tailored_t1</code>, <code>state.edits_t2</code></td>
+          <td><code>{"tailored_t2": str}</code></td>
+          <td class="pure">✓ pure fn</td>
+        </tr>
+        <tr>
+          <td>finalize node</td>
+          <td><code>nodes.py</code></td>
+          <td>Full <code>ApplyState</code></td>
+          <td><code>{"finalized": True}</code> · JSON file at <code>applications/&lt;sid&gt;.json</code></td>
+          <td class="isolated">✓ full</td>
+        </tr>
+        <tr>
+          <td>build_graph / make_config</td>
+          <td><code>graph.py</code></td>
+          <td><code>db_path: Path</code>, <code>session_id: str</code></td>
+          <td>Compiled <code>StateGraph</code> · <code>RunnableConfig</code></td>
+          <td class="isolated">✓ full</td>
+        </tr>
+        <tr>
+          <td>FastMCP Server — workflow tools</td>
+          <td><code>server.py</code></td>
+          <td>MCP stdio tool call JSON</td>
+          <td>JSON envelope response</td>
+          <td class="hub">orchestration hub</td>
+        </tr>
+        <tr>
+          <td>FastMCP Server — non-workflow tools</td>
+          <td><code>server.py</code></td>
+          <td>MCP stdio tool call JSON</td>
+          <td>Plain JSON stub response</td>
+          <td class="isolated">✓ full</td>
+        </tr>
+        <tr>
+          <td>SqliteSaver — sessions.db</td>
+          <td><code>~/.local/share/pi-apply/sessions.db</code></td>
+          <td>LangGraph checkpoint writes (post-node)</td>
+          <td>Persisted <code>ApplyState</code> keyed by <code>thread_id</code></td>
+          <td class="isolated">✓ full</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="iso-note">
+      "Isolated" means the component can be replaced by editing one file with no cascading edits.
+      The workflow tool handlers in <code>server.py</code> are the <strong>orchestration hub</strong> — they
+      intentionally coordinate session validation, state injection, and graph invocation in sequence.
+      This is expected and correct. All 5 node functions are pure in the skeleton: they take an
+      <code>ApplyState</code>, return a partial dict delta, and perform no I/O.
+    </p>
+  </div>
+
+</div>
+</body>
+</html>
