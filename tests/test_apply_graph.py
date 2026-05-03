@@ -84,23 +84,24 @@ class TestSingleInvocation:
         assert result.get("finalized") is True, "Graph did not reach finalize or finalized not set"
 
 
-class TestSentinelValues:
-    """Test that each node writes a sentinel placeholder."""
+class TestNodeOutputs:
+    """Test that each node writes its expected output field."""
 
-    def test_sentinels_present_after_run(self, apply_graph, tmp_resume):
-        """After run, every output field has its node's sentinel."""
-        session_id = "test-session-sentinel"
+    def test_outputs_present_after_run(self, apply_graph, tmp_resume):
+        """After run, every output field needed by downstream nodes is present."""
+        session_id = "test-session-outputs"
+        jd_text = "Test JD"
         initial_state = ApplyState(
             session_id=session_id,
-            jd_raw_text="Test JD",
+            jd_raw_text=jd_text,
             resume_path=tmp_resume,
         )
 
         config = {"configurable": {"thread_id": session_id}}
         result = apply_graph.invoke(initial_state, config)
 
-        # Check sentinel presence
-        assert result.get("jd_text") is not None, "jd_text not set by jd_fetch"
+        # Check output presence
+        assert result.get("jd_text") == jd_text, "jd_text not set by jd_fetch"
         assert isinstance(result.get("keywords"), dict), "keywords not set by keywords_extract"
         assert result.get("parsed_initial") is not None, "parsed_initial not set by parse_initial"
         assert isinstance(result.get("score_initial"), dict), "score_initial not set by score_initial"

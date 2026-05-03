@@ -12,3 +12,10 @@ wheels/
 # Claude Code local config
 .claude/
 .superpowers/
+
+# Codex local 
+.agents
+.codex
+
+# dev
+openspec

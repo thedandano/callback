@@ -19,6 +19,7 @@ from fastmcp import FastMCP
 
 # Import graphs and nodes
 from pi_apply.apply_graph import build_apply_graph, make_config as make_apply_config
+from pi_apply.jd_fetcher import JDFetchError
 from pi_apply.state import ApplyState, ProfileState
 import pi_apply.profile_nodes as profile_nodes
 
@@ -87,24 +88,24 @@ def _err(
 def apply(jd_url: Optional[str] = None, jd_raw_text: Optional[str] = None, resume_path: str = "") -> str:
     """Run a complete job application workflow end-to-end.
 
-    Takes a job description (via jd_url or jd_raw_text, one required) and a
-    resume_path. Runs the apply graph from jd_fetch to finalize in a single
-    call, returning the complete result (PDF path, scores, report, archive).
+    Takes a job description via jd_url, jd_raw_text, or both. At least one is
+    required. When both are supplied, the graph attempts jd_url first and keeps
+    jd_raw_text as fallback only for URL fetch failures. Empty URL content is
+    reported as an error and does not fall back to pasted text.
 
     Args:
-        jd_url: URL to a job description (not yet supported in skeleton).
+        jd_url: URL to a job description.
         jd_raw_text: Raw job description text.
         resume_path: Path to the source resume file.
 
     Returns:
-        JSON envelope with status, session_id, and data (pdf_path, report, scores, etc.).
+        JSON envelope with status, session_id, and data (pdf_path, report,
+        scores, etc.). Fetch errors use code "fetch_failed" when URL retrieval
+        fails and code "empty_result" when the URL returns no usable content.
     """
-    # Validate input: exactly one of jd_url or jd_raw_text
+    # Validate input: at least one of jd_url or jd_raw_text
     if not (jd_url or jd_raw_text):
         return _err("apply", "missing_input", "neither jd_url nor jd_raw_text provided")
-
-    if jd_url and jd_raw_text:
-        return _err("apply", "invalid_input", "only one of jd_url or jd_raw_text allowed")
 
     session_id = str(uuid.uuid4())
     _log("INFO", {"tool": "apply", "session_id": session_id, "has_resume": bool(resume_path)})
@@ -120,7 +121,27 @@ def apply(jd_url: Optional[str] = None, jd_raw_text: Optional[str] = None, resum
     # Build and invoke apply graph end-to-end
     graph = build_apply_graph()
     config = make_apply_config(session_id)
-    result_state = graph.invoke(initial_state, config)
+    try:
+        result_state = graph.invoke(initial_state, config)
+    except JDFetchError as exc:
+        reason = getattr(exc, "reason", None)
+        if reason == "fetch_failed":
+            return _err(
+                stage="jd_fetch",
+                code="fetch_failed",
+                message="URL fetch failed. Resubmit with jd_raw_text to use pasted job description text.",
+                session_id=session_id,
+                retriable=True,
+            )
+        if reason == "empty_result":
+            return _err(
+                stage="jd_fetch",
+                code="empty_result",
+                message="URL returned no usable content.",
+                session_id=session_id,
+                retriable=False,
+            )
+        raise RuntimeError(f"unknown jd_fetch error reason: {reason}") from exc
 
     # Extract results from final state
     data = {
