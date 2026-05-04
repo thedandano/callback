@@ -28,6 +28,7 @@ from pi_apply.apply_graph import (
 from pi_apply.jd_data import EXTRACTION_PROTOCOL, JDDataError, parse_jd_json
 from pi_apply.jd_fetcher import JDFetchError
 from pi_apply.state import ApplyState, ProfileState
+from pi_apply.wiki import WikiStore
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
@@ -335,6 +336,54 @@ def create_story(
     delta = profile_nodes.create_story(state)
 
     return _ok(session_id, "compile_profile", delta)
+
+
+@mcp.tool()
+def get_wiki_pages(session_id: str, page_ids: list[str]) -> str:
+    """Batch-fetch wiki pages for a session's resume.
+
+    Args:
+        session_id: Apply session ID (used to look up resume_label from graph state).
+        page_ids: Page paths relative to wiki root (e.g., ['experience/acme.md', 'summary.md']).
+                  Pass ['*'] to get all pages.
+
+    Returns:
+        JSON envelope with pages dict {page_id: content}.
+    """
+    _log("INFO", {"tool": "get_wiki_pages", "session_id": session_id, "page_count": len(page_ids)})
+
+    graph = build_apply_graph()
+    config = make_apply_config(session_id)
+    snapshot = graph.get_state(config)
+
+    if not snapshot.values:
+        return _err(
+            stage="get_wiki_pages",
+            code="invalid_session",
+            message="session_id not found",
+            session_id=session_id,
+        )
+
+    state_values = snapshot.values
+    resume_label = state_values.get("resume_label")
+    if not resume_label:
+        # Try to derive from resume_path
+        resume_path = state_values.get("resume_path")
+        if resume_path:
+            from pathlib import Path as _Path
+
+            resume_label = _Path(resume_path).stem
+        if not resume_label:
+            return _err(
+                stage="get_wiki_pages",
+                code="no_resume_label",
+                message="no resume_label in session; call load_jd with resume_path first",
+                session_id=session_id,
+            )
+
+    store = WikiStore()
+    pages = store.read_pages(resume_label, page_ids)
+    return _ok(session_id, data={"pages": pages})
 
 
 def run() -> None:
