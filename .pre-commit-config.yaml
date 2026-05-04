@@ -6,6 +6,28 @@ repos:
         entry: uv run python scripts/check_expected_objects.py --staged
         language: system
         files: ^tests/test_.*\.py$
+
+      - id: ruff-check
+        name: ruff lint
+        entry: uv run ruff check
+        language: system
+        types: [python]
+        stages: [pre-commit]
+
+      - id: ruff-format
+        name: ruff format check
+        entry: uv run ruff format --check
+        language: system
+        types: [python]
+        stages: [pre-commit]
+
+      - id: pytest-unit
+        name: pytest unit tests
+        entry: uv run pytest tests/ -m "not integration and not local" --tb=short -q
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
 # Disabled 2026-05-02 — re-enable after slop-reduction milestone:
 #   - repo: local
 #     hooks:

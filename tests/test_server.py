@@ -59,6 +59,7 @@ def test_apply_handoff_tools_registered():
     expected = {
         "load_jd",
         "submit_keywords",
+        "get_wiki_pages",
         "onboard_user",
         "compile_profile",
         "create_story",
