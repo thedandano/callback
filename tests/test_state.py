@@ -47,6 +47,8 @@ class TestApplyStateBasic:
             "keywords",
             "resume_path",
             "resume_label",
+            "sections",
+            "wiki_index",
             "parsed_initial",
             "parsed_final",
             "score_initial",
