@@ -1,16 +1,16 @@
 """Profile graph node implementations.
 
-Stub implementations of profile graph nodes. Each node logs entry and returns
-sentinel values as placeholders. In real implementations, these will:
-- onboard: collect user resume, skills, and accomplishment data
-- compile_profile: compute the compiled profile record from user data
-- create_story: extract behavioral stories for orphaned skills
+Each node logs entry and returns a dict update to the graph state. Nodes do
+I/O only — no LLM/API calls. All inference is performed by the host (calling LLM).
 """
 
 import json
 import logging
+from pathlib import Path
 
+import pi_apply.extractor as extractor
 from pi_apply.state import ProfileState
+from pi_apply.wiki import WikiStore
 
 logger = logging.getLogger(__name__)
 
@@ -35,22 +35,42 @@ def check_profile(state: ProfileState) -> dict:
 
 
 def onboard(state: ProfileState) -> dict:
-    """No-op stub: onboard a new user.
+    """Extract resume sections and persist sections.json to the profile wiki.
 
     Returns:
-        dict with sentinel intake value
+        dict with resume_label, sections, and intake status.
+        If no resume_path is set, returns no_resume status and no-ops.
     """
     _log_enter("onboard", state)
-    return {"intake": {"stub": "onboard"}}
+    if not state.resume_path:
+        return {"intake": {"status": "no_resume"}}
+
+    resume_label = Path(state.resume_path).stem
+    text = extractor.extract(state.resume_path)
+    section_map = extractor.extract_sections(text)
+
+    store = WikiStore()
+    store.write_page(resume_label, "sections.json", section_map.model_dump_json())
+
+    return {
+        "resume_label": resume_label,
+        "sections": section_map.model_dump(),
+        "intake": {"status": "onboarded", "resume_label": resume_label},
+    }
 
 
 def compile_profile(state: ProfileState) -> dict:
-    """No-op stub: compile the profile.
+    """Phase 1: return sections and intake for host to generate wiki pages.
+
+    The host (calling LLM) uses the returned sections to generate wiki markdown.
+    Wiki writes are handled by the MCP tool in server.py.
 
     Returns:
-        dict with sentinel compiled_profile value
+        dict with compiled_profile placeholder.
+        Does not touch orphaned_skills — managed exclusively by create_story.
     """
     _log_enter("compile_profile", state)
+    logger.info(json.dumps({"node": "compile_profile", "session_id": state.session_id, "phase": 1}))
     return {"compiled_profile": {"stub": True}}
 
 
