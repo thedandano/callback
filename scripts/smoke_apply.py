@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke test for the apply MCP tool."""
+"""Smoke test for the apply MCP handoff tools."""
 import json
 import sys
 import tempfile
@@ -9,7 +9,18 @@ from pathlib import Path
 # Add current directory to path for running via uv
 sys.path.insert(0, os.getcwd())
 
-from pi_apply.server import apply
+from pi_apply.jd_data import EXTRACTION_PROTOCOL
+from pi_apply.server import load_jd, submit_keywords
+
+
+JD_JSON = json.dumps(
+    {
+        "title": "Python Engineer",
+        "company": "ExampleCo",
+        "required": ["Python", "Kubernetes", "Go"],
+    },
+    separators=(",", ":"),
+)
 
 
 def main():
@@ -19,25 +30,50 @@ def main():
         resume_path = f.name
 
     try:
-        # Call apply with minimal inputs
-        result = apply(
+        # Call load_jd with minimal inputs
+        load_result = load_jd(
             jd_raw_text="Sample JD: Looking for a Python engineer with Kubernetes and Go experience.",
             resume_path=resume_path
         )
-        data = json.loads(result)
-        print(json.dumps(data, indent=2))
+        loaded = json.loads(load_result)
+        session_id = loaded["session_id"]
+        expected_loaded = {
+            "session_id": session_id,
+            "status": "ok",
+            "next_action": "extract_keywords",
+            "data": {
+                "jd_text": "Sample JD: Looking for a Python engineer with Kubernetes and Go experience.",
+                "extraction_protocol": EXTRACTION_PROTOCOL,
+            },
+        }
+        assert loaded == expected_loaded
 
-        # Verify structure
-        assert data["status"] == "ok", f"Expected status='ok', got {data['status']}"
-        assert "data" in data, "Missing 'data' key in response"
-        assert data["data"]["pdf_path"], "Missing or empty pdf_path"
-        assert data["data"]["report"], "Missing or empty report"
-        assert "score_initial" in data["data"], "Missing score_initial in data"
-        assert "score_final" in data["data"], "Missing score_final in data"
-        assert "uncovered_skills" in data["data"], "Missing uncovered_skills in data"
-        assert isinstance(data["data"]["uncovered_skills"], list), "uncovered_skills should be a list"
+        submit_result = submit_keywords(session_id=session_id, jd_json=JD_JSON)
+        submitted = json.loads(submit_result)
+        expected_submitted = {
+            "session_id": session_id,
+            "status": "ok",
+            "next_action": "parse_initial",
+            "data": {
+                "keywords": {
+                    "title": "Python Engineer",
+                    "company": "ExampleCo",
+                    "required": ["Python", "Kubernetes", "Go"],
+                    "preferred": None,
+                    "location": None,
+                    "seniority": "mid",
+                    "required_years": None,
+                    "team": None,
+                    "key_responsibilities": None,
+                    "pay_range_min": None,
+                    "pay_range_max": None,
+                },
+            },
+        }
+        assert submitted == expected_submitted
 
-        print("\nSMOKE OK: apply tool executed end-to-end")
+        print(json.dumps({"load_jd": loaded, "submit_keywords": submitted}, indent=2))
+        print("\nSMOKE OK: apply handoff tools executed")
         return 0
     except Exception as e:
         print(f"SMOKE FAILED: {e}", file=sys.stderr)
