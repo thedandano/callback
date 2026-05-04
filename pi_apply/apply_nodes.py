@@ -14,23 +14,25 @@ sentinel values as placeholders. In real implementations, these will:
 - finalize: archive the application record
 """
 
+import asyncio
 import json
 import logging
-import asyncio
-from time import perf_counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from time import perf_counter
 
-from pi_apply.jd_fetcher import JDFetchError, MIN_MARKDOWN_CHARS, fetch_url_to_markdown
+from pi_apply.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError, fetch_url_to_markdown
 from pi_apply.state import ApplyState
 
 logger = logging.getLogger(__name__)
 jd_fetcher_logger = logging.getLogger("pi_apply.jd_fetcher")
 
+
 # Module-level constant for applications directory, overridable by env var
 def _get_apps_dir() -> Path:
     """Get applications directory from env var or default."""
     import os
+
     env_path = os.getenv("PI_APPLY_APPS_DIR")
     if env_path:
         return Path(env_path)
@@ -232,7 +234,7 @@ def finalize(state: ApplyState) -> dict:
     # Build archive record with all required fields
     archive = {
         "session_id": state.session_id,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "jd_url": state.jd_url,
         "jd_text": state.jd_text,
         "keywords": state.keywords,

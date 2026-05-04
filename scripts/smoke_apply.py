@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Smoke test for the apply MCP handoff tools."""
+
 import json
+import os
 import sys
 import tempfile
-import os
 from pathlib import Path
 
 # Add current directory to path for running via uv
@@ -11,7 +12,6 @@ sys.path.insert(0, os.getcwd())
 
 from pi_apply.jd_data import EXTRACTION_PROTOCOL
 from pi_apply.server import load_jd, submit_keywords
-
 
 JD_JSON = json.dumps(
     {
@@ -28,12 +28,13 @@ def main():
     with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w") as f:
         f.write("Sample resume text: Python engineer with 5 years experience.")
         resume_path = f.name
+    jd_text = "Sample JD: Looking for a Python engineer with Kubernetes and Go experience."
 
     try:
         # Call load_jd with minimal inputs
         load_result = load_jd(
-            jd_raw_text="Sample JD: Looking for a Python engineer with Kubernetes and Go experience.",
-            resume_path=resume_path
+            jd_raw_text=jd_text,
+            resume_path=resume_path,
         )
         loaded = json.loads(load_result)
         session_id = loaded["session_id"]
@@ -42,7 +43,7 @@ def main():
             "status": "ok",
             "next_action": "extract_keywords",
             "data": {
-                "jd_text": "Sample JD: Looking for a Python engineer with Kubernetes and Go experience.",
+                "jd_text": jd_text,
                 "extraction_protocol": EXTRACTION_PROTOCOL,
             },
         }

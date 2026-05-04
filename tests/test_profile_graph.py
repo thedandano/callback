@@ -1,9 +1,4 @@
-import sqlite3
-from pathlib import Path
-
 import pytest
-from langchain_core.runnables import RunnableConfig
-from langgraph.graph import END
 
 from pi_apply.profile_graph import build_profile_graph, make_config
 from pi_apply.state import ProfileState
@@ -28,7 +23,7 @@ class TestProfileGraphStructure:
     def test_graph_compiles_with_five_nodes(self, graph):
         """Graph contains exactly the five named nodes."""
         nodes_dict = graph.get_graph().nodes
-        node_names = [n for n in nodes_dict.keys() if not n.startswith("__")]
+        node_names = [n for n in nodes_dict if not n.startswith("__")]
         assert "check_profile" in node_names
         assert "onboard" in node_names
         assert "compile_profile" in node_names

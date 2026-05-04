@@ -8,7 +8,6 @@ import pytest
 from pi_apply.apply_graph import build_apply_graph, make_config
 from pi_apply.state import ApplyState
 
-
 VALID_JD_DATA = {
     "title": "Backend Engineer",
     "company": "ExampleCo",

@@ -17,19 +17,19 @@ from pathlib import Path
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite import SqliteSaver
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
 from pi_apply.apply_nodes import (
+    finalize,
     jd_fetch,
     keywords_accept,
+    parse_final,
     parse_initial,
+    render,
+    report,
+    score_final,
     score_initial,
     tailor,
-    render,
-    parse_final,
-    score_final,
-    report,
-    finalize,
 )
 from pi_apply.state import ApplyState
 

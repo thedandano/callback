@@ -1,4 +1,5 @@
 """Unit tests for pi_apply.extractor."""
+
 import pytest
 
 from pi_apply.extractor import MAX_FILE_BYTES, extract
