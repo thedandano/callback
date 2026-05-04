@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## Northstar
 
@@ -26,9 +26,6 @@ State persists via LangGraph SQLite checkpointers under `~/.local/share/pi-apply
 # Install deps
 uv sync
 
-# One-time browser setup for Crawl4AI job-description fetching
-uv run playwright install chromium
-
 # Run the MCP server (stdio). go-apply binary must be on PATH or set GO_APPLY_BIN.
 GO_APPLY_BIN=/path/to/go-apply uv run python -m pi_apply.server
 
@@ -50,24 +47,15 @@ uv run python scripts/smoke_profile.py
 uv run python scripts/check_spaghetti.py
 ```
 
-## Env Vars
-
-- `PI_APPLY_APPS_DIR`: Override where application PDFs and JSON archives are written.
-- `PI_APPLY_FETCH_PAGE_TIMEOUT_MS`: Override Crawl4AI per-page timeout in milliseconds. Default: `30000`.
-- `PI_APPLY_FETCH_WAIT_UNTIL`: Override Crawl4AI wait strategy. Default: `networkidle`.
-- `PI_APPLY_FETCH_OUTER_TIMEOUT_S`: Override the outer fetch timeout in seconds. Default: `35`.
-- `PI_APPLY_FETCH_MAGIC`: Toggle Crawl4AI stealth mode. Default: `1`; set `0`, `false`, or empty string to disable.
-
 ## Architecture
 
 ### Two graphs, one server
 
-`server.py` (FastMCP) exposes five tools wired to two distinct LangGraph state graphs:
+`server.py` (FastMCP) exposes four tools wired to two distinct LangGraph state graphs:
 
 | Tool             | Graph    | Behavior                                                    |
 |------------------|----------|-------------------------------------------------------------|
-| `load_jd`        | apply    | Runs through `jd_fetch`, then returns JD markdown plus extraction instructions. |
-| `submit_keywords`| apply    | Accepts validated host-extracted JDData, resumes through `keywords_accept`, then stops before parsing/scoring. |
+| `apply`          | apply    | Runs end-to-end in a single `.invoke()` — no interrupts.    |
 | `onboard_user`   | profile  | Currently calls `profile_nodes.onboard` directly (skeleton).|
 | `compile_profile`| profile  | Currently calls `profile_nodes.compile_profile` directly.   |
 | `create_story`   | profile  | Currently calls `profile_nodes.create_story` directly.      |
@@ -78,16 +66,15 @@ All tools return JSON envelopes via `_ok` / `_err`:
 
 ### Apply graph (`apply_graph.py`, `apply_nodes.py`)
 
-Linear graph with host handoff interrupts after `jd_fetch` and `keywords_accept`:
+Linear, no interrupts, runs to completion in one `invoke()`:
 
 ```
-jd_fetch → keywords_accept → parse_initial → score_initial → tailor → render
+jd_fetch → keywords_extract → parse_initial → score_initial → tailor → render
         → parse_final → score_final → report → finalize → END
 ```
 
 Checkpointer DB: `~/.local/share/pi-apply/apply-sessions.db`.
 State schema: `ApplyState` in `state.py` (single Pydantic model — entire graph state).
-Keyword extraction is host-owned: `pi-apply` returns the JD markdown and extraction protocol, then stores only validated JDData submitted by the host.
 
 ### Profile graph (`profile_graph.py`, `profile_nodes.py`)
 
@@ -133,8 +120,8 @@ go-apply is used for PDF rendering only. `run_pdfrender` exists in `bridge.py`; 
 | Module               | Role |
 |----------------------|------|
 | `server.py`          | FastMCP tool definitions; envelope helpers (`_ok`/`_err`); structured stderr JSON logging |
-| `apply_graph.py`     | `build_apply_graph()` — linear apply pipeline with host handoff interrupts |
-| `apply_nodes.py`     | 10 apply nodes (`jd_fetch`, `keywords_accept`, `parse_initial`, `score_initial`, `tailor`, `render`, `parse_final`, `score_final`, `report`, `finalize`) |
+| `apply_graph.py`     | `build_apply_graph()` — linear, no-interrupt apply pipeline |
+| `apply_nodes.py`     | 10 apply nodes (`jd_fetch`, `keywords_extract`, `parse_initial`, `score_initial`, `tailor`, `render`, `parse_final`, `score_final`, `report`, `finalize`) |
 | `profile_graph.py`   | `build_profile_graph()` — cyclic profile graph with router edges and interrupts |
 | `profile_nodes.py`   | Profile nodes (`check_profile`, `onboard`, `compile_profile`, `check_orphans`, `create_story`) |
 | `state.py`           | `ApplyState`, `ProfileState` — Pydantic schemas for each graph |
