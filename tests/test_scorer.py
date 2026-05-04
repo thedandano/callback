@@ -1,8 +1,8 @@
 """Unit tests for pi_apply.scorer — pure function, no I/O."""
+
 import pytest
 
 from pi_apply.scorer import ScoringConfig, score
-
 
 RESUME_WITH_SECTIONS = """
 Experience
@@ -123,7 +123,9 @@ class TestExperienceScoring:
 
 class TestPassThreshold:
     def test_strong_resume_passes(self):
-        result = score(RESUME_WITH_SECTIONS, required=["Python", "Kubernetes"], preferred=["FastAPI"])
+        result = score(
+            RESUME_WITH_SECTIONS, required=["Python", "Kubernetes"], preferred=["FastAPI"]
+        )
         assert result.passes()
 
     def test_empty_resume_fails(self):

@@ -5,7 +5,6 @@ from typing import Literal
 
 from dataclass_wizard import JSONWizard
 
-
 EXTRACTION_PROTOCOL = """Extract keywords from jd_text using this exact protocol:
 
 1. Find sections labeled "Required", "Requirements", "Must Have", "Basic Qualifications", or similar. Extract every technical skill, tool, framework, platform, methodology, and credential. Copy the EXACT string from the JD - do NOT paraphrase, generalize, or substitute synonyms (e.g. if JD says "k8s", use "k8s", not "Kubernetes").
@@ -20,8 +19,7 @@ Omit optional fields entirely if not present. Do NOT invent values.
 
 Example:
   JD says: "Requirements: Go, Kubernetes, PostgreSQL, REST APIs. Preferred: GraphQL, Terraform."
-  -> {"title":"Software Engineer","company":"Acme Corp","required":["Go","Kubernetes","PostgreSQL","REST APIs"],"preferred":["GraphQL","Terraform"]}"""
-
+  -> {"title":"Software Engineer","company":"Acme Corp","required":["Go","Kubernetes","PostgreSQL","REST APIs"],"preferred":["GraphQL","Terraform"]}"""  # noqa: E501
 
 Seniority = Literal["junior", "mid", "senior", "lead", "director"]
 SUPPORTED_SENIORITIES = {"junior", "mid", "senior", "lead", "director"}
@@ -72,7 +70,8 @@ def parse_jd_json(jd_json: str) -> dict:
     if _is_empty_jd(data):
         raise JDDataError(
             "jd_empty",
-            "jd_json contains no extractable keywords - provide at least title, company, or required skills",
+            "jd_json contains no extractable keywords - provide at least title, "
+            "company, or required skills",
         )
 
     return data

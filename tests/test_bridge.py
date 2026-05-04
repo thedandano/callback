@@ -1,8 +1,6 @@
 """Unit tests for pi_apply.bridge module."""
 
 import importlib
-import os
-import subprocess
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -42,7 +40,7 @@ def test_resolution_from_env_var(monkeypatch, tmp_path):
 
     # Import should succeed
     bridge = importlib.import_module("pi_apply.bridge")
-    assert bridge._BIN == str(fake_bin)
+    assert str(fake_bin) == bridge._BIN
 
     # Clean up
     sys.modules.pop("pi_apply.bridge", None)
@@ -63,7 +61,7 @@ def test_resolution_from_path(monkeypatch):
 
     # Import should succeed
     bridge = importlib.import_module("pi_apply.bridge")
-    assert bridge._BIN == fake_bin_path
+    assert fake_bin_path == bridge._BIN
 
     # Clean up
     sys.modules.pop("pi_apply.bridge", None)

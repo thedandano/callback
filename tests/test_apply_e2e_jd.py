@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, patch
 from pi_apply.apply_graph import build_apply_graph
 from pi_apply.state import ApplyState
 
-
 FIXTURE_MD = """# Senior Python Engineer
 
 We need a senior engineer to build production Python services, improve

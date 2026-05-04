@@ -3,11 +3,11 @@
 Ported from go-apply internal/service/scorer/scorer.go.
 Weights and thresholds match internal/config/defaults.json exactly.
 """
+
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-
 
 # ── Regex patterns used for scoring ────────────────────────────────────────────
 
@@ -15,11 +15,11 @@ from dataclasses import dataclass, field
 METRIC_RE = re.compile(
     r"(?i)"
     r"(?:"
-    r"\d+\.?\d*\s*%"           # percentage: 40%, 3.5%
-    r"|\$\s*\d[\d,.]*"         # dollar: $1.2M, $50k
-    r"|\d[\d,.]*\s*[kKmMbB]\b" # magnitude: 50k, 1.2M
-    r"|\d+x\b"                  # multiplier: 2x, 10x
-    r"|\d{3,}"                  # large int ≥ 100 (years stripped first)
+    r"\d+\.?\d*\s*%"  # percentage: 40%, 3.5%
+    r"|\$\s*\d[\d,.]*"  # dollar: $1.2M, $50k
+    r"|\d[\d,.]*\s*[kKmMbB]\b"  # magnitude: 50k, 1.2M
+    r"|\d+x\b"  # multiplier: 2x, 10x
+    r"|\d{3,}"  # large int ≥ 100 (years stripped first)
     r")"
 )
 
@@ -35,6 +35,7 @@ ATS_SECTION_PATTERNS = [
 
 
 # ── Configuration and output types ─────────────────────────────────────────────
+
 
 @dataclass
 class ScoringWeights:
@@ -52,19 +53,30 @@ class ScoringConfig:
     keyword_preferred_weight: float = 0.3
     experience_seniority_weight: float = 0.6
     experience_years_weight: float = 0.4
-    seniority_multipliers: dict[str, float] = field(default_factory=lambda: {
-        "exact": 1.0,
-        "one_off": 0.8,
-        "two_or_more_off": 0.5,
-    })
+    seniority_multipliers: dict[str, float] = field(
+        default_factory=lambda: {
+            "exact": 1.0,
+            "one_off": 0.8,
+            "two_or_more_off": 0.5,
+        }
+    )
     overqualification_threshold_mult: float = 2.0
     overqualification_penalty: float = 0.85
     impact_bullet_target: int = 5
-    filler_phrases: list[str] = field(default_factory=lambda: [
-        "responsible for", "worked on", "helped with", "assisted in",
-        "involved in", "participated in", "contributed to",
-        "familiar with", "exposure to", "knowledge of",
-    ])
+    filler_phrases: list[str] = field(
+        default_factory=lambda: [
+            "responsible for",
+            "worked on",
+            "helped with",
+            "assisted in",
+            "involved in",
+            "participated in",
+            "contributed to",
+            "familiar with",
+            "exposure to",
+            "knowledge of",
+        ]
+    )
     readability_penalty_per_filler: float = 2.0
 
 
@@ -78,8 +90,11 @@ class ScoreBreakdown:
 
     def total(self) -> float:
         return (
-            self.keyword_match + self.experience_fit
-            + self.impact_evidence + self.ats_format + self.readability
+            self.keyword_match
+            + self.experience_fit
+            + self.impact_evidence
+            + self.ats_format
+            + self.readability
         )
 
 
@@ -108,6 +123,7 @@ class ScoreResult:
 
 
 # ── Public entry point ────────────────────────────────────────────────────────
+
 
 def score(
     resume_text: str,
@@ -148,6 +164,7 @@ def score(
 
 
 # ── Scoring dimensions ────────────────────────────────────────────────────────
+
 
 def _is_word_char(c: str) -> bool:
     return c.isalnum() or c == "_"
@@ -229,16 +246,14 @@ def _score_impact(resume_text: str, cfg: ScoringConfig) -> tuple[float, list[str
 
 def _score_ats(resume_text: str, cfg: ScoringConfig) -> float:
     lines = resume_text.splitlines()
-    found = sum(
-        1 for pat in ATS_SECTION_PATTERNS
-        if any(pat.match(line) for line in lines)
-    )
+    found = sum(1 for pat in ATS_SECTION_PATTERNS if any(pat.match(line) for line in lines))
     return found / len(ATS_SECTION_PATTERNS) * cfg.weights.ats_format
 
 
 def _score_readability(resume_text: str, cfg: ScoringConfig) -> tuple[float, list[str]]:
     detected = [
-        phrase for phrase in cfg.filler_phrases
+        phrase
+        for phrase in cfg.filler_phrases
         if re.search(r"(?i)\b" + re.escape(phrase) + r"\b", resume_text)
     ]
     read_score = max(

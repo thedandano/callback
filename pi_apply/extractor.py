@@ -1,4 +1,5 @@
 """Resume text extraction — PDF, DOCX, TXT. Pure I/O, no scoring logic."""
+
 from __future__ import annotations
 
 from pathlib import Path

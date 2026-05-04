@@ -60,9 +60,7 @@ async def fetch_url_to_markdown(url: str) -> str:
     """Fetch a URL with Crawl4AI and return pruned fit markdown."""
 
     config = CrawlerRunConfig(
-        markdown_generator=DefaultMarkdownGenerator(
-            content_filter=PruningContentFilter()
-        ),
+        markdown_generator=DefaultMarkdownGenerator(content_filter=PruningContentFilter()),
         wait_until=_wait_until(),
         page_timeout=_page_timeout_ms(),
     )

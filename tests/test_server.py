@@ -9,7 +9,6 @@ import pytest
 
 from pi_apply.jd_data import EXTRACTION_PROTOCOL
 
-
 PARTIAL_JD_JSON = """
 {
   "title": "Backend Engineer",
@@ -209,7 +208,10 @@ def test_submit_keywords_rejects_empty_jd_json():
         "error": {
             "stage": "submit_keywords",
             "code": "jd_empty",
-            "message": "jd_json contains no extractable keywords - provide at least title, company, or required skills",
+            "message": (
+                "jd_json contains no extractable keywords - provide at least title, "
+                "company, or required skills"
+            ),
             "retriable": True,
         },
         "session_id": session_id,
@@ -281,8 +283,8 @@ def test_submit_keywords_rejects_session_not_waiting_for_keywords(tmp_path):
 
 
 def test_onboard_user_enters_onboard_node(monkeypatch):
-    from pi_apply.server import onboard_user
     import pi_apply.profile_nodes as pnodes
+    from pi_apply.server import onboard_user
 
     def fake_onboard(state):
         return {"intake": {"stub": "onboard"}}
@@ -306,8 +308,8 @@ def test_onboard_user_enters_onboard_node(monkeypatch):
 
 
 def test_compile_profile_enters_compile_profile_node(monkeypatch):
-    from pi_apply.server import compile_profile
     import pi_apply.profile_nodes as pnodes
+    from pi_apply.server import compile_profile
 
     def fake_compile(state):
         return {"compiled_profile": {"stub": True}, "orphaned_skills": []}
@@ -331,8 +333,8 @@ def test_compile_profile_enters_compile_profile_node(monkeypatch):
 
 
 def test_create_story_enters_create_story_node(monkeypatch):
-    from pi_apply.server import create_story
     import pi_apply.profile_nodes as pnodes
+    from pi_apply.server import create_story
 
     def fake_create(state):
         return {"orphaned_skills": [], "current_story_target": "test"}

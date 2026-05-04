@@ -8,7 +8,7 @@ from unittest.mock import ANY
 import pytest
 
 import pi_apply.apply_nodes as apply_nodes
-from pi_apply.jd_fetcher import JDFetchError, MIN_MARKDOWN_CHARS
+from pi_apply.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError
 from pi_apply.state import ApplyState
 
 

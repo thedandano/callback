@@ -16,14 +16,14 @@ from pathlib import Path
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite import SqliteSaver
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
 from pi_apply.profile_nodes import (
-    check_profile,
-    onboard,
-    compile_profile,
     check_orphans,
+    check_profile,
+    compile_profile,
     create_story,
+    onboard,
 )
 from pi_apply.state import ProfileState
 
