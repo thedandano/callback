@@ -19,7 +19,11 @@ from typing import Optional
 from fastmcp import FastMCP
 
 # Import graphs and nodes
-from pi_apply.apply_graph import build_apply_graph, make_config as make_apply_config
+from pi_apply.apply_graph import (
+    KEYWORDS_ACCEPT_NODE,
+    build_apply_graph,
+    make_config as make_apply_config,
+)
 from pi_apply.jd_data import EXTRACTION_PROTOCOL, JDDataError, parse_jd_json
 from pi_apply.jd_fetcher import JDFetchError
 from pi_apply.state import ApplyState, ProfileState
@@ -76,9 +80,34 @@ def _err(
             "retriable": retriable,
         },
     }
-    if session_id:
+    if session_id is not None:
         env["session_id"] = session_id
     return json.dumps(env)
+
+
+def _submit_keywords_state_error(graph, config, session_id: str) -> str | None:
+    """Return an error envelope if submit_keywords cannot resume safely."""
+    snapshot = graph.get_state(config)
+    if not snapshot.values:
+        return _err(
+            stage="submit_keywords",
+            code="invalid_session",
+            message="session_id was not found; call load_jd before submit_keywords",
+            session_id=session_id,
+            retriable=False,
+        )
+
+    expected_next = (KEYWORDS_ACCEPT_NODE,)
+    if snapshot.next != expected_next:
+        return _err(
+            stage="submit_keywords",
+            code="invalid_state",
+            message="session is not waiting for keyword submission",
+            session_id=session_id,
+            retriable=False,
+        )
+
+    return None
 
 
 # ============================================================================
@@ -171,6 +200,10 @@ def submit_keywords(session_id: str, jd_json: str) -> str:
 
     graph = build_apply_graph()
     config = make_apply_config(session_id)
+    state_error = _submit_keywords_state_error(graph, config, session_id)
+    if state_error is not None:
+        return state_error
+
     try:
         graph.update_state(config, {"keywords": keywords})
         state = graph.invoke(None, config)
