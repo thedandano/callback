@@ -206,6 +206,10 @@ class TestProfileStateBasic:
         required_fields = {
             "session_id",
             "profile_exists",
+            "resume_label",
+            "resume_path",
+            "sections",
+            "wiki_path",
             "intake",
             "compiled_profile",
             "orphaned_skills",
