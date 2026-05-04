@@ -7,10 +7,10 @@ Conventional commits required throughout (`feat:`, `fix:`, `chore:`) — release
 
 ## Epic 0 — Walking Skeleton ✅ COMPLETE
 
-Foundation POC. LangGraph state graph running end-to-end with Go subprocess bridge and PDF output.
+Foundation POC. LangGraph state graph running through the current host keyword handoff, with later parse/score/tailor/render nodes still built out incrementally.
 
 - [x] `uv init`, deps: `langgraph`, `langchain-core`, `pydantic`, `fastmcp`, `fpdf2`
-- [x] Package structure: `pi_apply/{__init__, state, graph, bridge, nodes, server}.py`
+- [x] Package structure: `pi_apply/{__init__, state, apply_graph, apply_nodes, profile_graph, profile_nodes, bridge, server}.py`
 - [x] `.env.example` documenting `GO_APPLY_BIN`, `LOG_LEVEL`, `PI_APPLY_TEST_STUB`
 - [x] `pyrightconfig.json` for `.venv` type resolution
 - [x] `ApplyState(BaseModel)` — typed state with 14 fields covering full pipeline
@@ -18,164 +18,190 @@ Foundation POC. LangGraph state graph running end-to-end with Go subprocess brid
   - [x] `run_pdfrender(args) -> bytes`
   - [x] `run_survival(args) -> str`
   - [x] `EnvironmentError` on missing binary (no silent degradation)
-- [x] `nodes.py` — 5 skeleton node functions with structured JSON logging
-  - [x] `load_jd` — copies `jd_raw_text` → `jd_text`
-  - [x] `score` — counts keyword matches against resume content
-  - [x] `tailor_t1` — appends `[T1 edits: ...]` block (skeleton only)
-  - [x] `tailor_t2` — appends `[T2 edits: ...]` block (skeleton only)
-  - [x] `finalize` — writes JSON record + PDF to `~/.local/share/pi-apply/applications/`
-- [x] `graph.py` — `StateGraph` compiled with `interrupt_after` + `SqliteSaver`
+- [x] `apply_nodes.py` — apply pipeline nodes with structured JSON logging
+  - [x] `jd_fetch` — fetches or accepts JD text for host extraction
+  - [x] `keywords_accept` — accepts validated host-extracted JDData without inferring keywords
+  - [x] Later parse/score/tailor/render/report/finalize nodes remain milestone stubs
+- [x] `apply_graph.py` — `StateGraph` compiled with host handoff interrupts + `SqliteSaver`
   - [x] `session_id = thread_id` mapping (no lookup table)
-  - [x] `SqliteSaver` at `~/.local/share/pi-apply/sessions.db`
+  - [x] `SqliteSaver` at `~/.local/share/pi-apply/apply-sessions.db`
   - [x] `check_same_thread=False` for FastMCP threading
-- [x] `server.py` — FastMCP with 12 tools and consistent JSON envelope
+- [x] `server.py` — FastMCP with current MCP tools and consistent JSON envelope
   - [x] `{"session_id", "status", "next_action", "data", "error"}` envelope
-  - [x] `next_action` values map directly to next MCP tool name
+  - [x] `load_jd` returns `next_action="extract_keywords"` for host-owned extraction
+  - [x] `submit_keywords` stores validated JDData and returns `next_action="parse_initial"`
   - [x] Structured logging (ISO 8601 UTC timestamp + level) on every call
 - [x] PDF output via `fpdf2` in `finalize` node (go-apply pdfrender is not a CLI subprocess)
 - [x] MCP registered in `~/.claude.json`
 - [x] `/apply` slash command at `.claude/commands/apply.md`
-- [x] 47 tests — all passing
+- [x] Tests covering the current walking skeleton and handoff surface
   - [x] `test_state.py` (11) — field validation, optional/required
   - [x] `test_bridge.py` (8) — binary resolution, `importlib.reload` pattern
   - [x] `test_nodes.py` (12) — deltas, error logging, `_NotSerializable` ERROR path
   - [x] `test_graph.py` (2) — checkpoint round-trip, full pipeline end-to-end
-  - [x] `test_server.py` (14) — 12 tool registration, routing, ordering enforcement
+  - [x] `test_server.py` — MCP tool registration, routing, and handoff envelope behavior
 - [x] E2E validated: PlayStation SWE II Data Platform JD — 14/14 skeleton score, 7/14 honest coverage
 
 ---
 
-## Epic 1 — Installable Package + CI/CD + Release-Please
+## Epic 0.5 — Host-Handoff Surface ✅ COMPLETE
+
+Shipped after the Epic 0 walking skeleton. Establishes the host-as-brain
+pattern that the rest of the graph reuses.
+
+- [x] `jd_data.py` — `JDData` schema, `EXTRACTION_PROTOCOL`, `parse_jd_json` validator
+- [x] `jd_fetcher.py` — Crawl4AI-based URL fetch
+  - [x] Documented env vars: `PI_APPLY_FETCH_PAGE_TIMEOUT_MS`, `PI_APPLY_FETCH_WAIT_UNTIL`, `PI_APPLY_FETCH_OUTER_TIMEOUT_S`, `PI_APPLY_FETCH_MAGIC`
+  - [x] Explicit `JDFetchError` reasons: `fetch_failed`, `empty_result` (no silent fallback)
+- [x] `scorer.py` — deterministic port from `scorer.go` (KeywordMatch / ExperienceFit / ImpactEvidence / ATSFormat / Readability)
+- [x] `submit_keywords` MCP tool with state-error guards and graph state injection at `keywords_accept` interrupt
+- [x] `extractor.py` — PDF / DOCX / TXT resume text extraction
+- [x] Archived openspec changes: `2026-05-02-langgraph-pipeline-go-subprocess`, `2026-05-02-v2-noop-graph-skeleton`, `2026-05-03-host-keyword-handoff`, `2026-05-03-implement-jd-fetch-crawl4ai`
+
+In-flight (not yet archived): `openspec/changes/pdf-output-wiring/` —
+rewires the keystone `tailor → render → parse_final → score_final`
+round-trip with a vendored LaTeX skeleton + tectonic. See Epic 2.
+
+---
+
+## Epic 1 — Installable Package + CI/CD + Release-Please ✅ COMPLETE
 
 Makes pi-apply installable as a CLI tool (like `go-apply install`) with a `setup-mcp` command,
 parity CI, and release-please for semver releases driven by conventional commits.
 
 ### 1a — CLI Entry Point
 
-- [ ] Add `typer` and `rich` to dependencies
-- [ ] Create `pi_apply/cli.py` with `typer.Typer()` app
-  - [ ] `pi-apply serve` — starts the FastMCP MCP server (replaces `uv run python main.py`)
-  - [ ] `pi-apply setup-mcp` — writes MCP server config to `~/.claude.json` under `mcpServers["pi-apply"]`
-  - [ ] `pi-apply logs` — tails `~/.local/state/pi-apply/server.log` (XDG state dir)
-  - [ ] `pi-apply version` — prints version from `importlib.metadata`
-- [ ] Add entry point to `pyproject.toml`:
+- [x] Add `typer` and `rich` to dependencies
+- [x] Create `pi_apply/cli.py` with `typer.Typer()` app
+  - [x] `pi-apply serve` — starts the FastMCP MCP server (replaces `uv run python main.py`)
+  - [x] `pi-apply setup-mcp` — create a resusable interface
+  - [x] `pi-apply setup-mcp` — implements the interface to write MCP server config to `~/.claude.json` under `mcpServers["pi-apply"]`
+  - [x] `pi-apply setup-mcp` — implements the interface to write MCP server config to `~/.codex/config.toml` under `mcpServers["pi-apply"]`. use docs mcp
+  - [x] `pi-apply logs` — tails `~/.local/state/pi-apply/server.log` (XDG state dir)
+  - [x] `pi-apply version` — prints version from `importlib.metadata`
+- [x] Add entry point to `pyproject.toml`:
   ```toml
   [project.scripts]
   pi-apply = "pi_apply.cli:app"
   ```
-- [ ] `setup-mcp` writes correct config shape:
+- [x] `setup-mcp` writes correct config shape:
   ```json
   { "mcpServers": { "pi-apply": { "command": "pi-apply", "args": ["serve"] } } }
   ```
-- [ ] `setup-mcp` is idempotent — does not duplicate entry if already present
-- [ ] Tests for `setup-mcp` idempotency and config shape
+- [x] `setup-mcp` is idempotent — does not duplicate entry if already present
+- [x] Tests for `setup-mcp` idempotency and config shape
 
 ### 1b — Makefile
 
-- [ ] `Makefile` with targets mirroring go-apply:
-  - [ ] `make install` — `uv tool install .` (installs `pi-apply` to PATH)
-  - [ ] `make build` — `uv build` (wheel + sdist to `dist/`)
-  - [ ] `make check` — fmt + lint + type + test-unit (mirrors CI, run before pushing)
-  - [ ] `make test-unit` — `pytest tests/ -m "not integration"`
-  - [ ] `make test-integration` — `pytest tests/ -m integration`
-  - [ ] `make fmt` — `ruff format .`
-  - [ ] `make lint` — `ruff check .`
-  - [ ] `make type` — `pyright`
-  - [ ] `make clean` — `rm -rf dist/ .ruff_cache/ __pycache__/`
-- [ ] `make install` prints install location on success
-- [ ] `INSTALL_DIR` override: `make install INSTALL_DIR=~/.bin`
+- [x] `Makefile` with targets mirroring go-apply:
+  - [x] `make install` — `uv tool install .` (installs `pi-apply` to PATH)
+  - [x] `make build` — `uv build` (wheel + sdist to `dist/`)
+  - [x] `make check` — fmt + lint + type + test-unit (mirrors CI, run before pushing)
+  - [x] `make test-unit` — `pytest tests/ -m "not integration"`
+  - [x] `make test-integration` — `pytest tests/ -m integration`
+  - [x] `make fmt` — `ruff format .`
+  - [x] `make lint` — `ruff check .`
+  - [x] `make type` — `pyright`
+  - [x] `make clean` — `rm -rf dist/ .ruff_cache/ __pycache__/`
+- [x] `make install` prints install location on success
+- [x] `INSTALL_DIR` override: `make install INSTALL_DIR=~/.bin`
 
 ### 1c — GitHub Actions CI
 
-- [ ] `.github/workflows/ci.yml`
-  - [ ] Triggers: push to any branch, PR to `main` and `dev`
-  - [ ] Jobs (all must pass before merge):
-    - [ ] `fmt` — `ruff format --check .`
-    - [ ] `lint` — `ruff check .`
-    - [ ] `type` — `pyright`
-    - [ ] `test-unit` — `pytest tests/ -m "not integration" --tb=short`
-    - [ ] `test-integration` — `pytest tests/ -m integration --tb=short`
-  - [ ] Cache: `uv` cache keyed on `pyproject.toml` + `uv.lock`
-  - [ ] Python 3.12 pinned
-- [ ] `.github/workflows/release-please.yml`
-  - [ ] Trigger: push to `main`
-  - [ ] `google-github-actions/release-please-action@v4`
-  - [ ] Release type: `python`
-  - [ ] Bumps `version` in `pyproject.toml`
-  - [ ] Creates GitHub release with changelog from conventional commits
-  - [ ] On release created: build wheel + sdist, attach to release as assets
-- [ ] `release-please-config.json`:
+- [x] `.github/workflows/ci.yml`
+  - [x] Triggers: push to any branch, PR to `main` and `dev`
+  - [x] Jobs (all must pass before merge):
+    - [x] `fmt` — `ruff format --check .`
+    - [x] `lint` — `ruff check .`
+    - [x] `type` — `pyright`
+    - [x] `test-unit` — `pytest tests/ -m "not integration" --tb=short`
+    - [x] `test-integration` — `pytest tests/ -m integration --tb=short`
+  - [x] Cache: `uv` cache keyed on `pyproject.toml` + `uv.lock`
+  - [x] Python 3.12 pinned
+- [x] `.github/workflows/release-please.yml`
+  - [x] Trigger: push to `main`
+  - [x] `google-github-actions/release-please-action@v4`
+  - [x] Release type: `python`
+  - [x] Bumps `version` in `pyproject.toml`
+  - [x] Creates GitHub release with changelog from conventional commits
+  - [x] On release created: build wheel + sdist, attach to release as assets
+- [x] `release-please-config.json`:
   ```json
   { "release-type": "python", "packages": { ".": {} } }
   ```
-- [ ] `.release-please-manifest.json` initialized with `{"." : "0.1.0"}`
+- [x] `.release-please-manifest.json` initialized with `{"." : "0.1.0"}`
 
 ### 1d — Dev Tooling
 
-- [ ] Add to `[dependency-groups] dev`: `ruff`, `pyright`, `pytest-cov`, `pytest-mock`
-- [ ] `[tool.ruff]` in `pyproject.toml`: `line-length = 100`, `target-version = "py312"`, select `E,F,I,N,UP,B,SIM`
-- [ ] `[tool.pytest.ini_options]`: `testpaths = ["tests"]`, `markers = ["integration: marks tests as integration"]`
-- [ ] `.python-version` pinned to `3.12`
+- [x] Add to `[dependency-groups] dev`: `ruff`, `pyright`, `pytest-cov`, `pytest-mock`
+- [x] `[tool.ruff]` in `pyproject.toml`: `line-length = 100`, `target-version = "py312"`, select `E,F,I,N,UP,B,SIM`
+- [x] `[tool.pytest.ini_options]`: `testpaths = ["tests"]`, `markers = ["integration: marks tests as integration"]`
+- [x] `.python-version` pinned to `3.12`
 
 ---
 
-## Epic 2 — Real T1/T2 Edit Application
+## Epic 2 — Holistic Tailor + Keystone Round-Trip
 
-**Most critical next milestone.** Tailoring currently appends raw JSON patches.
-This epic makes T1 inject keywords into the skills section and T2 rewrite experience bullets.
+**Most critical next milestone.** Owns the design for nodes that are
+still stubs: `tailor`, `render`, `parse_final`, `score_final`, `report`.
+The architectural justification for using LangGraph at all — the
+keystone `render → parse_final → score_final` round-trip — produces no
+honest score delta until this epic ships.
 
-### 2a — Resume Section Parser
+**Design change vs. earlier draft:** T1 (skill injection) and T2 (bullet
+rewrite) are collapsed into **one holistic tailor pass**. The host
+reasons about the resume as a whole and submits a single structured
+`TailoredResume`. There is no `submit_tailor_t1` / `submit_tailor_t2`
+split — the two-pass design was inherited from go-apply's FSM and is
+not needed here.
 
-- [ ] `pi_apply/resume.py` — section parser for plain-text resumes
-- [ ] `parse_sections(text: str) -> ResumeDoc`
-  - [ ] Identifies skills section by heading heuristics ("Skills", "Technical Skills", etc.)
-  - [ ] Identifies experience section and individual job blocks
-  - [ ] Identifies experience bullets within each job block
-- [ ] `ResumeDoc(BaseModel)`:
-  - [ ] `skills: dict[str, list[str]]` — category → skills list
-  - [ ] `jobs: list[JobBlock]` — each with `title`, `company`, `bullets: list[str]`
-  - [ ] `raw: str` — original text preserved
-- [ ] `render_text(doc: ResumeDoc) -> str` — serializes back to plain text
-- [ ] Round-trip invariant: `render_text(parse_sections(text))` ≈ `text` (whitespace-normalized)
-- [ ] Tests: 5+ resume fixtures covering formatting variations
+Tracked in-flight by `openspec/changes/pdf-output-wiring/`.
 
-### 2b — Edit Schema
+### 2a — `TailoredResume` schema
 
-- [ ] `pi_apply/edits.py`
-- [ ] `SkillInjection(BaseModel)` — `category: str`, `skills: list[str]`
-- [ ] `BulletRewrite(BaseModel)` — `job_index: int`, `bullet_index: int`, `rewritten: str`
-- [ ] `T1Edits(BaseModel)` — `injections: list[SkillInjection]`
-- [ ] `T2Edits(BaseModel)` — `rewrites: list[BulletRewrite]`
-- [ ] Validation: `job_index` and `bullet_index` within bounds of parsed resume
-- [ ] Tests for out-of-bounds validation
+- [ ] `pi_apply/render/models.py` — Pydantic model whose fields match
+      `CanonicalTeXBuilder.build()` keys: `name`, `location`, `email`,
+      `phone`, `linkedin`, `website`, `title`, `summary`, `skills_raw`,
+      `experience_raw`, `projects_raw`, `volunteer_raw`, `education_raw`
+- [ ] `state.tailored: TailoredResume | None` (replaces sentinel string field)
+- [ ] Validation: required-field set + bounds checks against `parsed_initial`
+- [ ] Tests: schema round-trip, validation errors
 
-### 2c — Real T1 Node
+### 2b — Vendored LaTeX render path
 
-- [ ] `tailor_t1` applies `T1Edits` from `state.edits_t1`
-- [ ] Parses resume, injects skills into correct category (creates category if missing)
-- [ ] Deduplication: does not inject skill already present
-- [ ] `state.tailored_t1` = rendered plain text of modified resume
-- [ ] Tests: injection into existing category, new category, dedup
+- [ ] Vendor focused subset of resume-tailor into `pi_apply/render/`:
+      `escape_tex`, `strip_em_dashes`, `build_itemize`,
+      `CanonicalTeXBuilder`, `compile_tex`, `resume_skeleton.tex`
+- [ ] **Do NOT** vendor `resume_modifier.py` or `latex_converter.py` (different problem)
+- [ ] `tectonic` documented as system dependency (README + `.env.example`)
+- [ ] Fail-fast at import time if no LaTeX compiler found (mirror `bridge.py` binary-resolution pattern)
+- [ ] Tests: builder fixture round-trip, compile-on-CI smoke
 
-### 2d — Real T2 Node
+### 2c — Host-handoff `submit_tailor` MCP tool
 
-- [ ] `tailor_t2` applies `T2Edits` from `state.edits_t2`
-- [ ] Applies bullet rewrites by index against parsed `tailored_t1`
-- [ ] Preserves unmentioned bullets unchanged
-- [ ] `state.tailored_t2` = fully tailored plain-text resume
-- [ ] Tests: single rewrite, multiple rewrites, out-of-bounds handling
+- [ ] Single tool — `submit_tailor(session_id, tailored_json)` — accepts holistic edits
+- [ ] Validates JSON against `TailoredResume`
+- [ ] Writes `state.tailored`, resumes graph past tailor interrupt
+- [ ] No internal LLM call (host-as-brain — same pattern as `submit_keywords`)
+- [ ] Apply graph adds interrupt after `score_initial`, before `tailor`
+- [ ] Tests: schema validation errors, state update, interrupt resume
 
-### 2e — Clean PDF Output
+### 2d — Keystone round-trip (makes stubs honest)
 
-- [ ] `finalize` renders `state.tailored_t2` (not skeleton append output)
-- [ ] PDF uses proper section formatting (bold headings, consistent spacing)
-- [ ] Integration test: full run, assert PDF content contains injected keywords
+- [ ] `render` builds `.tex` via `CanonicalTeXBuilder().build(state.tailored.model_dump())`
+- [ ] `render` compiles to `~/.local/share/pi-apply/applications/<session_id>.pdf` via `compile_tex`
+- [ ] `parse_final` re-extracts text from the rendered PDF via `extractor.py` — no silent fallback on extraction failure
+- [ ] `score_final` runs the deterministic `scorer.score()` against the re-parsed text
+- [ ] `report` surfaces initial-vs-final per-dimension delta + `format_gap_chars` (round-trip text loss)
+- [ ] Integration test: full run on a real JD, assert PDF non-empty, assert delta is non-zero and matches injected keywords
 
 ---
 
 ## Epic 3 — Resume Data Layer
 
 Persistent resume store and accomplishments. Parity with go-apply's `fs` repository layer.
+
+**Owns the `onboard` profile-graph stub** — current `profile_nodes.onboard` returns `{"intake": {"stub": "onboard"}}` and the `onboard_user` MCP tool bypasses the graph entirely. This epic backs both with real intake + persistence.
 
 - [ ] `pi_apply/repository/` package
 - [ ] `repository/resumes.py` — file-based resume store
@@ -198,6 +224,12 @@ Persistent resume store and accomplishments. Parity with go-apply's `fs` reposit
 
 Assembles `CompiledProfile` from skills + tagged stories. Gates workflow tools on profile presence.
 
+**Owns the `compile_profile` and `create_story` profile-graph stubs.**
+Both currently return sentinel values, AND the matching MCP tools call
+`profile_nodes.X(state)` directly (bypassing the graph). This epic
+switches the profile MCP surface to **graph state injection** at the
+matching interrupt — same pattern as `submit_keywords` / `submit_tailor`.
+
 - [ ] `pi_apply/profilecompiler.py`
 - [ ] `CompiledProfile(BaseModel)` — `skills`, `stories`, `compiled_at`
 - [ ] `assemble(skills, remove_skills, story_ids) -> ProfileDiff`
@@ -211,20 +243,19 @@ Assembles `CompiledProfile` from skills + tagged stories. Gates workflow tools o
 
 ---
 
-## Epic 5 — JD Fetching (URL Support)
+## Epic 5 — JD Fetching (URL Support) ✅ COMPLETE
 
-`load_jd` currently only handles `jd_raw_text`. This epic wires Playwright + httpx fallback.
+Shipped as part of Epic 0.5. Implementation chose **Crawl4AI** over the
+originally-planned Playwright + httpx fallback because Crawl4AI bundles
+a stealth-mode Chromium driver and content extraction in a single dep,
+matching the "minimal surface area" constraint.
 
-- [ ] Add `playwright` and `httpx` to dependencies
-- [ ] `pi_apply/fetcher.py`
-  - [ ] `fetch_jd(url: str) -> str` — returns extracted text
-  - [ ] Playwright primary: headless Chromium, `page.inner_text("body")`
-  - [ ] httpx + BeautifulSoup fallback for non-JS pages
-  - [ ] `FetchError(url, reason)` on failure — no silent fallback
-  - [ ] Caches result to `~/.local/share/pi-apply/jd-cache/<url-hash>.txt`
-- [ ] `load_jd` routes: `jd_url` present → `fetch_jd()`, else `jd_raw_text` direct
-- [ ] Tests: httpx path with mock response, cache hit/miss, `FetchError` propagation
-- [ ] Integration test: real URL fetch (marked `@pytest.mark.integration`)
+- [x] `pi_apply/jd_fetcher.py` — Crawl4AI-based `fetch_jd(url) -> str`
+- [x] Documented env vars: `PI_APPLY_FETCH_PAGE_TIMEOUT_MS`, `PI_APPLY_FETCH_WAIT_UNTIL`, `PI_APPLY_FETCH_OUTER_TIMEOUT_S`, `PI_APPLY_FETCH_MAGIC`
+- [x] Explicit `JDFetchError` reasons (`fetch_failed`, `empty_result`) — no silent fallback
+- [x] `load_jd` routes: `jd_url` first, falls back to `jd_raw_text` only on URL failure
+- [x] Archived openspec change: `2026-05-03-implement-jd-fetch-crawl4ai`
+- [ ] _Optional polish:_ on-disk JD cache at `~/.local/share/pi-apply/jd-cache/<url-hash>.txt` (not currently implemented; only add if a real workflow demands re-runs of the same URL)
 
 ---
 
@@ -237,20 +268,20 @@ that go-apply established and that pi-apply intentionally carries forward.
 
 ---
 
-## Epic 6 — Scoring + ATS Survival Rate
+## Epic 6 — Scoring Config + ATS Survival Rate
 
-Ports deterministic scorer from Go. Wires the survival diff pipeline.
+Scorer is already ported (Epic 0.5). What remains is config-driven
+weights and wiring the survival-rate diff — the **only** remaining
+go-apply subprocess use after `pdfrender` was deemed not a CLI.
 
-- [ ] `pi_apply/scorer.py`
-  - [ ] `score(resume_text, keywords, weights) -> ScoreResult`
-  - [ ] `ScoreResult(BaseModel)` — `score: float`, `matched`, `missing`, `survival_rate: float | None`
-  - [ ] `ScoringWeights(BaseModel)` — loaded from `~/.config/pi-apply/defaults.json`
-- [ ] `pi_apply/defaults.json` — initial weights (ported from go-apply `config/defaults.json`)
-- [ ] `submit_keywords` calls scorer after state update
+- [x] `pi_apply/scorer.py` — deterministic port (KeywordMatch / ExperienceFit / ImpactEvidence / ATSFormat / Readability)
+- [ ] `ScoringWeights(BaseModel)` loaded from `~/.config/pi-apply/defaults.json` (currently hardcoded in `scorer.py`)
+- [ ] `pi_apply/defaults.json` — initial weights file (ported from go-apply `config/defaults.json`)
+- [ ] `get_config` / `update_config` MCP tools — read/update weights from the config file
 - [ ] ATS survival rate:
-  - [ ] `preview_ats_extraction` renders PDF then calls `bridge.run_survival()`
-  - [ ] `survival_rate` surfaced in `submit_keywords` response envelope
-- [ ] Tests: scorer unit tests, weight loading from config
+  - [ ] `preview_ats_extraction` MCP tool — renders PDF via Epic 2 path, then calls `bridge.run_survival()`
+  - [ ] `survival_rate` surfaced in `report` node output and `submit_tailor` response envelope
+- [ ] Tests: weight loading from config, `preview_ats_extraction` with mocked subprocess
 
 ---
 
@@ -267,22 +298,26 @@ Traces LangGraph graph execution — node timings, state transitions, interrupt 
 
 ---
 
-## Epic 8 — Evaluation Harness + LLM-as-Judge
+## Epic 8 — Evaluation Harness (Deterministic-First)
 
-Automated quality checks for tailoring. Runs async post-finalize, does not block workflow.
+Automated quality checks for tailoring. Runs async post-finalize, does
+not block workflow.
+
+**Reconciled with Epic 6 (LLM Nodes) REMOVED:** the host stays the
+brain; pi-apply does not make internal Anthropic SDK calls. This epic
+is rescoped to a **deterministic regression suite** keyed on
+`scorer.score()` deltas. An optional host-driven judge extension is
+sketched as a stretch goal.
 
 - [ ] `pi_apply/evaluation/` package
-- [ ] `evaluation/dataset.py` — JD/resume pair store (30+ pairs in `~/.local/share/pi-apply/evaluation/pairs.json`)
-- [ ] `evaluation/judge.py` — LLM-as-judge for tailoring quality
-  - [ ] `judge_tailoring(original, tailored, keywords) -> JudgeResult`
-  - [ ] `JudgeResult(BaseModel)` — `score: float`, `rationale: str`, `keyword_coverage: float`
-  - [ ] Scoring criteria: keyword density + readability + honesty (no invented skills)
+- [ ] `evaluation/dataset.py` — JD/resume pair store (~30 pairs in `~/.local/share/pi-apply/evaluation/pairs.json`)
 - [ ] `evaluation/runner.py` — batch runner
   - [ ] `run_evaluation(pairs) -> EvaluationReport`
+  - [ ] For each pair: full apply-graph run (with a recorded host transcript replacing live host calls), assert score delta + survival-rate within tolerance
   - [ ] Results to `~/.local/share/pi-apply/evaluation/results/<timestamp>.json`
-- [ ] Post-finalize: `finalize` node enqueues async judge call (non-blocking)
 - [ ] `make evaluate` — runs full suite and prints summary
-- [ ] Tests: judge mock, runner with 3 pairs, result schema
+- [ ] Tests: runner with 3 fixture pairs, result schema, regression detection
+- [ ] _Stretch (host-driven judge):_ `judge_tailoring` MCP tool that returns prompt + inputs; the host (Claude) returns the rationale. Not part of the core eval loop — reserved for the capstone demo.
 
 ---
 
@@ -294,7 +329,7 @@ Final polish for interview readiness.
   - [ ] Architecture: Claude → FastMCP → LangGraph → Go subprocess (ASCII diagram)
   - [ ] Quick-start: `make install && pi-apply setup-mcp`
   - [ ] Comparison table: go-apply hand-rolled FSM vs LangGraph StateGraph
-- [ ] Blog post: *"Replacing a hand-rolled Go FSM with LangGraph: mapping MCP tool boundaries to graph interrupts"*
+- [ ] Blog post: _"Replacing a hand-rolled Go FSM with LangGraph: mapping MCP tool boundaries to graph interrupts"_
   - [ ] Draft in `docs/blog-draft.md`
   - [ ] Covers: `interrupt_after` pattern, `session_id = thread_id`, SqliteSaver vs custom disk FSM
 - [ ] Recorded demo (Loom or similar)
@@ -307,17 +342,25 @@ Final polish for interview readiness.
 ## Dependency Order
 
 ```
-Epic 0 ✅
-  └── Epic 1 (installable + CI/CD)       ← next — unblocks clean merges
-        ├── Epic 2 (real T1/T2)           ← most critical product work
-        │     └── Epic 3 (data layer)
-        │           └── Epic 4 (profile compiler)
-        │                 └── Epic 5 (JD fetching)
-        │                       └── Epic 6 (scoring + survival)
-        │                             └── Epic 7 (LangSmith)
-        │                                   └── Epic 8 (evaluation harness)
-        │                                         └── Epic 9 (capstone)
-        └── CI/CD gates all merges from Epic 2 onward
+Epic 0   ✅  walking skeleton
+Epic 0.5 ✅  host-handoff surface (jd_fetcher, jd_data, scorer, submit_keywords)
+Epic 5   ✅  JD fetching (Crawl4AI — folded into Epic 0.5 in practice)
+  │
+  ├── Epic 1 (installable + CI/CD)    ← unblocks clean merges
+  │
+  └── Epic 2 (holistic tailor + keystone round-trip)   ← most critical product work
+        │     (makes tailor / render / parse_final / score_final / report honest)
+        └── Epic 3 (data layer)        — backs the `onboard` stub
+              └── Epic 4 (profile compiler) — backs `compile_profile` + `create_story` stubs; switches profile MCP tools to graph state injection
+                    └── Epic 6 (scoring config + survival rate)
+                          └── Epic 7 (LangSmith)
+                                └── Epic 8 (evaluation harness — deterministic-first)
+                                      └── Epic 9 (capstone)
+
+CI/CD (Epic 1) gates all merges from Epic 2 onward.
 ```
 
-**Next action:** Epic 1a — CLI entry point (`pi-apply serve` + `pi-apply setup-mcp`).
+**Next action:** Epic 2 (holistic tailor + keystone round-trip) — the
+keystone round-trip is what justifies LangGraph in the first place, and
+ships the only nodes still returning sentinel values. Epic 1 (CLI +
+CI/CD) can run in parallel since it has no overlap with the graph.

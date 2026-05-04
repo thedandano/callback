@@ -213,10 +213,13 @@ h1 {
 <div class="page-header">
   <h1>pi-apply — Architecture</h1>
   <p class="subtitle">
-    Python LangGraph MCP server exposing the same 12-tool surface as go-apply.
-    Each of 5 workflow tools advances exactly one graph node via <code style="font-family:ui-monospace,monospace;font-size:11px;background:#1B1921;padding:1px 5px;border-radius:3px;color:#80FFEA">update_state + invoke(None, config)</code>.
-    Sessions persist across server restarts via SqliteSaver at <code style="font-family:ui-monospace,monospace;font-size:11px;background:#1B1921;padding:1px 5px;border-radius:3px;color:#80FFEA">~/.local/share/pi-apply/sessions.db</code>.
-    Walking skeleton: nodes are deterministic stubs. PDF render and ATS survival via Go subprocess bridge deferred.
+    Python LangGraph MCP server exposing the current host keyword handoff surface.
+    <code style="font-family:ui-monospace,monospace;font-size:11px;background:#1B1921;padding:1px 5px;border-radius:3px;color:#80FFEA">load_jd</code>
+    runs to the JD fetch interrupt, and
+    <code style="font-family:ui-monospace,monospace;font-size:11px;background:#1B1921;padding:1px 5px;border-radius:3px;color:#80FFEA">submit_keywords</code>
+    injects host-extracted JDData and stops before parsing/scoring.
+    Sessions persist across server restarts via SqliteSaver at <code style="font-family:ui-monospace,monospace;font-size:11px;background:#1B1921;padding:1px 5px;border-radius:3px;color:#80FFEA">~/.local/share/pi-apply/apply-sessions.db</code>.
+    Walking skeleton: scoring, tailoring, rendering, reporting, and finalization are later node milestones.
   </p>
 </div>
 
@@ -234,7 +237,7 @@ h1 {
 
   <!-- ── Section A: Main pipeline ── -->
   <div class="panel">
-    <div class="panel-title">Main workflow pipeline · one MCP tool call = one graph node · interrupt_after each node</div>
+    <div class="panel-title">Main workflow pipeline · host keyword handoff · interrupt_after jd_fetch and keywords_accept</div>
     <div class="spine">
 
       <div class="layer-label">External caller</div>
@@ -262,7 +265,7 @@ h1 {
           <span class="node-file">pi_apply/server.py</span>
         </div>
         <div class="node-body">
-          12 tools registered via <code>@mcp.tool()</code>. Emits structured JSON logs
+          Current MCP tools registered via <code>@mcp.tool()</code>. Emits structured JSON logs
           (<code>timestamp</code>, <code>level</code>, <code>tool</code>, <code>session_id</code>)
           to stderr on every call. Returns uniform envelope:
           <code>{"session_id", "status", "next_action", "data"}</code> or
@@ -270,12 +273,12 @@ h1 {
           <div class="route-list">
             <div class="route">
               <span class="method post">GRAPH</span>
-              <span class="route-path">load_jd · submit_keywords · submit_tailor_t1 · submit_tailor_t2 · finalize</span>
+              <span class="route-path">load_jd · submit_keywords</span>
               <span class="route-note">→ LangGraph node</span>
             </div>
             <div class="route">
               <span class="method">STUB</span>
-              <span class="route-path">onboard_user · add_resume · get_config · update_config · compile_profile · create_story · preview_ats_extraction</span>
+              <span class="route-path">onboard_user · compile_profile · create_story</span>
               <span class="route-note">→ direct JSON</span>
             </div>
           </div>
@@ -294,11 +297,11 @@ h1 {
           <span class="node-file">pi_apply/server.py · per-tool guard</span>
         </div>
         <div class="node-body">
-          Three-step guard before every graph advance:
-          (1) validate input (exclusive args, JSON parse),
-          (2) <code>_session_exists(session_id)</code> via <code>graph.get_state(config)</code>,
-          (3) assert <code>snap.next == ("expected_node",)</code> for ordering.
-          On pass: <code>graph.update_state(config, delta)</code> then
+          Handoff guard before keyword submission:
+          (1) validate compact JDData JSON,
+          (2) verify <code>graph.get_state(config)</code> has a checkpoint,
+          (3) assert <code>snap.next == ("keywords_accept",)</code>.
+          On pass: <code>graph.update_state(config, {"keywords": jd_data})</code> then
           <code>graph.invoke(None, config)</code>. No silent fallbacks — every failure
           returns a typed error envelope with <code>code</code> and <code>retriable</code>.
         </div>
@@ -312,15 +315,15 @@ h1 {
 
       <div class="node sched">
         <div class="node-title">LangGraph StateGraph
-          <span class="node-file">pi_apply/graph.py · build_graph()</span>
+          <span class="node-file">pi_apply/apply_graph.py · build_apply_graph()</span>
         </div>
         <div class="node-body">
           <code>StateGraph(ApplyState)</code> with edges
-          <code>load_jd → score → tailor_t1 → tailor_t2 → finalize</code>.
-          Compiled with <code>interrupt_after=["load_jd","score","tailor_t1","tailor_t2"]</code>
+          <code>jd_fetch → keywords_accept → parse_initial → score_initial → tailor → render → parse_final → score_final → report → finalize</code>.
+          Compiled with <code>interrupt_after=["jd_fetch","keywords_accept"]</code>
           and <code>SqliteSaver(sqlite3.connect(db_path, check_same_thread=False))</code>.
           <code>thread_id = session_id</code> — no separate lookup table.
-          Each <code>invoke(None, config)</code> runs exactly one node then stops.
+          The MCP surface currently exposes only the first two apply milestones.
         </div>
       </div>
 
@@ -334,13 +337,13 @@ h1 {
       <div class="layer-label">Graph nodes — pure logic (walking skeleton: deterministic stubs)</div>
 
       <div class="node logic">
-        <div class="node-title">load_jd node
-          <span class="node-file">pi_apply/nodes.py</span>
+        <div class="node-title">jd_fetch node
+          <span class="node-file">pi_apply/apply_nodes.py</span>
         </div>
         <div class="node-body">
-          Input: <code>state.jd_raw_text</code>.
-          Output delta: <code>{"jd_text": jd_raw_text}</code>.
-          Copies raw text to typed field. Emits structured node-entry log.
+          Input: <code>state.jd_url</code> and/or <code>state.jd_raw_text</code>.
+          Output delta: <code>{"jd_text": markdown}</code>.
+          Fetches or accepts pasted JD text. The MCP response also returns the host extraction protocol.
           ← triggered by <code>mcp::load_jd</code> (first invoke from START).
         </div>
       </div>
@@ -352,89 +355,49 @@ h1 {
       </div>
 
       <div class="node logic">
-        <div class="node-title">score node
-          <span class="node-file">pi_apply/nodes.py</span>
+        <div class="node-title">keywords_accept node
+          <span class="node-file">pi_apply/apply_nodes.py</span>
         </div>
         <div class="node-body">
-          Input: <code>state.keywords</code>, <code>state.resume_content</code>.
-          Output delta: <code>{"scored_resumes": [{label, score, matched[]}]}</code>.
-          Counts required keyword matches in resume text. Skeleton: deterministic string match.
-          Future: semantic embedding scoring via pgvector.
-          ← triggered by <code>mcp::submit_keywords</code> (injects keywords + resume).
+          Input: validated host-extracted <code>state.keywords</code>.
+          Output delta: no keyword mutation. It verifies JDData is present and preserves the host payload.
+          It does not infer, paraphrase, rank, or generate JD keywords internally.
+          ← triggered by <code>mcp::submit_keywords</code>.
         </div>
       </div>
 
       <div class="arrow-down">
         <div class="arrow-stem"></div>
         <div class="arrow-head"></div>
-        <div class="arrow-note">interrupt · next_action: "tailor_t1" · client calls submit_tailor_t1</div>
+        <div class="arrow-note">interrupt · next_action: "parse_initial" · later milestone resumes parsing/scoring</div>
       </div>
 
       <div class="node logic">
-        <div class="node-title">tailor_t1 node — skills section
-          <span class="node-file">pi_apply/nodes.py</span>
+        <div class="node-title">Later apply nodes
+          <span class="node-file">pi_apply/apply_nodes.py</span>
         </div>
         <div class="node-body">
-          Input: <code>state.resume_content</code>, <code>state.edits_t1</code> (JSON patch list).
-          Output delta: <code>{"tailored_t1": str}</code>.
-          Skeleton: appends <code>[T1 edits: ...]</code> block. Future: LLM rewrites skills section.
-          ← triggered by <code>mcp::submit_tailor_t1</code> (injects edits_t1).
-        </div>
-      </div>
-
-      <div class="arrow-down">
-        <div class="arrow-stem"></div>
-        <div class="arrow-head"></div>
-        <div class="arrow-note">interrupt · next_action: "tailor_t2" · client calls submit_tailor_t2</div>
-      </div>
-
-      <div class="node logic">
-        <div class="node-title">tailor_t2 node — experience bullets
-          <span class="node-file">pi_apply/nodes.py</span>
-        </div>
-        <div class="node-body">
-          Input: <code>state.tailored_t1</code>, <code>state.edits_t2</code> (JSON patch list).
-          Output delta: <code>{"tailored_t2": str}</code>.
-          Skeleton: appends <code>[T2 edits: ...]</code> block. Future: LLM rewrites experience bullets.
-          ← triggered by <code>mcp::submit_tailor_t2</code> (injects edits_t2).
-        </div>
-      </div>
-
-      <div class="arrow-down">
-        <div class="arrow-stem"></div>
-        <div class="arrow-head"></div>
-        <div class="arrow-note">no interrupt · next_action: "finalize" · client calls finalize</div>
-      </div>
-
-      <div class="node logic">
-        <div class="node-title">finalize node
-          <span class="node-file">pi_apply/nodes.py</span>
-        </div>
-        <div class="node-body">
-          Input: full state. Output delta: <code>{"finalized": True}</code>.
-          Writes JSON application record to <code>~/.local/share/pi-apply/applications/&lt;session_id&gt;.json</code>.
-          Graph reaches END — no further interrupt.
-          ← triggered by <code>mcp::finalize</code>.
+          <code>parse_initial</code>, <code>score_initial</code>, <code>tailor</code>,
+          <code>render</code>, <code>parse_final</code>, <code>score_final</code>,
+          <code>report</code>, and <code>finalize</code> remain graph nodes, but are outside
+          the current MCP handoff surface. They are built out in later milestones.
         </div>
       </div>
 
       <div class="branch-block">
-        <div class="branch-header">finalize outputs</div>
+        <div class="branch-header">current handoff outputs</div>
         <div class="exit exit-inserted">
-          <div class="exit-title">JSON application record (implemented)</div>
+          <div class="exit-title">JD markdown and extraction protocol</div>
           <div class="exit-body">
-            Written to <code>~/.local/share/pi-apply/applications/&lt;session_id&gt;.json</code>.
-            Contains <code>session_id</code>, <code>jd_text</code>, <code>scored_resumes</code>,
-            <code>tailored_t2</code>, <code>finalized: true</code>.
+            <code>load_jd</code> returns <code>jd_text</code>, <code>extraction_protocol</code>,
+            and <code>next_action="extract_keywords"</code>.
           </div>
         </div>
         <div class="exit exit-error">
-          <div class="exit-title">Missing: tailored PDF + ATS survival rate</div>
+          <div class="exit-title">Validated JDData stored</div>
           <div class="exit-body">
-            Next milestone: <code>bridge.run_pdfrender(tailored_t2)</code> → styled PDF file.
-            Then <code>bridge.run_survival(pdf_bytes)</code> → <code>survival_rate</code> metric
-            showing which JD keywords survive ATS render-and-extract.
-            Return PDF path and survival rate in finalize envelope.
+            <code>submit_keywords</code> validates compact JDData JSON, stores it on
+            <code>ApplyState.keywords</code>, and returns <code>next_action="parse_initial"</code>.
           </div>
         </div>
       </div>
@@ -448,14 +411,14 @@ h1 {
       <div class="layer-label">Storage</div>
       <div class="node store">
         <div class="node-title">SqliteSaver — Session Checkpoints
-          <span class="node-file">~/.local/share/pi-apply/sessions.db</span>
+          <span class="node-file">~/.local/share/pi-apply/apply-sessions.db</span>
         </div>
         <div class="node-body">
           <code>SqliteSaver(sqlite3.connect(str(db_path), check_same_thread=False))</code>
           with explicit <code>.setup()</code> before first use.
           Persists full <code>ApplyState</code> snapshot after every node execution.
-          Session survives server restart — verified: fresh graph instance against same DB
-          recovered session at <code>score</code> node and resumed correctly.
+          Session survives server restart. Missing or out-of-order sessions return typed
+          <code>invalid_session</code> or <code>invalid_state</code> envelopes.
         </div>
       </div>
 
@@ -468,7 +431,7 @@ h1 {
     <!-- Non-workflow tools -->
     <div class="panel">
       <div class="panel-title">
-        Non-workflow tools · bypass graph entirely ·
+        Profile tools · currently bypass graph routing ·
         <span class="badge badge-pure">no session_id required</span>
       </div>
       <div class="vflow">
@@ -480,39 +443,8 @@ h1 {
           <div class="node-body">
             Accepts <code>resume_content</code>, <code>resume_label</code>, <code>skills</code>,
             <code>accomplishments</code>, <code>sections</code>.
-            Stub — not stored. Returns <code>"not yet implemented"</code>. No graph, no DB write.
-          </div>
-        </div>
-
-        <div class="node api">
-          <div class="node-title">add_resume
-            <span class="node-file">server.py</span>
-          </div>
-          <div class="node-body">
-            Accepts <code>resume_content</code>, <code>resume_label</code>, optional <code>sections</code>.
-            Stub. Logs call. Not persisted to data layer.
-          </div>
-        </div>
-
-        <div class="node api">
-          <div class="node-title">get_config / update_config
-            <span class="node-file">server.py</span>
-          </div>
-          <div class="node-body">
-            <code>get_config</code> returns live <code>{"log_level", "go_apply_bin"}</code> from
-            env and <code>bridge._BIN</code>. <code>update_config(key, value)</code> stub.
-            Both bypass graph entirely.
-          </div>
-        </div>
-
-        <div class="node api">
-          <div class="node-title">preview_ats_extraction
-            <span class="node-file">server.py</span>
-          </div>
-          <div class="node-body">
-            Read-only view into graph state. Calls <code>graph.get_state(config)</code>,
-            returns <code>tailored_t1 or resume_content</code>.
-            Does <em>not</em> advance graph state or write a checkpoint.
+            Directly calls the profile node for the walking skeleton and returns
+            <code>next_action="compile_profile"</code>.
           </div>
         </div>
 
@@ -521,17 +453,15 @@ h1 {
             <span class="node-file">server.py</span>
           </div>
           <div class="node-body">
-            Profile compilation and SBI story stubs. Full argument surface accepted for API
-            compatibility with go-apply's tool contract. Return stub messages — not yet
-            connected to a data layer.
+            Profile compilation and SBI story stubs. The profile graph exists separately,
+            but these MCP handlers still call the target profile nodes directly.
           </div>
         </div>
 
       </div>
       <div class="callout callout-blue">
-        All 7 non-workflow tools return plain JSON directly — no session required, no graph state touched,
-        no checkpoint written. They share the same MCP transport but are completely independent of
-        the LangGraph pipeline.
+        These profile tools return the same JSON envelope shape but do not advance the apply graph.
+        Real profile graph re-entry is intentionally left for a later profile milestone.
       </div>
     </div>
 
@@ -539,7 +469,7 @@ h1 {
     <div class="panel">
       <div class="panel-title">
         Go subprocess bridge ·
-        <span class="badge badge-bg">deferred — wired but not called in skeleton nodes</span>
+        <span class="badge badge-bg">PDF rendering dependency</span>
       </div>
       <div class="vflow">
 
@@ -579,10 +509,8 @@ h1 {
 
       </div>
       <div class="callout callout-amber">
-        Gap: <code>finalize</code> node should call <code>run_pdfrender(tailored_t2)</code> to produce a
-        styled PDF, then <code>run_survival(pdf_bytes)</code> to compute ATS keyword survival rate.
-        This is the primary gap between the walking skeleton and a production-ready system.
-        The bridge is fully wired and tested — only the node call sites are missing.
+        <code>go-apply</code> remains available for PDF rendering. Scoring and rendering are outside
+        this handoff milestone and will be wired when those nodes are implemented.
       </div>
     </div>
 
@@ -617,43 +545,22 @@ h1 {
           <td class="isolated">✓ full</td>
         </tr>
         <tr>
-          <td>load_jd node</td>
-          <td><code>nodes.py</code></td>
-          <td><code>state.jd_raw_text: str</code></td>
+          <td>jd_fetch node</td>
+          <td><code>apply_nodes.py</code></td>
+          <td><code>state.jd_url</code> / <code>state.jd_raw_text</code></td>
           <td><code>{"jd_text": str}</code></td>
           <td class="pure">✓ pure fn</td>
         </tr>
         <tr>
-          <td>score node</td>
-          <td><code>nodes.py</code></td>
-          <td><code>state.keywords</code>, <code>state.resume_content</code></td>
-          <td><code>{"scored_resumes": list[dict]}</code></td>
+          <td>keywords_accept node</td>
+          <td><code>apply_nodes.py</code></td>
+          <td><code>state.keywords</code></td>
+          <td>preserved validated JDData</td>
           <td class="pure">✓ pure fn</td>
         </tr>
         <tr>
-          <td>tailor_t1 node</td>
-          <td><code>nodes.py</code></td>
-          <td><code>state.resume_content</code>, <code>state.edits_t1</code></td>
-          <td><code>{"tailored_t1": str}</code></td>
-          <td class="pure">✓ pure fn</td>
-        </tr>
-        <tr>
-          <td>tailor_t2 node</td>
-          <td><code>nodes.py</code></td>
-          <td><code>state.tailored_t1</code>, <code>state.edits_t2</code></td>
-          <td><code>{"tailored_t2": str}</code></td>
-          <td class="pure">✓ pure fn</td>
-        </tr>
-        <tr>
-          <td>finalize node</td>
-          <td><code>nodes.py</code></td>
-          <td>Full <code>ApplyState</code></td>
-          <td><code>{"finalized": True}</code> · JSON file at <code>applications/&lt;sid&gt;.json</code></td>
-          <td class="isolated">✓ full</td>
-        </tr>
-        <tr>
-          <td>build_graph / make_config</td>
-          <td><code>graph.py</code></td>
+          <td>build_apply_graph / make_config</td>
+          <td><code>apply_graph.py</code></td>
           <td><code>db_path: Path</code>, <code>session_id: str</code></td>
           <td>Compiled <code>StateGraph</code> · <code>RunnableConfig</code></td>
           <td class="isolated">✓ full</td>
@@ -666,15 +573,15 @@ h1 {
           <td class="hub">orchestration hub</td>
         </tr>
         <tr>
-          <td>FastMCP Server — non-workflow tools</td>
+          <td>FastMCP Server — profile tools</td>
           <td><code>server.py</code></td>
           <td>MCP stdio tool call JSON</td>
-          <td>Plain JSON stub response</td>
+          <td>JSON envelope response</td>
           <td class="isolated">✓ full</td>
         </tr>
         <tr>
-          <td>SqliteSaver — sessions.db</td>
-          <td><code>~/.local/share/pi-apply/sessions.db</code></td>
+          <td>SqliteSaver — apply-sessions.db</td>
+          <td><code>~/.local/share/pi-apply/apply-sessions.db</code></td>
           <td>LangGraph checkpoint writes (post-node)</td>
           <td>Persisted <code>ApplyState</code> keyed by <code>thread_id</code></td>
           <td class="isolated">✓ full</td>
@@ -685,8 +592,8 @@ h1 {
       "Isolated" means the component can be replaced by editing one file with no cascading edits.
       The workflow tool handlers in <code>server.py</code> are the <strong>orchestration hub</strong> — they
       intentionally coordinate session validation, state injection, and graph invocation in sequence.
-      This is expected and correct. All 5 node functions are pure in the skeleton: they take an
-      <code>ApplyState</code>, return a partial dict delta, and perform no I/O.
+      This is expected and correct. The handoff nodes take an <code>ApplyState</code>,
+      return a partial dict delta, and do not perform hidden keyword extraction.
     </p>
   </div>
 
