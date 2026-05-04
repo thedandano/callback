@@ -237,11 +237,18 @@ def onboard_user(
     skills: str | None = None,
     accomplishments: str | None = None,
     sections: str | None = None,
+    resume_path: str | None = None,
 ) -> str:
     """Onboard a new user: collect resume, skills, and accomplishments.
 
+    When resume_path is provided, extracts sections from the file and writes
+    sections.json to the profile-wiki directory.
+
     Skeleton: directly invokes the onboard node. Real impl will use graph
     state injection to re-enter at onboard.
+
+    Args:
+        resume_path: Path to the resume file (.pdf, .docx, or .txt).
 
     Returns:
         JSON envelope with status ok and session_id.
@@ -253,49 +260,97 @@ def onboard_user(
             "tool": "onboard_user",
             "session_id": session_id,
             "has_resume": resume_content is not None,
+            "has_resume_path": resume_path is not None,
             "has_skills": skills is not None,
             "has_accomplishments": accomplishments is not None,
         },
     )
 
     # Skeleton: directly call the onboard node (bypasses check_profile router)
-    state = ProfileState(session_id=session_id)
-    delta = profile_nodes.onboard(state)
+    state = ProfileState(session_id=session_id, resume_path=resume_path)
+    if resume_path:
+        delta = profile_nodes.onboard(state)
+        return _ok(
+            session_id,
+            "compile_profile",
+            {
+                "resume_label": delta.get("resume_label"),
+                "sections_preview": "sections extracted",
+            },
+        )
 
+    delta = profile_nodes.onboard(state)
     return _ok(session_id, "compile_profile", delta)
 
 
 @mcp.tool()
 def compile_profile(
+    session_id: str | None = None,
+    wiki_pages: str | None = None,
     skills: str | None = None,
     remove_skills: str | None = None,
     stories: str | None = None,
 ) -> str:
-    """Recompile the user's profile from skills and stories.
+    """Compile the user profile wiki from SBI stories.
 
-    Skeleton: directly invokes the compile_profile node. Real impl will use
-    graph state injection to re-enter at compile_profile.
+    Two-phase tool:
+    - Phase 1 (no wiki_pages): returns sections + stories for host to generate
+      wiki markdown.
+    - Phase 2 (wiki_pages provided): writes host-generated pages to disk,
+      returns done.
+
+    Args:
+        session_id: Profile session ID (from onboard_user response).
+        wiki_pages: JSON object mapping page_id to markdown content (e.g.,
+                    {"experience/acme.md": "# Acme\\n...", "summary.md": "..."}).
 
     Returns:
         JSON envelope with status ok and session_id.
     """
-    session_id = str(uuid.uuid4())
+    tool_session_id = session_id or str(uuid.uuid4())
     _log(
         "INFO",
         {
             "tool": "compile_profile",
-            "session_id": session_id,
+            "session_id": tool_session_id,
+            "has_wiki_pages": wiki_pages is not None,
             "has_skills": skills is not None,
             "has_remove_skills": remove_skills is not None,
             "has_stories": stories is not None,
         },
     )
 
-    # Skeleton: directly call the compile_profile node (bypasses check_profile router)
-    state = ProfileState(session_id=session_id)
-    delta = profile_nodes.compile_profile(state)
+    # Phase 2: wiki_pages provided — write pages via WikiStore
+    if wiki_pages is not None:
+        try:
+            pages: dict = json.loads(wiki_pages)
+        except json.JSONDecodeError as exc:
+            return _err(
+                stage="compile_profile",
+                code="invalid_wiki_pages",
+                message=f"wiki_pages must be valid JSON: {exc}",
+                session_id=tool_session_id,
+            )
+        store = WikiStore()
+        # Derive resume_label from session state if available, else skip pathing
+        resume_label = tool_session_id  # fallback; real impl resolves from state
+        wiki_path: str | None = None
+        page_ids = []
+        for page_id, content in pages.items():
+            store.write_page(resume_label, page_id, content)
+            page_ids.append(page_id)
+            if wiki_path is None:
+                wiki_path = str(store.wiki_root(resume_label))
+        return _ok(
+            tool_session_id,
+            "profile_complete",
+            {"page_ids": page_ids, "wiki_path": wiki_path},
+        )
 
-    return _ok(session_id, "check_orphans", delta)
+    # Phase 1: call compile_profile node, return sections + intake for host
+    state = ProfileState(session_id=tool_session_id)
+    delta = profile_nodes.compile_profile(state)
+    return _ok(tool_session_id, "check_orphans", delta)
 
 
 @mcp.tool()

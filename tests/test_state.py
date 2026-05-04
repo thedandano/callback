@@ -211,6 +211,10 @@ class TestProfileStateBasic:
             "orphaned_skills",
             "current_story_target",
             "error",
+            "resume_label",
+            "resume_path",
+            "sections",
+            "wiki_path",
         }
         assert set(fields.keys()) == required_fields
 

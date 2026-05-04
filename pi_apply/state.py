@@ -33,3 +33,7 @@ class ProfileState(BaseModel):
     orphaned_skills: list | None = Field(default=None)
     current_story_target: str | None = Field(default=None)
     error: str | None = Field(default=None)
+    resume_label: str | None = Field(default=None)
+    resume_path: str | None = Field(default=None)
+    sections: dict | None = Field(default=None)  # serialized SectionMap
+    wiki_path: str | None = Field(default=None)

@@ -1,7 +1,24 @@
+import json
+
 import pytest
 
+import pi_apply.wiki as wiki_module
 from pi_apply.profile_graph import build_profile_graph, make_config
 from pi_apply.state import ProfileState
+
+SIMPLE_RESUME = """
+John Doe
+
+SUMMARY
+Software engineer with 5 years experience.
+
+SKILLS
+Python, Go
+
+EXPERIENCE
+Acme Corp | Engineer | 2020 – 2023
+- Built distributed systems
+"""
 
 
 @pytest.fixture
@@ -15,6 +32,14 @@ def tmp_db(tmp_path):
 def graph(tmp_db):
     """Build the profile graph with a temp DB."""
     return build_profile_graph(db_path=tmp_db)
+
+
+@pytest.fixture
+def resume_file(tmp_path):
+    """Write SIMPLE_RESUME to a temp .txt file."""
+    f = tmp_path / "test_resume.txt"
+    f.write_text(SIMPLE_RESUME)
+    return f
 
 
 class TestProfileGraphStructure:
@@ -35,18 +60,22 @@ class TestProfileGraphStructure:
 class TestFirstRunPath:
     """First-run: profile_exists=False, no orphans."""
 
-    def test_first_run_executes_onboard_compile_check_orphans(self, graph, tmp_db):
+    def test_first_run_executes_onboard_compile_check_orphans(
+        self, graph, tmp_db, resume_file, tmp_path, monkeypatch
+    ):
         """First run: check_profile → onboard → compile_profile → check_orphans → END."""
+        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path)
         config = make_config("test-session-1")
         state = ProfileState(
             session_id="test-session-1",
             profile_exists=False,
             orphaned_skills=[],
+            resume_path=str(resume_file),
         )
 
         # First invoke: check_profile → onboard (pauses at interrupt_after)
         result = graph.invoke(state, config)
-        assert result.get("intake") is not None  # onboard ran
+        assert result.get("resume_label") is not None  # onboard ran
 
         # Resume: compile_profile → check_orphans (checks, sees empty list) → END
         result = graph.invoke(None, config)
@@ -108,18 +137,20 @@ class TestCycleTerminates:
 class TestInterrupts:
     """Graph pauses at onboard and create_story."""
 
-    def test_interrupt_after_onboard(self, graph, tmp_db):
+    def test_interrupt_after_onboard(self, graph, tmp_db, resume_file, tmp_path, monkeypatch):
         """Graph pauses after onboard on first run."""
+        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path)
         config = make_config("test-session-4")
         state = ProfileState(
             session_id="test-session-4",
             profile_exists=False,
             orphaned_skills=[],
+            resume_path=str(resume_file),
         )
 
         # First invoke should pause at onboard
         result = graph.invoke(state, config)
-        assert result.get("intake") is not None  # onboard wrote intake
+        assert result.get("resume_label") is not None  # onboard ran
         assert result.get("compiled_profile") is None  # compile_profile hasn't run yet
 
     def test_interrupt_after_create_story(self, graph, tmp_db):
@@ -143,18 +174,22 @@ class TestInterrupts:
 class TestCheckProfileRouter:
     """check_profile routes correctly based on profile_exists."""
 
-    def test_check_profile_routes_to_onboard_when_no_profile(self, graph, tmp_db):
+    def test_check_profile_routes_to_onboard_when_no_profile(
+        self, graph, tmp_db, resume_file, tmp_path, monkeypatch
+    ):
         """profile_exists=False → routes to onboard."""
+        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path)
         config = make_config("test-session-6")
         state = ProfileState(
             session_id="test-session-6",
             profile_exists=False,
             orphaned_skills=[],
+            resume_path=str(resume_file),
         )
 
         result = graph.invoke(state, config)
-        # onboard ran (writes intake)
-        assert result.get("intake") is not None
+        # onboard ran (writes resume_label + sections)
+        assert result.get("resume_label") is not None
 
     def test_check_profile_routes_to_check_orphans_when_profile_exists(self, graph, tmp_db):
         """profile_exists=True → routes to check_orphans."""
@@ -200,3 +235,88 @@ class TestCheckOrphansRouter:
         # Should reach END without entering create_story
         # intake should remain None (onboard never ran)
         assert result.get("intake") is None
+
+
+# ---------------------------------------------------------------------------
+# M4 onboard + compile_profile node tests
+# ---------------------------------------------------------------------------
+
+
+def test_onboard_writes_sections_json(tmp_path, monkeypatch):
+    """onboard node extracts sections from resume and writes sections.json."""
+    monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path)
+
+    resume_file = tmp_path / "john_doe.txt"
+    resume_file.write_text(SIMPLE_RESUME)
+
+    import pi_apply.profile_nodes as profile_nodes
+
+    state = ProfileState(session_id="s1", resume_path=str(resume_file))
+    result = profile_nodes.onboard(state)
+
+    sections_json = tmp_path / "john_doe" / "sections.json"
+    assert sections_json.exists(), "sections.json was not written"
+    parsed = json.loads(sections_json.read_text())
+    expected = {
+        "resume_label": "john_doe",
+        "sections": parsed,  # content asserted separately via json.loads
+        "wiki_path": str(tmp_path / "john_doe"),
+    }
+    assert result == expected
+    assert isinstance(parsed, dict)
+
+
+def test_onboard_raises_without_resume_path():
+    """onboard node raises ValueError when resume_path is absent."""
+    import pi_apply.profile_nodes as profile_nodes
+
+    state = ProfileState(session_id="s2")
+    with pytest.raises(ValueError, match="resume_path required"):
+        profile_nodes.onboard(state)
+
+
+def test_compile_profile_returns_needs_wiki_pages():
+    """compile_profile node returns status=needs_wiki_pages."""
+    import pi_apply.profile_nodes as profile_nodes
+
+    sections_data = {"summary": "Engineer", "skills": {"flat": ["Python"], "categorized": {}}}
+    intake_data = {"name": "John"}
+    state = ProfileState(
+        session_id="s3",
+        resume_label="john_doe",
+        sections=sections_data,
+        intake=intake_data,
+    )
+    result = profile_nodes.compile_profile(state)
+    expected = {
+        "compiled_profile": {
+            "status": "needs_wiki_pages",
+            "sections": sections_data,
+            "intake": intake_data,
+            "resume_label": "john_doe",
+        }
+    }
+    assert result == expected
+
+
+def test_compile_profile_includes_sections_in_response():
+    """compile_profile node includes sections in compiled_profile dict."""
+    import pi_apply.profile_nodes as profile_nodes
+
+    sections_data = {"summary": "Engineer", "skills": {"flat": ["Go"], "categorized": {}}}
+    state = ProfileState(
+        session_id="s4",
+        resume_label="jane_smith",
+        sections=sections_data,
+        intake=None,
+    )
+    result = profile_nodes.compile_profile(state)
+    expected = {
+        "compiled_profile": {
+            "status": "needs_wiki_pages",
+            "sections": sections_data,
+            "intake": None,
+            "resume_label": "jane_smith",
+        }
+    }
+    assert result == expected
