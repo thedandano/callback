@@ -1,10 +1,11 @@
-"""MCP server for pi-apply: apply and profile management.
+"""MCP server for pi-apply: host handoff and profile management.
 
-Exposes four tools:
-1. apply — runs the apply graph end-to-end for a single JD application
-2. onboard_user — enters profile graph at onboard node
-3. compile_profile — enters profile graph at compile_profile node
-4. create_story — enters profile graph at create_story node
+Exposes five tools:
+1. load_jd — loads JD markdown and returns host extraction instructions
+2. submit_keywords — accepts host-extracted JDData and resumes keyword handoff
+3. onboard_user — enters profile graph at onboard node
+4. compile_profile — enters profile graph at compile_profile node
+5. create_story — enters profile graph at create_story node
 """
 
 import datetime
@@ -19,6 +20,7 @@ from fastmcp import FastMCP
 
 # Import graphs and nodes
 from pi_apply.apply_graph import build_apply_graph, make_config as make_apply_config
+from pi_apply.jd_data import EXTRACTION_PROTOCOL, JDDataError, parse_jd_json
 from pi_apply.jd_fetcher import JDFetchError
 from pi_apply.state import ApplyState, ProfileState
 import pi_apply.profile_nodes as profile_nodes
@@ -80,13 +82,13 @@ def _err(
 
 
 # ============================================================================
-# Apply workflow tool
+# Apply workflow tools
 # ============================================================================
 
 
 @mcp.tool()
-def apply(jd_url: Optional[str] = None, jd_raw_text: Optional[str] = None, resume_path: str = "") -> str:
-    """Run a complete job application workflow end-to-end.
+def load_jd(jd_url: Optional[str] = None, jd_raw_text: Optional[str] = None, resume_path: str = "") -> str:
+    """Load a job description and return host extraction instructions.
 
     Takes a job description via jd_url, jd_raw_text, or both. At least one is
     required. When both are supplied, the graph attempts jd_url first and keeps
@@ -99,18 +101,20 @@ def apply(jd_url: Optional[str] = None, jd_raw_text: Optional[str] = None, resum
         resume_path: Path to the source resume file.
 
     Returns:
-        JSON envelope with status, session_id, and data (pdf_path, report,
-        scores, etc.). Fetch errors use code "fetch_failed" when URL retrieval
-        fails and code "empty_result" when the URL returns no usable content.
+        JSON envelope with status, session_id, jd_text, extraction_protocol, and
+        next_action="extract_keywords".
     """
-    # Validate input: at least one of jd_url or jd_raw_text
-    if not (jd_url or jd_raw_text):
-        return _err("apply", "missing_input", "neither jd_url nor jd_raw_text provided")
-
     session_id = str(uuid.uuid4())
-    _log("INFO", {"tool": "apply", "session_id": session_id, "has_resume": bool(resume_path)})
+    if not (jd_url or jd_raw_text):
+        return _err(
+            "load_jd",
+            "missing_input",
+            "neither jd_url nor jd_raw_text provided",
+            session_id=session_id,
+        )
 
-    # Initialize state with provided inputs
+    _log("INFO", {"tool": "load_jd", "session_id": session_id, "has_resume": bool(resume_path)})
+
     initial_state = ApplyState(
         session_id=session_id,
         jd_url=jd_url,
@@ -118,11 +122,10 @@ def apply(jd_url: Optional[str] = None, jd_raw_text: Optional[str] = None, resum
         resume_path=resume_path,
     )
 
-    # Build and invoke apply graph end-to-end
     graph = build_apply_graph()
     config = make_apply_config(session_id)
     try:
-        result_state = graph.invoke(initial_state, config)
+        state = graph.invoke(initial_state, config)
     except JDFetchError as exc:
         reason = getattr(exc, "reason", None)
         if reason == "fetch_failed":
@@ -143,16 +146,44 @@ def apply(jd_url: Optional[str] = None, jd_raw_text: Optional[str] = None, resum
             )
         raise RuntimeError(f"unknown jd_fetch error reason: {reason}") from exc
 
-    # Extract results from final state
     data = {
-        "pdf_path": result_state.get("pdf_path"),
-        "report": result_state.get("report"),
-        "score_initial": result_state.get("score_initial"),
-        "score_final": result_state.get("score_final"),
-        "uncovered_skills": result_state.get("uncovered_skills", []),
+        "jd_text": state.get("jd_text"),
+        "extraction_protocol": EXTRACTION_PROTOCOL,
     }
+    return _ok(session_id, "extract_keywords", data)
 
-    return _ok(session_id, None, data)
+
+@mcp.tool()
+def submit_keywords(session_id: str, jd_json: str) -> str:
+    """Accept host-extracted JDData and stop before resume parsing/scoring."""
+    _log("INFO", {"tool": "submit_keywords", "session_id": session_id})
+
+    try:
+        keywords = parse_jd_json(jd_json)
+    except JDDataError as exc:
+        return _err(
+            stage="submit_keywords",
+            code=exc.code,
+            message=str(exc),
+            session_id=session_id,
+            retriable=True,
+        )
+
+    graph = build_apply_graph()
+    config = make_apply_config(session_id)
+    try:
+        graph.update_state(config, {"keywords": keywords})
+        state = graph.invoke(None, config)
+    except ValueError as exc:
+        return _err(
+            stage="submit_keywords",
+            code="invalid_session",
+            message=str(exc),
+            session_id=session_id,
+            retriable=False,
+        )
+
+    return _ok(session_id, "parse_initial", {"keywords": state.get("keywords")})
 
 
 # ============================================================================
