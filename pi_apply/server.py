@@ -46,6 +46,17 @@ def _log(level: str, payload: dict) -> None:
     logger.info(json.dumps(payload))
 
 
+_TAILOR_INSTRUCTIONS = (
+    "V4 voice constraints:\n"
+    "- Bullets: past-tense action verb + mechanism (HOW) + metric from wiki. "
+    "Banned verbs: spearheaded, orchestrated, championed, leveraged, utilized, streamlined.\n"
+    "- Summary: ≤3 sentences, ≥1 quantified anchor. "
+    "Banned: passionate, driven, results-oriented, proven track record.\n"
+    "- Context line per role: <Role> · <Domain/Team> · <Scale signal> · <Stack>"
+    " — factual only, no adjectives.\n"
+    "- Skills: every keyword added to skills MUST appear in ≥1 dated experience bullet."
+)
+
 mcp = FastMCP("pi-apply")
 
 
@@ -222,7 +233,26 @@ def submit_keywords(session_id: str, jd_json: str) -> str:
             retriable=False,
         )
 
-    return _ok(session_id, "parse_initial", {"keywords": state.get("keywords")})
+    data: dict = {"keywords": state.get("keywords")}
+
+    if state.get("sections"):
+        data["sections"] = state.get("sections")
+
+    score = state.get("score_initial")
+    if score:
+        data["score_gap"] = {
+            "required_missing": score.get("req_unmatched", []),
+            "preferred_missing": score.get("pref_unmatched", []),
+        }
+
+    if state.get("wiki_index"):
+        data["wiki_index"] = state.get("wiki_index")
+        data["tailor_instructions"] = _TAILOR_INSTRUCTIONS
+        next_action = "fetch_wiki_then_tailor"
+    else:
+        next_action = "parse_initial"
+
+    return _ok(session_id, next_action, data)
 
 
 # ============================================================================

@@ -11,6 +11,8 @@ class ApplyState(BaseModel):
     keywords: dict | None = Field(default=None)
     resume_path: str | None = Field(default=None)
     resume_label: str | None = Field(default=None)
+    sections: dict | None = Field(default=None)
+    wiki_index: str | None = Field(default=None)
     parsed_initial: str | None = Field(default=None)
     parsed_final: str | None = Field(default=None)
     score_initial: dict | None = Field(default=None)
