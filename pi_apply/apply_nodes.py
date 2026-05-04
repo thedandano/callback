@@ -21,8 +21,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 
+from pi_apply import extractor as resume_extractor
+from pi_apply import scorer
 from pi_apply.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError, fetch_url_to_markdown
+from pi_apply.section_map import SectionMap
 from pi_apply.state import ApplyState
+from pi_apply.wiki import WikiStore
 
 logger = logging.getLogger(__name__)
 jd_fetcher_logger = logging.getLogger("pi_apply.jd_fetcher")
@@ -149,16 +153,87 @@ def keywords_accept(state: ApplyState) -> dict:
     return {}
 
 
+def _sections_to_text(section_map: SectionMap) -> str:
+    """Convert a SectionMap to flat text suitable for scoring."""
+    parts: list[str] = []
+    if section_map.summary:
+        parts.append(section_map.summary)
+    skills = section_map.skills
+    skill_chunks: list[str] = []
+    if skills.flat:
+        skill_chunks.append(", ".join(skills.flat))
+    for cat, items in skills.categorized.items():
+        skill_chunks.append(f"{cat}: {', '.join(items)}")
+    if skill_chunks:
+        parts.append("\n".join(skill_chunks))
+    for exp in section_map.experience:
+        header = f"{exp.company} | {exp.role}"
+        lines = [header] + exp.bullets
+        parts.append("\n".join(lines))
+    for proj in section_map.projects:
+        lines = [proj.name] + proj.bullets
+        parts.append("\n".join(lines))
+    return "\n\n".join(parts)
+
+
+def _load_wiki_sections(resume_label: str) -> tuple[str, str, str]:
+    """Load sections.json and index.md from wiki.
+
+    Returns (sections_json, wiki_index, resume_text) where resume_text is empty
+    when sections_json is empty.
+    """
+    store = WikiStore()
+    pages = store.read_pages(resume_label, ["sections.json", "index.md"])
+    sections_json = pages.get("sections.json", "")
+    wiki_index = pages.get("index.md", "")
+    if not sections_json:
+        return "", "", ""
+    section_map = SectionMap.model_validate_json(sections_json)
+    resume_text = _sections_to_text(section_map)
+    return sections_json, wiki_index, resume_text
+
+
 def parse_initial(state: ApplyState) -> dict:
-    """Parse the original resume from resume_path."""
+    """Load sections.json from wiki, fall back to text extraction if missing."""
     _log_enter("parse_initial", state)
-    return {"parsed_initial": _parse_resume(state.resume_path)}
+    if state.resume_path is None:
+        return {"parsed_initial": "<noop:parse:no-source>"}
+    resume_label = Path(state.resume_path).stem
+    sections_json, wiki_index, resume_text = _load_wiki_sections(resume_label)
+    if sections_json:
+        section_map = SectionMap.model_validate_json(sections_json)
+        return {
+            "parsed_initial": resume_text,
+            "sections": section_map.model_dump(),
+            "resume_label": resume_label,
+            "wiki_index": wiki_index,
+        }
+    text = resume_extractor.extract(state.resume_path)
+    return {"parsed_initial": text, "resume_label": resume_label}
 
 
 def score_initial(state: ApplyState) -> dict:
-    """Score the initial parsed resume against keywords."""
+    """Score the parsed resume against JD keywords using scorer.py."""
     _log_enter("score_initial", state)
-    return {"score_initial": _score(state.parsed_initial, state.keywords)}
+    if state.parsed_initial is None or state.parsed_initial.startswith("<noop:"):
+        return {"score_initial": {"total": 0, "stub": True, "parsed_chars": 0}}
+    required = (state.keywords or {}).get("required") or []
+    preferred = (state.keywords or {}).get("preferred") or []
+    result = scorer.score(state.parsed_initial, required, preferred)
+    return {
+        "score_initial": {
+            "total": result.breakdown.total(),
+            "keyword_match": result.breakdown.keyword_match,
+            "experience_fit": result.breakdown.experience_fit,
+            "impact_evidence": result.breakdown.impact_evidence,
+            "ats_format": result.breakdown.ats_format,
+            "readability": result.breakdown.readability,
+            "req_matched": result.keywords.req_matched,
+            "req_unmatched": result.keywords.req_unmatched,
+            "pref_matched": result.keywords.pref_matched,
+            "pref_unmatched": result.keywords.pref_unmatched,
+        }
+    }
 
 
 def tailor(state: ApplyState) -> dict:
