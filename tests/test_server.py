@@ -218,6 +218,68 @@ def test_submit_keywords_rejects_empty_jd_json():
     assert json.loads(submit_keywords(session_id=session_id, jd_json="{}")) == expected
 
 
+def test_submit_keywords_rejects_unknown_session():
+    from pi_apply.server import submit_keywords
+
+    session_id = "missing-session"
+    result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+    expected = {
+        "status": "error",
+        "error": {
+            "stage": "submit_keywords",
+            "code": "invalid_session",
+            "message": "session_id was not found; call load_jd before submit_keywords",
+            "retriable": False,
+        },
+        "session_id": session_id,
+    }
+
+    assert result == expected
+
+
+def test_submit_keywords_rejects_blank_session_with_session_id():
+    from pi_apply.server import submit_keywords
+
+    session_id = ""
+    result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+    expected = {
+        "status": "error",
+        "error": {
+            "stage": "submit_keywords",
+            "code": "invalid_session",
+            "message": "session_id was not found; call load_jd before submit_keywords",
+            "retriable": False,
+        },
+        "session_id": session_id,
+    }
+
+    assert result == expected
+
+
+def test_submit_keywords_rejects_session_not_waiting_for_keywords(tmp_path):
+    from pi_apply.server import load_jd, submit_keywords
+
+    resume_file = tmp_path / "resume.txt"
+    resume_file.write_text("Python developer")
+    loaded = json.loads(load_jd(jd_raw_text="Python engineer needed", resume_path=str(resume_file)))
+    session_id = loaded["session_id"]
+    submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
+
+    result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+    expected = {
+        "status": "error",
+        "error": {
+            "stage": "submit_keywords",
+            "code": "invalid_state",
+            "message": "session is not waiting for keyword submission",
+            "retriable": False,
+        },
+        "session_id": session_id,
+    }
+
+    assert result == expected
+
+
 def test_onboard_user_enters_onboard_node(monkeypatch):
     from pi_apply.server import onboard_user
     import pi_apply.profile_nodes as pnodes
