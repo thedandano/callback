@@ -1,12 +1,13 @@
-"""Apply graph: end-to-end application pipeline with no interrupts.
+"""Apply graph: application pipeline with host keyword handoff interrupts.
 
-The apply graph runs a single job application end-to-end in one .invoke() call:
-jd_fetch → keywords_extract → parse_initial → score_initial → tailor → render
+The apply graph currently advances through the host keyword handoff:
+jd_fetch → keywords_accept → parse_initial → score_initial → tailor → render
 → parse_final → score_final → report → finalize
 
 Entry point: jd_fetch
 Finish point: finalize
-No interrupts; runs to completion in a single invoke() call.
+Interrupts after jd_fetch and keywords_accept so the host can extract and
+submit JDData before later milestones parse and score resumes.
 
 State is persisted in SQLite checkpointer at ~/.local/share/pi-apply/apply-sessions.db.
 """
@@ -20,7 +21,7 @@ from langgraph.graph import StateGraph, END
 
 from pi_apply.apply_nodes import (
     jd_fetch,
-    keywords_extract,
+    keywords_accept,
     parse_initial,
     score_initial,
     tailor,
@@ -33,6 +34,8 @@ from pi_apply.apply_nodes import (
 from pi_apply.state import ApplyState
 
 DB_PATH = Path.home() / ".local" / "share" / "pi-apply" / "apply-sessions.db"
+JD_FETCH_NODE = "jd_fetch"
+KEYWORDS_ACCEPT_NODE = "keywords_accept"
 
 
 def make_config(session_id: str) -> RunnableConfig:
@@ -41,19 +44,19 @@ def make_config(session_id: str) -> RunnableConfig:
 
 
 def build_apply_graph(db_path: Path = DB_PATH):
-    """Build the apply graph with checkpointing.
+    """Build the apply graph with checkpointing and host handoff interrupts.
 
-    Constructs a linear state graph: jd_fetch → keywords_extract →
+    Constructs a linear state graph: jd_fetch → keywords_accept →
     parse_initial → score_initial → tailor → render → parse_final →
-    score_final → report → finalize, with no interrupts.
+    score_final → report → finalize.
 
     Args:
         db_path: Path to the SQLite checkpointer DB.
                  Defaults to ~/.local/share/pi-apply/apply-sessions.db
 
     Returns:
-        Compiled LangGraph StateGraph for ApplyState with no interrupts.
-        Runs end-to-end from jd_fetch to finalize in a single invoke() call.
+        Compiled LangGraph StateGraph for ApplyState. The graph interrupts after
+        jd_fetch and keywords_accept for host-owned keyword extraction.
     """
     # Initialize checkpointer with SQLite backend
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -65,8 +68,8 @@ def build_apply_graph(db_path: Path = DB_PATH):
     builder = StateGraph(ApplyState)
 
     # Register all 10 nodes
-    builder.add_node("jd_fetch", jd_fetch)
-    builder.add_node("keywords_extract", keywords_extract)
+    builder.add_node(JD_FETCH_NODE, jd_fetch)
+    builder.add_node(KEYWORDS_ACCEPT_NODE, keywords_accept)
     builder.add_node("parse_initial", parse_initial)
     builder.add_node("score_initial", score_initial)
     builder.add_node("tailor", tailor)
@@ -77,11 +80,11 @@ def build_apply_graph(db_path: Path = DB_PATH):
     builder.add_node("finalize", finalize)
 
     # Set entry point
-    builder.set_entry_point("jd_fetch")
+    builder.set_entry_point(JD_FETCH_NODE)
 
     # Wire linear edges
-    builder.add_edge("jd_fetch", "keywords_extract")
-    builder.add_edge("keywords_extract", "parse_initial")
+    builder.add_edge(JD_FETCH_NODE, KEYWORDS_ACCEPT_NODE)
+    builder.add_edge(KEYWORDS_ACCEPT_NODE, "parse_initial")
     builder.add_edge("parse_initial", "score_initial")
     builder.add_edge("score_initial", "tailor")
     builder.add_edge("tailor", "render")
@@ -91,5 +94,7 @@ def build_apply_graph(db_path: Path = DB_PATH):
     builder.add_edge("report", "finalize")
     builder.add_edge("finalize", END)
 
-    # Compile without interrupts — graph runs end-to-end in single invoke()
-    return builder.compile(checkpointer=checkpointer)
+    return builder.compile(
+        checkpointer=checkpointer,
+        interrupt_after=[JD_FETCH_NODE, KEYWORDS_ACCEPT_NODE],
+    )

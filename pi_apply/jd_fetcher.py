@@ -18,6 +18,7 @@ DEFAULT_PAGE_TIMEOUT_MS = 30_000
 DEFAULT_WAIT_UNTIL = "networkidle"
 DEFAULT_OUTER_TIMEOUT_S = 35
 DEFAULT_MAGIC = True
+FALSE_ENV_VALUES = {"", "0", "false"}
 MIN_MARKDOWN_CHARS = 50
 
 
@@ -47,10 +48,8 @@ def _outer_timeout_s() -> int:
 
 
 def _magic() -> bool:
-    value = os.getenv("PI_APPLY_FETCH_MAGIC")
-    if value is None:
-        return DEFAULT_MAGIC
-    return value not in ("0", "false", "False", "")
+    value = os.getenv("PI_APPLY_FETCH_MAGIC", str(DEFAULT_MAGIC))
+    return value.lower() not in FALSE_ENV_VALUES
 
 
 def _log(event: str, **fields: object) -> None:

@@ -1,6 +1,5 @@
-"""End-to-end apply graph coverage for fetched job description propagation."""
+"""Apply graph coverage for fetched job description handoff."""
 
-import json
 from unittest.mock import AsyncMock, patch
 
 from pi_apply.apply_graph import build_apply_graph
@@ -20,8 +19,8 @@ customer-facing outcomes.
 """
 
 
-def test_url_fetched_markdown_propagates_to_final_archive(tmp_path, monkeypatch):
-    """Fetched markdown becomes state.jd_text and is archived by finalize."""
+def test_url_fetched_markdown_stops_before_keyword_acceptance(tmp_path, monkeypatch):
+    """Fetched markdown becomes state.jd_text before the host keyword handoff."""
     apps_dir = tmp_path / "applications"
     apps_dir.mkdir()
     monkeypatch.setenv("PI_APPLY_APPS_DIR", str(apps_dir))
@@ -46,12 +45,14 @@ def test_url_fetched_markdown_propagates_to_final_archive(tmp_path, monkeypatch)
             initial_state,
             {"configurable": {"thread_id": session_id}},
         )
+    expected_result = {
+        "session_id": session_id,
+        "jd_url": jd_url,
+        "jd_text": FIXTURE_MD,
+        "resume_path": str(resume_path),
+    }
 
-    assert result["jd_text"] == FIXTURE_MD
-
-    archive_path = apps_dir / f"{session_id}.json"
-    assert archive_path.exists()
-    archive = json.loads(archive_path.read_text())
-    assert archive["jd_text"] == FIXTURE_MD
+    assert result == expected_result
+    assert not (apps_dir / f"{session_id}.json").exists()
 
     fetch_mock.assert_awaited_once_with(jd_url)
