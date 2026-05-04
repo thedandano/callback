@@ -6,7 +6,6 @@ from dataclass_wizard import JSONWizard
 
 from pi_apply.jd_data import EXTRACTION_PROTOCOL, JDData, JDDataError, parse_jd_json
 
-
 FULL_JD = {
     "title": "Senior Platform Engineer",
     "company": "ExampleCo",
@@ -135,12 +134,11 @@ class TestExtractionProtocol:
         assert "Do NOT invent values" in EXTRACTION_PROTOCOL
 
     def test_protocol_contract_matches_actual_jd_json(self):
-        protocol_example = (
-            """{"title":"Senior Platform Engineer","company":"ExampleCo",
+        protocol_example = """{"title":"Senior Platform Engineer","company":"ExampleCo",
             "required":["Python","Kubernetes"],"preferred":["FastAPI","PostgreSQL"],
             "location":"Remote","seniority":"senior","required_years":5.0,
-            "team":"Platform","key_responsibilities":["Own deployment reliability","Improve developer tooling"],
+            "team":"Platform",
+            "key_responsibilities":["Own deployment reliability","Improve developer tooling"],
             "pay_range_min":180000.0,"pay_range_max":220000.0}"""
-        )
 
         assert parse_jd_json(protocol_example) == FULL_JD

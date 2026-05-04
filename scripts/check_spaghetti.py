@@ -18,19 +18,17 @@ def resolve_repo_root(repo_arg=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Check spaghetti-score and enforce quality gate"
-    )
+    parser = argparse.ArgumentParser(description="Check spaghetti-score and enforce quality gate")
     parser.add_argument(
         "--threshold",
         type=int,
         default=20,
-        help="Score threshold; exit 0 if score < threshold (default: 20)"
+        help="Score threshold; exit 0 if score < threshold (default: 20)",
     )
     parser.add_argument(
         "repo",
         nargs="?",
-        help="Repository root to scan (optional; auto-discovered if not provided)"
+        help="Repository root to scan (optional; auto-discovered if not provided)",
     )
     args = parser.parse_args()
 
@@ -38,13 +36,15 @@ def main():
     threshold = args.threshold
 
     # Invoke ai-slop-score CLI
-    spaghetti_script = Path("~/.claude/skills/ai-slop-score/scripts/spaghetti_score.py")
+    spaghetti_script = Path(
+        "~/.claude/skills/ai-slop-score/scripts/spaghetti_score.py"
+    )
     try:
         result = subprocess.run(
             ["python3", str(spaghetti_script), str(repo_root)],
             capture_output=True,
             text=True,
-            check=False
+            check=False,
         )
     except Exception as e:
         print(f"error: failed to invoke spaghetti-score: {e}", file=sys.stderr)
@@ -66,7 +66,7 @@ def main():
     band = output.get("band")
 
     if score is None or band is None:
-        print(f"error: missing 'score' or 'band' in output", file=sys.stderr)
+        print("error: missing 'score' or 'band' in output", file=sys.stderr)
         sys.exit(1)
 
     # Print result

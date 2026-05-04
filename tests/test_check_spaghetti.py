@@ -1,10 +1,11 @@
 """Tests for check_spaghetti.py wrapper."""
 
-import json
 import subprocess
 from pathlib import Path
 
 import pytest
+
+pytestmark = pytest.mark.local
 
 
 @pytest.fixture

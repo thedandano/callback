@@ -14,10 +14,48 @@ dependencies = [
     "pdfplumber>=0.11.0",
     "pydantic>=2.13.3",
     "python-docx>=1.1.0",
+    "rich>=13.9",
+    "typer>=0.15",
 ]
+
+[project.scripts]
+pi-apply = "pi_apply.cli:app"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["pi_apply*"]
 
 [dependency-groups]
 dev = [
     "pre-commit>=4.0",
+    "pyright>=1.1",
     "pytest>=9.0.3",
+    "pytest-cov>=6.0",
+    "pytest-mock>=3.14",
+    "ruff>=0.8",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "C90"]
+
+[tool.ruff.lint.pylint]
+max-branches = 8
+max-statements = 20
+max-args = 4
+
+[tool.ruff.lint.mccabe]
+max-complexity = 7
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: marks tests as integration",
+    "local: marks tests that require local-only tools or filesystem paths",
 ]

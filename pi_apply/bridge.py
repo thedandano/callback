@@ -15,7 +15,7 @@ def _resolve_binary() -> str:
         return candidate
     found = shutil.which("go-apply")
     if found is None:
-        raise EnvironmentError(
+        raise OSError(
             "go-apply binary not found. Set GO_APPLY_BIN environment variable "
             "or ensure go-apply is on PATH."
         )
@@ -39,9 +39,7 @@ class SubprocessError(Exception):
         self.cmd = cmd
         self.returncode = returncode
         self.stderr = stderr
-        super().__init__(
-            f"Command {cmd} failed with exit code {returncode}: {stderr}"
-        )
+        super().__init__(f"Command {cmd} failed with exit code {returncode}: {stderr}")
 
 
 def run_pdfrender(args: list[str]) -> bytes:
@@ -62,11 +60,7 @@ def run_pdfrender(args: list[str]) -> bytes:
     if result.returncode == 0:
         return result.stdout
 
-    raise SubprocessError(
-        cmd=cmd,
-        returncode=result.returncode,
-        stderr=result.stderr.decode()
-    )
+    raise SubprocessError(cmd=cmd, returncode=result.returncode, stderr=result.stderr.decode())
 
 
 def run_survival(args: list[str]) -> str:
@@ -87,8 +81,4 @@ def run_survival(args: list[str]) -> str:
     if result.returncode == 0:
         return result.stdout.decode()
 
-    raise SubprocessError(
-        cmd=cmd,
-        returncode=result.returncode,
-        stderr=result.stderr.decode()
-    )
+    raise SubprocessError(cmd=cmd, returncode=result.returncode, stderr=result.stderr.decode())

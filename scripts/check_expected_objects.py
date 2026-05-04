@@ -7,7 +7,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 MIN_PIECEMEAL_ASSERTS = 2
 
 
@@ -59,7 +58,9 @@ def _check_file(path: Path, *, staged_only: bool) -> list[str]:
             continue
 
         lines = ", ".join(str(assertion.lineno) for assertion in piecemeal_asserts)
-        failures.append(f"{path}:{node.lineno} {node.name} has piecemeal assertions on lines {lines}")
+        failures.append(
+            f"{path}:{node.lineno} {node.name} has piecemeal assertions on lines {lines}"
+        )
 
     return failures
 
@@ -100,7 +101,9 @@ def _is_piecemeal_assert(assertion: ast.Assert) -> bool:
 
 def _contains_field_access(expression: ast.AST) -> bool:
     if isinstance(expression, ast.Call):
-        return _is_get_call(expression) or any(_contains_field_access(arg) for arg in expression.args)
+        return _is_get_call(expression) or any(
+            _contains_field_access(arg) for arg in expression.args
+        )
     if isinstance(expression, ast.Subscript):
         return isinstance(_root_name(expression.value), str)
     if isinstance(expression, ast.Attribute):

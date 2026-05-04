@@ -14,20 +14,20 @@ import logging
 import os
 import sys
 import uuid
-from typing import Optional
 
 from fastmcp import FastMCP
 
-# Import graphs and nodes
+import pi_apply.profile_nodes as profile_nodes
 from pi_apply.apply_graph import (
     KEYWORDS_ACCEPT_NODE,
     build_apply_graph,
+)
+from pi_apply.apply_graph import (
     make_config as make_apply_config,
 )
 from pi_apply.jd_data import EXTRACTION_PROTOCOL, JDDataError, parse_jd_json
 from pi_apply.jd_fetcher import JDFetchError
 from pi_apply.state import ApplyState, ProfileState
-import pi_apply.profile_nodes as profile_nodes
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 def _log(level: str, payload: dict) -> None:
     """Log a structured JSON message."""
-    payload["timestamp"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    payload["timestamp"] = datetime.datetime.now(datetime.UTC).isoformat()
     payload["level"] = level
     logger.info(json.dumps(payload))
 
@@ -53,7 +53,7 @@ mcp = FastMCP("pi-apply")
 # ============================================================================
 
 
-def _ok(session_id: str, next_action: Optional[str] = None, data: Optional[dict] = None) -> str:
+def _ok(session_id: str, next_action: str | None = None, data: dict | None = None) -> str:
     """Return a success envelope."""
     env: dict = {"session_id": session_id, "status": "ok"}
     if next_action:
@@ -67,7 +67,7 @@ def _err(
     stage: str,
     code: str,
     message: str,
-    session_id: Optional[str] = None,
+    session_id: str | None = None,
     retriable: bool = False,
 ) -> str:
     """Return an error envelope."""
@@ -116,7 +116,9 @@ def _submit_keywords_state_error(graph, config, session_id: str) -> str | None:
 
 
 @mcp.tool()
-def load_jd(jd_url: Optional[str] = None, jd_raw_text: Optional[str] = None, resume_path: str = "") -> str:
+def load_jd(
+    jd_url: str | None = None, jd_raw_text: str | None = None, resume_path: str = ""
+) -> str:
     """Load a job description and return host extraction instructions.
 
     Takes a job description via jd_url, jd_raw_text, or both. At least one is
@@ -161,7 +163,10 @@ def load_jd(jd_url: Optional[str] = None, jd_raw_text: Optional[str] = None, res
             return _err(
                 stage="jd_fetch",
                 code="fetch_failed",
-                message="URL fetch failed. Resubmit with jd_raw_text to use pasted job description text.",
+                message=(
+                    "URL fetch failed. Resubmit with jd_raw_text to use pasted "
+                    "job description text."
+                ),
                 session_id=session_id,
                 retriable=True,
             )
@@ -226,11 +231,11 @@ def submit_keywords(session_id: str, jd_json: str) -> str:
 
 @mcp.tool()
 def onboard_user(
-    resume_content: Optional[str] = None,
-    resume_label: Optional[str] = None,
-    skills: Optional[str] = None,
-    accomplishments: Optional[str] = None,
-    sections: Optional[str] = None,
+    resume_content: str | None = None,
+    resume_label: str | None = None,
+    skills: str | None = None,
+    accomplishments: str | None = None,
+    sections: str | None = None,
 ) -> str:
     """Onboard a new user: collect resume, skills, and accomplishments.
 
@@ -261,9 +266,9 @@ def onboard_user(
 
 @mcp.tool()
 def compile_profile(
-    skills: Optional[str] = None,
-    remove_skills: Optional[str] = None,
-    stories: Optional[str] = None,
+    skills: str | None = None,
+    remove_skills: str | None = None,
+    stories: str | None = None,
 ) -> str:
     """Recompile the user's profile from skills and stories.
 
@@ -300,10 +305,10 @@ def create_story(
     situation: str,
     behavior: str,
     impact: str,
-    is_new_job: Optional[bool] = None,
-    job_start_date: Optional[str] = None,
-    job_end_date: Optional[str] = None,
-    jd_context: Optional[str] = None,
+    is_new_job: bool | None = None,
+    job_start_date: str | None = None,
+    job_end_date: str | None = None,
+    jd_context: str | None = None,
 ) -> str:
     """Create a behavioral story for a skill.
 
@@ -332,5 +337,10 @@ def create_story(
     return _ok(session_id, "compile_profile", delta)
 
 
-if __name__ == "__main__":
+def run() -> None:
+    """Run the FastMCP stdio server."""
     mcp.run()
+
+
+if __name__ == "__main__":
+    run()

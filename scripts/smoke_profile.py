@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Smoke test for the profile MCP tools: onboard_user, compile_profile, create_story."""
+
 import json
-import sys
 import os
+import sys
 
 # Add current directory to path for running via uv
 sys.path.insert(0, os.getcwd())
 
-from pi_apply.server import onboard_user, compile_profile, create_story
+from pi_apply.server import compile_profile, create_story, onboard_user
 
 
 def main():
@@ -32,7 +33,7 @@ def main():
             job_title="DevOps Engineer",
             situation="Team needed to migrate infrastructure",
             behavior="I automated AWS provisioning using Terraform",
-            impact="Reduced deployment time by 50%"
+            impact="Reduced deployment time by 50%",
         )
         r3 = json.loads(r3_str)
         print("create_story response:", json.dumps(r3, indent=2))
@@ -43,6 +44,7 @@ def main():
     except Exception as e:
         print(f"SMOKE FAILED: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         return 1
 

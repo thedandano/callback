@@ -38,19 +38,38 @@ class TestApplyStateBasic:
 
     def test_all_fields_present(self):
         """ApplyState has all required fields defined."""
-        state = ApplyState(session_id="test")
         fields = ApplyState.model_fields
         required_fields = {
-            "session_id", "jd_url", "jd_raw_text", "jd_text", "keywords",
-            "resume_path", "resume_label", "parsed_initial", "parsed_final",
-            "score_initial", "score_final", "tailored", "pdf_path", "report",
-            "uncovered_skills", "finalized", "error"
+            "session_id",
+            "jd_url",
+            "jd_raw_text",
+            "jd_text",
+            "keywords",
+            "resume_path",
+            "resume_label",
+            "parsed_initial",
+            "parsed_final",
+            "score_initial",
+            "score_final",
+            "tailored",
+            "pdf_path",
+            "report",
+            "uncovered_skills",
+            "finalized",
+            "error",
         }
         assert set(fields.keys()) == required_fields
 
     def test_legacy_fields_absent(self):
         """ApplyState does not have legacy fields from walking-skeleton."""
-        legacy_fields = {"resume_content", "scored_resumes", "tailored_t1", "tailored_t2", "edits_t1", "edits_t2"}
+        legacy_fields = {
+            "resume_content",
+            "scored_resumes",
+            "tailored_t1",
+            "tailored_t2",
+            "edits_t1",
+            "edits_t2",
+        }
         model_fields = set(ApplyState.model_fields.keys())
         assert not legacy_fields.intersection(model_fields)
 
@@ -150,7 +169,7 @@ class TestApplyStateBasic:
             jd_url="https://example.com",
             keywords={"title": "Engineer"},
             resume_label="backend",
-            finalized=False
+            finalized=False,
         )
         assert state.session_id == "s1"
         assert state.jd_url == "https://example.com"
@@ -183,11 +202,15 @@ class TestProfileStateBasic:
 
     def test_all_fields_present(self):
         """ProfileState has all required fields defined."""
-        state = ProfileState(session_id="test")
         fields = ProfileState.model_fields
         required_fields = {
-            "session_id", "profile_exists", "intake", "compiled_profile",
-            "orphaned_skills", "current_story_target", "error"
+            "session_id",
+            "profile_exists",
+            "intake",
+            "compiled_profile",
+            "orphaned_skills",
+            "current_story_target",
+            "error",
         }
         assert set(fields.keys()) == required_fields
 
@@ -232,7 +255,7 @@ class TestProfileStateBasic:
             session_id="s1",
             profile_exists=True,
             orphaned_skills=["Go", "Rust"],
-            current_story_target="Go"
+            current_story_target="Go",
         )
         assert state.session_id == "s1"
         assert state.profile_exists is True
@@ -256,4 +279,4 @@ class TestStateModelIndependence:
         assert ApplyState is not ProfileState
         apply_inst = ApplyState(session_id="a")
         profile_inst = ProfileState(session_id="p")
-        assert type(apply_inst) != type(profile_inst)
+        assert type(apply_inst) is not type(profile_inst)
