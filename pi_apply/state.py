@@ -28,6 +28,10 @@ class ProfileState(BaseModel):
 
     session_id: str
     profile_exists: bool | None = Field(default=None)
+    resume_label: str | None = Field(default=None)
+    resume_path: str | None = Field(default=None)
+    sections: dict | None = Field(default=None)
+    wiki_path: str | None = Field(default=None)
     intake: dict | None = Field(default=None)
     compiled_profile: dict | None = Field(default=None)
     orphaned_skills: list | None = Field(default=None)
