@@ -3,7 +3,7 @@
 Stub implementations of apply graph nodes. Each node logs entry and returns
 sentinel values as placeholders. In real implementations, these will:
 - jd_fetch: fetch or accept a job description
-- keywords_extract: extract required and preferred keywords from JD
+- keywords_accept: accept validated host-provided JDData
 - parse_initial: extract text from the original resume
 - score_initial: score resume against JD keywords
 - tailor: rewrite resume bullets to match JD
@@ -135,19 +135,16 @@ def jd_fetch(state: ApplyState) -> dict:
     raise ValueError("neither jd_url nor jd_raw_text provided")
 
 
-def keywords_extract(state: ApplyState) -> dict:
-    """Extract required and preferred keywords from JD.
+def keywords_accept(state: ApplyState) -> dict:
+    """Accept host-submitted JDData without extracting from jd_text.
 
-    Stub returns empty keyword lists with stub marker.
+    The host owns keyword extraction. This node only verifies that validated
+    JDData-shaped keywords were injected before the graph resumes.
     """
-    _log_enter("keywords_extract", state)
-    return {
-        "keywords": {
-            "required": [],
-            "preferred": [],
-            "stub": True,
-        }
-    }
+    _log_enter("keywords_accept", state)
+    if not state.keywords:
+        raise ValueError("keywords missing; submit validated JDData before resuming")
+    return {}
 
 
 def parse_initial(state: ApplyState) -> dict:
