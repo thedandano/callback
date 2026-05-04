@@ -1,4 +1,11 @@
-repos: []
+repos:
+  - repo: local
+    hooks:
+      - id: expected-object-assertions
+        name: expected-object assertions in Python tests
+        entry: uv run python scripts/check_expected_objects.py --staged
+        language: system
+        files: ^tests/test_.*\.py$
 # Disabled 2026-05-02 — re-enable after slop-reduction milestone:
 #   - repo: local
 #     hooks:
