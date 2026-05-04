@@ -1,87 +1,78 @@
-"""Tests for pi_apply.server MCP tool registration and routing (§4).
+"""Tests for pi_apply.server MCP tool registration and routing."""
 
-Tests the new four-tool MCP surface:
-- apply: runs apply graph end-to-end, takes jd_url|jd_raw_text + resume_path
-- onboard_user: enters profile graph at onboard node
-- compile_profile: enters profile graph at compile_profile node
-- create_story: enters profile graph at create_story node
-
-Legacy tools (load_jd, submit_keywords, submit_tailor_t1, submit_tailor_t2,
-finalize, etc.) must be absent.
-"""
 import json
 import sys
-from pathlib import Path
+import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from pi_apply.jd_data import EXTRACTION_PROTOCOL
+
+
+PARTIAL_JD_JSON = """
+{
+  "title": "Backend Engineer",
+  "company": "ExampleCo",
+  "required": ["Python"]
+}
+"""
+
+EXPECTED_PARTIAL_KEYWORDS = {
+    "title": "Backend Engineer",
+    "company": "ExampleCo",
+    "required": ["Python"],
+    "preferred": None,
+    "location": None,
+    "seniority": "mid",
+    "required_years": None,
+    "team": None,
+    "key_responsibilities": None,
+    "pay_range_min": None,
+    "pay_range_max": None,
+}
+
 
 @pytest.fixture(autouse=True)
 def isolate_server_db(tmp_path, monkeypatch):
-    """Redirect SQLite DBs to tmp dir before server import.
-
-    server.py imports apply_graph and profile_graph at module level, which
-    would otherwise open production DBs. Patch Path.home before re-importing.
-    """
+    """Redirect SQLite DBs to tmp dir before server import."""
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
 
-    # Evict both graphs and server so module-level code re-evaluates
     for mod in ("pi_apply.server", "pi_apply.apply_graph", "pi_apply.profile_graph"):
         sys.modules.pop(mod, None)
 
-    # Re-import server (triggers module-level graph builds with tmp paths)
     import pi_apply.server  # noqa: F401
 
     yield
 
-    # Evict again for next test
     for mod in ("pi_apply.server", "pi_apply.apply_graph", "pi_apply.profile_graph"):
         sys.modules.pop(mod, None)
 
 
-# ============================================================================
-# 4.1 RED: Tool registration tests
-# ============================================================================
+def _tool_names(server) -> set[str]:
+    components = server.mcp.local_provider._components
+    return {component.name for key, component in components.items() if key.startswith("tool:")}
 
 
-def test_exactly_four_tools_registered():
-    """Exactly four MCP tools must be registered: apply, onboard_user,
-    compile_profile, create_story.
-    """
+def test_apply_handoff_tools_registered():
     import pi_apply.server as server
 
-    # FastMCP 3.x: synchronous access via local_provider._components
-    components = server.mcp.local_provider._components
-    tool_names = {
-        v.name
-        for k, v in components.items()
-        if k.startswith("tool:")
-    }
-
     expected = {
-        "apply",
+        "load_jd",
+        "submit_keywords",
         "onboard_user",
         "compile_profile",
         "create_story",
     }
-    assert tool_names == expected, f"Expected {expected}, got {tool_names}"
+
+    assert _tool_names(server) == expected
 
 
-def test_legacy_tools_absent():
-    """Legacy workflow tools must not be registered."""
+def test_legacy_apply_tool_absent():
     import pi_apply.server as server
 
-    components = server.mcp.local_provider._components
-    tool_names = {
-        v.name
-        for k, v in components.items()
-        if k.startswith("tool:")
-    }
-
     legacy = {
-        "load_jd",
-        "submit_keywords",
+        "apply",
         "submit_tailor_t1",
         "submit_tailor_t2",
         "finalize",
@@ -90,149 +81,204 @@ def test_legacy_tools_absent():
         "get_config",
         "update_config",
     }
-    assert not tool_names.intersection(legacy), f"Legacy tools found: {tool_names & legacy}"
+
+    assert _tool_names(server).intersection(legacy) == set()
 
 
-# ============================================================================
-# 4.1 RED: apply tool tests
-# ============================================================================
+def test_load_jd_rejects_missing_jd_input():
+    from pi_apply.server import load_jd
+
+    result = json.loads(load_jd())
+    session_id = result["session_id"]
+    uuid.UUID(session_id)
+    expected = {
+        "session_id": session_id,
+        "status": "error",
+        "error": {
+            "stage": "load_jd",
+            "code": "missing_input",
+            "message": "neither jd_url nor jd_raw_text provided",
+            "retriable": False,
+        },
+    }
+
+    assert result == expected
 
 
-def test_apply_rejects_missing_jd_input():
-    """Spec: apply without jd_url or jd_raw_text must reject."""
-    from pi_apply.server import apply
+def test_load_jd_returns_handoff_envelope(tmp_path):
+    from pi_apply.server import load_jd
 
-    result = json.loads(apply())
-    assert result["status"] == "error"
-    assert result["error"]["code"] == "missing_input"
-
-
-def test_apply_accepts_both_jd_inputs(tmp_path, monkeypatch):
-    """Spec: apply accepts jd_url with jd_raw_text as fallback corpus."""
-    from pi_apply.server import apply
-
-    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path))
     resume_file = tmp_path / "resume.txt"
     resume_file.write_text("Python developer")
+    jd_text = "Python engineer needed"
 
+    result = json.loads(load_jd(jd_raw_text=jd_text, resume_path=str(resume_file)))
+    session_id = result["session_id"]
+    uuid.UUID(session_id)
+    expected = {
+        "session_id": session_id,
+        "status": "ok",
+        "next_action": "extract_keywords",
+        "data": {
+            "jd_text": jd_text,
+            "extraction_protocol": EXTRACTION_PROTOCOL,
+        },
+    }
+
+    assert result == expected
+
+
+def test_load_jd_accepts_url_with_raw_text_fallback(tmp_path):
+    from pi_apply.server import load_jd
+
+    resume_file = tmp_path / "resume.txt"
+    resume_file.write_text("Python developer")
     jd_url = "https://example.test/job"
-    fetch_mock = AsyncMock(
-        return_value=(
-            "# Python Engineer\n\n"
-            "Build Python services, maintain Kubernetes deployments, and own APIs."
-        )
-    )
+    jd_text = "# Python Engineer\n\nBuild Python services and own APIs."
+    fetch_mock = AsyncMock(return_value=jd_text)
+
     with patch("pi_apply.apply_nodes.fetch_url_to_markdown", fetch_mock):
         result = json.loads(
-            apply(
+            load_jd(
                 jd_url=jd_url,
                 jd_raw_text="Python engineer fallback text",
                 resume_path=str(resume_file),
             )
         )
+    session_id = result["session_id"]
+    uuid.UUID(session_id)
+    expected = {
+        "session_id": session_id,
+        "status": "ok",
+        "next_action": "extract_keywords",
+        "data": {
+            "jd_text": jd_text,
+            "extraction_protocol": EXTRACTION_PROTOCOL,
+        },
+    }
 
-    assert result["status"] == "ok"
+    assert result == expected
     fetch_mock.assert_awaited_once_with(jd_url)
 
 
-def test_apply_accepts_jd_raw_text_with_resume_path(tmp_path):
-    """Spec: apply with jd_raw_text and resume_path runs to completion."""
-    from pi_apply.server import apply
+def test_submit_keywords_stores_jddata_and_stops_before_parsing(tmp_path):
+    from pi_apply.server import load_jd, submit_keywords
 
-    # Create a dummy resume file
     resume_file = tmp_path / "resume.txt"
     resume_file.write_text("Python developer")
+    loaded = json.loads(load_jd(jd_raw_text="Python engineer needed", resume_path=str(resume_file)))
+    session_id = loaded["session_id"]
 
-    result = json.loads(apply(jd_raw_text="Python engineer needed", resume_path=str(resume_file)))
-    assert result["status"] == "ok"
-    assert "session_id" in result
-    assert result.get("data", {}).get("pdf_path")
-    assert result.get("data", {}).get("report") is not None
+    result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+    expected = {
+        "session_id": session_id,
+        "status": "ok",
+        "next_action": "parse_initial",
+        "data": {
+            "keywords": EXPECTED_PARTIAL_KEYWORDS,
+        },
+    }
 
-
-def test_apply_returns_envelope_structure():
-    """Spec: apply returns proper JSON envelope with status and data."""
-    from pi_apply.server import apply
-
-    result = json.loads(apply(jd_raw_text="Test JD"))
-    assert isinstance(result, dict)
-    assert "status" in result
-    assert "session_id" in result
-    assert "data" in result or "error" in result
+    assert result == expected
 
 
-# ============================================================================
-# 4.1 RED: Profile tool entry-point tests
-# ============================================================================
+def test_submit_keywords_rejects_invalid_jd_json():
+    from pi_apply.server import submit_keywords
+
+    session_id = "session-123"
+    expected = {
+        "status": "error",
+        "error": {
+            "stage": "submit_keywords",
+            "code": "invalid_jd",
+            "message": "jd_json must encode an object",
+            "retriable": True,
+        },
+        "session_id": session_id,
+    }
+
+    assert json.loads(submit_keywords(session_id=session_id, jd_json="[]")) == expected
+
+
+def test_submit_keywords_rejects_empty_jd_json():
+    from pi_apply.server import submit_keywords
+
+    session_id = "session-123"
+    expected = {
+        "status": "error",
+        "error": {
+            "stage": "submit_keywords",
+            "code": "jd_empty",
+            "message": "jd_json contains no extractable keywords - provide at least title, company, or required skills",
+            "retriable": True,
+        },
+        "session_id": session_id,
+    }
+
+    assert json.loads(submit_keywords(session_id=session_id, jd_json="{}")) == expected
 
 
 def test_onboard_user_enters_onboard_node(monkeypatch):
-    """Spec: onboard_user tool first node executed is onboard (not check_profile)."""
     from pi_apply.server import onboard_user
     import pi_apply.profile_nodes as pnodes
 
-    # Monkeypatch onboard to record that it was called
-    onboard_called = []
-
     def fake_onboard(state):
-        onboard_called.append(True)
         return {"intake": {"stub": "onboard"}}
 
-    monkeypatch.setattr(pnodes, "onboard", fake_onboard)
-
-    # Also patch check_profile to raise if called (it shouldn't be)
     def fake_check_profile(state):
         raise AssertionError("check_profile should not be called by onboard_user tool")
 
+    monkeypatch.setattr(pnodes, "onboard", fake_onboard)
     monkeypatch.setattr(pnodes, "check_profile", fake_check_profile)
 
-    # Call onboard_user
     result = json.loads(onboard_user())
-    assert onboard_called, "onboard node was not called"
-    assert result["status"] == "ok"
+    session_id = result["session_id"]
+    expected = {
+        "session_id": session_id,
+        "status": "ok",
+        "next_action": "compile_profile",
+        "data": {"intake": {"stub": "onboard"}},
+    }
+
+    assert result == expected
 
 
 def test_compile_profile_enters_compile_profile_node(monkeypatch):
-    """Spec: compile_profile tool first node executed is compile_profile."""
     from pi_apply.server import compile_profile
     import pi_apply.profile_nodes as pnodes
 
-    compile_called = []
-
     def fake_compile(state):
-        compile_called.append(True)
         return {"compiled_profile": {"stub": True}, "orphaned_skills": []}
 
-    monkeypatch.setattr(pnodes, "compile_profile", fake_compile)
-
-    # Patch check_profile to ensure it's not called
     def fake_check_profile(state):
         raise AssertionError("check_profile should not be called by compile_profile tool")
 
+    monkeypatch.setattr(pnodes, "compile_profile", fake_compile)
     monkeypatch.setattr(pnodes, "check_profile", fake_check_profile)
 
     result = json.loads(compile_profile())
-    assert compile_called, "compile_profile node was not called"
-    assert result["status"] == "ok"
+    session_id = result["session_id"]
+    expected = {
+        "session_id": session_id,
+        "status": "ok",
+        "next_action": "check_orphans",
+        "data": {"compiled_profile": {"stub": True}, "orphaned_skills": []},
+    }
+
+    assert result == expected
 
 
 def test_create_story_enters_create_story_node(monkeypatch):
-    """Spec: create_story tool first node executed is create_story."""
     from pi_apply.server import create_story
     import pi_apply.profile_nodes as pnodes
 
-    create_called = []
-
     def fake_create(state):
-        create_called.append(True)
         return {"orphaned_skills": [], "current_story_target": "test"}
 
-    monkeypatch.setattr(pnodes, "create_story", fake_create)
-
-    # Patch check_profile to ensure it's not called
     def fake_check_profile(state):
         raise AssertionError("check_profile should not be called by create_story tool")
 
+    monkeypatch.setattr(pnodes, "create_story", fake_create)
     monkeypatch.setattr(pnodes, "check_profile", fake_check_profile)
 
     result = json.loads(
@@ -245,36 +291,12 @@ def test_create_story_enters_create_story_node(monkeypatch):
             impact="test",
         )
     )
-    assert create_called, "create_story node was not called"
-    assert result["status"] == "ok"
-
-
-# ============================================================================
-# Additional integration smoke tests
-# ============================================================================
-
-
-def test_apply_produces_archive_file(tmp_path, monkeypatch):
-    """Spec: apply finalize writes archive JSON to apps dir."""
-    from pi_apply.server import apply
-
-    # Set apps dir to tmp
-    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path))
-
-    resume_file = tmp_path / "resume.txt"
-    resume_file.write_text("Test resume")
-
-    result = json.loads(apply(jd_raw_text="Test JD", resume_path=str(resume_file)))
-    assert result["status"] == "ok"
-
-    # Check that archive JSON was written
     session_id = result["session_id"]
-    archive_path = tmp_path / f"{session_id}.json"
-    assert archive_path.exists(), f"Archive not found at {archive_path}"
+    expected = {
+        "session_id": session_id,
+        "status": "ok",
+        "next_action": "compile_profile",
+        "data": {"orphaned_skills": [], "current_story_target": "test"},
+    }
 
-    with open(archive_path) as f:
-        archive = json.load(f)
-    assert archive["session_id"] == session_id
-    assert "timestamp" in archive
-    assert "jd_text" in archive
-    assert "scores" in archive
+    assert result == expected
