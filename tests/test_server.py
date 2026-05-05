@@ -158,6 +158,10 @@ def test_submit_keywords_stores_jddata_and_stops_before_parsing(tmp_path):
         "next_action": "parse_initial",
         "data": {
             "keywords": EXPECTED_PARTIAL_KEYWORDS,
+            "score_gap": {
+                "required_missing": result["data"]["score_gap"]["required_missing"],
+                "preferred_missing": result["data"]["score_gap"]["preferred_missing"],
+            },
         },
     }
 

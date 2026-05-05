@@ -137,10 +137,24 @@ class TestKeywordHandoffInterrupts:
             "jd_text": "Test JD: Need Python",
             "keywords": VALID_JD_DATA,
             "resume_path": tmp_resume,
+            "parsed_initial": "John Doe\nSoftware Engineer\n10 years experience",
+            "resume_label": "resume",
+            "score_initial": {
+                "ats_format": 0.0,
+                "experience_fit": 25.0,
+                "impact_evidence": 0.0,
+                "keyword_match": 0.0,
+                "pref_matched": [],
+                "pref_unmatched": [],
+                "readability": 10.0,
+                "req_matched": [],
+                "req_unmatched": ["Python"],
+                "total": 35.0,
+            },
         }
 
         assert result == expected_result
-        assert snapshot.next == ("parse_initial",)
+        assert snapshot.next == ("tailor",)
         assert len(_node_log_payloads(caplog, "keywords_accept")) == 1
 
     def test_keywords_accept_rejects_missing_host_keywords(self, apply_graph, tmp_resume):
