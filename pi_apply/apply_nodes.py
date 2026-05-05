@@ -253,29 +253,40 @@ def _detect_uncovered_skills(section_map: SectionMap) -> list[str]:
     return [s for s in all_skills if s.lower() not in bullet_text]
 
 
-def render(state: ApplyState) -> dict:
-    """Render tailored resume to PDF.
+def _resolve_tailored_text(state: ApplyState) -> str:
+    """Return tailored resume text from tailored_sections or fall back to state.tailored."""
+    if state.tailored_sections:
+        section_map = SectionMap.model_validate(state.tailored_sections)
+        return _sections_to_text(section_map)
+    return state.tailored or ""
 
-    Stub writes a real empty file at apps_dir/<session_id>.pdf.
-    Real impl will generate a full PDF.
-    """
+
+def render(state: ApplyState) -> dict:
+    """Render tailored resume to PDF (stub) and write plain-text for parse_final."""
     _log_enter("render", state)
 
     apps_dir = _get_apps_dir()
     apps_dir.mkdir(parents=True, exist_ok=True)
 
+    # Write empty PDF stub (real fpdf2 rendering is out of scope)
     pdf_path = apps_dir / f"{state.session_id}.pdf"
-    pdf_path.write_bytes(b"")  # Empty PDF stub
+    pdf_path.write_bytes(b"")
 
-    return {"pdf_path": str(pdf_path)}
+    # Derive tailored text from sections if available, else fall back to state.tailored
+    tailored_text = _resolve_tailored_text(state)
+
+    # Write plain-text alongside PDF for parse_final to read
+    txt_path = apps_dir / f"{state.session_id}.txt"
+    txt_path.write_text(tailored_text, encoding="utf-8")
+
+    return {"pdf_path": str(pdf_path), "tailored": tailored_text}
 
 
 def parse_final(state: ApplyState) -> dict:
-    """Parse the rendered PDF.
-
-    Reads from pdf_path. If file exists (even if empty), stub succeeds.
-    """
+    """Parse the rendered resume text for final scoring."""
     _log_enter("parse_final", state)
+    if state.tailored:
+        return {"parsed_final": state.tailored}
     return {"parsed_final": _parse_resume(state.pdf_path)}
 
 

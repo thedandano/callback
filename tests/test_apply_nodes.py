@@ -1,6 +1,7 @@
 """Tests for real parse_initial and score_initial node implementations."""
 
-from pi_apply.apply_nodes import parse_initial, score_initial
+from pi_apply.apply_nodes import parse_final, parse_initial, render, score_initial
+from pi_apply.section_map import SectionMap
 from pi_apply.state import ApplyState
 
 
@@ -34,3 +35,31 @@ def test_score_initial_returns_stub_for_noop(tmp_path):
     state = ApplyState(session_id="s1", parsed_initial="<noop:parse:no-source>", keywords=None)
     result = score_initial(state)
     assert result["score_initial"].get("stub") is True
+
+
+def test_render_uses_tailored_sections(tmp_path, monkeypatch):
+    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path))
+    sm = SectionMap(summary="Experienced engineer")
+    state = ApplyState(
+        session_id="s1",
+        tailored_sections=sm.model_dump(),
+    )
+    result = render(state)
+    assert result["tailored"] == "Experienced engineer"
+    txt_file = tmp_path / "s1.txt"
+    assert txt_file.exists()
+    assert txt_file.read_text() == "Experienced engineer"
+
+
+def test_render_falls_back_to_tailored_string(tmp_path, monkeypatch):
+    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path))
+    state = ApplyState(session_id="s2", tailored="Fallback text")
+    result = render(state)
+    assert result["tailored"] == "Fallback text"
+
+
+def test_parse_final_uses_tailored(tmp_path):
+    state = ApplyState(session_id="s3", tailored="Tailored resume text", pdf_path=None)
+    result = parse_final(state)
+    expected = {"parsed_final": "Tailored resume text"}
+    assert result == expected
