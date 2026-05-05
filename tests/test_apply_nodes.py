@@ -1,5 +1,7 @@
 """Tests for real parse_initial and score_initial node implementations."""
 
+import pytest
+
 from pi_apply.apply_nodes import parse_final, parse_initial, render, score_initial
 from pi_apply.state import ApplyState, TailoredResume
 
@@ -34,10 +36,10 @@ def test_score_initial_produces_score_gap(tmp_path):
     assert "Python" not in score["req_unmatched"]
 
 
-def test_score_initial_returns_stub_for_noop(tmp_path):
-    state = ApplyState(session_id="s1", parsed_initial="<noop:parse:no-source>", keywords=None)
-    result = score_initial(state)
-    assert result["score_initial"].get("stub") is True
+def test_score_initial_raises_on_missing_keywords(tmp_path):
+    state = ApplyState(session_id="s1", parsed_initial="some resume text", keywords=None)
+    with pytest.raises(ValueError, match="keywords"):
+        score_initial(state)
 
 
 def test_render_produces_pdf_from_tailored_resume(tmp_path, monkeypatch):

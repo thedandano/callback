@@ -55,10 +55,10 @@ def _log_jd_fetch(level: int, event: str, **fields: object) -> None:
     jd_fetcher_logger.log(level, json.dumps({"event": event, **fields}))
 
 
-def _run_score(text: str, keywords: dict) -> dict:
+def _run_score(text: str | None, keywords: dict | None) -> dict:
     if not text or not text.strip():
         raise ValueError("_run_score: text must not be empty")
-    if not keywords.get("required"):
+    if not keywords or not keywords.get("required"):
         raise ValueError("_run_score: keywords['required'] must be non-empty")
     r = scorer.score(
         text,
@@ -208,12 +208,7 @@ def parse_initial(state: ApplyState) -> dict:
 def score_initial(state: ApplyState) -> dict:
     """Score the parsed resume against JD keywords using scorer.py."""
     _log_enter("score_initial", state)
-    if state.parsed_initial is None or state.parsed_initial.startswith("<noop:"):
-        return {"score_initial": {"total": 0, "stub": True, "parsed_chars": 0}}
-    keywords = state.keywords
-    if not keywords:
-        return {"score_initial": {"total": 0, "stub": True, "parsed_chars": 0}}
-    return {"score_initial": _run_score(state.parsed_initial, keywords)}
+    return {"score_initial": _run_score(state.parsed_initial, state.keywords)}
 
 
 def tailor(state: ApplyState) -> dict:
@@ -338,24 +333,31 @@ def parse_final(state: ApplyState) -> dict:
 def score_final(state: ApplyState) -> dict:
     """Score the extracted PDF text against JD keywords."""
     _log_enter("score_final", state)
-    if state.parsed_final is None:
-        return {"score_final": {"total": 0, "stub": True, "parsed_chars": 0}}
-    keywords = state.keywords
-    if not keywords:
-        return {"score_final": {"total": 0, "stub": True, "parsed_chars": 0}}
-    return {"score_final": _run_score(state.parsed_final, keywords)}
+    return {"score_final": _run_score(state.parsed_final, state.keywords)}
+
+
+_SCORE_DIMS = (
+    "total",
+    "keyword_match",
+    "experience_fit",
+    "impact_evidence",
+    "ats_format",
+    "readability",
+)
 
 
 def report(state: ApplyState) -> dict:
-    """Compute score delta between initial and final pass."""
+    """Compute per-dimension score delta and format gap between initial and final pass."""
     _log_enter("report", state)
-    initial_total = (state.score_initial or {}).get("total") or 0.0
-    final_total = (state.score_final or {}).get("total") or 0.0
+    si = state.score_initial or {}
+    sf = state.score_final or {}
+    delta = {dim: round((sf.get(dim) or 0.0) - (si.get(dim) or 0.0), 2) for dim in _SCORE_DIMS}
+    format_gap_chars = len(state.parsed_final or "") - len(state.parsed_initial or "")
     return {
         "report": {
-            "delta_total": round(final_total - initial_total, 2),
-            "score_initial_total": initial_total,
-            "score_final_total": final_total,
+            "delta": delta,
+            "format_gap_chars": format_gap_chars,
+            "uncovered_skills": state.uncovered_skills or [],
         }
     }
 
@@ -386,7 +388,8 @@ def finalize(state: ApplyState) -> dict:
         "scores": {
             "initial": state.score_initial,
             "final": state.score_final,
-            "scoring_engine_version": "1",
+            "delta": (state.report or {}).get("delta"),
+            "scoring_engine_version": "v1",
         },
         "uncovered_skills": state.uncovered_skills or [],
     }
