@@ -18,6 +18,7 @@ class ApplyState(BaseModel):
     score_initial: dict | None = Field(default=None)
     score_final: dict | None = Field(default=None)
     tailored: str | None = Field(default=None)
+    tailored_sections: dict | None = Field(default=None)
     pdf_path: str | None = Field(default=None)
     report: dict | None = Field(default=None)
     uncovered_skills: list | None = Field(default=None)
