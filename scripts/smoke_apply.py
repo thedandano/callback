@@ -96,8 +96,21 @@ def main():
         assert len(tailored["data"]["edits_applied"]) > 0, "no edits applied"
         assert "total" in tailored["data"]["score_final"], "score_final missing total"
 
+        # Phase 4: read archive JSON for score delta
+        apps_dir = Path.home() / ".local" / "share" / "pi-apply" / "applications"
+        archive_path = apps_dir / f"{session_id}.json"
+        assert archive_path.exists(), f"archive not written: {archive_path}"
+        archive = json.loads(archive_path.read_text())
+        delta = archive["scores"]["delta"]
+        assert delta is not None, "scores.delta missing from archive"
+        assert delta["keyword_match"] > 0, (
+            f"delta.keyword_match <= 0: {delta['keyword_match']}"
+            " — tailor did not improve keyword coverage"
+        )
+
         phases = {"load_jd": loaded, "submit_keywords": submitted, "submit_tailor": tailored}
         print(json.dumps(phases, indent=2))
+        print(f"\nScore delta: {json.dumps(delta, indent=2)}")
         print(
             "\nSMOKE OK: apply handoff tools executed (load_jd + submit_keywords + submit_tailor)"
         )  # noqa: E501

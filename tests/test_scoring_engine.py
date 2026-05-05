@@ -114,23 +114,15 @@ class TestScoreInitial:
         }
         assert score_initial(state) == expected
 
-    def test_stubs_on_none_parsed_initial(self):
+    def test_raises_on_none_parsed_initial(self):
         state = ApplyState(session_id="s1", parsed_initial=None, keywords=None)
-        assert score_initial(state) == {
-            "score_initial": {"total": 0, "stub": True, "parsed_chars": 0}
-        }
+        with pytest.raises(ValueError, match="text must not be empty"):
+            score_initial(state)
 
-    def test_stubs_on_noop_sentinel(self):
-        state = ApplyState(session_id="s1", parsed_initial="<noop:parse:no-source>", keywords=None)
-        assert score_initial(state) == {
-            "score_initial": {"total": 0, "stub": True, "parsed_chars": 0}
-        }
-
-    def test_stubs_on_none_keywords(self):
+    def test_raises_on_none_keywords(self):
         state = ApplyState(session_id="s1", parsed_initial=RESUME_WITH_KEYWORDS, keywords=None)
-        assert score_initial(state) == {
-            "score_initial": {"total": 0, "stub": True, "parsed_chars": 0}
-        }
+        with pytest.raises(ValueError, match="keywords"):
+            score_initial(state)
 
 
 class TestScoreFinal:
@@ -156,17 +148,15 @@ class TestScoreFinal:
         }
         assert score_final(state) == expected
 
-    def test_stubs_on_non_empty_text_without_keywords(self):
-        state = ApplyState(session_id="s1", parsed_final="some text here", keywords=None)
-        assert score_final(state) == {"score_final": {"total": 0, "stub": True, "parsed_chars": 0}}
-
-    def test_stubs_on_none_parsed_final(self):
+    def test_raises_on_none_parsed_final(self):
         state = ApplyState(session_id="s1", parsed_final=None, keywords=None)
-        assert score_final(state) == {"score_final": {"total": 0, "stub": True, "parsed_chars": 0}}
+        with pytest.raises(ValueError, match="text must not be empty"):
+            score_final(state)
 
-    def test_stubs_on_none_keywords(self):
+    def test_raises_on_none_keywords(self):
         state = ApplyState(session_id="s1", parsed_final=RESUME_WITH_KEYWORDS, keywords=None)
-        assert score_final(state) == {"score_final": {"total": 0, "stub": True, "parsed_chars": 0}}
+        with pytest.raises(ValueError, match="keywords"):
+            score_final(state)
 
 
 class TestParseFinal:
@@ -197,29 +187,37 @@ class TestParseFinal:
         assert parse_final(state) == {"parsed_final": "Python developer with AWS experience"}
 
 
+_ZERO_DELTA = {
+    "total": 0.0,
+    "keyword_match": 0.0,
+    "experience_fit": 0.0,
+    "impact_evidence": 0.0,
+    "ats_format": 0.0,
+    "readability": 0.0,
+}
+
+
 class TestReport:
-    def test_computes_delta(self):
+    def test_computes_delta_total(self):
         state = ApplyState(
             session_id="s1",
             score_initial={"total": 45.0},
             score_final={"total": 72.0},
         )
         assert report(state) == {
-            "report": {"delta_total": 27.0, "score_initial_total": 45.0, "score_final_total": 72.0}
-        }
-
-    def test_handles_stub_scores(self):
-        state = ApplyState(
-            session_id="s1",
-            score_initial={"total": 0, "stub": True},
-            score_final={"total": 0, "stub": True},
-        )
-        assert report(state) == {
-            "report": {"delta_total": 0, "score_initial_total": 0, "score_final_total": 0}
+            "report": {
+                "delta": {**_ZERO_DELTA, "total": 27.0},
+                "format_gap_chars": 0,
+                "uncovered_skills": [],
+            }
         }
 
     def test_handles_none_scores(self):
         state = ApplyState(session_id="s1", score_initial=None, score_final=None)
         assert report(state) == {
-            "report": {"delta_total": 0.0, "score_initial_total": 0.0, "score_final_total": 0.0}
+            "report": {
+                "delta": _ZERO_DELTA,
+                "format_gap_chars": 0,
+                "uncovered_skills": [],
+            }
         }

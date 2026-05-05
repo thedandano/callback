@@ -20,6 +20,16 @@ KEYWORDS = {
     "key_responsibilities": [],
 }
 
+# Redis is not in sample_resume.txt — tailor will inject it, raising keyword_match delta > 0
+M3_KEYWORDS = {
+    "title": "Software Engineer",
+    "required": ["Python", "FastAPI", "PostgreSQL", "Redis"],
+    "preferred": ["Docker"],
+    "required_years": 3.0,
+    "seniority": "mid",
+    "key_responsibilities": [],
+}
+
 
 @pytest.fixture
 def setup_e2e_session(tmp_path, monkeypatch):
@@ -162,3 +172,85 @@ class TestApplyGraphE2E:
             "finalized": True,
         }
         assert actual == expected
+
+
+@pytest.fixture
+def setup_m3_session_with_graph(tmp_path, monkeypatch):
+    """M3 fixture: pipeline run through finalize with Redis as extra required keyword."""
+    from pi_apply.apply_graph import build_apply_graph, make_config
+    from pi_apply.server import load_jd, submit_keywords
+
+    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path / "applications"))
+
+    resume_file = tmp_path / "resume.txt"
+    resume_file.write_text(SAMPLE_RESUME)
+
+    loaded = json.loads(load_jd(jd_raw_text=SAMPLE_JD, resume_path=str(resume_file)))
+    assert loaded["status"] == "ok"
+    session_id = loaded["session_id"]
+
+    keywords_response = json.loads(
+        submit_keywords(session_id=session_id, jd_json=json.dumps(M3_KEYWORDS))
+    )
+    assert keywords_response["status"] == "ok"
+
+    graph = build_apply_graph()
+    config = make_config(session_id)
+    graph.invoke(None, config)
+
+    yield session_id, graph, config, tmp_path
+
+
+class TestM3ScoreDelta:
+    """M3 scenario: real score delta, archive contains scores.delta."""
+
+    def test_m3_both_scores_have_six_dimensions(self, setup_m3_session_with_graph):
+        """Both score dicts have all six dimensional keys after finalize."""
+        session_id, graph, config, _ = setup_m3_session_with_graph
+        state = graph.get_state(config).values
+        dims = {
+            "total",
+            "keyword_match",
+            "experience_fit",
+            "impact_evidence",
+            "ats_format",
+            "readability",
+        }
+
+        actual = {
+            "score_initial_keys": set(state["score_initial"].keys()) & dims,
+            "score_final_keys": set(state["score_final"].keys()) & dims,
+            "score_initial_has_stub": "stub" in state["score_initial"],
+            "score_final_has_stub": "stub" in state["score_final"],
+        }
+        assert actual == {
+            "score_initial_keys": dims,
+            "score_final_keys": dims,
+            "score_initial_has_stub": False,
+            "score_final_has_stub": False,
+        }
+
+    def test_m3_keyword_match_delta_positive(self, setup_m3_session_with_graph):
+        """score_final.keyword_match > score_initial.keyword_match after tailor injects Redis."""
+        session_id, graph, config, _ = setup_m3_session_with_graph
+        state = graph.get_state(config).values
+        delta = state["report"]["delta"]
+        assert delta["keyword_match"] > 0
+
+    def test_m3_archive_contains_scores_delta(self, setup_m3_session_with_graph):
+        """Archive JSON has scores.delta mirroring report.delta."""
+        session_id, graph, config, tmp_path = setup_m3_session_with_graph
+        state = graph.get_state(config).values
+        archive_path = tmp_path / "applications" / f"{session_id}.json"
+        archive = json.loads(archive_path.read_text())
+
+        actual = {
+            "scores_delta_equals_report_delta": (
+                archive["scores"]["delta"] == state["report"]["delta"]
+            ),
+            "scoring_engine_version": archive["scores"]["scoring_engine_version"],
+        }
+        assert actual == {
+            "scores_delta_equals_report_delta": True,
+            "scoring_engine_version": "v1",
+        }
