@@ -54,36 +54,28 @@ def _log_jd_fetch(level: int, event: str, **fields: object) -> None:
     jd_fetcher_logger.log(level, json.dumps({"event": event, **fields}))
 
 
-def _parse_resume(source_path: str | None) -> str:
-    """Shared no-op parse of resume text.
-
-    Real impl will use pdfplumber/python-docx/txt extraction.
-    Stub returns sentinel showing the path was valid.
-    """
-    if source_path is None:
-        return "<noop:parse:no-source>"
-
-    p = Path(source_path)
-    if not p.exists():
-        return f"<noop:parse:missing:{source_path}>"
-
-    if p.stat().st_size == 0:
-        return f"<noop:parse:empty:{source_path}>"
-
-    # Real impl reads file. Stub shows path was real.
-    return f"<noop:parse:ok:{source_path}>"
-
-
-def _score(parsed_text: str | None, keywords: dict | None) -> dict:
-    """Shared no-op score computation.
-
-    Real impl will use scorer.compute_score.
-    Stub returns fixed dict with stub marker.
-    """
+def _run_score(text: str, keywords: dict) -> dict:
+    if not text or not text.strip():
+        raise ValueError("_run_score: text must not be empty")
+    if not keywords.get("required"):
+        raise ValueError("_run_score: keywords['required'] must be non-empty")
+    r = scorer.score(
+        text,
+        keywords["required"],
+        keywords["preferred"],
+        required_years=keywords["required_years"],
+    )
     return {
-        "total": 0,
-        "stub": True,
-        "parsed_chars": len(parsed_text or ""),
+        "total": r.breakdown.total(),
+        "keyword_match": r.breakdown.keyword_match,
+        "experience_fit": r.breakdown.experience_fit,
+        "impact_evidence": r.breakdown.impact_evidence,
+        "ats_format": r.breakdown.ats_format,
+        "readability": r.breakdown.readability,
+        "req_matched": r.keywords.req_matched,
+        "req_unmatched": r.keywords.req_unmatched,
+        "pref_matched": r.keywords.pref_matched,
+        "pref_unmatched": r.keywords.pref_unmatched,
     }
 
 
@@ -217,23 +209,10 @@ def score_initial(state: ApplyState) -> dict:
     _log_enter("score_initial", state)
     if state.parsed_initial is None or state.parsed_initial.startswith("<noop:"):
         return {"score_initial": {"total": 0, "stub": True, "parsed_chars": 0}}
-    required = (state.keywords or {}).get("required") or []
-    preferred = (state.keywords or {}).get("preferred") or []
-    result = scorer.score(state.parsed_initial, required, preferred)
-    return {
-        "score_initial": {
-            "total": result.breakdown.total(),
-            "keyword_match": result.breakdown.keyword_match,
-            "experience_fit": result.breakdown.experience_fit,
-            "impact_evidence": result.breakdown.impact_evidence,
-            "ats_format": result.breakdown.ats_format,
-            "readability": result.breakdown.readability,
-            "req_matched": result.keywords.req_matched,
-            "req_unmatched": result.keywords.req_unmatched,
-            "pref_matched": result.keywords.pref_matched,
-            "pref_unmatched": result.keywords.pref_unmatched,
-        }
-    }
+    keywords = state.keywords
+    if not keywords:
+        return {"score_initial": {"total": 0, "stub": True, "parsed_chars": 0}}
+    return {"score_initial": _run_score(state.parsed_initial, keywords)}
 
 
 def tailor(state: ApplyState) -> dict:
@@ -283,34 +262,38 @@ def render(state: ApplyState) -> dict:
 
 
 def parse_final(state: ApplyState) -> dict:
-    """Parse the rendered resume text for final scoring."""
+    """Extract text from the rendered PDF for final ATS scoring."""
     _log_enter("parse_final", state)
-    if state.tailored:
-        return {"parsed_final": state.tailored}
-    return {"parsed_final": _parse_resume(state.pdf_path)}
+    if not state.pdf_path:
+        return {"parsed_final": "<noop:parse:no-pdf-path>"}
+    p = Path(state.pdf_path)
+    if not p.exists() or p.stat().st_size == 0:
+        return {"parsed_final": "<noop:parse:empty-pdf>"}
+    return {"parsed_final": resume_extractor.extract(str(p))}
 
 
 def score_final(state: ApplyState) -> dict:
-    """Score the final parsed text against keywords.
-
-    Stub returns same structure as score_initial.
-    """
+    """Score the extracted PDF text against JD keywords."""
     _log_enter("score_final", state)
-    return {"score_final": _score(state.parsed_final, state.keywords)}
+    if state.parsed_final is None or state.parsed_final.startswith("<noop:"):
+        return {"score_final": {"total": 0, "stub": True, "parsed_chars": 0}}
+    keywords = state.keywords
+    if not keywords:
+        return {"score_final": {"total": 0, "stub": True, "parsed_chars": 0}}
+    return {"score_final": _run_score(state.parsed_final, keywords)}
 
 
 def report(state: ApplyState) -> dict:
-    """Generate a comparison report between initial and final scores.
-
-    Stub returns empty report dict with stub marker.
-    """
+    """Compute score delta between initial and final pass."""
     _log_enter("report", state)
+    initial_total = (state.score_initial or {}).get("total") or 0.0
+    final_total = (state.score_final or {}).get("total") or 0.0
     return {
         "report": {
-            "stub": True,
-            "delta_total": 0,
-        },
-        "uncovered_skills": [],
+            "delta_total": round(final_total - initial_total, 2),
+            "score_initial_total": initial_total,
+            "score_final_total": final_total,
+        }
     }
 
 
@@ -337,7 +320,7 @@ def finalize(state: ApplyState) -> dict:
         "scores": {
             "initial": state.score_initial,
             "final": state.score_final,
-            "scoring_engine_version": "noop-0",
+            "scoring_engine_version": "1",
         },
         "uncovered_skills": state.uncovered_skills or [],
     }
