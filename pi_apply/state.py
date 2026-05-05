@@ -1,6 +1,23 @@
 from pydantic import BaseModel, Field
 
 
+class TailoredResume(BaseModel):
+    name: str
+    location: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    linkedin: str | None = None
+    website: str | None = None
+    title: str | None = None
+    summary: str | None = None
+    skills_raw: str | None = None
+    experience_raw: str | None = None
+    projects_raw: str | None = None
+    volunteer_raw: str | None = None
+    education_raw: str | None = None
+    max_pages: int = 1
+
+
 class ApplyState(BaseModel):
     """Per-session state for the apply graph."""
 
@@ -17,7 +34,7 @@ class ApplyState(BaseModel):
     parsed_final: str | None = Field(default=None)
     score_initial: dict | None = Field(default=None)
     score_final: dict | None = Field(default=None)
-    tailored: str | None = Field(default=None)
+    tailored: TailoredResume | None = Field(default=None)
     tailored_sections: dict | None = Field(default=None)
     pdf_path: str | None = Field(default=None)
     report: dict | None = Field(default=None)

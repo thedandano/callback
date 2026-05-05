@@ -354,7 +354,6 @@ def _apply_tailor_edits(session_id, graph, config, state_values, sections_dict, 
         config,
         {
             "tailored_sections": section_map.model_dump(),
-            "tailored": resume_text,
             "uncovered_skills": uncovered_skills,
             "score_final": score_final,
         },
