@@ -36,6 +36,7 @@ from pi_apply.state import ApplyState
 DB_PATH = Path.home() / ".local" / "share" / "pi-apply" / "apply-sessions.db"
 JD_FETCH_NODE = "jd_fetch"
 KEYWORDS_ACCEPT_NODE = "keywords_accept"
+TAILOR_NODE = "tailor"
 
 
 def make_config(session_id: str) -> RunnableConfig:
@@ -96,5 +97,5 @@ def build_apply_graph(db_path: Path = DB_PATH):
 
     return builder.compile(
         checkpointer=checkpointer,
-        interrupt_after=[JD_FETCH_NODE, KEYWORDS_ACCEPT_NODE],
+        interrupt_after=[JD_FETCH_NODE, KEYWORDS_ACCEPT_NODE, TAILOR_NODE],
     )

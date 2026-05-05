@@ -1,11 +1,8 @@
 """Tests for pi_apply.server MCP tool registration and routing."""
 
 import json
-import sys
 import uuid
 from unittest.mock import AsyncMock, patch
-
-import pytest
 
 from pi_apply.jd_data import EXTRACTION_PROTOCOL
 
@@ -32,22 +29,6 @@ EXPECTED_PARTIAL_KEYWORDS = {
 }
 
 
-@pytest.fixture(autouse=True)
-def isolate_server_db(tmp_path, monkeypatch):
-    """Redirect SQLite DBs to tmp dir before server import."""
-    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
-
-    for mod in ("pi_apply.server", "pi_apply.apply_graph", "pi_apply.profile_graph"):
-        sys.modules.pop(mod, None)
-
-    import pi_apply.server  # noqa: F401
-
-    yield
-
-    for mod in ("pi_apply.server", "pi_apply.apply_graph", "pi_apply.profile_graph"):
-        sys.modules.pop(mod, None)
-
-
 def _tool_names(server) -> set[str]:
     components = server.mcp.local_provider._components
     return {component.name for key, component in components.items() if key.startswith("tool:")}
@@ -59,6 +40,7 @@ def test_apply_handoff_tools_registered():
     expected = {
         "load_jd",
         "submit_keywords",
+        "submit_tailor",
         "get_wiki_pages",
         "onboard_user",
         "compile_profile",

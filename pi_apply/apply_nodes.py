@@ -237,12 +237,20 @@ def score_initial(state: ApplyState) -> dict:
 
 
 def tailor(state: ApplyState) -> dict:
-    """Rewrite resume bullets to match JD.
-
-    Stub returns noop sentinel with original text appended.
-    """
+    """Host handoff interrupt. Graph pauses here for submit_tailor."""
     _log_enter("tailor", state)
-    return {"tailored": f"<noop:tailor>{state.parsed_initial or ''}"}
+    return {}
+
+
+def _detect_uncovered_skills(section_map: SectionMap) -> list[str]:
+    """Return skills added to skills section but absent from all experience bullets."""
+    all_skills = list(section_map.skills.flat)
+    for items in section_map.skills.categorized.values():
+        all_skills.extend(items)
+
+    bullet_text = " ".join(b for exp in section_map.experience for b in exp.bullets).lower()
+
+    return [s for s in all_skills if s.lower() not in bullet_text]
 
 
 def render(state: ApplyState) -> dict:

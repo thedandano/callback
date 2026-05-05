@@ -22,6 +22,7 @@ class TestApplyStateBasic:
         assert state.score_initial is None
         assert state.score_final is None
         assert state.tailored is None
+        assert state.tailored_sections is None
         assert state.pdf_path is None
         assert state.report is None
         assert state.uncovered_skills is None
@@ -54,6 +55,7 @@ class TestApplyStateBasic:
             "score_initial",
             "score_final",
             "tailored",
+            "tailored_sections",
             "pdf_path",
             "report",
             "uncovered_skills",
