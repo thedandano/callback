@@ -24,6 +24,7 @@ from time import perf_counter
 from pi_apply import extractor as resume_extractor
 from pi_apply import scorer
 from pi_apply.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError, fetch_url_to_markdown
+from pi_apply.render import render_resume
 from pi_apply.section_map import SectionMap
 from pi_apply.state import ApplyState, TailoredResume
 from pi_apply.wiki import WikiStore
@@ -293,41 +294,51 @@ def _resolve_tailored_text(state: ApplyState) -> str:
 
 
 def render(state: ApplyState) -> dict:
-    """Render tailored resume to PDF (stub) and write plain-text for parse_final."""
+    """Render tailored resume to PDF via Typst."""
     _log_enter("render", state)
+    if state.tailored is None:
+        return {"error": "render: state.tailored is None — tailor node must run first"}
 
     apps_dir = _get_apps_dir()
     apps_dir.mkdir(parents=True, exist_ok=True)
+    output_path = str(apps_dir / f"{state.session_id}.pdf")
 
-    # Write empty PDF stub (real fpdf2 rendering is out of scope)
-    pdf_path = apps_dir / f"{state.session_id}.pdf"
-    pdf_path.write_bytes(b"")
-
-    # Derive tailored text from sections if available, else fall back to state.tailored
-    tailored_text = _resolve_tailored_text(state)
-
-    # Write plain-text alongside PDF for parse_final to read
-    txt_path = apps_dir / f"{state.session_id}.txt"
-    txt_path.write_text(tailored_text, encoding="utf-8")
-
-    return {"pdf_path": str(pdf_path)}
+    result = render_resume(state.tailored.model_dump(), output_path)
+    if result["success"]:
+        logger.info(
+            json.dumps({"node": "render", "session_id": state.session_id, "pdf_path": output_path})
+        )
+        return {"pdf_path": output_path}
+    else:
+        logger.error(
+            json.dumps({"node": "render", "session_id": state.session_id, "error": result["error"]})
+        )
+        return {"error": f"render: {result['error']}"}
 
 
 def parse_final(state: ApplyState) -> dict:
     """Extract text from the rendered PDF for final ATS scoring."""
     _log_enter("parse_final", state)
     if not state.pdf_path:
-        return {"parsed_final": "<noop:parse:no-pdf-path>"}
+        return {"error": "parse_final: no pdf_path in state"}
     p = Path(state.pdf_path)
-    if not p.exists() or p.stat().st_size == 0:
-        return {"parsed_final": "<noop:parse:empty-pdf>"}
-    return {"parsed_final": resume_extractor.extract(str(p))}
+    if not p.exists():
+        return {"error": f"parse_final: pdf file not found: {state.pdf_path}"}
+    if p.stat().st_size == 0:
+        return {"error": f"parse_final: pdf file is empty: {state.pdf_path}"}
+    text = resume_extractor.extract(state.pdf_path)
+    if not text.strip():
+        return {"error": "parse_final: PDF extracted to empty text"}
+    logger.info(
+        json.dumps({"node": "parse_final", "session_id": state.session_id, "chars": len(text)})
+    )
+    return {"parsed_final": text}
 
 
 def score_final(state: ApplyState) -> dict:
     """Score the extracted PDF text against JD keywords."""
     _log_enter("score_final", state)
-    if state.parsed_final is None or state.parsed_final.startswith("<noop:"):
+    if state.parsed_final is None:
         return {"score_final": {"total": 0, "stub": True, "parsed_chars": 0}}
     keywords = state.keywords
     if not keywords:
