@@ -6,6 +6,22 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def isolate_server_db(tmp_path, monkeypatch):
+    """Redirect SQLite DBs to tmp dir before server import."""
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
+    for mod in ("pi_apply.server", "pi_apply.apply_graph", "pi_apply.profile_graph"):
+        sys.modules.pop(mod, None)
+
+    import pi_apply.server  # noqa: F401
+
+    yield
+
+    for mod in ("pi_apply.server", "pi_apply.apply_graph", "pi_apply.profile_graph"):
+        sys.modules.pop(mod, None)
+
+
+@pytest.fixture(autouse=True)
 def restore_bridge_module(tmp_path):
     """Restore pi_apply.bridge in sys.modules after tests that evict it.
 

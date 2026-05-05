@@ -18,15 +18,19 @@ import uuid
 from fastmcp import FastMCP
 
 import pi_apply.profile_nodes as profile_nodes
+import pi_apply.scorer as scorer_mod
 from pi_apply.apply_graph import (
     KEYWORDS_ACCEPT_NODE,
+    TAILOR_NODE,
     build_apply_graph,
 )
 from pi_apply.apply_graph import (
     make_config as make_apply_config,
 )
+from pi_apply.apply_nodes import _detect_uncovered_skills, _sections_to_text
 from pi_apply.jd_data import EXTRACTION_PROTOCOL, JDDataError, parse_jd_json
 from pi_apply.jd_fetcher import JDFetchError
+from pi_apply.section_map import SectionMap, apply_edit
 from pi_apply.state import ApplyState, ProfileState
 from pi_apply.wiki import WikiStore
 
@@ -253,6 +257,106 @@ def submit_keywords(session_id: str, jd_json: str) -> str:
         next_action = "parse_initial"
 
     return _ok(session_id, next_action, data)
+
+
+@mcp.tool()
+def submit_tailor(session_id: str, edits: list[dict]) -> str:
+    """Apply host-submitted edits to the resume SectionMap and rescore.
+
+    Accepts a list of port.Edit-style dicts. Each edit must have:
+      section: str (summary | skills | experience | projects)
+      op: str (add | replace | remove)
+      target: str (required for experience/projects)
+      value: str (required for add/replace)
+      category: str (optional, for categorized skills)
+
+    Applies valid edits, reports rejections, detects uncovered skills
+    (skills added to skills section but absent from experience bullets),
+    rescores the modified resume, and stores tailored_sections in state.
+
+    Returns JSON envelope with edits_applied, edits_rejected, uncovered_skills,
+    score_final, and next_action="render".
+    """
+    _log("INFO", {"tool": "submit_tailor", "session_id": session_id, "edit_count": len(edits)})
+
+    graph = build_apply_graph()
+    config = make_apply_config(session_id)
+    snapshot = graph.get_state(config)
+
+    if not snapshot.values:
+        return _err("submit_tailor", "session_not_found", "session_id not found", session_id)
+
+    if snapshot.next != (TAILOR_NODE,):
+        return _err(
+            "submit_tailor",
+            "invalid_state",
+            "session is not waiting for tailor edits",
+            session_id,
+        )
+
+    state_values = snapshot.values
+    sections_dict = state_values.get("sections")
+    if not sections_dict:
+        return _err(
+            "submit_tailor",
+            "no_sections",
+            "no sections in session; call load_jd with a resume_path first",
+            session_id,
+        )
+
+    return _apply_tailor_edits(session_id, graph, config, state_values, sections_dict, edits)
+
+
+def _apply_tailor_edits(session_id, graph, config, state_values, sections_dict, edits):
+    """Apply edits to the SectionMap, rescore, and store results."""
+    section_map = SectionMap.model_validate(sections_dict)
+    edits_applied = []
+    edits_rejected = []
+
+    for i, edit in enumerate(edits):
+        result = apply_edit(section_map, edit)
+        if result.applied:
+            edits_applied.append(i)
+        else:
+            edits_rejected.append({"index": i, "reason": result.rejection_reason})
+
+    uncovered_skills = _detect_uncovered_skills(section_map)
+
+    resume_text = _sections_to_text(section_map)
+    keywords = state_values.get("keywords") or {}
+    required = keywords.get("required") or []
+    preferred = keywords.get("preferred") or []
+    score_result = scorer_mod.score(resume_text, required, preferred)
+    score_final = {
+        "total": score_result.breakdown.total(),
+        "keyword_match": score_result.breakdown.keyword_match,
+        "req_matched": score_result.keywords.req_matched,
+        "req_unmatched": score_result.keywords.req_unmatched,
+        "pref_matched": score_result.keywords.pref_matched,
+        "pref_unmatched": score_result.keywords.pref_unmatched,
+    }
+
+    graph.update_state(
+        config,
+        {
+            "tailored_sections": section_map.model_dump(),
+            "tailored": resume_text,
+            "uncovered_skills": uncovered_skills,
+            "score_final": score_final,
+        },
+    )
+    graph.invoke(None, config)
+
+    return _ok(
+        session_id,
+        "render",
+        {
+            "edits_applied": edits_applied,
+            "edits_rejected": edits_rejected,
+            "uncovered_skills": uncovered_skills,
+            "score_final": score_final,
+        },
+    )
 
 
 # ============================================================================
