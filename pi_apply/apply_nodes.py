@@ -25,7 +25,7 @@ from pi_apply import extractor as resume_extractor
 from pi_apply import scorer
 from pi_apply.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError, fetch_url_to_markdown
 from pi_apply.section_map import SectionMap
-from pi_apply.state import ApplyState
+from pi_apply.state import ApplyState, TailoredResume
 from pi_apply.wiki import WikiStore
 
 logger = logging.getLogger(__name__)
@@ -216,9 +216,61 @@ def score_initial(state: ApplyState) -> dict:
 
 
 def tailor(state: ApplyState) -> dict:
-    """Host handoff interrupt. Graph pauses here for submit_tailor."""
+    """Deterministic skeleton tailor: build TailoredResume from parsed_initial and keywords."""
     _log_enter("tailor", state)
-    return {}
+
+    parsed = state.parsed_initial or ""
+    non_empty_lines = [line.strip() for line in parsed.splitlines() if line.strip()]
+
+    # name: first non-empty line, fallback to "Candidate Name"
+    name = non_empty_lines[0] if non_empty_lines else "Candidate Name"
+
+    # summary: next up to 5 non-empty lines joined with spaces
+    summary_lines = non_empty_lines[1:6]
+    summary = " ".join(summary_lines) if summary_lines else None
+
+    # experience_raw: all remaining non-empty lines joined with \n
+    remaining_lines = non_empty_lines[6:]
+    experience_raw = "\n".join(remaining_lines) if remaining_lines else None
+
+    # skills_raw: top-3 required keywords absent from parsed_initial (case-insensitive)
+    required_keywords: list[str] = (state.keywords or {}).get("required", [])
+    parsed_lower = parsed.lower()
+    missing = [kw for kw in required_keywords if kw.lower() not in parsed_lower]
+    top3_missing = missing[:3]
+    skills_raw = f"Tools: {', '.join(top3_missing)}" if top3_missing else None
+
+    keyword_count = len(required_keywords)
+    output_fields = {
+        k: v
+        for k, v in {
+            "name": name,
+            "summary": summary,
+            "skills_raw": skills_raw,
+            "experience_raw": experience_raw,
+        }.items()
+        if v is not None
+    }
+    logger.info(
+        json.dumps(
+            {
+                "node": "tailor",
+                "session_id": state.session_id,
+                "keyword_count": keyword_count,
+                "output_fields": list(output_fields.keys()),
+            }
+        )
+    )
+
+    return {
+        "tailored": TailoredResume(
+            name=name,
+            summary=summary,
+            skills_raw=skills_raw,
+            experience_raw=experience_raw,
+            max_pages=1,
+        )
+    }
 
 
 def _detect_uncovered_skills(section_map: SectionMap) -> list[str]:
@@ -233,11 +285,11 @@ def _detect_uncovered_skills(section_map: SectionMap) -> list[str]:
 
 
 def _resolve_tailored_text(state: ApplyState) -> str:
-    """Return tailored resume text from tailored_sections or fall back to state.tailored."""
+    """Return tailored resume text from tailored_sections; state.tailored is now TailoredResume."""
     if state.tailored_sections:
         section_map = SectionMap.model_validate(state.tailored_sections)
         return _sections_to_text(section_map)
-    return state.tailored or ""
+    return ""
 
 
 def render(state: ApplyState) -> dict:
@@ -258,7 +310,7 @@ def render(state: ApplyState) -> dict:
     txt_path = apps_dir / f"{state.session_id}.txt"
     txt_path.write_text(tailored_text, encoding="utf-8")
 
-    return {"pdf_path": str(pdf_path), "tailored": tailored_text}
+    return {"pdf_path": str(pdf_path)}
 
 
 def parse_final(state: ApplyState) -> dict:
@@ -308,6 +360,9 @@ def finalize(state: ApplyState) -> dict:
     apps_dir = _get_apps_dir()
     apps_dir.mkdir(parents=True, exist_ok=True)
 
+    # Derive tailored resume text from sections or tailored object
+    tailored_text = _resolve_tailored_text(state)
+
     # Build archive record with all required fields
     archive = {
         "session_id": state.session_id,
@@ -315,7 +370,7 @@ def finalize(state: ApplyState) -> dict:
         "jd_url": state.jd_url,
         "jd_text": state.jd_text,
         "keywords": state.keywords,
-        "tailored_resume_text": state.tailored,
+        "tailored_resume_text": tailored_text,
         "pdf_path": state.pdf_path,
         "scores": {
             "initial": state.score_initial,
