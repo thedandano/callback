@@ -1,0 +1,10 @@
+Jane Doe
+Senior Software Engineer | San Francisco, CA
+
+Experience
+Acme Corp | Backend Engineer | 2021-Present
+- Built Python microservices deployed on AWS
+- Designed REST APIs with FastAPI and PostgreSQL
+
+Education
+B.S. Computer Science, UC Berkeley 2018

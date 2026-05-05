@@ -133,9 +133,12 @@ class TestApplyStateBasic:
         assert state.score_final == score
 
     def test_field_types_tailored(self):
-        """tailored field accepts str or None."""
-        state = ApplyState(session_id="s", tailored="Tailored resume text")
-        assert state.tailored == "Tailored resume text"
+        """tailored field accepts TailoredResume or None."""
+        from pi_apply.state import TailoredResume
+
+        tr = TailoredResume(name="Jane Doe")
+        state = ApplyState(session_id="s", tailored=tr)
+        assert state.tailored == tr
 
     def test_field_types_pdf_path(self):
         """pdf_path field accepts str or None."""

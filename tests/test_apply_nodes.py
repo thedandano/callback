@@ -49,20 +49,13 @@ def test_render_uses_tailored_sections(tmp_path, monkeypatch):
         tailored_sections=sm.model_dump(),
     )
     result = render(state)
-    assert result["tailored"] == "Experienced engineer"
+    assert "pdf_path" in result
     txt_file = tmp_path / "s1.txt"
     assert txt_file.exists()
     assert txt_file.read_text() == "Experienced engineer"
 
 
-def test_render_falls_back_to_tailored_string(tmp_path, monkeypatch):
-    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path))
-    state = ApplyState(session_id="s2", tailored="Fallback text")
-    result = render(state)
-    assert result["tailored"] == "Fallback text"
-
-
 def test_parse_final_returns_sentinel_when_no_pdf_path(tmp_path):
-    state = ApplyState(session_id="s3", tailored="Tailored resume text", pdf_path=None)
+    state = ApplyState(session_id="s3", pdf_path=None)
     result = parse_final(state)
     assert result["parsed_final"] == "<noop:parse:no-pdf-path>"
