@@ -11,7 +11,9 @@ from pathlib import Path
 sys.path.insert(0, os.getcwd())
 
 from pi_apply.jd_data import EXTRACTION_PROTOCOL
-from pi_apply.server import load_jd, submit_keywords
+from pi_apply.section_map import ExperienceEntry, SectionMap, SkillsSection
+from pi_apply.server import load_jd, submit_keywords, submit_tailor
+from pi_apply.wiki import WikiStore
 
 JD_JSON = json.dumps(
     {
@@ -29,9 +31,27 @@ def main():
         f.write("Sample resume text: Python engineer with 5 years experience.")
         resume_path = f.name
     jd_text = "Sample JD: Looking for a Python engineer with Kubernetes and Go experience."
+    resume_label = Path(resume_path).stem
+
+    # Write minimal sections.json to WikiStore so parse_initial can load structured data
+    section_map = SectionMap(
+        summary="Python engineer with 5 years experience in backend systems.",
+        skills=SkillsSection(flat=["Python", "Go"]),
+        experience=[
+            ExperienceEntry(
+                company="ExampleCo",
+                role="Software Engineer",
+                bullets=[
+                    "Built Go microservices handling 200K RPS",
+                    "Deployed Python data pipelines",
+                ],
+            ),
+        ],
+    )
+    WikiStore().write_page(resume_label, "sections.json", section_map.model_dump_json())
 
     try:
-        # Call load_jd with minimal inputs
+        # Phase 1: load_jd
         load_result = load_jd(
             jd_raw_text=jd_text,
             resume_path=resume_path,
@@ -47,41 +67,53 @@ def main():
                 "extraction_protocol": EXTRACTION_PROTOCOL,
             },
         }
-        assert loaded == expected_loaded
+        assert loaded == expected_loaded, f"load_jd mismatch: {loaded}"
 
+        # Phase 2: submit_keywords
         submit_result = submit_keywords(session_id=session_id, jd_json=JD_JSON)
         submitted = json.loads(submit_result)
-        expected_submitted = {
-            "session_id": session_id,
-            "status": "ok",
-            "next_action": "parse_initial",
-            "data": {
-                "keywords": {
-                    "title": "Python Engineer",
-                    "company": "ExampleCo",
-                    "required": ["Python", "Kubernetes", "Go"],
-                    "preferred": None,
-                    "location": None,
-                    "seniority": "mid",
-                    "required_years": None,
-                    "team": None,
-                    "key_responsibilities": None,
-                    "pay_range_min": None,
-                    "pay_range_max": None,
-                },
-            },
-        }
-        assert submitted == expected_submitted
+        assert submitted["status"] == "ok", f"submit_keywords failed: {submitted}"
+        assert submitted["next_action"] == "parse_initial", (
+            f"unexpected next_action: {submitted['next_action']}"
+        )
+        assert submitted["data"]["keywords"]["required"] == ["Python", "Kubernetes", "Go"]
+        assert "score_gap" in submitted["data"], "score_gap missing from submit_keywords response"
 
-        print(json.dumps({"load_jd": loaded, "submit_keywords": submitted}, indent=2))
-        print("\nSMOKE OK: apply handoff tools executed")
+        # Phase 3: submit_tailor
+        edits = [
+            {
+                "section": "summary",
+                "op": "replace",
+                "value": "Python and Kubernetes engineer, 5 years experience building Go services.",
+            },
+        ]
+        tailor_result = submit_tailor(session_id=session_id, edits=edits)
+        tailored = json.loads(tailor_result)
+        assert tailored["status"] == "ok", f"submit_tailor failed: {tailored}"
+        assert tailored["next_action"] == "render", (
+            f"unexpected next_action: {tailored['next_action']}"
+        )
+        assert len(tailored["data"]["edits_applied"]) > 0, "no edits applied"
+        assert "total" in tailored["data"]["score_final"], "score_final missing total"
+
+        phases = {"load_jd": loaded, "submit_keywords": submitted, "submit_tailor": tailored}
+        print(json.dumps(phases, indent=2))
+        print(
+            "\nSMOKE OK: apply handoff tools executed (load_jd + submit_keywords + submit_tailor)"
+        )  # noqa: E501
         return 0
     except Exception as e:
         print(f"SMOKE FAILED: {e}", file=sys.stderr)
         return 1
     finally:
-        # Cleanup
+        # Cleanup temp resume
         Path(resume_path).unlink(missing_ok=True)
+        # Cleanup sections.json from WikiStore (best-effort)
+        try:
+            wiki_page = WikiStore().wiki_root(resume_label) / "sections.json"
+            wiki_page.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
