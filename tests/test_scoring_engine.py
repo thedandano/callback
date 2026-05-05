@@ -156,8 +156,8 @@ class TestScoreFinal:
         }
         assert score_final(state) == expected
 
-    def test_stubs_on_noop_sentinel(self):
-        state = ApplyState(session_id="s1", parsed_final="<noop:parse:empty-pdf>", keywords=None)
+    def test_stubs_on_non_empty_text_without_keywords(self):
+        state = ApplyState(session_id="s1", parsed_final="some text here", keywords=None)
         assert score_final(state) == {"score_final": {"total": 0, "stub": True, "parsed_chars": 0}}
 
     def test_stubs_on_none_parsed_final(self):
@@ -170,19 +170,25 @@ class TestScoreFinal:
 
 
 class TestParseFinal:
-    def test_sentinel_for_no_pdf_path(self):
+    def test_halts_for_no_pdf_path(self):
         state = ApplyState(session_id="x", pdf_path=None)
-        assert parse_final(state) == {"parsed_final": "<noop:parse:no-pdf-path>"}
+        result = parse_final(state)
+        assert "error" in result
+        assert "parsed_final" not in result
 
-    def test_sentinel_for_empty_pdf(self, tmp_path):
+    def test_halts_for_empty_pdf(self, tmp_path):
         p = tmp_path / "test.pdf"
         p.write_bytes(b"")
         state = ApplyState(session_id="x", pdf_path=str(p))
-        assert parse_final(state) == {"parsed_final": "<noop:parse:empty-pdf>"}
+        result = parse_final(state)
+        assert "error" in result
+        assert "parsed_final" not in result
 
-    def test_sentinel_for_missing_file(self, tmp_path):
+    def test_halts_for_missing_file(self, tmp_path):
         state = ApplyState(session_id="x", pdf_path=str(tmp_path / "nonexistent.pdf"))
-        assert parse_final(state) == {"parsed_final": "<noop:parse:empty-pdf>"}
+        result = parse_final(state)
+        assert "error" in result
+        assert "parsed_final" not in result
 
     def test_extracts_txt_file(self, tmp_path):
         txt = tmp_path / "test.txt"

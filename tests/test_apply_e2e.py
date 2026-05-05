@@ -43,6 +43,21 @@ def setup_e2e_session(tmp_path, monkeypatch):
     yield session_id
 
 
+@pytest.fixture
+def setup_e2e_session_with_graph(setup_e2e_session, tmp_path, monkeypatch):
+    """Extended e2e fixture that also returns graph and config, advanced through finalize."""
+    from pi_apply.apply_graph import build_apply_graph, make_config
+
+    session_id = setup_e2e_session
+    graph = build_apply_graph()
+    config = make_config(session_id)
+
+    # Advance all the way through the graph (tailor → render → parse_final → ... → finalize)
+    graph.invoke(None, config)
+
+    yield session_id, graph, config
+
+
 class TestApplyGraphE2E:
     """End-to-end tests for the apply graph."""
 
@@ -123,3 +138,27 @@ class TestApplyGraphE2E:
             education_raw=tailored.education_raw,
         )
         assert tailored == expected
+
+    def test_m2_scenario_real_pdf_round_trip(self, setup_e2e_session_with_graph):
+        """M2: pipeline produces a real PDF and non-empty parsed_final."""
+        session_id, graph, config = setup_e2e_session_with_graph
+        state = graph.get_state(config).values
+        from pathlib import Path
+
+        pdf_path = state["pdf_path"]
+        pdf_bytes = Path(pdf_path).read_bytes()
+        parsed_final = state.get("parsed_final", "")
+
+        actual = {
+            "pdf_magic_bytes": pdf_bytes[:4],
+            "has_parsed_final": bool(parsed_final),
+            "parsed_final_nonempty": len(parsed_final) > 0,
+            "finalized": state.get("finalized"),
+        }
+        expected = {
+            "pdf_magic_bytes": b"%PDF",
+            "has_parsed_final": True,
+            "parsed_final_nonempty": True,
+            "finalized": True,
+        }
+        assert actual == expected

@@ -34,6 +34,15 @@ from pi_apply.apply_nodes import (
 from pi_apply.state import ApplyState
 
 DB_PATH = Path.home() / ".local" / "share" / "pi-apply" / "apply-sessions.db"
+
+
+def _route_or_halt(next_node: str):
+    def _router(state: ApplyState) -> str:
+        return END if state.error else next_node
+
+    return _router
+
+
 JD_FETCH_NODE = "jd_fetch"
 KEYWORDS_ACCEPT_NODE = "keywords_accept"
 TAILOR_NODE = "tailor"
@@ -89,8 +98,8 @@ def build_apply_graph(db_path: Path = DB_PATH):
     builder.add_edge("parse_initial", "score_initial")
     builder.add_edge("score_initial", "tailor")
     builder.add_edge("tailor", "render")
-    builder.add_edge("render", "parse_final")
-    builder.add_edge("parse_final", "score_final")
+    builder.add_conditional_edges("render", _route_or_halt("parse_final"))
+    builder.add_conditional_edges("parse_final", _route_or_halt("score_final"))
     builder.add_edge("score_final", "report")
     builder.add_edge("report", "finalize")
     builder.add_edge("finalize", END)
