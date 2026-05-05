@@ -323,9 +323,23 @@ def _apply_tailor_edits(session_id, graph, config, state_values, sections_dict, 
     uncovered_skills = _detect_uncovered_skills(section_map)
 
     resume_text = _sections_to_text(section_map)
-    keywords = state_values.get("keywords") or {}
-    required = keywords.get("required") or []
-    preferred = keywords.get("preferred") or []
+    keywords = state_values.get("keywords")
+    if keywords is None:
+        return _err(
+            stage="submit_tailor",
+            code="no_keywords",
+            message="no keywords in session; call submit_keywords first",
+            session_id=session_id,
+        )
+    required = keywords.get("required")
+    if required is None:
+        return _err(
+            stage="submit_tailor",
+            code="invalid_keywords",
+            message="keywords['required'] is missing; keywords data is malformed",
+            session_id=session_id,
+        )
+    preferred = keywords["preferred"]
     score_result = scorer_mod.score(resume_text, required, preferred)
     score_final = {
         "total": score_result.breakdown.total(),

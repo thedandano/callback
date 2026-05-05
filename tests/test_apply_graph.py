@@ -15,9 +15,9 @@ VALID_JD_DATA = {
     "preferred": [],
     "location": None,
     "seniority": "mid",
-    "required_years": None,
+    "required_years": 0.0,
     "team": None,
-    "key_responsibilities": None,
+    "key_responsibilities": [],
     "pay_range_min": None,
     "pay_range_max": None,
 }
