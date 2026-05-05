@@ -9,7 +9,11 @@ def test_parse_initial_falls_back_to_text_extraction(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     resume = tmp_path / "resume.txt"
     resume.write_text("EXPERIENCE\nAcme | Engineer\nBuilt REST API")
-    state = ApplyState(session_id="s1", resume_path=str(resume), keywords={"required": ["Python"]})
+    state = ApplyState(
+        session_id="s1",
+        resume_path=str(resume),
+        keywords={"required": ["Python"], "preferred": [], "required_years": 0.0},
+    )
     result = parse_initial(state)
     expected = {
         "parsed_initial": "EXPERIENCE\nAcme | Engineer\nBuilt REST API",
@@ -22,7 +26,7 @@ def test_score_initial_produces_score_gap(tmp_path):
     state = ApplyState(
         session_id="s1",
         parsed_initial="Python developer with AWS experience",
-        keywords={"required": ["Python", "Go"], "preferred": ["AWS"]},
+        keywords={"required": ["Python", "Go"], "preferred": ["AWS"], "required_years": 0.0},
     )
     result = score_initial(state)
     score = result["score_initial"]
@@ -58,8 +62,7 @@ def test_render_falls_back_to_tailored_string(tmp_path, monkeypatch):
     assert result["tailored"] == "Fallback text"
 
 
-def test_parse_final_uses_tailored(tmp_path):
+def test_parse_final_returns_sentinel_when_no_pdf_path(tmp_path):
     state = ApplyState(session_id="s3", tailored="Tailored resume text", pdf_path=None)
     result = parse_final(state)
-    expected = {"parsed_final": "Tailored resume text"}
-    assert result == expected
+    assert result["parsed_final"] == "<noop:parse:no-pdf-path>"

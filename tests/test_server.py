@@ -18,12 +18,12 @@ EXPECTED_PARTIAL_KEYWORDS = {
     "title": "Backend Engineer",
     "company": "ExampleCo",
     "required": ["Python"],
-    "preferred": None,
+    "preferred": [],
     "location": None,
     "seniority": "mid",
-    "required_years": None,
+    "required_years": 0.0,
     "team": None,
-    "key_responsibilities": None,
+    "key_responsibilities": [],
     "pay_range_min": None,
     "pay_range_max": None,
 }
@@ -194,11 +194,8 @@ def test_submit_keywords_rejects_empty_jd_json():
         "status": "error",
         "error": {
             "stage": "submit_keywords",
-            "code": "jd_empty",
-            "message": (
-                "jd_json contains no extractable keywords - provide at least title, "
-                "company, or required skills"
-            ),
+            "code": "invalid_jd",
+            "message": "required skills must not be empty",
             "retriable": True,
         },
         "session_id": session_id,

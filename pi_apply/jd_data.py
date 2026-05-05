@@ -1,6 +1,6 @@
 """JDData contract for host-owned keyword extraction."""
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Literal
 
 from dataclass_wizard import JSONWizard
@@ -39,22 +39,27 @@ class JDData(JSONWizard):
 
     title: str | None = None
     company: str | None = None
-    required: list[str] | None = None
-    preferred: list[str] | None = None
+    required: list[str] = field(default_factory=list)
+    preferred: list[str] = field(default_factory=list)
     location: str | None = None
     seniority: Seniority | str = "mid"
-    required_years: float | None = None
+    required_years: float = 0.0
     team: str | None = None
-    key_responsibilities: list[str] | None = None
+    key_responsibilities: list[str] = field(default_factory=list)
     pay_range_min: float | None = None
     pay_range_max: float | None = None
 
     def __post_init__(self) -> None:
         if self.seniority in (None, ""):
             self.seniority = "mid"
-        _validate_list_field("required", self.required)
-        _validate_list_field("preferred", self.preferred)
-        _validate_list_field("key_responsibilities", self.key_responsibilities)
+        if not isinstance(self.required, list):
+            raise JDDataError("invalid_jd", "required must be a list")
+        if not isinstance(self.preferred, list):
+            raise JDDataError("invalid_jd", "preferred must be a list")
+        if not isinstance(self.key_responsibilities, list):
+            raise JDDataError("invalid_jd", "key_responsibilities must be a list")
+        if not self.required:
+            raise JDDataError("invalid_jd", "required skills must not be empty")
         if self.seniority not in SUPPORTED_SENIORITIES:
             raise JDDataError("invalid_jd", f"unsupported seniority: {self.seniority}")
 
@@ -66,15 +71,7 @@ def parse_jd_json(jd_json: str) -> dict:
     """Parse and validate host-submitted JDData JSON."""
 
     jd_data = _load_jd_data(jd_json)
-    data = jd_data.model_dump()
-    if _is_empty_jd(data):
-        raise JDDataError(
-            "jd_empty",
-            "jd_json contains no extractable keywords - provide at least title, "
-            "company, or required skills",
-        )
-
-    return data
+    return jd_data.model_dump()
 
 
 def _load_jd_data(jd_json: str) -> JDData:
@@ -89,17 +86,3 @@ def _load_jd_data(jd_json: str) -> JDData:
         raise JDDataError("invalid_jd", "jd_json must encode an object")
 
     return jd_data
-
-
-def _is_empty_jd(data: dict) -> bool:
-    return (
-        not str(data.get("title") or "").strip()
-        and not str(data.get("company") or "").strip()
-        and not data.get("required")
-        and not data.get("preferred")
-    )
-
-
-def _validate_list_field(name: str, value: object) -> None:
-    if value is not None and not isinstance(value, list):
-        raise JDDataError("invalid_jd", f"{name} must be a list")

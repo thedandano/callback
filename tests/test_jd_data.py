@@ -36,12 +36,12 @@ EXPECTED_PARTIAL_JD = {
     "title": "Backend Engineer",
     "company": "ExampleCo",
     "required": ["Python"],
-    "preferred": None,
+    "preferred": [],
     "location": None,
     "seniority": "mid",
-    "required_years": None,
+    "required_years": 0.0,
     "team": None,
-    "key_responsibilities": None,
+    "key_responsibilities": [],
     "pay_range_min": None,
     "pay_range_max": None,
 }
@@ -119,11 +119,11 @@ class TestParseJDJson:
 
         assert exc_info.value.code == "invalid_jd"
 
-    def test_empty_payload_is_rejected_with_jd_empty(self):
+    def test_empty_payload_is_rejected_with_invalid_jd(self):
         with pytest.raises(JDDataError) as exc_info:
             parse_jd_json("{}")
 
-        assert exc_info.value.code == "jd_empty"
+        assert exc_info.value.code == "invalid_jd"
 
 
 class TestExtractionProtocol:
