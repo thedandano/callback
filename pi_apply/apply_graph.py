@@ -97,5 +97,6 @@ def build_apply_graph(db_path: Path = DB_PATH):
 
     return builder.compile(
         checkpointer=checkpointer,
-        interrupt_after=[JD_FETCH_NODE, KEYWORDS_ACCEPT_NODE, TAILOR_NODE],
+        interrupt_after=[JD_FETCH_NODE],
+        interrupt_before=[TAILOR_NODE],
     )
