@@ -17,6 +17,7 @@ sentinel values as placeholders. In real implementations, these will:
 import asyncio
 import json
 import logging
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -38,9 +39,6 @@ jd_fetcher_logger = logging.getLogger("pi_apply.jd_fetcher")
 
 # Module-level constant for applications directory, overridable by env var
 def _get_apps_dir() -> Path:
-    """Get applications directory from env var or default."""
-    import os
-
     env_path = os.getenv("PI_APPLY_APPS_DIR")
     if env_path:
         return Path(env_path)

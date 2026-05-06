@@ -115,9 +115,12 @@ def check_orphans(state: ProfileState) -> dict:
 def create_story(state: ProfileState) -> dict:
     _log_enter("create_story", state)
     intake = state.intake or {}
+    primary_skill = intake.get("primary_skill") or state.current_story_target
+    if not primary_skill:
+        raise ValueError("primary_skill is required in intake or via current_story_target")
     story = CreatedStory(
         id="",
-        primary_skill=intake.get("primary_skill", state.current_story_target or ""),
+        primary_skill=primary_skill,
         skills=intake.get("skills", []),
         story_type=intake.get("story_type", "STAR"),
         job_title=intake.get("job_title", ""),
