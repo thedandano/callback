@@ -4,6 +4,10 @@ import json
 import uuid
 from unittest.mock import AsyncMock, patch
 
+import pytest
+from fastmcp import Client
+from fastmcp.client.transports import FastMCPTransport
+
 from pi_apply.jd_data import EXTRACTION_PROTOCOL
 
 PARTIAL_JD_JSON = """
@@ -45,6 +49,7 @@ def test_apply_handoff_tools_registered():
         "onboard_user",
         "compile_profile",
         "create_story",
+        "check_update",
     }
 
     assert _tool_names(server) == expected
@@ -367,3 +372,50 @@ class TestSubmitTailorNoCoverage:
             "report_no_coverage": True,
             "outcome_no_coverage": True,
         }
+
+
+# ============================================================================
+# check_update MCP tool — in-process transport tests
+# ============================================================================
+
+
+@pytest.mark.anyio
+async def test_check_update_tool_returns_update_available():
+    import pi_apply.server as server
+    import pi_apply.version_check as vc
+
+    vc._cached = None
+    check_result = {
+        "checked": True,
+        "current": "0.2.0",
+        "latest": "v9.9.9",
+        "update_available": True,
+    }
+
+    with patch.object(vc, "check_update", return_value=check_result):
+        async with Client(FastMCPTransport(server.mcp)) as client:
+            result = await client.call_tool("check_update", {})
+
+    envelope = json.loads(str(result.data))
+    assert envelope == {"session_id": "", "status": "ok", "data": check_result}
+
+
+@pytest.mark.anyio
+async def test_check_update_tool_returns_already_current():
+    import pi_apply.server as server
+    import pi_apply.version_check as vc
+
+    vc._cached = None
+    check_result = {
+        "checked": True,
+        "current": "0.2.0",
+        "latest": "v0.2.0",
+        "update_available": False,
+    }
+
+    with patch.object(vc, "check_update", return_value=check_result):
+        async with Client(FastMCPTransport(server.mcp)) as client:
+            result = await client.call_tool("check_update", {})
+
+    envelope = json.loads(str(result.data))
+    assert envelope == {"session_id": "", "status": "ok", "data": check_result}
