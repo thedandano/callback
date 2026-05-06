@@ -186,3 +186,39 @@ class TestInterruptAfterCreateStory:
             "current_story_target": "Rust",
             "compiled_profile": None,
         }
+
+
+# ---------------------------------------------------------------------------
+# compile_profile interrupt
+# ---------------------------------------------------------------------------
+
+
+class TestInterruptAfterCompileProfile:
+    def test_graph_pauses_after_compile_profile(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        graph = _tmp_graph(tmp_path)
+        config = make_config("s-cp-1")
+
+        graph.invoke(_make_state("s-cp-1"), config)
+        result = graph.invoke(None, config)
+
+        assert {
+            "has_compiled_profile": result.get("compiled_profile") is not None,
+            "orphaned_skills": result.get("orphaned_skills"),
+        } == {
+            "has_compiled_profile": True,
+            "orphaned_skills": None,
+        }
+
+    def test_graph_reaches_check_orphans_after_compile_profile_resume(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        graph = _tmp_graph(tmp_path)
+        config = make_config("s-cp-2")
+
+        graph.invoke(_make_state("s-cp-2"), config)
+        graph.invoke(None, config)
+        result = graph.invoke(None, config)
+
+        assert result.get("orphaned_skills") == []

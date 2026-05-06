@@ -96,5 +96,5 @@ def build_profile_graph(db_path: Path = DB_PATH):
 
     return builder.compile(
         checkpointer=checkpointer,
-        interrupt_after=["onboard", "create_story"],
+        interrupt_after=["onboard", "compile_profile", "create_story"],
     )
