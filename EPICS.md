@@ -58,9 +58,7 @@ pattern that the rest of the graph reuses.
 - [x] `extractor.py` — PDF / DOCX / TXT resume text extraction
 - [x] Archived openspec changes: `2026-05-02-langgraph-pipeline-go-subprocess`, `2026-05-02-v2-noop-graph-skeleton`, `2026-05-03-host-keyword-handoff`, `2026-05-03-implement-jd-fetch-crawl4ai`
 
-In-flight (not yet archived): `openspec/changes/pdf-output-wiring/` —
-rewires the keystone `tailor → render → parse_final → score_final`
-round-trip with a vendored LaTeX skeleton + tectonic. See Epic 2.
+Archived openspec changes: `2026-05-03-host-keyword-handoff`, `2026-05-03-implement-jd-fetch-crawl4ai`, `2026-05-05-holistic-tailor`, `2026-05-05-holistic-tailor-wiring`, `2026-05-05-pdf-output-wiring`, `2026-05-05-scoring-engine`.
 
 ---
 
@@ -140,60 +138,51 @@ parity CI, and release-please for semver releases driven by conventional commits
 
 ---
 
-## Epic 2 — Holistic Tailor + Keystone Round-Trip
+## Epic 2 — Holistic Tailor + Keystone Round-Trip ✅ COMPLETE
 
-**Most critical next milestone.** Owns the design for nodes that are
-still stubs: `tailor`, `render`, `parse_final`, `score_final`, `report`.
-The architectural justification for using LangGraph at all — the
-keystone `render → parse_final → score_final` round-trip — produces no
-honest score delta until this epic ships.
+T1/T2 collapsed into one holistic tailor pass. Host submits a single
+structured edit list; pi-apply applies edits to a `SectionMap`, renders
+to PDF via Typst, re-parses, re-scores, and archives.
 
-**Design change vs. earlier draft:** T1 (skill injection) and T2 (bullet
-rewrite) are collapsed into **one holistic tailor pass**. The host
-reasons about the resume as a whole and submits a single structured
-`TailoredResume`. There is no `submit_tailor_t1` / `submit_tailor_t2`
-split — the two-pass design was inherited from go-apply's FSM and is
-not needed here.
+**Design change vs. earlier draft:** LaTeX/tectonic replaced by Typst
+(`pi_apply/render/`). `TailoredResume` lives in `state.py`, not a
+separate `render/models.py`. No `submit_tailor_t1` / `submit_tailor_t2`
+split.
 
-Tracked in-flight by `openspec/changes/pdf-output-wiring/`.
+Archived openspec changes: `2026-05-05-holistic-tailor`,
+`2026-05-05-holistic-tailor-wiring`, `2026-05-05-pdf-output-wiring`,
+`2026-05-05-scoring-engine`.
 
 ### 2a — `TailoredResume` schema
 
-- [ ] `pi_apply/render/models.py` — Pydantic model whose fields match
-      `CanonicalTeXBuilder.build()` keys: `name`, `location`, `email`,
-      `phone`, `linkedin`, `website`, `title`, `summary`, `skills_raw`,
-      `experience_raw`, `projects_raw`, `volunteer_raw`, `education_raw`
-- [ ] `state.tailored: TailoredResume | None` (replaces sentinel string field)
-- [ ] Validation: required-field set + bounds checks against `parsed_initial`
-- [ ] Tests: schema round-trip, validation errors
+- [x] `TailoredResume(BaseModel)` in `state.py` — `name`, `location`, `email`, `phone`, `linkedin`, `website`, `title`, `summary`, `skills_raw`, `experience_raw`, `projects_raw`, `volunteer_raw`, `education_raw`, `max_pages`
+- [x] `state.tailored: TailoredResume | None`
+- [x] Tests: schema round-trip, validation errors
 
-### 2b — Vendored LaTeX render path
+### 2b — Typst render path
 
-- [ ] Vendor focused subset of resume-tailor into `pi_apply/render/`:
-      `escape_tex`, `strip_em_dashes`, `build_itemize`,
-      `CanonicalTeXBuilder`, `compile_tex`, `resume_skeleton.tex`
-- [ ] **Do NOT** vendor `resume_modifier.py` or `latex_converter.py` (different problem)
-- [ ] `tectonic` documented as system dependency (README + `.env.example`)
-- [ ] Fail-fast at import time if no LaTeX compiler found (mirror `bridge.py` binary-resolution pattern)
-- [ ] Tests: builder fixture round-trip, compile-on-CI smoke
+- [x] `pi_apply/render/` — Typst-based renderer (`render_resume`)
+- [x] Renders to `~/.local/share/pi-apply/applications/<session_id>.pdf`
+- [x] Tests: renderer fixture round-trip
 
 ### 2c — Host-handoff `submit_tailor` MCP tool
 
-- [ ] Single tool — `submit_tailor(session_id, tailored_json)` — accepts holistic edits
-- [ ] Validates JSON against `TailoredResume`
-- [ ] Writes `state.tailored`, resumes graph past tailor interrupt
-- [ ] No internal LLM call (host-as-brain — same pattern as `submit_keywords`)
-- [ ] Apply graph adds interrupt after `score_initial`, before `tailor`
-- [ ] Tests: schema validation errors, state update, interrupt resume
+- [x] `submit_tailor(session_id, edits, no_coverage)` — accepts `SectionMap`-style edit list
+- [x] Applies edits via `section_map.apply_edit`; collects `edits_applied` / `edits_rejected`
+- [x] `no_coverage=True` path skips edit application and routes directly to `report`
+- [x] Resumes graph past `tailor` interrupt; returns `score_final`, `report`, `outcome`
+- [x] Tests: edit application, no_coverage path, invalid state guard
 
-### 2d — Keystone round-trip (makes stubs honest)
+### 2d — Keystone round-trip
 
-- [ ] `render` builds `.tex` via `CanonicalTeXBuilder().build(state.tailored.model_dump())`
-- [ ] `render` compiles to `~/.local/share/pi-apply/applications/<session_id>.pdf` via `compile_tex`
-- [ ] `parse_final` re-extracts text from the rendered PDF via `extractor.py` — no silent fallback on extraction failure
-- [ ] `score_final` runs the deterministic `scorer.score()` against the re-parsed text
-- [ ] `report` surfaces initial-vs-final per-dimension delta + `format_gap_chars` (round-trip text loss)
-- [ ] Integration test: full run on a real JD, assert PDF non-empty, assert delta is non-zero and matches injected keywords
+- [x] `tailor` converts `tailored_sections` SectionMap to `TailoredResume`
+- [x] `render` compiles PDF via Typst
+- [x] `parse_final` re-extracts text from rendered PDF; errors on empty
+- [x] `score_final` runs `scorer.score()` against re-parsed text
+- [x] `report` surfaces `before` / `after` score snapshots + per-dimension `delta` + `format_gap_chars`
+- [x] `finalize` archives to `<apps_dir>/<session_id>.json`; returns `finalized_at` ISO timestamp
+- [x] `ApplyState` gains `finalized_at: str | None`
+- [x] Integration test: full run on a real JD, assert PDF non-empty, assert delta non-zero
 
 ---
 
@@ -345,22 +334,17 @@ Final polish for interview readiness.
 Epic 0   ✅  walking skeleton
 Epic 0.5 ✅  host-handoff surface (jd_fetcher, jd_data, scorer, submit_keywords)
 Epic 5   ✅  JD fetching (Crawl4AI — folded into Epic 0.5 in practice)
+Epic 1   ✅  installable + CI/CD
+Epic 2   ✅  holistic tailor + keystone round-trip
   │
-  ├── Epic 1 (installable + CI/CD)    ← unblocks clean merges
-  │
-  └── Epic 2 (holistic tailor + keystone round-trip)   ← most critical product work
-        │     (makes tailor / render / parse_final / score_final / report honest)
-        └── Epic 3 (data layer)        — backs the `onboard` stub
-              └── Epic 4 (profile compiler) — backs `compile_profile` + `create_story` stubs; switches profile MCP tools to graph state injection
-                    └── Epic 6 (scoring config + survival rate)
-                          └── Epic 7 (LangSmith)
-                                └── Epic 8 (evaluation harness — deterministic-first)
-                                      └── Epic 9 (capstone)
-
-CI/CD (Epic 1) gates all merges from Epic 2 onward.
+  └── Epic 3 (data layer)        — backs the `onboard` stub
+        └── Epic 4 (profile compiler) — backs `compile_profile` + `create_story` stubs; switches profile MCP tools to graph state injection
+              └── Epic 6 (scoring config + survival rate)
+                    └── Epic 7 (LangSmith)
+                          └── Epic 8 (evaluation harness — deterministic-first)
+                                └── Epic 9 (capstone)
 ```
 
-**Next action:** Epic 2 (holistic tailor + keystone round-trip) — the
-keystone round-trip is what justifies LangGraph in the first place, and
-ships the only nodes still returning sentinel values. Epic 1 (CLI +
-CI/CD) can run in parallel since it has no overlap with the graph.
+**Next action:** Epic 3 (resume data layer) — backs the `onboard_user`
+stub and wires the profile graph to real file-based stores for resumes
+and SBI stories.
