@@ -1,202 +1,188 @@
-import pytest
+"""Tests for the profile graph — structure, routing, and interrupt behaviour.
 
+Isolation: XDG_DATA_HOME + wiki_module.BASE_DIR patched per test so nodes
+write to tmp_path rather than ~/.local/share/pi-apply.
+"""
+
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pi_apply.wiki as wiki_module
 from pi_apply.profile_graph import build_profile_graph, make_config
-from pi_apply.state import ProfileState
+from pi_apply.profilecompiler import save_compiled_profile
+from pi_apply.repository.resumes import save_resume
+from pi_apply.state import CompiledProfile, OrphanedSkill, ProfileState
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def tmp_db(tmp_path):
-    """Temp SQLite DB for profile graph checkpointing."""
+def _tmp_graph(tmp_path):
     db_path = tmp_path / "profile-sessions.db"
-    return db_path
+    return build_profile_graph(db_path=db_path)
 
 
-@pytest.fixture
-def graph(tmp_db):
-    """Build the profile graph with a temp DB."""
-    return build_profile_graph(db_path=tmp_db)
+def _make_state(session_id: str, **kwargs) -> ProfileState:
+    return ProfileState(session_id=session_id, **kwargs)
+
+
+def _resume_txt(tmp_path: Path) -> Path:
+    f = tmp_path / "backend.txt"
+    f.write_text("Jane Doe\njane@example.com\n\nSkills\nPython\n", encoding="utf-8")
+    return f
+
+
+def _save_profile_with_resumes(tmp_path: Path, orphans: list[str] | None = None) -> None:
+    profile = CompiledProfile(
+        schema_version="1",
+        skills_index=["Python"],
+        stories=[],
+        orphaned_skills=[OrphanedSkill(skill=s) for s in (orphans or [])],
+        compiled_at=datetime.now(UTC).isoformat(),
+    )
+    save_compiled_profile(profile, base_dir=tmp_path / "pi-apply")
+    resume = _resume_txt(tmp_path)
+    save_resume("backend", str(resume))
+
+
+# ---------------------------------------------------------------------------
+# Graph structure
+# ---------------------------------------------------------------------------
 
 
 class TestProfileGraphStructure:
-    """Graph compiles with correct nodes and edges."""
-
-    def test_graph_compiles_with_five_nodes(self, graph):
-        """Graph contains exactly the five named nodes."""
-        nodes_dict = graph.get_graph().nodes
-        node_names = [n for n in nodes_dict if not n.startswith("__")]
-        assert "check_profile" in node_names
-        assert "onboard" in node_names
-        assert "compile_profile" in node_names
-        assert "check_orphans" in node_names
-        assert "create_story" in node_names
-        assert len(node_names) == 5, f"Expected 5 nodes, got {len(node_names)}: {node_names}"
+    def test_graph_compiles_with_five_nodes(self, tmp_path):
+        graph = _tmp_graph(tmp_path)
+        nodes = [n for n in graph.get_graph().nodes if not n.startswith("__")]
+        expected = {"check_profile", "onboard", "compile_profile", "check_orphans", "create_story"}
+        assert set(nodes) == expected
 
 
-class TestFirstRunPath:
-    """First-run: profile_exists=False, no orphans."""
-
-    def test_first_run_executes_onboard_compile_check_orphans(self, graph, tmp_db):
-        """First run: check_profile → onboard → compile_profile → check_orphans → END."""
-        config = make_config("test-session-1")
-        state = ProfileState(
-            session_id="test-session-1",
-            profile_exists=False,
-            orphaned_skills=[],
-        )
-
-        # First invoke: check_profile → onboard (pauses at interrupt_after)
-        result = graph.invoke(state, config)
-        assert result.get("intake") is not None  # onboard ran
-
-        # Resume: compile_profile → check_orphans (checks, sees empty list) → END
-        result = graph.invoke(None, config)
-        assert result.get("compiled_profile") is not None
-
-
-class TestExistingProfilePath:
-    """Existing profile: profile_exists=True, skips onboard and compile_profile."""
-
-    def test_existing_profile_skips_onboard_and_compile(self, graph, tmp_db):
-        """Existing profile: check_profile → check_orphans → END (no onboard/compile)."""
-        config = make_config("test-session-2")
-        state = ProfileState(
-            session_id="test-session-2",
-            profile_exists=True,
-            orphaned_skills=[],
-        )
-
-        result = graph.invoke(state, config)
-
-        # With profile_exists=True and no orphans, should reach END immediately
-        # intake and compiled_profile should remain None (not written)
-        assert result.get("intake") is None
-        assert result.get("compiled_profile") is None
-
-
-class TestCycleTerminates:
-    """Cycle: create_story → compile_profile → check_orphans, terminates when orphans drain."""
-
-    def test_cycle_drains_three_orphans(self, graph, tmp_db):
-        """Three orphans: exactly 3 create_story calls, 3 compile_profile calls, then END."""
-        config = make_config("test-session-3")
-        state = ProfileState(
-            session_id="test-session-3",
-            profile_exists=True,
-            orphaned_skills=["Kubernetes", "Terraform", "Docker"],
-        )
-
-        # First invoke: check_profile → check_orphans → create_story (pauses at interrupt_after)
-        result = graph.invoke(state, config)
-        assert result.get("current_story_target") is not None
-        assert len(result.get("orphaned_skills", [])) == 2  # One orphan popped
-
-        # Resume 1: compile_profile → check_orphans → create_story (pauses again)
-        result = graph.invoke(None, config)
-        assert len(result.get("orphaned_skills", [])) == 1
-
-        # Resume 2: compile_profile → check_orphans → create_story (pauses again)
-        result = graph.invoke(None, config)
-        assert len(result.get("orphaned_skills", [])) == 0
-
-        # Resume 3: compile_profile → check_orphans (checks, sees empty list) → END
-        result = graph.invoke(None, config)
-
-        # Verify by checking final state
-        assert result.get("orphaned_skills") == []
-
-
-class TestInterrupts:
-    """Graph pauses at onboard and create_story."""
-
-    def test_interrupt_after_onboard(self, graph, tmp_db):
-        """Graph pauses after onboard on first run."""
-        config = make_config("test-session-4")
-        state = ProfileState(
-            session_id="test-session-4",
-            profile_exists=False,
-            orphaned_skills=[],
-        )
-
-        # First invoke should pause at onboard
-        result = graph.invoke(state, config)
-        assert result.get("intake") is not None  # onboard wrote intake
-        assert result.get("compiled_profile") is None  # compile_profile hasn't run yet
-
-    def test_interrupt_after_create_story(self, graph, tmp_db):
-        """Graph pauses after create_story."""
-        config = make_config("test-session-5")
-        state = ProfileState(
-            session_id="test-session-5",
-            profile_exists=True,
-            orphaned_skills=["Skill1"],
-        )
-
-        # Invoke: check_profile → check_orphans → create_story (pauses)
-        result = graph.invoke(state, config)
-        assert result.get("current_story_target") is not None  # create_story ran and popped a skill
-        assert result.get("orphaned_skills") == []
-
-        # compiled_profile should not be set yet (compile_profile hasn't run)
-        assert result.get("compiled_profile") is None
+# ---------------------------------------------------------------------------
+# check_profile routing
+# ---------------------------------------------------------------------------
 
 
 class TestCheckProfileRouter:
-    """check_profile routes correctly based on profile_exists."""
+    def test_routes_to_onboard_when_no_profile_on_disk(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        graph = _tmp_graph(tmp_path)
+        config = make_config("s-router-1")
 
-    def test_check_profile_routes_to_onboard_when_no_profile(self, graph, tmp_db):
-        """profile_exists=False → routes to onboard."""
-        config = make_config("test-session-6")
-        state = ProfileState(
-            session_id="test-session-6",
-            profile_exists=False,
-            orphaned_skills=[],
-        )
+        result = graph.invoke(_make_state("s-router-1"), config)
 
-        result = graph.invoke(state, config)
-        # onboard ran (writes intake)
-        assert result.get("intake") is not None
+        assert result.get("intake") == {"status": "no_resume"}
 
-    def test_check_profile_routes_to_check_orphans_when_profile_exists(self, graph, tmp_db):
-        """profile_exists=True → routes to check_orphans."""
-        config = make_config("test-session-7")
-        state = ProfileState(
-            session_id="test-session-7",
-            profile_exists=True,
-            orphaned_skills=[],
-        )
+    def test_routes_to_check_orphans_when_profile_and_resume_exist(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        _save_profile_with_resumes(tmp_path)
+        graph = _tmp_graph(tmp_path)
+        config = make_config("s-router-2")
 
-        result = graph.invoke(state, config)
-        # onboard did not run (intake still None)
-        assert result.get("intake") is None
+        result = graph.invoke(_make_state("s-router-2"), config)
+
+        assert {k: result.get(k) for k in ("profile_exists", "intake")} == {
+            "profile_exists": True,
+            "intake": None,
+        }
+
+
+# ---------------------------------------------------------------------------
+# check_orphans routing
+# ---------------------------------------------------------------------------
 
 
 class TestCheckOrphansRouter:
-    """check_orphans routes correctly based on orphaned_skills."""
+    def test_routes_to_end_when_no_orphans_in_profile(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        _save_profile_with_resumes(tmp_path, orphans=[])
+        graph = _tmp_graph(tmp_path)
+        config = make_config("s-orphan-1")
 
-    def test_check_orphans_routes_to_create_story_when_orphans_exist(self, graph, tmp_db):
-        """orphaned_skills non-empty → routes to create_story."""
-        config = make_config("test-session-8")
-        state = ProfileState(
-            session_id="test-session-8",
-            profile_exists=True,
-            orphaned_skills=["Go", "Python"],
-        )
+        result = graph.invoke(_make_state("s-orphan-1"), config)
 
-        result = graph.invoke(state, config)
-        # create_story ran (popped one orphan)
-        assert result.get("current_story_target") is not None
-        assert len(result.get("orphaned_skills", [])) == 1
+        assert result.get("orphaned_skills") == []
+        assert result.get("current_story_target") is None
 
-    def test_check_orphans_routes_to_end_when_no_orphans(self, graph, tmp_db):
-        """orphaned_skills empty → routes to END."""
-        config = make_config("test-session-9")
-        state = ProfileState(
-            session_id="test-session-9",
-            profile_exists=True,
-            orphaned_skills=[],
-        )
+    def test_routes_to_create_story_when_orphans_exist(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        _save_profile_with_resumes(tmp_path, orphans=["Rust"])
+        graph = _tmp_graph(tmp_path)
+        config = make_config("s-orphan-2")
+        intake = {
+            "primary_skill": "Rust",
+            "skills": ["Rust"],
+            "story_type": "STAR",
+            "job_title": "Systems Engineer",
+            "situation": "S",
+            "behavior": "B",
+            "impact": "I",
+        }
 
-        result = graph.invoke(state, config)
-        # Should reach END without entering create_story
-        # intake should remain None (onboard never ran)
-        assert result.get("intake") is None
+        result = graph.invoke(_make_state("s-orphan-2", intake=intake), config)
+
+        assert result.get("current_story_target") == "Rust"
+
+
+# ---------------------------------------------------------------------------
+# First-run interrupt (onboard)
+# ---------------------------------------------------------------------------
+
+
+class TestInterruptAfterOnboard:
+    def test_graph_pauses_after_onboard_on_first_run(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        graph = _tmp_graph(tmp_path)
+        config = make_config("s-interrupt-1")
+
+        result = graph.invoke(_make_state("s-interrupt-1"), config)
+
+        assert result.get("intake") is not None
+        assert result.get("compiled_profile") is None
+
+    def test_graph_resumes_and_reaches_end_after_onboard(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        graph = _tmp_graph(tmp_path)
+        config = make_config("s-interrupt-2")
+
+        graph.invoke(_make_state("s-interrupt-2"), config)
+        result = graph.invoke(None, config)
+
+        assert result.get("compiled_profile") is not None
+
+
+# ---------------------------------------------------------------------------
+# create_story interrupt
+# ---------------------------------------------------------------------------
+
+
+class TestInterruptAfterCreateStory:
+    def test_graph_pauses_after_create_story_when_orphan_exists(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        _save_profile_with_resumes(tmp_path, orphans=["Rust"])
+        graph = _tmp_graph(tmp_path)
+        config = make_config("s-create-1")
+        intake = {
+            "primary_skill": "Rust",
+            "skills": ["Rust"],
+            "story_type": "STAR",
+            "job_title": "Systems Engineer",
+            "situation": "S",
+            "behavior": "B",
+            "impact": "I",
+        }
+
+        result = graph.invoke(_make_state("s-create-1", intake=intake), config)
+
+        assert {k: result.get(k) for k in ("current_story_target", "compiled_profile")} == {
+            "current_story_target": "Rust",
+            "compiled_profile": None,
+        }
