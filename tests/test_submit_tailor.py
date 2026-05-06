@@ -2,7 +2,7 @@
 
 import json
 
-from pi_apply.section_map import ExperienceEntry, SectionMap, SkillsSection
+from pi_apply.section_map import ContactInfo, ExperienceEntry, SectionMap, SkillsSection
 from pi_apply.wiki import WikiStore
 
 
@@ -53,6 +53,7 @@ def _make_section_map_and_write(
     """Create a minimal SectionMap, write sections.json to WikiStore, and return the model."""
     bullets = extra_bullets or ["Led backend services handling 500K RPS"]
     section_map = SectionMap(
+        contact=ContactInfo(name="Jane Dev"),
         summary="Experienced software engineer",
         skills=SkillsSection(flat=["Python"]),
         experience=[
@@ -72,10 +73,19 @@ def _make_section_map_and_write(
     return section_map
 
 
-def _run_to_tailor(tmp_path, jd_json_str: str, resume_label: str = "test_resume") -> str:
+def _run_to_tailor(
+    tmp_path, jd_json_str: str, resume_label: str = "test_resume", monkeypatch=None
+) -> str:
     """Run load_jd + submit_keywords and return the session_id at TAILOR_NODE."""
+    import os
+
     from pi_apply.server import load_jd, submit_keywords
 
+    apps_dir = str(tmp_path / "applications")
+    if monkeypatch is not None:
+        monkeypatch.setenv("PI_APPLY_APPS_DIR", apps_dir)
+    else:
+        os.environ["PI_APPLY_APPS_DIR"] = apps_dir
     resume_file = tmp_path / f"{resume_label}.txt"
     resume_file.write_text("Placeholder resume text")
     loaded = json.loads(load_jd(jd_raw_text="Sample JD", resume_path=str(resume_file)))
@@ -84,15 +94,15 @@ def _run_to_tailor(tmp_path, jd_json_str: str, resume_label: str = "test_resume"
     return session_id
 
 
-def test_submit_tailor_applies_valid_edits_and_rescores(tmp_path):
-    """Happy path: valid edits are applied, score_final is returned, nothing rejected."""
+def test_submit_tailor_applies_valid_edits_and_rescores(tmp_path, monkeypatch):
+    """Happy path: valid edits are applied, score_final and report returned from final state."""
     from pi_apply.server import submit_tailor
 
     resume_label = "test_resume"
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python", "Kubernetes"]})
-    session_id = _run_to_tailor(tmp_path, jd_json, resume_label)
+    session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
 
     edits = [
         {"section": "summary", "op": "replace", "value": "Python + Kubernetes engineer."},
@@ -106,27 +116,35 @@ def test_submit_tailor_applies_valid_edits_and_rescores(tmp_path):
     ]
     result = json.loads(submit_tailor(session_id=session_id, edits=edits))
 
-    expected = {
-        "session_id": session_id,
-        "status": "ok",
-        "next_action": "render",
-        "data": {
-            "edits_applied": [0, 1, 2],
-            "edits_rejected": [],
-            "uncovered_skills": result["data"]["uncovered_skills"],
-            "score_final": result["data"]["score_final"],
-        },
+    actual = {
+        "status": result["status"],
+        "has_session_id": bool(result.get("session_id")),
+        "no_next_action": "next_action" not in result,
+        "edits_applied": result["data"]["edits_applied"],
+        "edits_rejected": result["data"]["edits_rejected"],
+        "score_final_has_total": "total" in (result["data"]["score_final"] or {}),
+        "report_has_delta": "delta" in (result["data"]["report"] or {}),
+        "outcome_no_coverage": result["data"]["outcome"]["no_coverage"],
     }
-    assert result == expected
-    assert "total" in result["data"]["score_final"]
+    assert actual == {
+        "status": "ok",
+        "has_session_id": True,
+        "no_next_action": True,
+        "edits_applied": [0, 1, 2],
+        "edits_rejected": [],
+        "score_final_has_total": True,
+        "report_has_delta": True,
+        "outcome_no_coverage": False,
+    }
 
 
-def test_submit_tailor_rejects_out_of_bounds_target(tmp_path):
+def test_submit_tailor_rejects_out_of_bounds_target(tmp_path, monkeypatch):
     """Out-of-bounds experience target is rejected; in-bounds edits still applied."""
     from pi_apply.server import submit_tailor
 
     resume_label = "oob_resume"
     section_map = SectionMap(
+        contact=ContactInfo(name="Jane Dev"),
         summary="Engineer",
         skills=SkillsSection(flat=["Python"]),
         experience=[
@@ -136,7 +154,7 @@ def test_submit_tailor_rejects_out_of_bounds_target(tmp_path):
     WikiStore().write_page(resume_label, "sections.json", section_map.model_dump_json())
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
-    session_id = _run_to_tailor(tmp_path, jd_json, resume_label)
+    session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
 
     edits = [
         {"section": "summary", "op": "replace", "value": "Good summary"},
@@ -150,26 +168,35 @@ def test_submit_tailor_rejects_out_of_bounds_target(tmp_path):
     assert rejection == expected_rejection
     assert "out of bounds" in rejection["reason"]
 
-    expected = {
-        "session_id": session_id,
-        "status": "ok",
-        "next_action": "render",
-        "data": {
-            "edits_applied": [0],
-            "edits_rejected": [expected_rejection],
-            "uncovered_skills": result["data"]["uncovered_skills"],
-            "score_final": result["data"]["score_final"],
-        },
+    actual = {
+        "status": result["status"],
+        "has_session_id": bool(result.get("session_id")),
+        "no_next_action": "next_action" not in result,
+        "edits_applied": result["data"]["edits_applied"],
+        "edits_rejected": result["data"]["edits_rejected"],
+        "score_final_has_total": "total" in (result["data"]["score_final"] or {}),
+        "report_has_delta": "delta" in (result["data"]["report"] or {}),
+        "outcome_no_coverage": result["data"]["outcome"]["no_coverage"],
     }
-    assert result == expected
+    assert actual == {
+        "status": "ok",
+        "has_session_id": True,
+        "no_next_action": True,
+        "edits_applied": [0],
+        "edits_rejected": [expected_rejection],
+        "score_final_has_total": True,
+        "report_has_delta": True,
+        "outcome_no_coverage": False,
+    }
 
 
-def test_submit_tailor_flags_uncovered_skill(tmp_path):
+def test_submit_tailor_flags_uncovered_skill(tmp_path, monkeypatch):
     """Skill added to skills section but absent from all bullets appears in uncovered_skills."""
     from pi_apply.server import submit_tailor
 
     resume_label = "uncovered_resume"
     section_map = SectionMap(
+        contact=ContactInfo(name="Jane Dev"),
         summary="Engineer",
         skills=SkillsSection(flat=["Python"]),
         experience=[
@@ -179,24 +206,32 @@ def test_submit_tailor_flags_uncovered_skill(tmp_path):
     WikiStore().write_page(resume_label, "sections.json", section_map.model_dump_json())
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python", "Apache Kafka"]})
-    session_id = _run_to_tailor(tmp_path, jd_json, resume_label)
+    session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
 
     edits = [
         {"section": "skills", "op": "add", "value": "Apache Kafka"},
     ]
     result = json.loads(submit_tailor(session_id=session_id, edits=edits))
 
-    assert result["status"] == "ok"
-    assert "Apache Kafka" in result["data"]["uncovered_skills"]
-    assert 0 in result["data"]["edits_applied"]
+    actual = {
+        "status": result["status"],
+        "apache_kafka_in_uncovered": "Apache Kafka" in result["data"]["uncovered_skills"],
+        "edit_0_applied": 0 in result["data"]["edits_applied"],
+    }
+    assert actual == {
+        "status": "ok",
+        "apache_kafka_in_uncovered": True,
+        "edit_0_applied": True,
+    }
 
 
-def test_submit_tailor_does_not_flag_covered_skill(tmp_path):
+def test_submit_tailor_does_not_flag_covered_skill(tmp_path, monkeypatch):
     """Skill present in experience bullets is NOT flagged as uncovered."""
     from pi_apply.server import submit_tailor
 
     resume_label = "covered_resume"
     section_map = SectionMap(
+        contact=ContactInfo(name="Jane Dev"),
         summary="Engineer",
         skills=SkillsSection(flat=["Python"]),
         experience=[
@@ -206,7 +241,7 @@ def test_submit_tailor_does_not_flag_covered_skill(tmp_path):
     WikiStore().write_page(resume_label, "sections.json", section_map.model_dump_json())
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python", "Kubernetes"]})
-    session_id = _run_to_tailor(tmp_path, jd_json, resume_label)
+    session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
 
     edits = [
         {"section": "skills", "op": "add", "value": "Kubernetes"},
@@ -219,5 +254,11 @@ def test_submit_tailor_does_not_flag_covered_skill(tmp_path):
     ]
     result = json.loads(submit_tailor(session_id=session_id, edits=edits))
 
-    assert result["status"] == "ok"
-    assert "Kubernetes" not in result["data"]["uncovered_skills"]
+    actual = {
+        "status": result["status"],
+        "kubernetes_not_uncovered": "Kubernetes" not in result["data"]["uncovered_skills"],
+    }
+    assert actual == {
+        "status": "ok",
+        "kubernetes_not_uncovered": True,
+    }

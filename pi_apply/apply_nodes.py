@@ -17,9 +17,12 @@ sentinel values as placeholders. In real implementations, these will:
 import asyncio
 import json
 import logging
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
+
+from pydantic import ValidationError
 
 from pi_apply import extractor as resume_extractor
 from pi_apply import scorer
@@ -211,62 +214,68 @@ def score_initial(state: ApplyState) -> dict:
     return {"score_initial": _run_score(state.parsed_initial, state.keywords)}
 
 
-def tailor(state: ApplyState) -> dict:
-    """Deterministic skeleton tailor: build TailoredResume from parsed_initial and keywords."""
-    _log_enter("tailor", state)
+def _build_skills_raw(skills) -> str | None:
+    lines: list[str] = []
+    if skills.flat:
+        lines.append(", ".join(skills.flat))
+    for cat, items in skills.categorized.items():
+        lines.append(f"{cat}: {', '.join(items)}")
+    return "\n".join(lines) or None
 
-    parsed = state.parsed_initial or ""
-    non_empty_lines = [line.strip() for line in parsed.splitlines() if line.strip()]
 
-    # name: first non-empty line, fallback to "Candidate Name"
-    name = non_empty_lines[0] if non_empty_lines else "Candidate Name"
+def _build_experience_raw(experience) -> str | None:
+    blocks: list[str] = []
+    for exp in experience:
+        first_line = exp.context_line if exp.context_line is not None else exp.role
+        start = exp.start_date or ""
+        end = exp.end_date or ""
+        date_range = f"{start} – {end}" if (start or end) else ""
+        header = f"{exp.company} | {date_range}" if date_range else exp.company
+        blocks.append("\n".join([first_line, header] + [f"• {b}" for b in exp.bullets]))
+    return "\n\n".join(blocks) or None
 
-    # summary: next up to 5 non-empty lines joined with spaces
-    summary_lines = non_empty_lines[1:6]
-    summary = " ".join(summary_lines) if summary_lines else None
 
-    # experience_raw: all remaining non-empty lines joined with \n
-    remaining_lines = non_empty_lines[6:]
-    experience_raw = "\n".join(remaining_lines) if remaining_lines else None
-
-    # skills_raw: top-3 required keywords absent from parsed_initial (case-insensitive)
-    required_keywords: list[str] = (state.keywords or {}).get("required", [])
-    parsed_lower = parsed.lower()
-    missing = [kw for kw in required_keywords if kw.lower() not in parsed_lower]
-    top3_missing = missing[:3]
-    skills_raw = f"Tools: {', '.join(top3_missing)}" if top3_missing else None
-
-    keyword_count = len(required_keywords)
-    output_fields = {
-        k: v
-        for k, v in {
-            "name": name,
-            "summary": summary,
-            "skills_raw": skills_raw,
-            "experience_raw": experience_raw,
-        }.items()
-        if v is not None
-    }
-    logger.info(
-        json.dumps(
-            {
-                "node": "tailor",
-                "session_id": state.session_id,
-                "keyword_count": keyword_count,
-                "output_fields": list(output_fields.keys()),
-            }
-        )
+def _section_map_to_tailored_resume(section_map: SectionMap) -> TailoredResume:
+    """Convert a SectionMap to a TailoredResume for rendering."""
+    contact = section_map.contact
+    if contact is None:
+        raise ValueError("_section_map_to_tailored_resume: section_map.contact is required")
+    proj_blocks: list[str] = []
+    for proj in section_map.projects:
+        block_lines = [proj.name]
+        if proj.description is not None:
+            block_lines.append(proj.description)
+        block_lines.extend(f"• {b}" for b in proj.bullets)
+        proj_blocks.append("\n".join(block_lines))
+    edu_blocks = [f"{edu.institution}\n{edu.degree or ''}" for edu in section_map.education]
+    return TailoredResume(
+        name=contact.name,
+        email=contact.email,
+        phone=contact.phone,
+        location=contact.location,
+        linkedin=contact.linkedin,
+        website=contact.website,
+        summary=section_map.summary,
+        skills_raw=_build_skills_raw(section_map.skills),
+        experience_raw=_build_experience_raw(section_map.experience),
+        projects_raw="\n\n".join(proj_blocks) or None,
+        education_raw="\n\n".join(edu_blocks) or None,
+        max_pages=1,
     )
 
-    return {
-        "tailored": TailoredResume(
-            name=name,
-            summary=summary,
-            skills_raw=skills_raw,
-            experience_raw=experience_raw,
-            max_pages=1,
-        )
-    }
+
+def tailor(state: ApplyState) -> dict:
+    """Convert tailored_sections SectionMap to TailoredResume, or skip if no_coverage."""
+    _log_enter("tailor", state)
+    if state.no_coverage:
+        return {}  # conditional edge routes to report
+    if state.tailored_sections:
+        try:
+            section_map = SectionMap.model_validate(state.tailored_sections)
+            return {"tailored": _section_map_to_tailored_resume(section_map)}
+        except (ValidationError, ValueError) as exc:
+            return {"error": f"tailor: invalid tailored_sections: {exc}"}
+    return {"error": "tailor: no tailored_sections and no_coverage not set"}
 
 
 def _detect_uncovered_skills(section_map: SectionMap) -> list[str]:
@@ -275,9 +284,12 @@ def _detect_uncovered_skills(section_map: SectionMap) -> list[str]:
     for items in section_map.skills.categorized.values():
         all_skills.extend(items)
 
-    bullet_text = " ".join(b for exp in section_map.experience for b in exp.bullets).lower()
+    bullet_text = " ".join(b for exp in section_map.experience for b in exp.bullets)
 
-    return [s for s in all_skills if s.lower() not in bullet_text]
+    def _covered(skill: str) -> bool:
+        return bool(re.search(rf"\b{re.escape(skill)}\b", bullet_text, re.IGNORECASE))
+
+    return [s for s in all_skills if not _covered(s)]
 
 
 def _resolve_tailored_text(state: ApplyState) -> str:
@@ -347,16 +359,20 @@ _SCORE_DIMS = (
 
 
 def report(state: ApplyState) -> dict:
-    """Compute per-dimension score delta and format gap between initial and final pass."""
+    """Compute per-dimension score delta and format gap between initial and final pass.
+
+    When no_coverage=True, use score_initial as both si and sf so delta is all-zero.
+    """
     _log_enter("report", state)
     si = state.score_initial or {}
-    sf = state.score_final or {}
+    sf = si if state.no_coverage else (state.score_final or {})
     delta = {dim: round((sf.get(dim) or 0.0) - (si.get(dim) or 0.0), 2) for dim in _SCORE_DIMS}
     format_gap_chars = len(state.parsed_final or "") - len(state.parsed_initial or "")
     return {
         "report": {
             "delta": delta,
             "format_gap_chars": format_gap_chars,
+            "no_coverage": bool(state.no_coverage),
             "uncovered_skills": state.uncovered_skills or [],
         }
     }
@@ -387,11 +403,15 @@ def finalize(state: ApplyState) -> dict:
         "pdf_path": state.pdf_path,
         "scores": {
             "initial": state.score_initial,
-            "final": state.score_final,
+            "final": state.score_initial if state.no_coverage else state.score_final,
             "delta": (state.report or {}).get("delta"),
             "scoring_engine_version": "v1",
         },
         "uncovered_skills": state.uncovered_skills or [],
+        "outcome": {
+            "no_coverage": bool(state.no_coverage),
+            "reason": "no wiki stories cover required keywords" if state.no_coverage else None,
+        },
     }
 
     # Write archive JSON

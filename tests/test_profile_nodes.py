@@ -49,7 +49,14 @@ EXPECTED_SECTIONS = {
             "graduation_date": None,
         }
     ],
-    "contact": None,
+    "contact": {
+        "name": "John Doe",
+        "email": "john@example.com",
+        "phone": None,
+        "location": None,
+        "linkedin": None,
+        "website": None,
+    },
     "certifications": [],
     "awards": [],
 }

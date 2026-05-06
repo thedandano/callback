@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 from pi_apply.section_map import (
+    ContactInfo,
     EducationEntry,
     ExperienceEntry,
     ProjectEntry,
@@ -237,6 +238,113 @@ def _parse_education(raw: list[str]) -> list[EducationEntry]:
     return entries
 
 
+_EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
+_PHONE_RE = re.compile(r"[\+\(]?[\d\s\(\)\-\.]{7,15}\d")
+_URL_RE = re.compile(r"https?://\S+")
+
+
+def _process_url_line(stripped: str) -> tuple[str | None, str | None]:
+    """Return (linkedin, website) found in stripped, both may be None."""
+    url_m = _URL_RE.search(stripped)
+    if url_m:
+        url = url_m.group(0)
+        return (url, None) if "linkedin.com" in url else (None, url)
+    if "linkedin.com" in stripped.lower():
+        return stripped, None
+    return None, None
+
+
+def _extract_phone_candidate(stripped: str) -> str | None:
+    """Return phone string if a valid candidate is found, else None."""
+    ph = _PHONE_RE.search(stripped)
+    if not ph:
+        return None
+    candidate = ph.group(0).strip()
+    return candidate if len(re.sub(r"\D", "", candidate)) >= 7 else None
+
+
+def _phase1_classify(
+    lines: list[str],
+) -> tuple[str | None, str | None, str | None, str | None, set[int], set[int], set[int]]:
+    """Classify each line as email/URL/phone and extract first-found values."""
+    email: str | None = None
+    phone: str | None = None
+    linkedin: str | None = None
+    website: str | None = None
+    email_lines: set[int] = set()
+    phone_lines: set[int] = set()
+    url_lines: set[int] = set()
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        em = _EMAIL_RE.search(stripped)
+        if em:
+            email_lines.add(i)
+            email = email or em.group(0)
+        lin, web = _process_url_line(stripped)
+        if lin or web:
+            url_lines.add(i)
+            linkedin = linkedin or lin
+            website = website or web
+        if i not in email_lines:
+            phone_val = _extract_phone_candidate(stripped)
+            if phone_val:
+                phone_lines.add(i)
+                phone = phone or phone_val
+    return email, phone, linkedin, website, email_lines, phone_lines, url_lines
+
+
+def _phase2_find_name(lines: list[str], pre_classified: set[int]) -> tuple[str, int | None]:
+    """Return (name, name_idx) — first non-empty unclassified line."""
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped and i not in pre_classified:
+            return stripped, i
+    return "", None
+
+
+def _phase3_find_location(
+    lines: list[str], email_lines: set[int], url_lines: set[int], name_idx: int | None
+) -> str | None:
+    """Return first city/state-shaped line, never the name line."""
+    location: str | None = None
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if (
+            stripped
+            and i not in email_lines
+            and i not in url_lines
+            and i != name_idx
+            and stripped.count(",") == 1
+            and "@" not in stripped
+            and not (stripped == stripped.upper() and any(c.isalpha() for c in stripped))
+            and location is None
+        ):
+            location = stripped
+    return location
+
+
+def _parse_contact_info(lines: list[str]) -> ContactInfo:
+    """Extract ContactInfo fields from the first lines of a resume header.
+
+    Three-phase approach: classify email/URL/phone → claim name (first
+    unclassified line) → classify location, never stealing the name line.
+    """
+    email, phone, linkedin, website, email_lines, phone_lines, url_lines = _phase1_classify(lines)
+    pre_classified = email_lines | phone_lines | url_lines
+    name, name_idx = _phase2_find_name(lines, pre_classified)
+    location = _phase3_find_location(lines, email_lines, url_lines, name_idx)
+    return ContactInfo(
+        name=name,
+        email=email,
+        phone=phone,
+        location=location,
+        linkedin=linkedin,
+        website=website,
+    )
+
+
 def extract_sections(text: str) -> SectionMap:
     """Parse resume plain text into a structured SectionMap."""
     lines = text.splitlines()
@@ -248,13 +356,12 @@ def extract_sections(text: str) -> SectionMap:
     projects = _parse_projects(groups.get("projects", []))
     education = _parse_education(groups.get("education", []))
 
-    contact_lines = [ln.strip() for ln in groups.get("contact", []) if ln.strip()]
-    contact = "\n".join(contact_lines) if contact_lines else None
-
     certifications = [ln.strip() for ln in groups.get("certifications", []) if ln.strip()]
     awards = [ln.strip() for ln in groups.get("awards", []) if ln.strip()]
 
-    return SectionMap(
+    contact = _parse_contact_info(lines[:15])
+
+    section_map = SectionMap(
         summary=summary,
         skills=skills,
         experience=experience,
@@ -264,6 +371,11 @@ def extract_sections(text: str) -> SectionMap:
         certifications=certifications,
         awards=awards,
     )
+
+    if section_map.contact is None or section_map.contact.name == "":
+        raise ValueError("extract_sections: could not determine candidate name from resume")
+
+    return section_map
 
 
 def extract(path: str | Path) -> str:
