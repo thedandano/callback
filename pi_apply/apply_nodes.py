@@ -1,17 +1,16 @@
 """Apply graph node implementations.
 
-Stub implementations of apply graph nodes. Each node logs entry and returns
-sentinel values as placeholders. In real implementations, these will:
-- jd_fetch: fetch or accept a job description
-- keywords_accept: accept validated host-provided JDData
-- parse_initial: extract text from the original resume
-- score_initial: score resume against JD keywords
-- tailor: rewrite resume bullets to match JD
-- render: render the tailored resume to PDF
-- parse_final: extract text from the rendered PDF
-- score_final: score the rendered PDF text against JD keywords
-- report: generate a comparison report
-- finalize: archive the application record
+Implements the 10 nodes of the linear apply pipeline:
+- jd_fetch: fetches the job description via URL (Crawl4AI) or accepts raw text
+- keywords_accept: stores host-validated JDData; re-enters at parse_initial
+- parse_initial: extracts text and sections from the source resume file
+- score_initial: scores the resume against JD keywords (deterministic scorer)
+- tailor: interrupts for host to submit edits to the resume SectionMap
+- render: renders the tailored SectionMap to PDF via Typst template
+- parse_final: extracts text from the rendered PDF for final scoring
+- score_final: scores the rendered PDF text against JD keywords
+- report: generates a before/after comparison report
+- finalize: archives the application PDF and JSON record to PI_APPLY_APPS_DIR
 """
 
 import asyncio
