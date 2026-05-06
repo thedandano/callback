@@ -40,6 +40,24 @@ _DELTA = {
     "readability": 0.0,
 }
 
+_BEFORE = {
+    "total": 35.0,
+    "keyword_match": 0.0,
+    "experience_fit": 25.0,
+    "impact_evidence": 0.0,
+    "ats_format": 0.0,
+    "readability": 10.0,
+}
+
+_AFTER = {
+    "total": 52.5,
+    "keyword_match": 17.5,
+    "experience_fit": 25.0,
+    "impact_evidence": 0.0,
+    "ats_format": 0.0,
+    "readability": 10.0,
+}
+
 
 def test_report_delta_all_six_dimensions():
     state = ApplyState(
@@ -52,6 +70,8 @@ def test_report_delta_all_six_dimensions():
     result = report(state)
     assert result == {
         "report": {
+            "before": _BEFORE,
+            "after": _AFTER,
             "delta": _DELTA,
             "format_gap_chars": -150,
             "no_coverage": False,
@@ -70,6 +90,8 @@ def test_report_format_gap_chars_negative_on_content_loss():
     )
     assert report(state) == {
         "report": {
+            "before": _BEFORE,
+            "after": _AFTER,
             "delta": _DELTA,
             "format_gap_chars": -150,
             "no_coverage": False,
@@ -88,6 +110,8 @@ def test_report_format_gap_chars_positive_on_content_gain():
     )
     assert report(state) == {
         "report": {
+            "before": _BEFORE,
+            "after": _AFTER,
             "delta": _DELTA,
             "format_gap_chars": 200,
             "no_coverage": False,
@@ -113,7 +137,7 @@ def test_finalize_archive_includes_scores_delta(tmp_path, monkeypatch):
         parsed_final="tailored pdf text",
     )
     result = finalize(state)
-    assert result == {"finalized": True}
+    assert result == {"finalized": True, "finalized_at": result["finalized_at"]}
 
     archive = json.loads((tmp_path / "r4.json").read_text())
     assert archive["scores"] == {
@@ -166,6 +190,8 @@ def test_report_no_coverage_path():
     )
     assert report(state) == {
         "report": {
+            "before": _BEFORE,
+            "after": _BEFORE,
             "delta": _ZERO_DELTA,
             "format_gap_chars": -100,
             "no_coverage": True,

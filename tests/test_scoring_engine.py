@@ -204,8 +204,17 @@ class TestReport:
             score_initial={"total": 45.0},
             score_final={"total": 72.0},
         )
+        _none_dims = {
+            "keyword_match": None,
+            "experience_fit": None,
+            "impact_evidence": None,
+            "ats_format": None,
+            "readability": None,
+        }
         assert report(state) == {
             "report": {
+                "before": {"total": 45.0, **_none_dims},
+                "after": {"total": 72.0, **_none_dims},
                 "delta": {**_ZERO_DELTA, "total": 27.0},
                 "format_gap_chars": 0,
                 "no_coverage": False,
@@ -215,8 +224,19 @@ class TestReport:
 
     def test_handles_none_scores(self):
         state = ApplyState(session_id="s1", score_initial=None, score_final=None)
+        _dims = (
+            "total",
+            "keyword_match",
+            "experience_fit",
+            "impact_evidence",
+            "ats_format",
+            "readability",
+        )
+        _all_none = {d: None for d in _dims}
         assert report(state) == {
             "report": {
+                "before": _all_none,
+                "after": _all_none,
                 "delta": _ZERO_DELTA,
                 "format_gap_chars": 0,
                 "no_coverage": False,
