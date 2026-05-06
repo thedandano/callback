@@ -40,6 +40,7 @@ class ApplyState(BaseModel):
     report: dict | None = Field(default=None)
     uncovered_skills: list | None = Field(default=None)
     finalized: bool | None = Field(default=None)
+    finalized_at: str | None = Field(default=None)
     error: str | None = Field(default=None)
     no_coverage: bool | None = Field(default=None)
 

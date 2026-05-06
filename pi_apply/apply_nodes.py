@@ -370,6 +370,8 @@ def report(state: ApplyState) -> dict:
     format_gap_chars = len(state.parsed_final or "") - len(state.parsed_initial or "")
     return {
         "report": {
+            "before": {dim: si.get(dim) for dim in _SCORE_DIMS},
+            "after": {dim: sf.get(dim) for dim in _SCORE_DIMS},
             "delta": delta,
             "format_gap_chars": format_gap_chars,
             "no_coverage": bool(state.no_coverage),
@@ -392,10 +394,12 @@ def finalize(state: ApplyState) -> dict:
     # Derive tailored resume text from sections or tailored object
     tailored_text = _resolve_tailored_text(state)
 
+    finalized_at = datetime.now(UTC).isoformat()
+
     # Build archive record with all required fields
     archive = {
         "session_id": state.session_id,
-        "timestamp": datetime.now(UTC).isoformat(),
+        "timestamp": finalized_at,
         "jd_url": state.jd_url,
         "jd_text": state.jd_text,
         "keywords": state.keywords,
@@ -419,4 +423,4 @@ def finalize(state: ApplyState) -> dict:
     with open(archive_path, "w") as f:
         json.dump(archive, f, indent=2)
 
-    return {"finalized": True}
+    return {"finalized": True, "finalized_at": finalized_at}
