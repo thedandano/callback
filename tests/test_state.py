@@ -61,6 +61,7 @@ class TestApplyStateBasic:
             "report",
             "uncovered_skills",
             "finalized",
+            "finalized_at",
             "error",
             "no_coverage",
         }
