@@ -28,6 +28,7 @@ class TestApplyStateBasic:
         assert state.uncovered_skills is None
         assert state.finalized is None
         assert state.error is None
+        assert state.no_coverage is None
 
     def test_rejects_missing_session_id(self):
         """ApplyState raises ValidationError when session_id is missing."""
@@ -61,6 +62,7 @@ class TestApplyStateBasic:
             "uncovered_skills",
             "finalized",
             "error",
+            "no_coverage",
         }
         assert set(fields.keys()) == required_fields
 
@@ -168,6 +170,11 @@ class TestApplyStateBasic:
         """error field accepts str or None."""
         state = ApplyState(session_id="s", error="Some error message")
         assert state.error == "Some error message"
+
+    def test_field_types_no_coverage(self):
+        """no_coverage field accepts bool."""
+        state = ApplyState(session_id="s", no_coverage=True)
+        assert state.no_coverage is True
 
     def test_multiple_fields_together(self):
         """ApplyState accepts multiple fields set simultaneously."""

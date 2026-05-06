@@ -17,6 +17,15 @@ _SKILLS_IDX_RE = re.compile(r"^skills-(\d+)$")
 _EDITABLE = {"summary", "skills", "experience", "projects"}
 
 
+class ContactInfo(BaseModel):
+    name: str  # required
+    email: str | None = None
+    phone: str | None = None
+    location: str | None = None
+    linkedin: str | None = None
+    website: str | None = None
+
+
 class SkillsSection(BaseModel):
     flat: list[str] = []
     categorized: dict[str, list[str]] = {}
@@ -50,7 +59,7 @@ class SectionMap(BaseModel):
     experience: list[ExperienceEntry] = []
     projects: list[ProjectEntry] = []
     education: list[EducationEntry] = []
-    contact: str | None = None
+    contact: ContactInfo | None = None
     certifications: list[str] = []
     awards: list[str] = []
 

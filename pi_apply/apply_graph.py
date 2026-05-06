@@ -43,6 +43,14 @@ def _route_or_halt(next_node: str):
     return _router
 
 
+def _tailor_route(state: ApplyState) -> str:
+    if state.error:
+        return END
+    if state.no_coverage:
+        return "report"
+    return "render"
+
+
 JD_FETCH_NODE = "jd_fetch"
 KEYWORDS_ACCEPT_NODE = "keywords_accept"
 TAILOR_NODE = "tailor"
@@ -97,7 +105,7 @@ def build_apply_graph(db_path: Path = DB_PATH):
     builder.add_edge(KEYWORDS_ACCEPT_NODE, "parse_initial")
     builder.add_edge("parse_initial", "score_initial")
     builder.add_edge("score_initial", "tailor")
-    builder.add_edge("tailor", "render")
+    builder.add_conditional_edges("tailor", _tailor_route)
     builder.add_conditional_edges("render", _route_or_halt("parse_final"))
     builder.add_conditional_edges("parse_final", _route_or_halt("score_final"))
     builder.add_edge("score_final", "report")

@@ -30,6 +30,41 @@ M3_KEYWORDS = {
     "key_responsibilities": [],
 }
 
+# Minimal tailored SectionMap derived from sample_resume.txt, used to satisfy the
+# new tailor node which requires host-injected tailored_sections.
+MINIMAL_TAILORED_SECTIONS = {
+    "contact": {
+        "name": "Jane Doe",
+        "email": None,
+        "phone": None,
+        "location": None,
+        "linkedin": None,
+        "website": None,
+    },
+    "summary": "Experienced software engineer with Python, FastAPI, and PostgreSQL expertise.",
+    "skills": {
+        "flat": ["Python", "FastAPI", "PostgreSQL"],
+        "categorized": {},
+    },
+    "experience": [
+        {
+            "company": "Acme Corp",
+            "role": "Backend Engineer",
+            "start_date": "2021",
+            "end_date": "Present",
+            "context_line": None,
+            "bullets": [
+                "Built Python microservices deployed on AWS",
+                "Designed REST APIs with FastAPI and PostgreSQL",
+            ],
+        }
+    ],
+    "projects": [],
+    "education": [],
+    "certifications": [],
+    "awards": [],
+}
+
 
 @pytest.fixture
 def setup_e2e_session(tmp_path, monkeypatch):
@@ -53,18 +88,25 @@ def setup_e2e_session(tmp_path, monkeypatch):
     yield session_id
 
 
+def _inject_tailored_sections_and_invoke(session_id: str, tailored_sections: dict) -> tuple:
+    """Inject tailored_sections into graph state and invoke through tailor → finalize.
+
+    Returns (graph, config) after the graph has run to completion.
+    """
+    from pi_apply.apply_graph import build_apply_graph, make_config
+
+    graph = build_apply_graph()
+    config = make_config(session_id)
+    graph.update_state(config, {"tailored_sections": tailored_sections})
+    graph.invoke(None, config)
+    return graph, config
+
+
 @pytest.fixture
 def setup_e2e_session_with_graph(setup_e2e_session, tmp_path, monkeypatch):
     """Extended e2e fixture that also returns graph and config, advanced through finalize."""
-    from pi_apply.apply_graph import build_apply_graph, make_config
-
     session_id = setup_e2e_session
-    graph = build_apply_graph()
-    config = make_config(session_id)
-
-    # Advance all the way through the graph (tailor → render → parse_final → ... → finalize)
-    graph.invoke(None, config)
-
+    graph, config = _inject_tailored_sections_and_invoke(session_id, MINIMAL_TAILORED_SECTIONS)
     yield session_id, graph, config
 
 
@@ -72,7 +114,7 @@ class TestApplyGraphE2E:
     """End-to-end tests for the apply graph."""
 
     def test_tailor_produces_tailored_resume_object(self, setup_e2e_session):
-        """After submit_keywords, graph is at tailor and state has TailoredResume."""
+        """Injecting tailored_sections at tailor interrupt produces TailoredResume."""
         from pi_apply.apply_graph import build_apply_graph, make_config
 
         session_id = setup_e2e_session
@@ -83,7 +125,8 @@ class TestApplyGraphE2E:
         # Verify we're at tailor interrupt
         assert snapshot.next == ("tailor",)
 
-        # Advance past tailor
+        # Inject tailored_sections and advance past tailor
+        graph.update_state(config, {"tailored_sections": MINIMAL_TAILORED_SECTIONS})
         graph.invoke(None, config)
         snapshot_after_tailor = graph.get_state(config)
         state_values = snapshot_after_tailor.values
@@ -104,14 +147,8 @@ class TestApplyGraphE2E:
 
     def test_graph_reaches_finalize_after_tailor(self, setup_e2e_session):
         """Graph completes all nodes from tailor through finalize."""
-        from pi_apply.apply_graph import build_apply_graph, make_config
-
         session_id = setup_e2e_session
-        graph = build_apply_graph()
-        config = make_config(session_id)
-
-        # Advance all the way through the graph
-        graph.invoke(None, config)
+        graph, config = _inject_tailored_sections_and_invoke(session_id, MINIMAL_TAILORED_SECTIONS)
         final_snapshot = graph.get_state(config)
         final_state = final_snapshot.values
 
@@ -128,10 +165,11 @@ class TestApplyGraphE2E:
         graph = build_apply_graph()
         config = make_config(session_id)
 
-        # Advance to tailor
+        # Inject tailored_sections and advance through the graph
+        graph.update_state(config, {"tailored_sections": MINIMAL_TAILORED_SECTIONS})
         graph.invoke(None, config)
 
-        # Get state at tailor
+        # Get state after tailor
         snapshot = graph.get_state(config)
         state_values = snapshot.values
         tailored = state_values["tailored"]
@@ -177,7 +215,6 @@ class TestApplyGraphE2E:
 @pytest.fixture
 def setup_m3_session_with_graph(tmp_path, monkeypatch):
     """M3 fixture: pipeline run through finalize with Redis as extra required keyword."""
-    from pi_apply.apply_graph import build_apply_graph, make_config
     from pi_apply.server import load_jd, submit_keywords
 
     monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path / "applications"))
@@ -194,9 +231,24 @@ def setup_m3_session_with_graph(tmp_path, monkeypatch):
     )
     assert keywords_response["status"] == "ok"
 
-    graph = build_apply_graph()
-    config = make_config(session_id)
-    graph.invoke(None, config)
+    # Inject tailored_sections that adds Redis to a bullet so score_final > score_initial
+    m3_tailored_sections = {
+        **MINIMAL_TAILORED_SECTIONS,
+        "experience": [
+            {
+                "company": "Acme Corp",
+                "role": "Backend Engineer",
+                "start_date": "2021",
+                "end_date": "Present",
+                "context_line": None,
+                "bullets": [
+                    "Built Python microservices deployed on AWS using FastAPI and PostgreSQL",
+                    "Designed and deployed Redis caching layer reducing latency by 60%",
+                ],
+            }
+        ],
+    }
+    graph, config = _inject_tailored_sections_and_invoke(session_id, m3_tailored_sections)
 
     yield session_id, graph, config, tmp_path
 
