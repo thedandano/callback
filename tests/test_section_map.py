@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from pi_apply.section_map import (
+    ContactInfo,
     EditResult,
     EducationEntry,
     ExperienceEntry,
@@ -58,7 +59,11 @@ def make_full_section_map() -> SectionMap:
                 graduation_date="2018-05",
             )
         ],
-        contact="john@example.com | (555) 123-4567",
+        contact=ContactInfo(
+            name="John Doe",
+            email="john@example.com",
+            phone="(555) 123-4567",
+        ),
         certifications=["AWS Certified Solutions Architect"],
         awards=["Employee of the Year 2022"],
     )

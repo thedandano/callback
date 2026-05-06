@@ -2,7 +2,7 @@
 
 import pytest
 
-from pi_apply.apply_nodes import parse_final, parse_initial, render, score_initial
+from pi_apply.apply_nodes import parse_final, parse_initial, render, score_initial, tailor
 from pi_apply.state import ApplyState, TailoredResume
 
 
@@ -69,3 +69,40 @@ def test_parse_final_returns_error_when_no_pdf_path(tmp_path):
     result = parse_final(state)
     assert "error" in result
     assert "parsed_final" not in result
+
+
+class TestTailorNode:
+    def test_tailor_with_tailored_sections_converts_section_map(self):
+        state = ApplyState(
+            session_id="s",
+            tailored_sections={
+                "contact": {"name": "Jane Doe"},
+                "skills": {"flat": ["Python"], "categorized": {}},
+                "experience": [
+                    {
+                        "company": "Acme",
+                        "role": "Engineer",
+                        "start_date": "2020-01",
+                        "end_date": "2023-06",
+                        "bullets": ["Built REST API"],
+                    }
+                ],
+            },
+        )
+        result = tailor(state)
+        tailored = result["tailored"]
+        assert tailored == TailoredResume(
+            name="Jane Doe",
+            skills_raw="Python",
+            experience_raw="Engineer\nAcme | 2020-01 – 2023-06\n• Built REST API",
+            max_pages=1,
+        )
+
+    def test_tailor_no_coverage_returns_empty(self):
+        state = ApplyState(session_id="s", no_coverage=True)
+        result = tailor(state)
+        assert result == {}
+
+    def test_tailor_missing_tailored_sections_returns_error(self):
+        state = ApplyState(session_id="s")
+        assert tailor(state) == {"error": "tailor: no tailored_sections and no_coverage not set"}

@@ -12,13 +12,13 @@ import datetime
 import json
 import logging
 import os
+import re
 import sys
 import uuid
 
 from fastmcp import FastMCP
 
 import pi_apply.profile_nodes as profile_nodes
-import pi_apply.scorer as scorer_mod
 from pi_apply.apply_graph import (
     KEYWORDS_ACCEPT_NODE,
     TAILOR_NODE,
@@ -27,7 +27,7 @@ from pi_apply.apply_graph import (
 from pi_apply.apply_graph import (
     make_config as make_apply_config,
 )
-from pi_apply.apply_nodes import _detect_uncovered_skills, _sections_to_text
+from pi_apply.apply_nodes import _detect_uncovered_skills
 from pi_apply.jd_data import EXTRACTION_PROTOCOL, JDDataError, parse_jd_json
 from pi_apply.jd_fetcher import JDFetchError
 from pi_apply.section_map import SectionMap, apply_edit
@@ -62,6 +62,42 @@ _TAILOR_INSTRUCTIONS = (
 )
 
 mcp = FastMCP("pi-apply")
+
+
+# ============================================================================
+# Orphan detection helpers
+# ============================================================================
+
+
+def _all_skills(sections: dict) -> list[str]:
+    """Extract all skill strings from a SectionMap skills dict (flat + categorized)."""
+    skills = sections.get("skills") or {}
+    flat = skills.get("flat") or []
+    cats = skills.get("categorized") or {}
+    result = list(flat)
+    for items in cats.values():
+        result.extend(items)
+    return result
+
+
+def _detect_orphaned_required(
+    required_missing: list[str], sections: dict, wiki_index: str
+) -> list[str]:
+    """Return required_missing keywords that are orphans.
+
+    An orphan is a keyword that IS in the candidate's SectionMap skills but is
+    NOT yet covered by any wiki story. Skills membership uses case-insensitive
+    exact match; wiki_index uses case-insensitive substring search (the index is
+    unstructured markdown text).
+    """
+    all_skills_lower = [s.lower() for s in _all_skills(sections)]
+    orphans: list[str] = []
+    for kw in required_missing:
+        in_skills = kw.lower() in all_skills_lower
+        in_wiki = bool(re.search(rf"\b{re.escape(kw)}\b", wiki_index, re.IGNORECASE))
+        if in_skills and not in_wiki:
+            orphans.append(kw)
+    return orphans
 
 
 # ============================================================================
@@ -203,6 +239,12 @@ def load_jd(
     return _ok(session_id, "extract_keywords", data)
 
 
+def _submit_keywords_next_action(wiki_index: str | None, orphaned_required: list[str]) -> str:
+    if not wiki_index:
+        return "parse_initial"
+    return "add_story_first" if orphaned_required else "fetch_wiki_then_tailor"
+
+
 @mcp.tool()
 def submit_keywords(session_id: str, jd_json: str) -> str:
     """Accept host-extracted JDData and stop before resume parsing/scoring."""
@@ -242,26 +284,30 @@ def submit_keywords(session_id: str, jd_json: str) -> str:
     if state.get("sections"):
         data["sections"] = state.get("sections")
 
+    orphaned_required: list[str] = []
     score = state.get("score_initial")
     if score:
         data["score_gap"] = {
             "required_missing": score.get("req_unmatched", []),
             "preferred_missing": score.get("pref_unmatched", []),
         }
+        orphaned_required = _detect_orphaned_required(
+            score.get("req_unmatched", []),
+            state.get("sections") or {},
+            state.get("wiki_index") or "",
+        )
+        data["orphaned_required"] = orphaned_required
 
     if state.get("wiki_index"):
         data["wiki_index"] = state.get("wiki_index")
         data["tailor_instructions"] = _TAILOR_INSTRUCTIONS
-        next_action = "fetch_wiki_then_tailor"
-    else:
-        next_action = "parse_initial"
-
+    next_action = _submit_keywords_next_action(state.get("wiki_index"), orphaned_required)
     return _ok(session_id, next_action, data)
 
 
 @mcp.tool()
-def submit_tailor(session_id: str, edits: list[dict]) -> str:
-    """Apply host-submitted edits to the resume SectionMap and rescore.
+def submit_tailor(session_id: str, edits: list[dict], no_coverage: bool = False) -> str:
+    """Apply host-submitted edits to the resume SectionMap and run the graph to finalize.
 
     Accepts a list of port.Edit-style dicts. Each edit must have:
       section: str (summary | skills | experience | projects)
@@ -270,12 +316,14 @@ def submit_tailor(session_id: str, edits: list[dict]) -> str:
       value: str (required for add/replace)
       category: str (optional, for categorized skills)
 
-    Applies valid edits, reports rejections, detects uncovered skills
-    (skills added to skills section but absent from experience bullets),
-    rescores the modified resume, and stores tailored_sections in state.
+    When no_coverage=True, skips edit application entirely, sets no_coverage in
+    graph state, and runs the graph directly to finalize.
+
+    Applies valid edits (or skips on no_coverage), runs the graph through finalize,
+    and returns real score_final and report from final graph state.
 
     Returns JSON envelope with edits_applied, edits_rejected, uncovered_skills,
-    score_final, and next_action="render".
+    score_final, report, and outcome.
     """
     _log("INFO", {"tool": "submit_tailor", "session_id": session_id, "edit_count": len(edits)})
 
@@ -294,6 +342,31 @@ def submit_tailor(session_id: str, edits: list[dict]) -> str:
             session_id,
         )
 
+    if no_coverage:
+        graph.update_state(config, {"no_coverage": True})
+        graph.invoke(None, config)
+        final_snapshot = graph.get_state(config)
+        final = final_snapshot.values
+        if final.get("error"):
+            return _err("submit_tailor", "pipeline_error", final["error"], session_id)
+        return _ok(
+            session_id,
+            next_action=None,
+            data={
+                "edits_applied": [],
+                "edits_rejected": [],
+                "uncovered_skills": [],
+                "score_final": final.get("score_final"),
+                "report": final.get("report"),
+                "outcome": (final.get("report") or {}).get("no_coverage")
+                and {
+                    "no_coverage": True,
+                    "reason": "no wiki stories cover required keywords",
+                }
+                or {"no_coverage": False, "reason": None},
+            },
+        )
+
     state_values = snapshot.values
     sections_dict = state_values.get("sections")
     if not sections_dict:
@@ -308,7 +381,7 @@ def submit_tailor(session_id: str, edits: list[dict]) -> str:
 
 
 def _apply_tailor_edits(session_id, graph, config, state_values, sections_dict, edits):
-    """Apply edits to the SectionMap, rescore, and store results."""
+    """Apply edits to the SectionMap, run the graph to finalize, and return real scores."""
     section_map = SectionMap.model_validate(sections_dict)
     edits_applied = []
     edits_rejected = []
@@ -322,52 +395,34 @@ def _apply_tailor_edits(session_id, graph, config, state_values, sections_dict, 
 
     uncovered_skills = _detect_uncovered_skills(section_map)
 
-    resume_text = _sections_to_text(section_map)
-    keywords = state_values.get("keywords")
-    if keywords is None:
-        return _err(
-            stage="submit_tailor",
-            code="no_keywords",
-            message="no keywords in session; call submit_keywords first",
-            session_id=session_id,
-        )
-    required = keywords.get("required")
-    if required is None:
-        return _err(
-            stage="submit_tailor",
-            code="invalid_keywords",
-            message="keywords['required'] is missing; keywords data is malformed",
-            session_id=session_id,
-        )
-    preferred = keywords["preferred"]
-    score_result = scorer_mod.score(resume_text, required, preferred)
-    score_final = {
-        "total": score_result.breakdown.total(),
-        "keyword_match": score_result.breakdown.keyword_match,
-        "req_matched": score_result.keywords.req_matched,
-        "req_unmatched": score_result.keywords.req_unmatched,
-        "pref_matched": score_result.keywords.pref_matched,
-        "pref_unmatched": score_result.keywords.pref_unmatched,
-    }
-
     graph.update_state(
         config,
         {
             "tailored_sections": section_map.model_dump(),
             "uncovered_skills": uncovered_skills,
-            "score_final": score_final,
         },
     )
     graph.invoke(None, config)
 
+    final_snapshot = graph.get_state(config)
+    final = final_snapshot.values
+    if final.get("error"):
+        return _err("submit_tailor", "pipeline_error", final["error"], session_id)
     return _ok(
         session_id,
-        "render",
-        {
+        next_action=None,
+        data={
             "edits_applied": edits_applied,
             "edits_rejected": edits_rejected,
             "uncovered_skills": uncovered_skills,
-            "score_final": score_final,
+            "score_final": final.get("score_final"),
+            "report": final.get("report"),
+            "outcome": (final.get("report") or {}).get("no_coverage")
+            and {
+                "no_coverage": True,
+                "reason": "no wiki stories cover required keywords",
+            }
+            or {"no_coverage": False, "reason": None},
         },
     )
 

@@ -162,6 +162,7 @@ def test_submit_keywords_stores_jddata_and_stops_before_parsing(tmp_path):
                 "required_missing": result["data"]["score_gap"]["required_missing"],
                 "preferred_missing": result["data"]["score_gap"]["preferred_missing"],
             },
+            "orphaned_required": result["data"]["orphaned_required"],
         },
     }
 
@@ -348,3 +349,105 @@ def test_create_story_enters_create_story_node(monkeypatch):
     }
 
     assert result == expected
+
+
+class TestOrphanDetection:
+    """Tests for _detect_orphaned_required orphan classification logic."""
+
+    def test_orphan_detected_when_skill_in_sections_not_in_wiki(self):
+        from pi_apply.server import _detect_orphaned_required
+
+        sections = {
+            "skills": {
+                "flat": ["Python", "Docker"],
+                "categorized": {},
+            }
+        }
+        wiki_index = "# Stories\n\n## Docker\n- Built containers\n"
+
+        result = _detect_orphaned_required(["Python", "Docker"], sections, wiki_index)
+
+        assert result == ["Python"]
+
+    def test_genuine_gap_not_flagged_as_orphan(self):
+        from pi_apply.server import _detect_orphaned_required
+
+        sections = {
+            "skills": {
+                "flat": ["Docker"],
+                "categorized": {},
+            }
+        }
+        wiki_index = "# Stories\n\n## Docker\n- Built containers\n"
+
+        result = _detect_orphaned_required(["Kubernetes"], sections, wiki_index)
+
+        assert result == []
+
+    def test_skill_covered_in_wiki_not_flagged(self):
+        from pi_apply.server import _detect_orphaned_required
+
+        sections = {
+            "skills": {
+                "flat": ["Python"],
+                "categorized": {},
+            }
+        }
+        wiki_index = "# Stories\n\n## Python\n- Built services in python\n"
+
+        result = _detect_orphaned_required(["Python"], sections, wiki_index)
+
+        assert result == []
+
+
+_NO_COVERAGE_JD_JSON = json.dumps(
+    {
+        "title": "Backend Engineer",
+        "company": "ExampleCo",
+        "required": ["Python"],
+    }
+)
+
+
+class TestSubmitTailorNoCoverage:
+    """Tests for submit_tailor with no_coverage=True."""
+
+    def test_submit_tailor_no_coverage_sets_outcome(self, tmp_path, monkeypatch):
+        """no_coverage=True skips edits, runs graph to finalize, and returns no_coverage outcome."""
+        from pi_apply.server import load_jd, submit_keywords, submit_tailor
+
+        monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path / "applications"))
+
+        resume_file = tmp_path / "resume.txt"
+        resume_file.write_text("Python developer")
+
+        session_id = json.loads(
+            load_jd(jd_raw_text="Python engineer needed", resume_path=str(resume_file))
+        )["session_id"]
+        json.loads(submit_keywords(session_id=session_id, jd_json=_NO_COVERAGE_JD_JSON))
+
+        result = json.loads(submit_tailor(session_id=session_id, edits=[], no_coverage=True))
+
+        actual = {
+            "status": result["status"],
+            "session_id": result["session_id"],
+            "no_next_action": "next_action" not in result,
+            "edits_applied": result["data"]["edits_applied"],
+            "edits_rejected": result["data"]["edits_rejected"],
+            "uncovered_skills": result["data"]["uncovered_skills"],
+            "score_final_is_none_or_dict": result["data"]["score_final"] is None
+            or isinstance(result["data"]["score_final"], dict),
+            "report_no_coverage": (result["data"]["report"] or {}).get("no_coverage"),
+            "outcome_no_coverage": result["data"]["outcome"]["no_coverage"],
+        }
+        assert actual == {
+            "status": "ok",
+            "session_id": session_id,
+            "no_next_action": True,
+            "edits_applied": [],
+            "edits_rejected": [],
+            "uncovered_skills": [],
+            "score_final_is_none_or_dict": True,
+            "report_no_coverage": True,
+            "outcome_no_coverage": True,
+        }

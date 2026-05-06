@@ -208,6 +208,7 @@ class TestReport:
             "report": {
                 "delta": {**_ZERO_DELTA, "total": 27.0},
                 "format_gap_chars": 0,
+                "no_coverage": False,
                 "uncovered_skills": [],
             }
         }
@@ -218,6 +219,7 @@ class TestReport:
             "report": {
                 "delta": _ZERO_DELTA,
                 "format_gap_chars": 0,
+                "no_coverage": False,
                 "uncovered_skills": [],
             }
         }
