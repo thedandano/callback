@@ -350,7 +350,7 @@ class TestCompiledProfile:
         )
         defaults = {
             "schema_version": "1",
-            "skills": ["Kubernetes", "Terraform"],
+            "skills_index": ["Kubernetes", "Terraform"],
             "stories": [story],
             "orphaned_skills": [OrphanedSkill(skill="Terraform")],
             "compiled_at": "2026-05-06T12:00:00+00:00",
@@ -367,7 +367,8 @@ class TestCompiledProfile:
 
     def test_all_fields_present(self):
         fields = set(CompiledProfile.model_fields)
-        assert fields == {"schema_version", "skills", "stories", "orphaned_skills", "compiled_at"}
+        expected = {"schema_version", "skills_index", "stories", "orphaned_skills", "compiled_at"}
+        assert fields == expected
 
     def test_empty_stories_and_orphans(self):
         profile = self._make_profile(stories=[], orphaned_skills=[])

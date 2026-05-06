@@ -19,9 +19,7 @@ class OrphanedSkill(BaseModel):
 
 class CompiledProfile(BaseModel):
     schema_version: str
-    # Denormalized union of all compiled_story.skills across stories — used by
-    # the wiki index renderer and orphan detection without re-iterating stories.
-    skills: list[str]
+    skills_index: list[str]  # union of all compiled_story.skills across stories
     stories: list[CreatedStory]
     orphaned_skills: list[OrphanedSkill]
     compiled_at: str
