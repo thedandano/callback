@@ -4,6 +4,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pi_apply.extractor as ext
 import pi_apply.wiki as wiki_module
 from pi_apply.profile_nodes import (
     check_orphans,
@@ -116,8 +117,6 @@ class TestOnboard:
         sections_path = tmp_path / "profile-wiki" / "jane_doe" / "sections.json"
         assert sections_path.exists()
         assert json.loads(sections_path.read_text())["contact"]["name"] == "Jane Doe"
-
-        import pi_apply.extractor as ext
 
         text = ext.extract(str(resume_file))
         expected_sections = ext.extract_sections(text).model_dump()

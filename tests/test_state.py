@@ -1,7 +1,14 @@
 import pytest
 from pydantic import ValidationError
 
-from pi_apply.state import ApplyState, CompiledProfile, CreatedStory, OrphanedSkill, ProfileState
+from pi_apply.state import (
+    ApplyState,
+    CompiledProfile,
+    CreatedStory,
+    OrphanedSkill,
+    ProfileState,
+    TailoredResume,
+)
 
 
 class TestApplyStateBasic:
@@ -137,8 +144,6 @@ class TestApplyStateBasic:
 
     def test_field_types_tailored(self):
         """tailored field accepts TailoredResume or None."""
-        from pi_apply.state import TailoredResume
-
         tr = TailoredResume(name="Jane Doe")
         state = ApplyState(session_id="s", tailored=tr)
         assert state.tailored == tr

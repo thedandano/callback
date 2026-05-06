@@ -15,6 +15,7 @@ import os
 import re
 import sys
 import uuid
+from pathlib import Path
 
 from fastmcp import FastMCP
 
@@ -442,8 +443,6 @@ def _apply_tailor_edits(session_id, graph, config, state_values, sections_dict, 
 def _read_file_content(path: str | None) -> str | None:
     if not path:
         return None
-    from pathlib import Path
-
     p = Path(path)
     return p.read_text(encoding="utf-8") if p.exists() else None
 
@@ -680,9 +679,7 @@ def get_wiki_pages(session_id: str, page_ids: list[str]) -> str:
     if not resume_label:
         resume_path = state_values.get("resume_path")
         if resume_path:
-            from pathlib import Path as _Path
-
-            resume_label = _Path(resume_path).stem
+            resume_label = Path(resume_path).stem
     if not resume_label:
         return _err(
             stage="get_wiki_pages",

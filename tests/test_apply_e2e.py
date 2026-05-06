@@ -191,8 +191,6 @@ class TestApplyGraphE2E:
         """M2: pipeline produces a real PDF and non-empty parsed_final."""
         session_id, graph, config = setup_e2e_session_with_graph
         state = graph.get_state(config).values
-        from pathlib import Path
-
         pdf_path = state["pdf_path"]
         pdf_bytes = Path(pdf_path).read_bytes()
         parsed_final = state.get("parsed_final", "")

@@ -1,6 +1,7 @@
 """Tests for the submit_tailor MCP tool."""
 
 import json
+import os
 
 from pi_apply.section_map import ContactInfo, ExperienceEntry, SectionMap, SkillsSection
 from pi_apply.wiki import WikiStore
@@ -77,8 +78,6 @@ def _run_to_tailor(
     tmp_path, jd_json_str: str, resume_label: str = "test_resume", monkeypatch=None
 ) -> str:
     """Run load_jd + submit_keywords and return the session_id at TAILOR_NODE."""
-    import os
-
     from pi_apply.server import load_jd, submit_keywords
 
     apps_dir = str(tmp_path / "applications")
