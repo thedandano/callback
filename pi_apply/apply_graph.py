@@ -47,13 +47,20 @@ def _tailor_route(state: ApplyState) -> str:
     if state.error:
         return END
     if state.no_coverage:
-        return "report"
-    return "render"
+        return REPORT_NODE
+    return RENDER_NODE
 
 
 JD_FETCH_NODE = "jd_fetch"
 KEYWORDS_ACCEPT_NODE = "keywords_accept"
+PARSE_INITIAL_NODE = "parse_initial"
+SCORE_INITIAL_NODE = "score_initial"
 TAILOR_NODE = "tailor"
+RENDER_NODE = "render"
+PARSE_FINAL_NODE = "parse_final"
+SCORE_FINAL_NODE = "score_final"
+REPORT_NODE = "report"
+FINALIZE_NODE = "finalize"
 
 
 def make_config(session_id: str) -> RunnableConfig:
@@ -88,29 +95,29 @@ def build_apply_graph(db_path: Path = DB_PATH):
     # Register all 10 nodes
     builder.add_node(JD_FETCH_NODE, jd_fetch)
     builder.add_node(KEYWORDS_ACCEPT_NODE, keywords_accept)
-    builder.add_node("parse_initial", parse_initial)
-    builder.add_node("score_initial", score_initial)
-    builder.add_node("tailor", tailor)
-    builder.add_node("render", render)
-    builder.add_node("parse_final", parse_final)
-    builder.add_node("score_final", score_final)
-    builder.add_node("report", report)
-    builder.add_node("finalize", finalize)
+    builder.add_node(PARSE_INITIAL_NODE, parse_initial)
+    builder.add_node(SCORE_INITIAL_NODE, score_initial)
+    builder.add_node(TAILOR_NODE, tailor)
+    builder.add_node(RENDER_NODE, render)
+    builder.add_node(PARSE_FINAL_NODE, parse_final)
+    builder.add_node(SCORE_FINAL_NODE, score_final)
+    builder.add_node(REPORT_NODE, report)
+    builder.add_node(FINALIZE_NODE, finalize)
 
     # Set entry point
     builder.set_entry_point(JD_FETCH_NODE)
 
     # Wire linear edges
     builder.add_edge(JD_FETCH_NODE, KEYWORDS_ACCEPT_NODE)
-    builder.add_edge(KEYWORDS_ACCEPT_NODE, "parse_initial")
-    builder.add_edge("parse_initial", "score_initial")
-    builder.add_edge("score_initial", "tailor")
-    builder.add_conditional_edges("tailor", _tailor_route)
-    builder.add_conditional_edges("render", _route_or_halt("parse_final"))
-    builder.add_conditional_edges("parse_final", _route_or_halt("score_final"))
-    builder.add_edge("score_final", "report")
-    builder.add_edge("report", "finalize")
-    builder.add_edge("finalize", END)
+    builder.add_edge(KEYWORDS_ACCEPT_NODE, PARSE_INITIAL_NODE)
+    builder.add_edge(PARSE_INITIAL_NODE, SCORE_INITIAL_NODE)
+    builder.add_edge(SCORE_INITIAL_NODE, TAILOR_NODE)
+    builder.add_conditional_edges(TAILOR_NODE, _tailor_route)
+    builder.add_conditional_edges(RENDER_NODE, _route_or_halt(PARSE_FINAL_NODE))
+    builder.add_conditional_edges(PARSE_FINAL_NODE, _route_or_halt(SCORE_FINAL_NODE))
+    builder.add_edge(SCORE_FINAL_NODE, REPORT_NODE)
+    builder.add_edge(REPORT_NODE, FINALIZE_NODE)
+    builder.add_edge(FINALIZE_NODE, END)
 
     return builder.compile(
         checkpointer=checkpointer,
