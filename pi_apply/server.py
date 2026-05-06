@@ -1,25 +1,31 @@
 """MCP server for pi-apply: host handoff and profile management.
 
-Exposes five tools:
+Exposes six tools:
 1. load_jd — loads JD markdown and returns host extraction instructions
 2. submit_keywords — accepts host-extracted JDData and resumes keyword handoff
 3. onboard_user — enters profile graph at onboard node
 4. compile_profile — enters profile graph at compile_profile node
 5. create_story — enters profile graph at create_story node
+6. check_update — returns current version, latest release, and update_available flag
 """
 
+import asyncio
 import datetime
 import json
 import logging
 import os
 import re
+import subprocess
 import sys
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastmcp import FastMCP
 
 import pi_apply.profile_nodes as profile_nodes
+import pi_apply.version_check as version_check
 from pi_apply.apply_graph import (
     KEYWORDS_ACCEPT_NODE,
     TAILOR_NODE,
@@ -53,6 +59,34 @@ def _log(level: str, payload: dict) -> None:
     logger.info(json.dumps(payload))
 
 
+def _ensure_browsers() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "playwright", "install", "chromium"],
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        _log("WARNING", {"event": "browser_install_failed", "returncode": result.returncode})
+
+
+async def _startup_version_check() -> None:
+    info = await asyncio.to_thread(version_check.check_update)
+    if info.get("update_available"):
+        _log(
+            "INFO",
+            {
+                "event": "update_available",
+                "current": info.get("current"),
+                "latest": info.get("latest"),
+            },
+        )
+
+
+@asynccontextmanager
+async def _lifespan(server: object) -> AsyncIterator[None]:
+    asyncio.create_task(_startup_version_check())
+    yield
+
+
 _TAILOR_INSTRUCTIONS = (
     "V4 voice constraints:\n"
     "- Bullets: past-tense action verb + mechanism (HOW) + metric from wiki. "
@@ -64,7 +98,7 @@ _TAILOR_INSTRUCTIONS = (
     "- Skills: every keyword added to skills MUST appear in ≥1 dated experience bullet."
 )
 
-mcp = FastMCP("pi-apply")
+mcp = FastMCP("pi-apply", lifespan=_lifespan)
 
 _NEXT_EXTRACT_KEYWORDS = "extract_keywords"
 _NEXT_PARSE_INITIAL = "parse_initial"
@@ -693,8 +727,20 @@ def get_wiki_pages(session_id: str, page_ids: list[str]) -> str:
     return _ok(session_id, data={"pages": pages})
 
 
+# ============================================================================
+# Utility tools
+# ============================================================================
+
+
+@mcp.tool()
+def check_update() -> str:
+    """Return current version, latest GitHub release tag, and update_available flag."""
+    return _ok("", data=version_check.check_update())
+
+
 def run() -> None:
     """Run the FastMCP stdio server."""
+    _ensure_browsers()
     mcp.run()
 
 
