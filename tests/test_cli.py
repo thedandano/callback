@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import tomllib
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from typer.testing import CliRunner
 
@@ -23,7 +23,8 @@ def test_cli_help_lists_commands():
     result = runner.invoke(app, ["--help"])
 
     assert result.exit_code == 0
-    for command in ("serve", "setup-mcp", "logs", "version"):
+    commands = ("serve", "setup-mcp", "install-browsers", "uninstall", "update", "logs", "version")
+    for command in commands:
         assert command in result.stdout
 
 
@@ -174,3 +175,93 @@ def test_setup_mcp_rejects_invalid_codex_toml_without_overwrite(tmp_path):
     assert result.exit_code == 1
     assert "not valid TOML" in result.stderr
     assert codex_path.read_text(encoding="utf-8") == original
+
+
+# ============================================================================
+# install-browsers, uninstall, update
+# ============================================================================
+
+
+def test_install_browsers_calls_playwright():
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+
+    with patch("pi_apply.cli.subprocess.run", return_value=mock_result) as mock_run:
+        result = runner.invoke(app, ["install-browsers"])
+
+    import sys
+
+    mock_run.assert_called_once_with([sys.executable, "-m", "playwright", "install", "chromium"])
+    assert result.exit_code == 0
+
+
+def test_uninstall_removes_claude_entry(tmp_path):
+    from pi_apply.cli import _remove_server_from_claude
+
+    claude_path = tmp_path / ".claude.json"
+    entry = {"command": "pi-apply", "args": ["serve"]}
+    existing = {"theme": "dark", "mcpServers": {"pi-apply": entry}}
+    claude_path.write_text(json.dumps(existing), encoding="utf-8")
+
+    _remove_server_from_claude(claude_path)
+
+    config = json.loads(claude_path.read_text(encoding="utf-8"))
+    assert config == {"theme": "dark", "mcpServers": {}}
+
+
+def test_uninstall_skips_missing_config_files(tmp_path):
+    from pi_apply.cli import _remove_server_from_claude, _remove_server_from_codex
+
+    missing_claude = tmp_path / ".claude.json"
+    missing_codex = tmp_path / "config.toml"
+
+    _remove_server_from_claude(missing_claude)
+    _remove_server_from_codex(missing_codex)
+
+    assert not missing_claude.exists()
+    assert not missing_codex.exists()
+
+
+def test_uninstall_without_purge_preserves_data_dir(tmp_path):
+    data_dir = tmp_path / "pi-apply-data"
+    data_dir.mkdir()
+
+    state_dir = tmp_path / "state"
+    with patch("pi_apply.cli._DATA_DIR", data_dir), patch("pi_apply.cli._STATE_DIR", state_dir):
+        runner.invoke(app, ["uninstall"])
+
+    assert data_dir.exists()
+
+
+def test_uninstall_purge_deletes_data_and_state_dirs(tmp_path):
+    data_dir = tmp_path / "share"
+    state_dir = tmp_path / "state"
+    data_dir.mkdir()
+    state_dir.mkdir()
+
+    with patch("pi_apply.cli._DATA_DIR", data_dir), patch("pi_apply.cli._STATE_DIR", state_dir):
+        runner.invoke(app, ["uninstall", "--purge"])
+
+    assert not data_dir.exists()
+    assert not state_dir.exists()
+
+
+def test_uninstall_purge_skips_absent_dirs(tmp_path):
+    data_dir = tmp_path / "share"
+    state_dir = tmp_path / "state"
+
+    with patch("pi_apply.cli._DATA_DIR", data_dir), patch("pi_apply.cli._STATE_DIR", state_dir):
+        invoke_result = runner.invoke(app, ["uninstall", "--purge"])
+
+    assert invoke_result.exit_code == 0
+
+
+def test_update_calls_uv_tool_upgrade():
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+
+    with patch("pi_apply.cli.subprocess.run", return_value=mock_result) as mock_run:
+        result = runner.invoke(app, ["update"])
+
+    mock_run.assert_called_once_with(["uv", "tool", "upgrade", "pi-apply"])
+    assert result.exit_code == 0

@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib.metadata
 import json
 import re
+import subprocess
+import sys
 import tempfile
 import time
 import tomllib
@@ -23,6 +25,8 @@ SERVER_NAME = "pi-apply"
 SERVER_COMMAND = "pi-apply"
 SERVER_ARGS = ["serve"]
 DEFAULT_LOG_PATH = Path("~/.local/state/pi-apply/server.log").expanduser()
+_DATA_DIR = Path("~/.local/share/pi-apply").expanduser()
+_STATE_DIR = Path("~/.local/state/pi-apply").expanduser()
 
 
 class ConfigError(Exception):
@@ -132,6 +136,26 @@ def configure_codex(path: Path) -> None:
     _write_text_atomic(path, _dump_toml(config))
 
 
+def _remove_server_from_claude(path: Path) -> None:
+    if not path.exists():
+        return
+    config = _read_json_config(path)
+    servers = config.get("mcpServers")
+    if isinstance(servers, dict):
+        servers.pop(SERVER_NAME, None)
+    _write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
+
+
+def _remove_server_from_codex(path: Path) -> None:
+    if not path.exists():
+        return
+    config = _read_toml_config(path)
+    servers = config.get("mcp_servers")
+    if isinstance(servers, dict):
+        servers.pop(SERVER_NAME, None)
+    _write_text_atomic(path, _dump_toml(config))
+
+
 @app.command()
 def serve() -> None:
     """Start the pi-apply MCP server."""
@@ -195,6 +219,48 @@ def logs(
                     console.print(line.rstrip("\n"))
                 else:
                     time.sleep(0.5)
+
+
+@app.command("install-browsers")
+def install_browsers() -> None:
+    """Install Playwright Chromium browser in the tool's isolated environment."""
+    result = subprocess.run(
+        [sys.executable, "-m", "playwright", "install", "chromium"],
+    )
+    raise typer.Exit(result.returncode)
+
+
+@app.command()
+def uninstall(
+    purge: Annotated[
+        bool,
+        typer.Option("--purge", help="Also delete application data and state directories."),
+    ] = False,
+) -> None:
+    """Remove pi-apply MCP server entries from Claude and Codex configs."""
+    claude_path = Path("~/.claude.json").expanduser()
+    codex_path = Path("~/.codex/config.toml").expanduser()
+    try:
+        _remove_server_from_claude(claude_path)
+        _remove_server_from_codex(codex_path)
+    except ConfigError as exc:
+        error_console.print(f"uninstall failed: {exc}")
+        raise typer.Exit(1) from exc
+
+    if purge:
+        import shutil
+
+        for directory in (_DATA_DIR, _STATE_DIR):
+            if directory.exists():
+                shutil.rmtree(directory)
+                console.print(f"Deleted: {directory}")
+
+
+@app.command()
+def update() -> None:
+    """Upgrade pi-apply to the latest version via uv."""
+    result = subprocess.run(["uv", "tool", "upgrade", "pi-apply"])
+    raise typer.Exit(result.returncode)
 
 
 @app.command()
