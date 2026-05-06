@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from pi_apply.state import ApplyState, ProfileState
+from pi_apply.state import ApplyState, CompiledProfile, CreatedStory, OrphanedSkill, ProfileState
 
 
 class TestApplyStateBasic:
@@ -280,6 +280,98 @@ class TestProfileStateBasic:
         assert state.profile_exists is True
         assert state.orphaned_skills == ["Go", "Rust"]
         assert state.current_story_target == "Go"
+
+
+class TestCreatedStory:
+    """Schema round-trips and field validation for CreatedStory."""
+
+    def _make_story(self, **overrides):
+        defaults = {
+            "id": "story-001",
+            "primary_skill": "Kubernetes",
+            "skills": ["Kubernetes", "Helm"],
+            "story_type": "technical",
+            "job_title": "Platform Engineer",
+            "situation": "Legacy infra had no container orchestration.",
+            "behavior": "Migrated 12 services to Kubernetes on EKS.",
+            "impact": "Reduced deploy time by 60%.",
+        }
+        return CreatedStory(**{**defaults, **overrides})
+
+    def test_round_trip(self):
+        story = self._make_story()
+        assert CreatedStory.model_validate(story.model_dump()) == story
+
+    def test_all_fields_present(self):
+        expected = {
+            "id",
+            "primary_skill",
+            "skills",
+            "story_type",
+            "job_title",
+            "situation",
+            "behavior",
+            "impact",
+        }
+        assert set(CreatedStory.model_fields) == expected
+
+    def test_skills_accepts_empty_list(self):
+        story = self._make_story(skills=[])
+        assert story.skills == []
+
+    def test_rejects_missing_required_field(self):
+        with pytest.raises(ValidationError):
+            CreatedStory(id="s", primary_skill="k8s", skills=[], story_type="t", job_title="j")  # type: ignore[call-arg]
+
+
+class TestOrphanedSkill:
+    def test_defaults_deferred_false(self):
+        expected = OrphanedSkill(skill="Terraform", deferred=False)
+        assert OrphanedSkill(skill="Terraform") == expected
+
+    def test_round_trip(self):
+        o = OrphanedSkill(skill="Go", deferred=True)
+        assert OrphanedSkill.model_validate(o.model_dump()) == o
+
+
+class TestCompiledProfile:
+    """Schema round-trips and field validation for CompiledProfile."""
+
+    def _make_profile(self, **overrides):
+        story = CreatedStory(
+            id="story-001",
+            primary_skill="Kubernetes",
+            skills=["Kubernetes"],
+            story_type="technical",
+            job_title="SRE",
+            situation="s",
+            behavior="b",
+            impact="i",
+        )
+        defaults = {
+            "schema_version": "1",
+            "skills": ["Kubernetes", "Terraform"],
+            "stories": [story],
+            "orphaned_skills": [OrphanedSkill(skill="Terraform")],
+            "compiled_at": "2026-05-06T12:00:00+00:00",
+        }
+        return CompiledProfile(**{**defaults, **overrides})
+
+    def test_round_trip(self):
+        profile = self._make_profile()
+        assert CompiledProfile.model_validate(profile.model_dump()) == profile
+
+    def test_schema_version_is_one(self):
+        profile = self._make_profile()
+        assert profile.schema_version == "1"
+
+    def test_all_fields_present(self):
+        fields = set(CompiledProfile.model_fields)
+        assert fields == {"schema_version", "skills", "stories", "orphaned_skills", "compiled_at"}
+
+    def test_empty_stories_and_orphans(self):
+        profile = self._make_profile(stories=[], orphaned_skills=[])
+        assert CompiledProfile.model_validate(profile.model_dump()) == profile
 
 
 class TestStateModelIndependence:
