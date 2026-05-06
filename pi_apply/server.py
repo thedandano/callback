@@ -30,6 +30,8 @@ from pi_apply.apply_graph import (
 from pi_apply.apply_nodes import _detect_uncovered_skills
 from pi_apply.jd_data import EXTRACTION_PROTOCOL, JDDataError, parse_jd_json
 from pi_apply.jd_fetcher import JDFetchError
+from pi_apply.profile_graph import build_profile_graph
+from pi_apply.profile_graph import make_config as make_profile_config
 from pi_apply.section_map import SectionMap, apply_edit
 from pi_apply.state import ApplyState, ProfileState
 from pi_apply.wiki import WikiStore
@@ -437,21 +439,69 @@ def _apply_tailor_edits(session_id, graph, config, state_values, sections_dict, 
 # ============================================================================
 
 
+def _read_file_content(path: str | None) -> str | None:
+    if not path:
+        return None
+    from pathlib import Path
+
+    p = Path(path)
+    return p.read_text(encoding="utf-8") if p.exists() else None
+
+
+def _build_onboard_warnings(
+    skills_path: str | None, accomplishments_path: str | None
+) -> list[dict]:
+    if skills_path or accomplishments_path:
+        return []
+    return [
+        {
+            "warning": "no_skills_path",
+            "message": "No skills file provided. Skills will be extracted from resume only.",
+        }
+    ]
+
+
+def _build_onboard_data(state_values: dict, warnings: list[dict]) -> dict:
+    data: dict = {
+        "intake": state_values.get("intake") or {},
+        "resume_label": state_values.get("resume_label"),
+        "sections": state_values.get("sections") or {},
+    }
+    if warnings:
+        data["warnings"] = warnings
+    return data
+
+
+def _parse_story_tags(story_tags: str | None) -> list[str] | None:
+    if not story_tags:
+        return []
+    try:
+        parsed = json.loads(story_tags)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(parsed, dict):
+        return list(parsed.keys())
+    if isinstance(parsed, list):
+        return [str(t) for t in parsed]
+    return None
+
+
 @mcp.tool()
 def onboard_user(
-    resume_content: str | None = None,
-    resume_label: str | None = None,
-    skills: str | None = None,
-    accomplishments: str | None = None,
-    sections: str | None = None,
+    resume_path: str | None = None,
+    skills_path: str | None = None,
+    accomplishments_path: str | None = None,
 ) -> str:
-    """Onboard a new user: collect resume, skills, and accomplishments.
+    """Onboard a new user: register resume, skills, and accomplishments.
 
-    Skeleton: directly invokes the onboard node. Real impl will use graph
-    state injection to re-enter at onboard.
+    Args:
+        resume_path: Path to the resume file (PDF, DOCX, or TXT).
+        skills_path: Optional path to a plain-text skills file.
+        accomplishments_path: Optional path to a plain-text accomplishments file.
 
     Returns:
-        JSON envelope with status ok and session_id.
+        JSON envelope with status ok, next_action=compile_profile, and data
+        containing intake, resume_label, sections, and optional warnings.
     """
     session_id = str(uuid.uuid4())
     _log(
@@ -459,32 +509,50 @@ def onboard_user(
         {
             "tool": "onboard_user",
             "session_id": session_id,
-            "has_resume": resume_content is not None,
-            "has_skills": skills is not None,
-            "has_accomplishments": accomplishments is not None,
+            "has_resume": resume_path is not None,
+            "has_skills": skills_path is not None,
+            "has_accomplishments": accomplishments_path is not None,
         },
     )
 
-    # Skeleton: directly call the onboard node (bypasses check_profile router)
-    state = ProfileState(session_id=session_id)
-    delta = profile_nodes.onboard(state)
+    if not resume_path:
+        return _err(
+            stage="onboard_user",
+            code="missing_resume_path",
+            message="resume_path is required",
+            session_id=session_id,
+            retriable=False,
+        )
 
-    return _ok(session_id, "compile_profile", delta)
+    warnings = _build_onboard_warnings(skills_path, accomplishments_path)
+    onboard_text = _read_file_content(accomplishments_path)
+    intake: dict = {}
+    if onboard_text:
+        intake["onboard_text"] = onboard_text
+
+    initial_state = ProfileState(
+        session_id=session_id,
+        resume_path=resume_path,
+        intake=intake if intake else None,
+    )
+    graph = build_profile_graph()
+    config = make_profile_config(session_id)
+    graph.invoke(initial_state, config)
+    state_values = graph.get_state(config).values
+
+    return _ok(session_id, "compile_profile", _build_onboard_data(state_values, warnings))
 
 
 @mcp.tool()
-def compile_profile(
-    skills: str | None = None,
-    remove_skills: str | None = None,
-    stories: str | None = None,
-) -> str:
-    """Recompile the user's profile from skills and stories.
+def compile_profile(story_tags: str | None = None) -> str:
+    """Recompile the user profile from all stored stories.
 
-    Skeleton: directly invokes the compile_profile node. Real impl will use
-    graph state injection to re-enter at compile_profile.
+    Args:
+        story_tags: Optional JSON string. Accepts a dict (keys become host_tags)
+            or a list of skill strings.
 
     Returns:
-        JSON envelope with status ok and session_id.
+        JSON envelope with compiled_profile, skill_coverage_warnings, and skills_index.
     """
     session_id = str(uuid.uuid4())
     _log(
@@ -492,39 +560,57 @@ def compile_profile(
         {
             "tool": "compile_profile",
             "session_id": session_id,
-            "has_skills": skills is not None,
-            "has_remove_skills": remove_skills is not None,
-            "has_stories": stories is not None,
+            "has_story_tags": story_tags is not None,
         },
     )
 
-    # Skeleton: directly call the compile_profile node (bypasses check_profile router)
-    state = ProfileState(session_id=session_id)
-    delta = profile_nodes.compile_profile(state)
+    host_tags = _parse_story_tags(story_tags)
+    if host_tags is None:
+        return _err(
+            stage="compile_profile",
+            code="invalid_story_tags",
+            message="story_tags must be a JSON dict or list",
+            session_id=session_id,
+            retriable=True,
+        )
 
-    return _ok(session_id, "check_orphans", delta)
+    state = ProfileState(
+        session_id=session_id,
+        compiled_profile={"host_tags": host_tags} if host_tags else None,
+    )
+    delta = profile_nodes.compile_profile(state)
+    intake = delta.get("intake") or {}
+    data = {
+        "compiled_profile": delta.get("compiled_profile") or {},
+        "skill_coverage_warnings": intake.get("skill_coverage_warnings", []),
+        "skills_index": intake.get("skills_index", []),
+    }
+    return _ok(session_id, None, data)
 
 
 @mcp.tool()
 def create_story(
-    skill: str,
+    primary_skill: str,
+    skills: list[str],
     story_type: str,
     job_title: str,
     situation: str,
     behavior: str,
     impact: str,
-    is_new_job: bool | None = None,
-    job_start_date: str | None = None,
-    job_end_date: str | None = None,
-    jd_context: str | None = None,
 ) -> str:
-    """Create a behavioral story for a skill.
+    """Create and persist a behavioral story for a skill.
 
-    Skeleton: directly invokes the create_story node. Real impl will use graph
-    state injection to re-enter at create_story.
+    Args:
+        primary_skill: The main skill this story demonstrates.
+        skills: All skills this story demonstrates (must include primary_skill).
+        story_type: Story format (e.g., STAR, CAR, PAR).
+        job_title: Role title for this story.
+        situation: Context / problem statement.
+        behavior: Actions taken.
+        impact: Quantified outcome.
 
     Returns:
-        JSON envelope with status ok and session_id.
+        JSON envelope with story_id, primary_skill, and needs_compile=true.
     """
     session_id = str(uuid.uuid4())
     _log(
@@ -532,17 +618,30 @@ def create_story(
         {
             "tool": "create_story",
             "session_id": session_id,
-            "skill": skill,
+            "primary_skill": primary_skill,
             "story_type": story_type,
             "job_title": job_title,
         },
     )
 
-    # Skeleton: directly call the create_story node (bypasses check_profile router)
-    state = ProfileState(session_id=session_id)
+    intake = {
+        "primary_skill": primary_skill,
+        "skills": skills,
+        "story_type": story_type,
+        "job_title": job_title,
+        "situation": situation,
+        "behavior": behavior,
+        "impact": impact,
+    }
+    state = ProfileState(session_id=session_id, intake=intake)
     delta = profile_nodes.create_story(state)
-
-    return _ok(session_id, "compile_profile", delta)
+    saved_intake = delta.get("intake") or {}
+    data = {
+        "story_id": saved_intake.get("story_id"),
+        "primary_skill": primary_skill,
+        "needs_compile": True,
+    }
+    return _ok(session_id, "compile_profile", data)
 
 
 @mcp.tool()
