@@ -9,17 +9,15 @@ from pi_apply.server import compile_profile, create_story, onboard_user
 
 def _fake_graph(state_values: dict):
     class _Snap:
-        pass
-
-    snap = _Snap()
-    snap.values = state_values
+        def __init__(self) -> None:
+            self.values = state_values
 
     class _Graph:
         def invoke(self, state, config):
             pass
 
         def get_state(self, config):
-            return snap
+            return _Snap()
 
     return _Graph()
 
@@ -230,7 +228,17 @@ class TestCreateStory:
     def test_returns_story_id_and_needs_compile(self, monkeypatch):
         monkeypatch.setattr(pnodes, "create_story", lambda state: _CREATE_DELTA)
 
-        result = json.loads(create_story(**_STORY_FIELDS))
+        result = json.loads(
+            create_story(
+                primary_skill="Python",
+                skills=["Python", "Docker"],
+                story_type="STAR",
+                job_title="Backend Engineer",
+                situation="Legacy system.",
+                behavior="Rewrote it.",
+                impact="40% faster.",
+            )
+        )
 
         assert result == {
             "session_id": result["session_id"],
@@ -252,6 +260,14 @@ class TestCreateStory:
 
         monkeypatch.setattr(pnodes, "create_story", fake_create)
 
-        create_story(**_STORY_FIELDS)
+        create_story(
+            primary_skill="Python",
+            skills=["Python", "Docker"],
+            story_type="STAR",
+            job_title="Backend Engineer",
+            situation="Legacy system.",
+            behavior="Rewrote it.",
+            impact="40% faster.",
+        )
 
         assert captured["state"].intake == _STORY_FIELDS
