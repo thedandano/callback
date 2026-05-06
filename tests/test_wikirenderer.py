@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from pi_apply.profilecompiler import ProfileCompiler
 from pi_apply.state import CompiledProfile, CreatedStory
 from pi_apply.wiki import WikiStore
 from pi_apply.wikirenderer import WikiRenderer
@@ -29,8 +30,6 @@ def _make_story(
 
 
 def _make_profile(stories: list[CreatedStory], orphans: list[str] | None = None) -> CompiledProfile:
-    from pi_apply.profilecompiler import ProfileCompiler
-
     host_tags = orphans or []
     profile, _ = ProfileCompiler().compile(stories, host_tags=host_tags)
     return profile

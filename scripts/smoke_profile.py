@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import tempfile
+import traceback
 
 # Add current directory to path for running via uv
 sys.path.insert(0, os.getcwd())
@@ -68,8 +69,6 @@ def main():
         return 0
     except Exception as e:
         print(f"SMOKE FAILED: {e}", file=sys.stderr)
-        import traceback
-
         traceback.print_exc()
         return 1
 
