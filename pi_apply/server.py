@@ -63,6 +63,11 @@ _TAILOR_INSTRUCTIONS = (
 
 mcp = FastMCP("pi-apply")
 
+_NEXT_EXTRACT_KEYWORDS = "extract_keywords"
+_NEXT_PARSE_INITIAL = "parse_initial"
+_NEXT_FETCH_WIKI_THEN_TAILOR = "fetch_wiki_then_tailor"
+_NEXT_ADD_STORY_FIRST = "add_story_first"
+
 
 # ============================================================================
 # Orphan detection helpers
@@ -236,13 +241,13 @@ def load_jd(
         "jd_text": state.get("jd_text"),
         "extraction_protocol": EXTRACTION_PROTOCOL,
     }
-    return _ok(session_id, "extract_keywords", data)
+    return _ok(session_id, _NEXT_EXTRACT_KEYWORDS, data)
 
 
 def _submit_keywords_next_action(wiki_index: str | None, orphaned_required: list[str]) -> str:
     if not wiki_index:
-        return "parse_initial"
-    return "add_story_first" if orphaned_required else "fetch_wiki_then_tailor"
+        return _NEXT_PARSE_INITIAL
+    return _NEXT_ADD_STORY_FIRST if orphaned_required else _NEXT_FETCH_WIKI_THEN_TAILOR
 
 
 @mcp.tool()
