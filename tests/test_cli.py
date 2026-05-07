@@ -133,24 +133,25 @@ def test_setup_mcp_writes_both_configs(tmp_path):
     claude_path = tmp_path / ".claude.json"
     codex_path = tmp_path / ".codex" / "config.toml"
 
-    result = runner.invoke(
-        app,
-        [
-            "setup-mcp",
-            "--claude-config",
-            str(claude_path),
-            "--codex-config",
-            str(codex_path),
-        ],
-    )
+    with patch("pi_apply.cli._resolve_command", return_value="/usr/local/bin/pi-apply"):
+        result = runner.invoke(
+            app,
+            [
+                "setup-mcp",
+                "--claude-config",
+                str(claude_path),
+                "--codex-config",
+                str(codex_path),
+            ],
+        )
 
     assert result.exit_code == 0
     assert json.loads(claude_path.read_text(encoding="utf-8"))["mcpServers"]["pi-apply"] == {
-        "command": "pi-apply",
+        "command": "/usr/local/bin/pi-apply",
         "args": ["serve"],
     }
     assert _read_toml(codex_path)["mcp_servers"]["pi-apply"] == {
-        "command": "pi-apply",
+        "command": "/usr/local/bin/pi-apply",
         "args": ["serve"],
     }
 
