@@ -25,6 +25,7 @@ _KNOWN_SECTIONS: dict[str, str] = {
     "objective": "summary",
     "profile": "summary",
     "skills": "skills",
+    "skills & abilities": "skills",
     "technologies": "skills",
     "experience": "experience",
     "work experience": "experience",
@@ -404,11 +405,28 @@ def extract(path: str | Path) -> str:
 
 
 def _extract_pdf(path: Path) -> str:
+    from collections import defaultdict
+
     import pdfplumber
 
+    page_texts: list[str] = []
     with pdfplumber.open(path) as pdf:
-        pages = [page.extract_text() or "" for page in pdf.pages]
-    text = "\n".join(pages).strip()
+        for page in pdf.pages:
+            # x_tolerance=2 handles PDFs with tight inter-word spacing (~2.6px)
+            # that extract_text()'s default x_tolerance=3 merges into one token.
+            words = page.extract_words(x_tolerance=2, y_tolerance=3)
+            if not words:
+                continue
+            lines_by_y: dict[int, list] = defaultdict(list)
+            for w in words:
+                y_key = round(w["top"] / 3) * 3
+                lines_by_y[y_key].append(w)
+            lines: list[str] = []
+            for y in sorted(lines_by_y):
+                row = sorted(lines_by_y[y], key=lambda w: w["x0"])
+                lines.append(" ".join(w["text"] for w in row))
+            page_texts.append("\n".join(lines))
+    text = "\n".join(page_texts).strip()
     if not text:
         raise RuntimeError(f"extractor: PDF yielded no text: {path}")
     return text
