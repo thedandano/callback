@@ -28,6 +28,7 @@ from pi_apply import extractor as resume_extractor
 from pi_apply import scorer
 from pi_apply.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError, fetch_url_to_markdown
 from pi_apply.render import render_resume
+from pi_apply.repository.resumes import ResumeNotFoundError, get_resume
 from pi_apply.section_map import SectionMap
 from pi_apply.state import ApplyState, TailoredResume
 from pi_apply.wiki import WikiStore
@@ -189,20 +190,31 @@ def _load_wiki_sections(resume_label: str) -> tuple[str, str, str]:
 def parse_initial(state: ApplyState) -> dict:
     """Load sections.json from wiki, fall back to text extraction if missing."""
     _log_enter("parse_initial", state)
-    if state.resume_path is None:
+    if state.resume_label is None:
         return {"parsed_initial": "<noop:parse:no-source>"}
-    resume_label = Path(state.resume_path).stem
-    sections_json, wiki_index, resume_text = _load_wiki_sections(resume_label)
+    sections_json, wiki_index, resume_text = _load_wiki_sections(state.resume_label)
     if sections_json:
         section_map = SectionMap.model_validate_json(sections_json)
         return {
             "parsed_initial": resume_text,
             "sections": section_map.model_dump(),
-            "resume_label": resume_label,
             "wiki_index": wiki_index,
         }
-    text = resume_extractor.extract(state.resume_path)
-    return {"parsed_initial": text, "resume_label": resume_label}
+    try:
+        resume_path = get_resume(state.resume_label)
+    except ResumeNotFoundError:
+        logger.warning(
+            json.dumps(
+                {
+                    "node": "parse_initial",
+                    "event": "resume_not_found",
+                    "resume_label": state.resume_label,
+                }
+            )
+        )
+        return {"parsed_initial": "<noop:parse:no-source>"}
+    text = resume_extractor.extract(resume_path)
+    return {"parsed_initial": text}
 
 
 def score_initial(state: ApplyState) -> dict:

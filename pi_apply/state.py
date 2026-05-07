@@ -50,7 +50,6 @@ class ApplyState(BaseModel):
     jd_raw_text: str | None = Field(default=None)
     jd_text: str | None = Field(default=None)
     keywords: dict | None = Field(default=None)
-    resume_path: str | None = Field(default=None)
     resume_label: str | None = Field(default=None)
     sections: dict | None = Field(default=None)
     wiki_index: str | None = Field(default=None)

@@ -22,7 +22,6 @@ class TestApplyStateBasic:
         assert state.jd_raw_text is None
         assert state.jd_text is None
         assert state.keywords is None
-        assert state.resume_path is None
         assert state.resume_label is None
         assert state.parsed_initial is None
         assert state.parsed_final is None
@@ -54,7 +53,6 @@ class TestApplyStateBasic:
             "jd_raw_text",
             "jd_text",
             "keywords",
-            "resume_path",
             "resume_label",
             "sections",
             "wiki_index",
@@ -78,6 +76,7 @@ class TestApplyStateBasic:
         """ApplyState does not have legacy fields from walking-skeleton."""
         legacy_fields = {
             "resume_content",
+            "resume_path",
             "scored_resumes",
             "tailored_t1",
             "tailored_t2",
@@ -109,11 +108,6 @@ class TestApplyStateBasic:
         kw = {"title": "Engineer", "required": ["Python"]}
         state = ApplyState(session_id="s", keywords=kw)
         assert state.keywords == kw
-
-    def test_field_types_resume_path(self):
-        """resume_path field accepts str or None."""
-        state = ApplyState(session_id="s", resume_path="/path/to/resume.pdf")
-        assert state.resume_path == "/path/to/resume.pdf"
 
     def test_field_types_resume_label(self):
         """resume_label field accepts str or None."""

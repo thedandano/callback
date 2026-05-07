@@ -92,14 +92,13 @@ def test_load_jd_rejects_missing_jd_input():
     assert result == expected
 
 
-def test_load_jd_returns_handoff_envelope(tmp_path):
+def test_load_jd_returns_handoff_envelope():
     from pi_apply.server import load_jd
 
-    resume_file = tmp_path / "resume.txt"
-    resume_file.write_text("Python developer")
     jd_text = "Python engineer needed"
 
-    result = json.loads(load_jd(jd_raw_text=jd_text, resume_path=str(resume_file)))
+    with patch("pi_apply.server.list_resumes", return_value=["resume"]):
+        result = json.loads(load_jd(jd_raw_text=jd_text))
     session_id = result["session_id"]
     uuid.UUID(session_id)
     expected = {
@@ -115,21 +114,21 @@ def test_load_jd_returns_handoff_envelope(tmp_path):
     assert result == expected
 
 
-def test_load_jd_accepts_url_with_raw_text_fallback(tmp_path):
+def test_load_jd_accepts_url_with_raw_text_fallback():
     from pi_apply.server import load_jd
 
-    resume_file = tmp_path / "resume.txt"
-    resume_file.write_text("Python developer")
     jd_url = "https://example.test/job"
     jd_text = "# Python Engineer\n\nBuild Python services and own APIs."
     fetch_mock = AsyncMock(return_value=jd_text)
 
-    with patch("pi_apply.apply_nodes.fetch_url_to_markdown", fetch_mock):
+    with (
+        patch("pi_apply.apply_nodes.fetch_url_to_markdown", fetch_mock),
+        patch("pi_apply.server.list_resumes", return_value=["resume"]),
+    ):
         result = json.loads(
             load_jd(
                 jd_url=jd_url,
                 jd_raw_text="Python engineer fallback text",
-                resume_path=str(resume_file),
             )
         )
     session_id = result["session_id"]
@@ -148,12 +147,11 @@ def test_load_jd_accepts_url_with_raw_text_fallback(tmp_path):
     fetch_mock.assert_awaited_once_with(jd_url)
 
 
-def test_submit_keywords_stores_jddata_and_stops_before_parsing(tmp_path):
+def test_submit_keywords_stores_jddata_and_stops_before_parsing():
     from pi_apply.server import load_jd, submit_keywords
 
-    resume_file = tmp_path / "resume.txt"
-    resume_file.write_text("Python developer")
-    loaded = json.loads(load_jd(jd_raw_text="Python engineer needed", resume_path=str(resume_file)))
+    with patch("pi_apply.server.list_resumes", return_value=["resume"]):
+        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
     session_id = loaded["session_id"]
 
     result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
@@ -248,12 +246,11 @@ def test_submit_keywords_rejects_blank_session_with_session_id():
     assert result == expected
 
 
-def test_submit_keywords_rejects_session_not_waiting_for_keywords(tmp_path):
+def test_submit_keywords_rejects_session_not_waiting_for_keywords():
     from pi_apply.server import load_jd, submit_keywords
 
-    resume_file = tmp_path / "resume.txt"
-    resume_file.write_text("Python developer")
-    loaded = json.loads(load_jd(jd_raw_text="Python engineer needed", resume_path=str(resume_file)))
+    with patch("pi_apply.server.list_resumes", return_value=["resume"]):
+        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
     session_id = loaded["session_id"]
     submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
 
@@ -339,12 +336,8 @@ class TestSubmitTailorNoCoverage:
 
         monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path / "applications"))
 
-        resume_file = tmp_path / "resume.txt"
-        resume_file.write_text("Python developer")
-
-        session_id = json.loads(
-            load_jd(jd_raw_text="Python engineer needed", resume_path=str(resume_file))
-        )["session_id"]
+        with patch("pi_apply.server.list_resumes", return_value=["resume"]):
+            session_id = json.loads(load_jd(jd_raw_text="Python engineer needed"))["session_id"]
         json.loads(submit_keywords(session_id=session_id, jd_json=_NO_COVERAGE_JD_JSON))
 
         result = json.loads(submit_tailor(session_id=session_id, edits=[], no_coverage=True))
@@ -372,6 +365,157 @@ class TestSubmitTailorNoCoverage:
             "report_no_coverage": True,
             "outcome_no_coverage": True,
         }
+
+
+# ============================================================================
+# check_update MCP tool — in-process transport tests
+# ============================================================================
+
+
+# ============================================================================
+# load_jd resume resolution — tasks 4.1–4.4
+# ============================================================================
+
+
+def test_load_jd_auto_selects_single_registered_resume():
+    """Single registered resume is auto-selected when resume_label is omitted."""
+    from pi_apply.apply_graph import build_apply_graph, make_config
+    from pi_apply.server import load_jd
+
+    with patch("pi_apply.server.list_resumes", return_value=["default"]):
+        result = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+
+    session_id = result["session_id"]
+    graph = build_apply_graph()
+    snapshot = graph.get_state(make_config(session_id))
+    expected = {
+        "session_id": session_id,
+        "status": "ok",
+        "next_action": "extract_keywords",
+        "data": {"jd_text": "Python engineer needed", "extraction_protocol": EXTRACTION_PROTOCOL},
+    }
+    assert result == expected
+    assert snapshot.values.get("resume_label") == "default"
+
+
+def test_load_jd_returns_ambiguous_resume_error_for_multiple_resumes():
+    """Multiple resumes registered without label returns ambiguous_resume error."""
+    from pi_apply.server import load_jd
+
+    with patch("pi_apply.server.list_resumes", return_value=["default", "senior"]):
+        result = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+
+    expected = {
+        "session_id": result["session_id"],
+        "status": "error",
+        "error": {
+            "stage": "load_jd",
+            "code": "ambiguous_resume",
+            "message": result["error"]["message"],
+            "retriable": False,
+        },
+    }
+    assert result == expected
+    assert "default" in result["error"]["message"]
+    assert "senior" in result["error"]["message"]
+
+
+def test_load_jd_returns_no_resume_registered_error_when_empty():
+    """No registered resumes returns no_resume_registered error."""
+    from pi_apply.server import load_jd
+
+    with patch("pi_apply.server.list_resumes", return_value=[]):
+        result = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+
+    expected = {
+        "session_id": result["session_id"],
+        "status": "error",
+        "error": {
+            "stage": "load_jd",
+            "code": "no_resume_registered",
+            "message": result["error"]["message"],
+            "retriable": False,
+        },
+    }
+    assert result == expected
+    assert "onboard_user" in result["error"]["message"]
+
+
+def test_load_jd_passes_explicit_label_through_to_state():
+    """Explicit resume_label is stored in session state."""
+    from pi_apply.apply_graph import build_apply_graph, make_config
+    from pi_apply.server import load_jd
+
+    with patch("pi_apply.server.list_resumes", return_value=["default", "senior"]):
+        result = json.loads(load_jd(jd_raw_text="Python engineer needed", resume_label="senior"))
+
+    session_id = result["session_id"]
+    graph = build_apply_graph()
+    snapshot = graph.get_state(make_config(session_id))
+    expected = {
+        "session_id": session_id,
+        "status": "ok",
+        "next_action": "extract_keywords",
+        "data": {"jd_text": "Python engineer needed", "extraction_protocol": EXTRACTION_PROTOCOL},
+    }
+    assert result == expected
+    assert snapshot.values.get("resume_label") == "senior"
+
+
+def test_load_jd_returns_error_for_unknown_explicit_label():
+    """Explicit resume_label not in registry returns resume_not_found error."""
+    from pi_apply.server import load_jd
+
+    with patch("pi_apply.server.list_resumes", return_value=["default"]):
+        result = json.loads(load_jd(jd_raw_text="Python engineer needed", resume_label="missing"))
+
+    expected = {
+        "session_id": result["session_id"],
+        "status": "error",
+        "error": {
+            "stage": "load_jd",
+            "code": "resume_not_found",
+            "message": result["error"]["message"],
+            "retriable": False,
+        },
+    }
+    assert result == expected
+    assert "missing" in result["error"]["message"]
+
+
+# ============================================================================
+# parse_initial resume resolution — tasks 4.5–4.6
+# ============================================================================
+
+
+def test_parse_initial_wiki_miss_calls_get_resume_and_extracts_text(tmp_path):
+    """Wiki miss: get_resume is called and text is extracted from the returned path."""
+    from pi_apply.apply_nodes import parse_initial
+    from pi_apply.state import ApplyState
+
+    resume = tmp_path / "resume.txt"
+    resume.write_text("Lead Engineer with Python and Kubernetes experience")
+    state = ApplyState(session_id="s1", resume_label="lead")
+
+    with patch("pi_apply.apply_nodes.get_resume", return_value=str(resume)) as mock_get:
+        result = parse_initial(state)
+
+    mock_get.assert_called_once_with("lead")
+    assert result == {"parsed_initial": "Lead Engineer with Python and Kubernetes experience"}
+
+
+def test_parse_initial_wiki_miss_resume_not_found_returns_noop_sentinel():
+    """Wiki miss with ResumeNotFoundError returns noop sentinel."""
+    from pi_apply.apply_nodes import parse_initial
+    from pi_apply.repository.resumes import ResumeNotFoundError
+    from pi_apply.state import ApplyState
+
+    state = ApplyState(session_id="s1", resume_label="ghost")
+
+    with patch("pi_apply.apply_nodes.get_resume", side_effect=ResumeNotFoundError("ghost")):
+        result = parse_initial(state)
+
+    assert result == {"parsed_initial": "<noop:parse:no-source>"}
 
 
 # ============================================================================

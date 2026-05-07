@@ -1,24 +1,25 @@
 """Tests for real parse_initial and score_initial node implementations."""
 
+from unittest.mock import patch
+
 import pytest
 
 from pi_apply.apply_nodes import parse_final, parse_initial, render, score_initial, tailor
 from pi_apply.state import ApplyState, TailoredResume
 
 
-def test_parse_initial_falls_back_to_text_extraction(tmp_path, monkeypatch):
-    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+def test_parse_initial_falls_back_to_text_extraction(tmp_path):
     resume = tmp_path / "resume.txt"
     resume.write_text("EXPERIENCE\nAcme | Engineer\nBuilt REST API")
     state = ApplyState(
         session_id="s1",
-        resume_path=str(resume),
+        resume_label="resume",
         keywords={"required": ["Python"], "preferred": [], "required_years": 0.0},
     )
-    result = parse_initial(state)
+    with patch("pi_apply.apply_nodes.get_resume", return_value=str(resume)):
+        result = parse_initial(state)
     expected = {
         "parsed_initial": "EXPERIENCE\nAcme | Engineer\nBuilt REST API",
-        "resume_label": "resume",
     }
     assert result == expected
 

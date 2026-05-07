@@ -24,13 +24,15 @@ def test_submit_tailor_rejects_unknown_session():
     assert result == expected
 
 
-def test_submit_tailor_rejects_session_not_at_tailor(tmp_path):
+def test_submit_tailor_rejects_session_not_at_tailor(tmp_path, monkeypatch):
     """Session that has only completed load_jd (at keywords_accept, not tailor) is rejected."""
+    from unittest.mock import patch
+
     from pi_apply.server import load_jd, submit_tailor
 
-    resume_file = tmp_path / "resume.txt"
-    resume_file.write_text("Python developer")
-    loaded = json.loads(load_jd(jd_raw_text="Python engineer", resume_path=str(resume_file)))
+    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path / "applications"))
+    with patch("pi_apply.server.list_resumes", return_value=["resume"]):
+        loaded = json.loads(load_jd(jd_raw_text="Python engineer"))
     session_id = loaded["session_id"]
 
     # Session is at keywords_accept (not tailor) — submit_tailor should reject
@@ -78,6 +80,8 @@ def _run_to_tailor(
     tmp_path, jd_json_str: str, resume_label: str = "test_resume", monkeypatch=None
 ) -> str:
     """Run load_jd + submit_keywords and return the session_id at TAILOR_NODE."""
+    from unittest.mock import patch
+
     from pi_apply.server import load_jd, submit_keywords
 
     apps_dir = str(tmp_path / "applications")
@@ -85,9 +89,8 @@ def _run_to_tailor(
         monkeypatch.setenv("PI_APPLY_APPS_DIR", apps_dir)
     else:
         os.environ["PI_APPLY_APPS_DIR"] = apps_dir
-    resume_file = tmp_path / f"{resume_label}.txt"
-    resume_file.write_text("Placeholder resume text")
-    loaded = json.loads(load_jd(jd_raw_text="Sample JD", resume_path=str(resume_file)))
+    with patch("pi_apply.server.list_resumes", return_value=[resume_label]):
+        loaded = json.loads(load_jd(jd_raw_text="Sample JD"))
     session_id = loaded["session_id"]
     submit_keywords(session_id=session_id, jd_json=jd_json_str)
     return session_id
