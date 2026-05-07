@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Smoke test for the apply MCP handoff tools."""
 
+import contextlib
 import json
 import os
 import sys
@@ -11,7 +12,8 @@ from pathlib import Path
 sys.path.insert(0, os.getcwd())
 
 from pi_apply.jd_data import EXTRACTION_PROTOCOL
-from pi_apply.section_map import ExperienceEntry, SectionMap, SkillsSection
+from pi_apply.repository.resumes import save_resume
+from pi_apply.section_map import ContactInfo, ExperienceEntry, SectionMap, SkillsSection
 from pi_apply.server import load_jd, submit_keywords, submit_tailor
 from pi_apply.wiki import WikiStore
 
@@ -35,6 +37,7 @@ def main():
 
     # Write minimal sections.json to WikiStore so parse_initial can load structured data
     section_map = SectionMap(
+        contact=ContactInfo(name="Jane Doe", email="jane@example.com"),
         summary="Python engineer with 5 years experience in backend systems.",
         skills=SkillsSection(flat=["Python", "Go"]),
         experience=[
@@ -49,12 +52,13 @@ def main():
         ],
     )
     WikiStore().write_page(resume_label, "sections.json", section_map.model_dump_json())
+    registered_resume_path = save_resume(resume_label, resume_path)
 
     try:
         # Phase 1: load_jd
         load_result = load_jd(
             jd_raw_text=jd_text,
-            resume_path=resume_path,
+            resume_label=resume_label,
         )
         loaded = json.loads(load_result)
         session_id = loaded["session_id"]
@@ -90,10 +94,11 @@ def main():
         tailor_result = submit_tailor(session_id=session_id, edits=edits)
         tailored = json.loads(tailor_result)
         assert tailored["status"] == "ok", f"submit_tailor failed: {tailored}"
-        assert tailored["next_action"] == "render", (
-            f"unexpected next_action: {tailored['next_action']}"
+        assert "next_action" not in tailored, (
+            f"unexpected next_action: {tailored.get('next_action')}"
         )
         assert len(tailored["data"]["edits_applied"]) > 0, "no edits applied"
+        assert tailored["data"]["score_final"] is not None, "score_final missing"
         assert "total" in tailored["data"]["score_final"], "score_final missing total"
 
         # Phase 4: read archive JSON for score delta
@@ -121,6 +126,9 @@ def main():
     finally:
         # Cleanup temp resume
         Path(resume_path).unlink(missing_ok=True)
+        # Cleanup registered resume from registry (best-effort)
+        with contextlib.suppress(Exception):
+            Path(registered_resume_path).unlink(missing_ok=True)
         # Cleanup sections.json from WikiStore (best-effort)
         try:
             wiki_page = WikiStore().wiki_root(resume_label) / "sections.json"

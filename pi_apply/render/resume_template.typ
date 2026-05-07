@@ -25,7 +25,7 @@
 )
 
 #set text(
-  font: ("Helvetica Neue", "Helvetica", "Arial", "sans-serif"),
+  font: ("Inter", "sans-serif"),
   size: 10pt,
   lang: "en",
 )

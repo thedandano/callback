@@ -2,6 +2,7 @@
 
 from pi_apply import extractor as resume_extractor
 from pi_apply.apply_nodes import parse_final, render
+from pi_apply.render.typst_builder import render_resume
 from pi_apply.state import ApplyState, TailoredResume
 
 
@@ -41,6 +42,15 @@ def test_render_halts_when_tailored_is_none(tmp_path, monkeypatch):
     state = ApplyState(session_id="s3")
     result = render(state)
     assert result == {"error": "render: state.tailored is None — tailor node must run first"}
+
+
+def test_render_resume_inter_font_produces_valid_pdf(tmp_path):
+    """render_resume() with bundled Inter font produces a valid PDF."""
+    output_path = str(tmp_path / "inter_test.pdf")
+    result = render_resume({"name": "Inter Test"}, output_path)
+    assert result == {"success": True, "pdf_path": output_path}
+    with open(output_path, "rb") as f:
+        assert f.read(4) == b"%PDF"
 
 
 def test_parse_final_halts_on_missing_pdf_path():
