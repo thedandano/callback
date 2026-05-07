@@ -24,18 +24,13 @@ def test_url_fetched_markdown_stops_before_keyword_acceptance(tmp_path, monkeypa
     apps_dir.mkdir()
     monkeypatch.setenv("PI_APPLY_APPS_DIR", str(apps_dir))
 
-    resume_path = tmp_path / "resume.txt"
-    resume_path.write_text(
-        "Jane Candidate\nSenior Software Engineer\nBuilt Python services on Kubernetes.\n"
-    )
-
     session_id = "e2e-jd-fetch-propagation"
     jd_url = "https://example.test/jobs/senior-python-engineer"
     graph = build_apply_graph(db_path=tmp_path / "apply-test.db")
     initial_state = ApplyState(
         session_id=session_id,
         jd_url=jd_url,
-        resume_path=str(resume_path),
+        resume_label="resume",
     )
 
     fetch_mock = AsyncMock(return_value=FIXTURE_MD)
@@ -48,7 +43,7 @@ def test_url_fetched_markdown_stops_before_keyword_acceptance(tmp_path, monkeypa
         "session_id": session_id,
         "jd_url": jd_url,
         "jd_text": FIXTURE_MD,
-        "resume_path": str(resume_path),
+        "resume_label": "resume",
     }
 
     assert result == expected_result

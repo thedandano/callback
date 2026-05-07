@@ -69,14 +69,17 @@ MINIMAL_TAILORED_SECTIONS = {
 @pytest.fixture
 def setup_e2e_session(tmp_path, monkeypatch):
     """Setup e2e test session: return session_id at the tailor interrupt."""
+    from pi_apply.repository.resumes import save_resume
     from pi_apply.server import load_jd, submit_keywords
 
     monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path / "applications"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
 
     resume_file = tmp_path / "resume.txt"
     resume_file.write_text(SAMPLE_RESUME)
+    save_resume("resume", str(resume_file))
 
-    loaded = json.loads(load_jd(jd_raw_text=SAMPLE_JD, resume_path=str(resume_file)))
+    loaded = json.loads(load_jd(jd_raw_text=SAMPLE_JD))
     assert loaded["status"] == "ok"
     session_id = loaded["session_id"]
 
@@ -213,14 +216,17 @@ class TestApplyGraphE2E:
 @pytest.fixture
 def setup_m3_session_with_graph(tmp_path, monkeypatch):
     """M3 fixture: pipeline run through finalize with Redis as extra required keyword."""
+    from pi_apply.repository.resumes import save_resume
     from pi_apply.server import load_jd, submit_keywords
 
     monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path / "applications"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
 
     resume_file = tmp_path / "resume.txt"
     resume_file.write_text(SAMPLE_RESUME)
+    save_resume("resume", str(resume_file))
 
-    loaded = json.loads(load_jd(jd_raw_text=SAMPLE_JD, resume_path=str(resume_file)))
+    loaded = json.loads(load_jd(jd_raw_text=SAMPLE_JD))
     assert loaded["status"] == "ok"
     session_id = loaded["session_id"]
 

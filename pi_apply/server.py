@@ -39,6 +39,7 @@ from pi_apply.jd_data import EXTRACTION_PROTOCOL, JDDataError, parse_jd_json
 from pi_apply.jd_fetcher import JDFetchError
 from pi_apply.profile_graph import build_profile_graph
 from pi_apply.profile_graph import make_config as make_profile_config
+from pi_apply.repository.resumes import list_resumes
 from pi_apply.section_map import SectionMap, apply_edit
 from pi_apply.state import ApplyState, ProfileState
 from pi_apply.wiki import WikiStore
@@ -209,9 +210,45 @@ def _submit_keywords_state_error(graph, config, session_id: str) -> str | None:
 # ============================================================================
 
 
+def _resolve_resume_label(
+    resume_label: str | None, session_id: str
+) -> tuple[str | None, str | None]:
+    """Resolve resume label from registry. Returns (resolved_label, error_json_or_None)."""
+    registered = list_resumes()
+    if not registered:
+        return None, _err(
+            stage="load_jd",
+            code="no_resume_registered",
+            message="no resume registered; run onboard_user first",
+            session_id=session_id,
+            retriable=False,
+        )
+    if resume_label is not None:
+        if resume_label not in registered:
+            return None, _err(
+                stage="load_jd",
+                code="resume_not_found",
+                message=f"resume '{resume_label}' not found; registered: {registered}",
+                session_id=session_id,
+                retriable=False,
+            )
+        return resume_label, None
+    if len(registered) == 1:
+        return registered[0], None
+    return None, _err(
+        stage="load_jd",
+        code="ambiguous_resume",
+        message=f"multiple resumes registered; specify resume_label: {registered}",
+        session_id=session_id,
+        retriable=False,
+    )
+
+
 @mcp.tool()
 def load_jd(
-    jd_url: str | None = None, jd_raw_text: str | None = None, resume_path: str = ""
+    jd_url: str | None = None,
+    jd_raw_text: str | None = None,
+    resume_label: str | None = None,
 ) -> str:
     """Load a job description and return host extraction instructions.
 
@@ -220,10 +257,15 @@ def load_jd(
     jd_raw_text as fallback only for URL fetch failures. Empty URL content is
     reported as an error and does not fall back to pasted text.
 
+    The resume is resolved from the internal registry. If resume_label is
+    omitted and exactly one resume is registered, it is auto-selected. When
+    multiple resumes are registered, resume_label is required for disambiguation.
+
     Args:
         jd_url: URL to a job description.
         jd_raw_text: Raw job description text.
-        resume_path: Path to the source resume file.
+        resume_label: Label of the registered resume to use. Optional when
+            exactly one resume is registered.
 
     Returns:
         JSON envelope with status, session_id, jd_text, extraction_protocol, and
@@ -238,13 +280,17 @@ def load_jd(
             session_id=session_id,
         )
 
-    _log("INFO", {"tool": "load_jd", "session_id": session_id, "has_resume": bool(resume_path)})
+    resolved_label, err = _resolve_resume_label(resume_label, session_id)
+    if err:
+        return err
+
+    _log("INFO", {"tool": "load_jd", "session_id": session_id, "resume_label": resolved_label})
 
     initial_state = ApplyState(
         session_id=session_id,
         jd_url=jd_url,
         jd_raw_text=jd_raw_text,
-        resume_path=resume_path,
+        resume_label=resolved_label,
     )
 
     graph = build_apply_graph()
@@ -415,7 +461,7 @@ def submit_tailor(session_id: str, edits: list[dict], no_coverage: bool = False)
         return _err(
             "submit_tailor",
             "no_sections",
-            "no sections in session; call load_jd with a resume_path first",
+            "no sections in session; call load_jd first",
             session_id,
         )
 
@@ -711,14 +757,10 @@ def get_wiki_pages(session_id: str, page_ids: list[str]) -> str:
     state_values = snapshot.values
     resume_label = state_values.get("resume_label")
     if not resume_label:
-        resume_path = state_values.get("resume_path")
-        if resume_path:
-            resume_label = Path(resume_path).stem
-    if not resume_label:
         return _err(
             stage="get_wiki_pages",
             code="no_resume_label",
-            message="no resume_label in session; call load_jd with resume_path first",
+            message="no resume_label in session; call load_jd first",
             session_id=session_id,
         )
 

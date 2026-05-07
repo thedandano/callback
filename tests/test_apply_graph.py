@@ -39,10 +39,14 @@ def tmp_apps_dir(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def tmp_resume(tmp_path):
-    """Temporary resume file for testing."""
+def tmp_resume(tmp_path, monkeypatch):
+    """Register a temporary resume in the local registry and return its path."""
+    from pi_apply.repository.resumes import save_resume
+
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     resume_file = tmp_path / "resume.txt"
     resume_file.write_text("John Doe\nSoftware Engineer\n10 years experience")
+    save_resume("resume", str(resume_file))
     return str(resume_file)
 
 
@@ -96,7 +100,7 @@ class TestKeywordHandoffInterrupts:
         initial_state = ApplyState(
             session_id=session_id,
             jd_raw_text=jd_text,
-            resume_path=tmp_resume,
+            resume_label="resume",
         )
 
         config = make_config(session_id)
@@ -106,7 +110,7 @@ class TestKeywordHandoffInterrupts:
             "session_id": session_id,
             "jd_raw_text": jd_text,
             "jd_text": jd_text,
-            "resume_path": tmp_resume,
+            "resume_label": "resume",
         }
 
         assert result == expected_result
@@ -124,7 +128,7 @@ class TestKeywordHandoffInterrupts:
         initial_state = ApplyState(
             session_id=session_id,
             jd_raw_text="Test JD: Need Python",
-            resume_path=tmp_resume,
+            resume_label="resume",
         )
 
         apply_graph.invoke(initial_state, config)
@@ -136,9 +140,8 @@ class TestKeywordHandoffInterrupts:
             "jd_raw_text": "Test JD: Need Python",
             "jd_text": "Test JD: Need Python",
             "keywords": VALID_JD_DATA,
-            "resume_path": tmp_resume,
-            "parsed_initial": "John Doe\nSoftware Engineer\n10 years experience",
             "resume_label": "resume",
+            "parsed_initial": "John Doe\nSoftware Engineer\n10 years experience",
             "score_initial": {
                 "ats_format": 0.0,
                 "experience_fit": 25.0,
@@ -163,7 +166,7 @@ class TestKeywordHandoffInterrupts:
         initial_state = ApplyState(
             session_id=session_id,
             jd_raw_text="Test JD: Need Python",
-            resume_path=tmp_resume,
+            resume_label="resume",
         )
 
         apply_graph.invoke(initial_state, config)
