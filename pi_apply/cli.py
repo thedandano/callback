@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.metadata
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -33,9 +34,14 @@ class ConfigError(Exception):
     """Raised when an MCP config file cannot be safely updated."""
 
 
-def mcp_server_config() -> dict[str, object]:
+def _resolve_command() -> str:
+    """Return absolute path to the pi-apply binary, falling back to the bare name."""
+    return shutil.which(SERVER_COMMAND) or SERVER_COMMAND
+
+
+def mcp_server_config(command: str | None = None) -> dict[str, object]:
     """Return the launcher config shared by supported MCP clients."""
-    return {"command": SERVER_COMMAND, "args": list(SERVER_ARGS)}
+    return {"command": command or SERVER_COMMAND, "args": list(SERVER_ARGS)}
 
 
 def _write_text_atomic(path: Path, content: str) -> None:
@@ -58,13 +64,13 @@ def _read_json_config(path: Path) -> dict[str, Any]:
     return loaded
 
 
-def configure_claude(path: Path) -> None:
+def configure_claude(path: Path, command: str | None = None) -> None:
     """Write the Claude MCP server entry, preserving unrelated config keys."""
     config = _read_json_config(path)
     servers = config.setdefault("mcpServers", {})
     if not isinstance(servers, dict):
         raise ConfigError(f'{path} key "mcpServers" must be an object')
-    servers[SERVER_NAME] = mcp_server_config()
+    servers[SERVER_NAME] = mcp_server_config(command)
     _write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
 
 
@@ -126,13 +132,13 @@ def _dump_toml(config: Mapping[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def configure_codex(path: Path) -> None:
+def configure_codex(path: Path, command: str | None = None) -> None:
     """Write the Codex MCP server entry, preserving parseable config keys."""
     config = _read_toml_config(path)
     servers = config.setdefault("mcp_servers", {})
     if not isinstance(servers, dict):
         raise ConfigError(f'{path} key "mcp_servers" must be a table')
-    servers[SERVER_NAME] = mcp_server_config()
+    servers[SERVER_NAME] = mcp_server_config(command)
     _write_text_atomic(path, _dump_toml(config))
 
 
@@ -178,9 +184,10 @@ def setup_mcp(
     """Install pi-apply MCP server entries for Claude and Codex."""
     claude_path = claude_config or Path("~/.claude.json").expanduser()
     codex_path = codex_config or Path("~/.codex/config.toml").expanduser()
+    command = _resolve_command()
     try:
-        configure_claude(claude_path)
-        configure_codex(codex_path)
+        configure_claude(claude_path, command)
+        configure_codex(codex_path, command)
     except ConfigError as exc:
         error_console.print(f"setup-mcp failed: {exc}")
         raise typer.Exit(1) from exc
