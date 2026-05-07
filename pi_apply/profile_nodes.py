@@ -17,6 +17,7 @@ from pi_apply.profilecompiler import (
 )
 from pi_apply.repository.accomplishments import AccomplishmentsStore
 from pi_apply.repository.resumes import list_resumes, save_resume
+from pi_apply.section_map import SectionMap
 from pi_apply.state import CreatedStory, ProfileState
 from pi_apply.wiki import WikiStore
 from pi_apply.wikirenderer import WikiRenderer
@@ -32,6 +33,26 @@ def _log_enter(node: str, state: ProfileState) -> None:
 def _persist_onboard_text(intake: dict) -> None:
     if onboard_text := intake.get("onboard_text"):
         AccomplishmentsStore().save_onboard_text(onboard_text)
+
+
+def _resume_skills(label: str) -> list[str]:
+    """Return all skills from sections.json for the given resume label."""
+    if label == "default":
+        registered = list_resumes()
+        if registered:
+            label = registered[0]
+    pages = WikiStore().read_pages(label, ["sections.json"])
+    sections_json = pages.get("sections.json", "")
+    if not sections_json:
+        return []
+    try:
+        section_map = SectionMap.model_validate_json(sections_json)
+    except Exception:
+        return []
+    skills: list[str] = list(section_map.skills.flat)
+    for items in section_map.skills.categorized.values():
+        skills.extend(items)
+    return skills
 
 
 def _render_wiki(label: str, profile) -> None:
@@ -86,9 +107,10 @@ def compile_profile(state: ProfileState) -> dict:
         if isinstance(state.compiled_profile, dict)
         else []
     )
-    profile, warnings = ProfileCompiler().compile(stories, host_tags)
-
     label = state.resume_label or "default"
+    resume_skills = _resume_skills(label)
+    all_tags = list(dict.fromkeys(host_tags + resume_skills))
+    profile, warnings = ProfileCompiler().compile(stories, all_tags)
     _render_wiki(label, profile)
     save_compiled_profile(profile)
 
