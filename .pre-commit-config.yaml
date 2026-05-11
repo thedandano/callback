@@ -29,11 +29,3 @@ repos:
         stages: [pre-push]
 
 # Disabled 2026-05-02 — re-enable after slop-reduction milestone:
-#   - repo: local
-#     hooks:
-#       - id: ai-slop-score
-#         name: ai-slop-score gate (band must be low)
-#         entry: uv run python scripts/check_spaghetti.py
-#         language: system
-#         pass_filenames: false
-#         always_run: true

@@ -5,7 +5,7 @@ INSTALL_PREFIX := UV_TOOL_BIN_DIR=$(INSTALL_DIR)
 endif
 
 install:
-	$(INSTALL_PREFIX) uv tool install .
+	$(INSTALL_PREFIX) uv tool install --force .
 	@command -v pi-apply >/dev/null 2>&1 && command -v pi-apply || true
 
 build:
