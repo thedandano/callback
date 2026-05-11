@@ -31,6 +31,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["pi_apply*"]
 
+[tool.setuptools.package-data]
+"pi_apply.render" = ["*.typ", "fonts/*.ttf"]
+
 [dependency-groups]
 dev = [
     "pre-commit>=4.0",

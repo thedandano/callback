@@ -46,8 +46,6 @@ uv run pyright
 uv run python scripts/smoke_apply.py
 uv run python scripts/smoke_profile.py
 
-# Static check for spaghetti (used in CI)
-uv run python scripts/check_spaghetti.py
 ```
 
 ## Env Vars
