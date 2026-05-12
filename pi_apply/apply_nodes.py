@@ -6,7 +6,7 @@ Implements the 10 nodes of the linear apply pipeline:
 - parse_initial: extracts text and sections from the source resume file
 - score_initial: scores the resume against JD keywords (deterministic scorer)
 - tailor: interrupts for host to submit edits to the resume SectionMap
-- render: renders the tailored SectionMap to PDF via Typst template
+- render: renders the tailored SectionMap to PDF via HTML + Playwright
 - parse_final: extracts text from the rendered PDF for final scoring
 - score_final: scores the rendered PDF text against JD keywords
 - report: generates a before/after comparison report
@@ -26,6 +26,7 @@ from pydantic import ValidationError
 
 from pi_apply import extractor as resume_extractor
 from pi_apply import scorer
+from pi_apply.scorer import _normalize_for_match
 from pi_apply.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError, fetch_url_to_markdown
 from pi_apply.render import render_resume
 from pi_apply.repository.resumes import ResumeNotFoundError, get_resume
@@ -45,6 +46,18 @@ def _get_apps_dir() -> Path:
     return Path.home() / ".local" / "share" / "pi-apply" / "applications"
 
 
+def _resume_filename_part(value: str | None, fallback: str) -> str:
+    raw = (value or "").strip() or fallback
+    safe = re.sub(r"[^A-Za-z0-9]+", "_", raw).strip("_")
+    return safe or fallback
+
+
+def _resume_pdf_filename(candidate_name: str | None, company_name: str | None) -> str:
+    candidate = _resume_filename_part(candidate_name, "Candidate")
+    company = _resume_filename_part(company_name, "Company")
+    return f"{candidate}_{company}_Resume.pdf"
+
+
 def _log_enter(node: str, state: ApplyState) -> None:
     """Log entry to a node with structured JSON."""
     present = [k for k, v in state.model_dump().items() if v is not None]
@@ -56,7 +69,11 @@ def _log_jd_fetch(level: int, event: str, **fields: object) -> None:
     jd_fetcher_logger.log(level, json.dumps({"event": event, **fields}))
 
 
-def _run_score(text: str | None, keywords: dict | None) -> dict:
+def _run_score(
+    text: str | None,
+    keywords: dict | None,
+    closeable_by: str = "source_pdf",
+) -> dict:
     if not text or not text.strip():
         raise ValueError("_run_score: text must not be empty")
     if not keywords or not keywords.get("required"):
@@ -66,6 +83,7 @@ def _run_score(text: str | None, keywords: dict | None) -> dict:
         keywords["required"],
         keywords["preferred"],
         required_years=keywords["required_years"],
+        closeable_by=closeable_by,  # type: ignore[arg-type]
     )
     return {
         "total": r.breakdown.total(),
@@ -78,6 +96,15 @@ def _run_score(text: str | None, keywords: dict | None) -> dict:
         "req_unmatched": r.keywords.req_unmatched,
         "pref_matched": r.keywords.pref_matched,
         "pref_unmatched": r.keywords.pref_unmatched,
+        "ats_diagnostics": [
+            {
+                "expected": d.expected,
+                "observed": d.observed,
+                "matched": d.matched,
+                "closeable_by": d.closeable_by,
+            }
+            for d in r.breakdown.ats_diagnostics
+        ],
     }
 
 
@@ -159,11 +186,18 @@ def _sections_to_text(section_map: SectionMap) -> str:
     for cat, items in skills.categorized.items():
         skill_chunks.append(f"{cat}: {', '.join(items)}")
     if skill_chunks:
+        parts.append("Skills")
         parts.append("\n".join(skill_chunks))
+    if section_map.experience:
+        parts.append("Experience")
     for exp in section_map.experience:
         header = f"{exp.company} | {exp.role}"
         lines = [header] + exp.bullets
         parts.append("\n".join(lines))
+    if section_map.education:
+        parts.append("Education")
+    for edu in section_map.education:
+        parts.append(edu.institution or "")
     for proj in section_map.projects:
         lines = [proj.name] + proj.bullets
         parts.append("\n".join(lines))
@@ -188,60 +222,140 @@ def _load_wiki_sections(resume_label: str) -> tuple[str, str, str]:
 
 
 def parse_initial(state: ApplyState) -> dict:
-    """Load sections.json from wiki, fall back to text extraction if missing."""
+    """Load sections.json from wiki for tailoring; extract original PDF for scoring."""
     _log_enter("parse_initial", state)
     if state.resume_label is None:
         return {"parsed_initial": "<noop:parse:no-source>"}
-    sections_json, wiki_index, resume_text = _load_wiki_sections(state.resume_label)
+
+    sections_json, wiki_index, sections_text = _load_wiki_sections(state.resume_label)
+    base: dict = {}
     if sections_json:
         section_map = SectionMap.model_validate_json(sections_json)
-        return {
-            "parsed_initial": resume_text,
-            "sections": section_map.model_dump(),
-            "wiki_index": wiki_index,
-        }
+        base = {"sections": section_map.model_dump(), "wiki_index": wiki_index}
+
     try:
         resume_path = get_resume(state.resume_label)
     except ResumeNotFoundError:
+        fallback = sections_text if sections_json else "<noop:parse:no-source>"
         logger.warning(
             json.dumps(
                 {
                     "node": "parse_initial",
                     "event": "resume_not_found",
                     "resume_label": state.resume_label,
+                    "fallback": "sections_text" if sections_json else "noop",
                 }
             )
         )
-        return {"parsed_initial": "<noop:parse:no-source>"}
+        return {**base, "parsed_initial": fallback}
+
     text = resume_extractor.extract(resume_path)
-    return {"parsed_initial": text}
+    return {**base, "parsed_initial": text}
 
 
 def score_initial(state: ApplyState) -> dict:
     """Score the parsed resume against JD keywords using scorer.py."""
     _log_enter("score_initial", state)
-    return {"score_initial": _run_score(state.parsed_initial, state.keywords)}
+    return {"score_initial": _run_score(state.parsed_initial, state.keywords, closeable_by="source_pdf")}
 
 
 def _build_skills_raw(skills) -> str | None:
     lines: list[str] = []
-    if skills.flat:
-        lines.append(", ".join(skills.flat))
     for cat, items in skills.categorized.items():
         lines.append(f"{cat}: {', '.join(items)}")
+    if skills.flat:
+        lines.append(f"Additional: {', '.join(skills.flat)}")
     return "\n".join(lines) or None
 
 
 def _build_experience_raw(experience) -> str | None:
     blocks: list[str] = []
     for exp in experience:
-        first_line = exp.context_line if exp.context_line is not None else exp.role
+        lines = [exp.company]
+        role_line = exp.context_line if exp.context_line is not None else exp.role
         start = exp.start_date or ""
         end = exp.end_date or ""
         date_range = f"{start} – {end}" if (start or end) else ""
-        header = f"{exp.company} | {date_range}" if date_range else exp.company
-        blocks.append("\n".join([first_line, header] + [f"• {b}" for b in exp.bullets]))
+        if role_line and date_range:
+            lines.append(f"{role_line} | {date_range}")
+        elif role_line:
+            lines.append(role_line)
+        elif date_range:
+            lines[-1] = f"{lines[-1]} | {date_range}"
+        lines.extend(f"• {b}" for b in exp.bullets)
+        blocks.append("\n".join(lines))
     return "\n\n".join(blocks) or None
+
+
+_MONTHS = {
+    "jan": 1,
+    "january": 1,
+    "feb": 2,
+    "february": 2,
+    "mar": 3,
+    "march": 3,
+    "apr": 4,
+    "april": 4,
+    "may": 5,
+    "jun": 6,
+    "june": 6,
+    "jul": 7,
+    "july": 7,
+    "aug": 8,
+    "august": 8,
+    "sep": 9,
+    "sept": 9,
+    "september": 9,
+    "oct": 10,
+    "october": 10,
+    "nov": 11,
+    "november": 11,
+    "dec": 12,
+    "december": 12,
+}
+
+
+def _parse_resume_month(value: str | None) -> tuple[int, int] | None:
+    if not value:
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"present", "current"}:
+        now = datetime.now(UTC)
+        return now.year, now.month
+    if match := re.fullmatch(r"(\d{4})-(\d{1,2})", normalized):
+        return int(match.group(1)), int(match.group(2))
+    if match := re.fullmatch(r"([a-z]+)\s+(\d{4})", normalized):
+        month = _MONTHS.get(match.group(1))
+        if month:
+            return int(match.group(2)), month
+    if match := re.fullmatch(r"(\d{4})", normalized):
+        return int(match.group(1)), 1
+    return None
+
+
+def _candidate_experience_years(experience) -> float | None:
+    months = 0
+    for exp in experience:
+        start = _parse_resume_month(exp.start_date)
+        end = _parse_resume_month(exp.end_date)
+        if not start or not end:
+            continue
+        start_index = start[0] * 12 + start[1]
+        end_index = end[0] * 12 + end[1]
+        if end_index >= start_index:
+            months += end_index - start_index + 1
+    if months == 0:
+        return None
+    return round(months / 12, 2)
+
+
+def _split_title_summary(summary: str | None) -> tuple[str | None, str | None]:
+    if not summary:
+        return None, None
+    lines = [line.strip() for line in summary.splitlines() if line.strip()]
+    if len(lines) > 1 and lines[0] == lines[0].upper() and any(c.isalpha() for c in lines[0]):
+        return lines[0], " ".join(lines[1:])
+    return None, summary
 
 
 def _section_map_to_tailored_resume(section_map: SectionMap) -> TailoredResume:
@@ -249,6 +363,7 @@ def _section_map_to_tailored_resume(section_map: SectionMap) -> TailoredResume:
     contact = section_map.contact
     if contact is None:
         raise ValueError("_section_map_to_tailored_resume: section_map.contact is required")
+    title, summary = _split_title_summary(section_map.summary)
     proj_blocks: list[str] = []
     for proj in section_map.projects:
         block_lines = [proj.name]
@@ -264,11 +379,13 @@ def _section_map_to_tailored_resume(section_map: SectionMap) -> TailoredResume:
         location=contact.location,
         linkedin=contact.linkedin,
         website=contact.website,
-        summary=section_map.summary,
+        title=title,
+        summary=summary,
         skills_raw=_build_skills_raw(section_map.skills),
         experience_raw=_build_experience_raw(section_map.experience),
         projects_raw="\n\n".join(proj_blocks) or None,
         education_raw="\n\n".join(edu_blocks) or None,
+        candidate_experience_years=_candidate_experience_years(section_map.experience),
         max_pages=1,
     )
 
@@ -310,21 +427,26 @@ def _resolve_tailored_text(state: ApplyState) -> str:
 
 
 def render(state: ApplyState) -> dict:
-    """Render tailored resume to PDF via Typst."""
+    """Render tailored resume to PDF via HTML + Playwright."""
     _log_enter("render", state)
     if state.tailored is None:
         return {"error": "render: state.tailored is None — tailor node must run first"}
 
     apps_dir = _get_apps_dir()
     apps_dir.mkdir(parents=True, exist_ok=True)
-    output_path = str(apps_dir / f"{state.session_id}.pdf")
+    company_name = state.keywords.get("company") if state.keywords else None
+    output_path = str(apps_dir / _resume_pdf_filename(state.tailored.name, company_name))
 
     result = render_resume(state.tailored.model_dump(), output_path)
     if result["success"]:
         logger.info(
             json.dumps({"node": "render", "session_id": state.session_id, "pdf_path": output_path})
         )
-        return {"pdf_path": output_path}
+        return {
+            "pdf_path": output_path,
+            "render_page_count": result.get("page_count"),
+            "render_warnings": result.get("warnings") or [],
+        }
     else:
         logger.error(
             json.dumps({"node": "render", "session_id": state.session_id, "error": result["error"]})
@@ -354,7 +476,7 @@ def parse_final(state: ApplyState) -> dict:
 def score_final(state: ApplyState) -> dict:
     """Score the extracted PDF text against JD keywords."""
     _log_enter("score_final", state)
-    return {"score_final": _run_score(state.parsed_final, state.keywords)}
+    return {"score_final": _run_score(state.parsed_final, state.keywords, closeable_by="render")}
 
 
 _SCORE_DIMS = (
@@ -367,6 +489,27 @@ _SCORE_DIMS = (
 )
 
 
+def _compute_tailor_diagnostics(
+    applied_skill_values: list[str] | None, parsed_final: str | None
+) -> list[dict]:
+    if not applied_skill_values:
+        return []
+    rendered = parsed_final or ""
+    rendered_lower = rendered.lower()
+    result = []
+    for value in applied_skill_values:
+        present = value.lower() in rendered_lower
+        result.append(
+            {
+                "value": value,
+                "applied_to_map": True,
+                "present_in_rendered_text": present,
+                "suggested_alternatives": [] if present else [_normalize_for_match(value)],
+            }
+        )
+    return result
+
+
 def report(state: ApplyState) -> dict:
     """Compute per-dimension score delta and format gap between initial and final pass.
 
@@ -377,6 +520,19 @@ def report(state: ApplyState) -> dict:
     sf = si if state.no_coverage else (state.score_final or {})
     delta = {dim: round((sf.get(dim) or 0.0) - (si.get(dim) or 0.0), 2) for dim in _SCORE_DIMS}
     format_gap_chars = len(state.parsed_final or "") - len(state.parsed_initial or "")
+    tailor_diagnostics = _compute_tailor_diagnostics(state.applied_skill_values, state.parsed_final)
+    notes: list[str] = []
+    sf_diag = sf.get("ats_diagnostics") or []
+    for d in sf_diag:
+        if not d.get("matched") and d.get("closeable_by") != "tailor":
+            notes.append(
+                f"ATS format: '{d['expected']}' header not found in rendered PDF "
+                f"(closeable_by={d['closeable_by']}). Tailoring cannot fix this."
+            )
+    for warning in state.render_warnings or []:
+        message = warning.get("message")
+        if message:
+            notes.append(str(message))
     return {
         "report": {
             "before": {dim: si.get(dim) for dim in _SCORE_DIMS},
@@ -385,7 +541,9 @@ def report(state: ApplyState) -> dict:
             "format_gap_chars": format_gap_chars,
             "no_coverage": bool(state.no_coverage),
             "uncovered_skills": state.uncovered_skills or [],
-        }
+            "notes": notes,
+        },
+        "tailor_diagnostics": tailor_diagnostics,
     }
 
 
@@ -414,6 +572,8 @@ def finalize(state: ApplyState) -> dict:
         "keywords": state.keywords,
         "tailored_resume_text": tailored_text,
         "pdf_path": state.pdf_path,
+        "render_page_count": state.render_page_count,
+        "render_warnings": state.render_warnings or [],
         "scores": {
             "initial": state.score_initial,
             "final": state.score_initial if state.no_coverage else state.score_final,

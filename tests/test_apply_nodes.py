@@ -1,5 +1,6 @@
 """Tests for real parse_initial and score_initial node implementations."""
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -52,9 +53,32 @@ def test_render_produces_pdf_from_tailored_resume(tmp_path, monkeypatch):
     result = render(state)
     assert "pdf_path" in result
     assert "error" not in result
-    pdf_file = tmp_path / "s1.pdf"
+    pdf_file = tmp_path / "Jane_Doe_Company_Resume.pdf"
     assert pdf_file.exists()
     assert pdf_file.read_bytes()[:4] == b"%PDF"
+
+
+def test_render_names_pdf_from_candidate_and_company(tmp_path, monkeypatch):
+    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path))
+    calls: list[str] = []
+
+    def fake_render_resume(_tailored: dict, output_path: str) -> dict:
+        calls.append(output_path)
+        Path(output_path).write_bytes(b"%PDF fake")
+        return {"success": True, "pdf_path": output_path, "page_count": 1, "warnings": []}
+
+    monkeypatch.setattr("pi_apply.apply_nodes.render_resume", fake_render_resume)
+    state = ApplyState(
+        session_id="legacy-session-id",
+        keywords={"company": "Brain Corp / Robotics"},
+        tailored=TailoredResume(name="Jane Doe", summary="Experienced engineer"),
+    )
+
+    expected_path = str(tmp_path / "Jane_Doe_Brain_Corp_Robotics_Resume.pdf")
+    result = render(state)
+
+    assert calls == [expected_path]
+    assert result == {"pdf_path": expected_path, "render_page_count": 1, "render_warnings": []}
 
 
 def test_render_halts_when_tailored_is_none(tmp_path, monkeypatch):
@@ -92,10 +116,11 @@ class TestTailorNode:
         )
         result = tailor(state)
         tailored = result["tailored"]
-        assert tailored == TailoredResume(
+        assert tailored.candidate_experience_years == pytest.approx(3.49, abs=0.02)
+        assert tailored.model_copy(update={"candidate_experience_years": None}) == TailoredResume(
             name="Jane Doe",
-            skills_raw="Python",
-            experience_raw="Engineer\nAcme | 2020-01 – 2023-06\n• Built REST API",
+            skills_raw="Additional: Python",
+            experience_raw="Acme\nEngineer | 2020-01 – 2023-06\n• Built REST API",
             max_pages=1,
         )
 
