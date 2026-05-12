@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import re
+import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
@@ -26,7 +27,6 @@ from pydantic import ValidationError
 
 from pi_apply import extractor as resume_extractor
 from pi_apply import scorer
-from pi_apply.scorer import _normalize_for_match
 from pi_apply.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError, fetch_url_to_markdown
 from pi_apply.render import render_resume
 from pi_apply.repository.resumes import ResumeNotFoundError, get_resume
@@ -36,6 +36,8 @@ from pi_apply.wiki import WikiStore
 
 logger = logging.getLogger(__name__)
 jd_fetcher_logger = logging.getLogger("pi_apply.jd_fetcher")
+_DASH_RE = re.compile(r"[-‐–—\u00ad\u2011\u200b]")
+_WS_RE = re.compile(r"\s+")
 
 
 # Module-level constant for applications directory, overridable by env var
@@ -56,6 +58,12 @@ def _resume_pdf_filename(candidate_name: str | None, company_name: str | None) -
     candidate = _resume_filename_part(candidate_name, "Candidate")
     company = _resume_filename_part(company_name, "Company")
     return f"{candidate}_{company}_Resume.pdf"
+
+
+def _normalize_for_match(text: str) -> str:
+    normalized = unicodedata.normalize("NFKC", text)
+    normalized = _DASH_RE.sub(" ", normalized)
+    return _WS_RE.sub(" ", normalized).strip()
 
 
 def _log_enter(node: str, state: ApplyState) -> None:
@@ -174,7 +182,7 @@ def keywords_accept(state: ApplyState) -> dict:
     return {}
 
 
-def _sections_to_text(section_map: SectionMap) -> str:
+def _sections_to_text(section_map: SectionMap) -> str:  # noqa: C901
     """Convert a SectionMap to flat text suitable for scoring."""
     parts: list[str] = []
     if section_map.summary:
@@ -256,7 +264,9 @@ def parse_initial(state: ApplyState) -> dict:
 def score_initial(state: ApplyState) -> dict:
     """Score the parsed resume against JD keywords using scorer.py."""
     _log_enter("score_initial", state)
-    return {"score_initial": _run_score(state.parsed_initial, state.keywords, closeable_by="source_pdf")}
+    return {
+        "score_initial": _run_score(state.parsed_initial, state.keywords, closeable_by="source_pdf")
+    }
 
 
 def _build_skills_raw(skills) -> str | None:
