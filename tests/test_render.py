@@ -1,13 +1,13 @@
 """Tests for wired render and parse_final nodes."""
 
-import base64
 import asyncio
+import base64
 import re
 from pathlib import Path
 
+import pi_apply.render.html_builder as render_builder
 from pi_apply import extractor as resume_extractor
 from pi_apply.apply_nodes import parse_final, render
-import pi_apply.render.html_builder as render_builder
 from pi_apply.render.html_builder import (
     _render_async,
     _render_html,
@@ -90,7 +90,8 @@ def test_split_timeline_entries_single_heading_without_date_is_organization():
 
 
 def test_split_timeline_entries_single_heading_with_date_is_role_row():
-    assert _split_timeline_entries("Engineer September 2020 – Present\n• Built pricing systems") == [
+    entry = _split_timeline_entries("Engineer September 2020 – Present\n• Built pricing systems")
+    assert entry == [
         {
             "organization": None,
             "role": "Engineer",
@@ -209,8 +210,10 @@ def test_render_async_skips_fit_logic_when_max_pages_is_not_one(tmp_path, monkey
 
     asyncio.run(_render_async({"name": "Dan Sedano", "max_pages": 2}, str(tmp_path / "resume.pdf")))
 
-    assert page.evaluate_calls == []
-    assert page.pdf_kwargs is not None
+    assert {
+        "evaluate_calls": page.evaluate_calls,
+        "has_pdf_kwargs": page.pdf_kwargs is not None,
+    } == {"evaluate_calls": [], "has_pdf_kwargs": True}
 
 
 def test_render_async_skips_zoom_when_content_already_fits(tmp_path, monkeypatch):
@@ -219,8 +222,10 @@ def test_render_async_skips_zoom_when_content_already_fits(tmp_path, monkeypatch
 
     asyncio.run(_render_async({"name": "Dan Sedano", "max_pages": 1}, str(tmp_path / "resume.pdf")))
 
-    assert len(page.evaluate_calls) == 1
-    assert page.pdf_kwargs is not None
+    assert {
+        "zoom_calls": len(page.evaluate_calls),
+        "has_pdf_kwargs": page.pdf_kwargs is not None,
+    } == {"zoom_calls": 1, "has_pdf_kwargs": True}
 
 
 def test_parse_final_halts_on_missing_pdf_path():
@@ -250,7 +255,9 @@ def test_render_html_contains_font_face_embed():
     payload_m = re.search(r'data:font/ttf;base64,([^"]+)"', html)
     assert payload_m is not None
     payload_len = len(payload_m.group(1))
-    font_bytes = (Path(__file__).parent.parent / "pi_apply" / "render" / "fonts" / "InterVariable.ttf").read_bytes()
+    font_bytes = (
+        Path(__file__).parent.parent / "pi_apply" / "render" / "fonts" / "InterVariable.ttf"
+    ).read_bytes()
     expected_len = len(base64.b64encode(font_bytes).decode())
     assert payload_len == expected_len
 
@@ -307,7 +314,7 @@ def test_render_html_uses_consistent_body_font_for_contact_summary_and_skills():
         }
     )
 
-    assert "font-family: \"Inter\", sans-serif;" in html
+    assert 'font-family: "Inter", sans-serif;' in html
     assert ".contact {\n      text-align: center;\n      margin-top:" in html
     assert ".contact {\n      text-align: center;\n      font-size:" not in html
     assert ".summary {\n      white-space: normal;" in html
@@ -336,7 +343,9 @@ def test_render_html_uses_two_column_bullets_for_wrapped_line_alignment():
 
     assert ".bullet {\n      display: grid;" in html
     assert "grid-template-columns: 0.7em 1fr;" in html
-    assert '<span class="bullet-marker">•</span><span class="bullet-text">Built pricing systems</span>' in html
+    assert (
+        '<span class="bullet-marker">•</span><span class="bullet-text">Built pricing systems</span>'
+    ) in html
 
 
 def test_render_resume_ats_headers_round_trip(tmp_path):
@@ -379,7 +388,10 @@ def test_render_page_warnings_flags_under_five_years_over_one_page():
     assert _render_page_warnings(page_count=2, max_pages=1, candidate_experience_years=3.8) == [
         {
             "code": "under_five_years_over_one_page",
-            "message": "Resume rendered to 2 pages; candidates with under 5 years of experience should stay within 1 page.",
+            "message": (
+                "Resume rendered to 2 pages; candidates with under 5 years of "
+                "experience should stay within 1 page."
+            ),
             "page_count": 2,
             "max_pages": 1,
             "candidate_experience_years": 3.8,
