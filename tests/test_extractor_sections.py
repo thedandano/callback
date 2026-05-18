@@ -56,8 +56,8 @@ def test_skills_categorized(sm: SectionMap) -> None:
     assert sm.skills.categorized["Languages"] == ["Python", "Go", "TypeScript"]
 
 
-def test_skills_flat(sm: SectionMap) -> None:
-    assert "Docker" in sm.skills.flat
+def test_skills_continuation_stays_in_previous_category(sm: SectionMap) -> None:
+    assert "Docker" in sm.skills.categorized["Databases"]
 
 
 def test_experience_count(sm: SectionMap) -> None:
