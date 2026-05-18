@@ -1,10 +1,16 @@
-# Pre-Build Brief — pi-apply v2 (Python LangGraph MCP Server)
+# Project Charter — pi-apply v2 (Python LangGraph MCP Server)
+
+This brief records the original project intent. For day-to-day agent guidance,
+use `AGENTS.md`; it contains the current architecture pattern, commands, module
+map, and change discipline.
 
 **Differentiator:** LangGraph experience on a non-trivial, real-world stateful agent workflow — a concrete portfolio talking point about agent design that the Go version can't provide for an AI engineering career pivot.
 
 **User:** Me, replacing the Go FSM with a LangGraph state graph so I have something defensible in a technical interview on stateful agent design.
 
-**Smallest proof:** A LangGraph graph that ingests a JD and resume, runs through the workflow steps with visible logs at each node, delegates all computation to existing Go subprocess binaries, and produces output at the end.
+**Current walking-skeleton proof:** A stdio MCP server backed by LangGraph state graphs that ingests a JD and resume, pauses for host-owned reasoning at explicit handoff points, runs deterministic scoring/rendering/archival steps, and returns concrete application artifacts.
+
+**Legacy note:** Early sketches expected most computation to delegate to the Go `go-apply` binary. The current Python server owns the main walking-skeleton path directly. `bridge.py` remains only as a legacy subprocess adapter where still needed.
 
 **State owner:** Client — LangGraph checkpointer on local disk, persists across restarts, no coordination required.
 
@@ -17,4 +23,4 @@ Second interface when: N/A — the protocol handles it.
 - Differentiator is a learning/career goal, not a product capability. Legitimate — but scope discipline is critical. Any complexity beyond "teaches LangGraph" is wasted on a project with a finite maintenance horizon.
 - Finite maintenance horizon declared upfront. Don't add polish that won't ship.
 
-**Verdict:** Ready to build — with one constraint. Build only what the walking skeleton needs. The moment you feel the urge to add pgvector, LLM-as-judge, or an eval harness before the LangGraph graph runs end-to-end, stop. Floor before scaffold.
+**Verdict:** Keep building only what the walking skeleton needs. The moment you feel the urge to add pgvector, LLM-as-judge, provider clients, RAG, or an eval harness, stop unless an explicit proposal makes that complexity serve the ATS-gate North Star.
