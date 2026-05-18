@@ -1,4 +1,4 @@
-"""Tests for pi_apply.render (typst-based)."""
+"""Tests for pi_apply.render (HTML + Playwright)."""
 
 import tempfile
 from pathlib import Path
@@ -28,10 +28,9 @@ def test_render_resume_produces_pdf():
         assert Path(out).read_bytes()[:4] == b"%PDF"
 
 
-def test_render_resume_returns_error_on_bad_template(monkeypatch):
-    import pi_apply.render.typst_builder as tb
-
-    monkeypatch.setattr(tb, "TEMPLATE_PATH", Path("/nonexistent/template.typ"))
-    result = render_resume({"name": "Test"}, "/tmp/out.pdf")
+def test_render_resume_returns_error_on_missing_output_parent(tmp_path):
+    out = tmp_path / "missing-parent" / "out.pdf"
+    result = render_resume({"name": "Test"}, str(out))
     assert result["success"] is False
     assert "error" in result
+    assert not out.exists()
