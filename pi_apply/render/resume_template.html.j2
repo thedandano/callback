@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <style>
+    @font-face {
+      font-family: "Inter";
+      src: url("data:font/ttf;base64,{{ font_b64 }}") format("truetype");
+      font-weight: 100 900;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    @page {
+      size: letter;
+      margin: 0.30in 0.50in 0.16in;
+      background: #fff;
+    }
+
+    html,
+    body {
+      background: #fff !important;
+      color: #111 !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: #111;
+      font-family: "Inter", sans-serif;
+      font-size: 11pt;
+      line-height: 1.15;
+    }
+
+    .container {
+      width: 100%;
+      background: #fff;
+    }
+
+    .name {
+      font-size: 14pt;
+      font-weight: 800;
+      text-align: center;
+      margin: 0;
+    }
+
+    .contact {
+      text-align: center;
+      margin-top: 3px;
+      margin-bottom: 6px;
+    }
+
+    .contact-link {
+      color: #00e;
+    }
+
+    .summary {
+      white-space: normal;
+      margin: 0.35em 0 0.5em;
+    }
+
+    .section {
+      margin-top: 0.55em;
+    }
+
+    .headline-section {
+      margin-top: 0.45em;
+    }
+
+    .section-header {
+      font-weight: 800;
+      border-bottom: 0.55pt solid #000;
+      padding-bottom: 0.2em;
+      margin-bottom: 0.35em;
+    }
+
+    .line {
+      white-space: normal;
+      margin: 0 0 1px;
+    }
+
+    .skill-label {
+      font-weight: 700;
+    }
+
+    .bullet {
+      display: grid;
+      grid-template-columns: 0.7em 1fr;
+      column-gap: 0.25em;
+      margin: 0 0 0.35em 8px;
+      align-items: start;
+    }
+
+    .bullet-marker {
+      line-height: inherit;
+      text-align: center;
+    }
+
+    .bullet-text {
+      min-width: 0;
+    }
+
+    .entry {
+      page-break-inside: avoid;
+      margin-bottom: 0.45em;
+    }
+
+    .entry-organization {
+      font-style: italic;
+      margin: 0 0 0.18em;
+    }
+
+    .entry-meta {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) max-content;
+      column-gap: 12px;
+      align-items: baseline;
+      margin: 0 0 0.18em;
+    }
+
+    .entry-role {
+      font-weight: 700;
+    }
+
+    .entry-date {
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .education-line {
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="name">{{ name }}</h1>
+    {% if contact_items %}
+    <div class="contact">
+      {%- for item in contact_items -%}
+        {%- if not loop.first %} | {% endif -%}
+        <span class="{% if item.kind in ['linkedin', 'website'] %}contact-link{% endif %}">{{ item.value }}</span>
+      {%- endfor -%}
+    </div>
+    {% endif %}
+
+    {% if title %}
+    <section class="section headline-section">
+      <div class="section-header">{{ title }}</div>
+    </section>
+    {% endif %}
+    {% if summary %}
+    <div class="summary">{{ summary }}</div>
+    {% endif %}
+
+    {% if skills_rows %}
+    <section class="section">
+      <div class="section-header">SKILLS &amp; ABILITIES</div>
+      {% for row in skills_rows %}
+      <div class="line">
+        {% if row.category %}<span class="skill-label">{{ row.category }}:</span> {% endif %}{{ row.value }}
+      </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if experience_entries %}
+    <section class="section">
+      <div class="section-header">PROFESSIONAL EXPERIENCE</div>
+      {% for entry in experience_entries %}
+      <div class="entry">
+        {% if entry.organization %}
+        <div class="entry-organization">{{ entry.organization }}</div>
+        {% endif %}
+        {% if entry.role or entry.date %}
+        <div class="entry-meta">
+          <span class="entry-role">{{ entry.role }}</span>
+          {% if entry.date %}<span class="entry-date">{{ entry.date }}</span>{% endif %}
+        </div>
+        {% endif %}
+        {% for bullet in entry.bullets %}
+        <div class="bullet"><span class="bullet-marker">•</span><span class="bullet-text">{{ bullet }}</span></div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if project_entries %}
+    <section class="section">
+      <div class="section-header">PROJECTS</div>
+      {% for entry in project_entries %}
+      <div class="entry">
+        {% if entry.organization %}
+        <div class="entry-organization">{{ entry.organization }}</div>
+        {% endif %}
+        {% if entry.role or entry.date %}
+        <div class="entry-meta">
+          <span class="entry-role">{{ entry.role }}</span>
+          {% if entry.date %}<span class="entry-date">{{ entry.date }}</span>{% endif %}
+        </div>
+        {% endif %}
+        {% for bullet in entry.bullets %}
+        <div class="bullet"><span class="bullet-marker">•</span><span class="bullet-text">{{ bullet }}</span></div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if volunteer_entries %}
+    <section class="section">
+      <div class="section-header">VOLUNTEER</div>
+      {% for entry in volunteer_entries %}
+      <div class="entry">
+        {% if entry.organization %}
+        <div class="entry-organization">{{ entry.organization }}</div>
+        {% endif %}
+        {% if entry.role or entry.date %}
+        <div class="entry-meta">
+          <span class="entry-role">{{ entry.role }}</span>
+          {% if entry.date %}<span class="entry-date">{{ entry.date }}</span>{% endif %}
+        </div>
+        {% endif %}
+        {% for bullet in entry.bullets %}
+        <div class="bullet"><span class="bullet-marker">•</span><span class="bullet-text">{{ bullet }}</span></div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if education_lines %}
+    <section class="section">
+      <div class="section-header">EDUCATION</div>
+      {% for line in education_lines %}
+      <div class="line education-line">{{ line }}</div>
+      {% endfor %}
+    </section>
+    {% endif %}
+  </div>
+</body>
+</html>
