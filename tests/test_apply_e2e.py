@@ -134,19 +134,25 @@ class TestApplyGraphE2E:
         snapshot_after_tailor = graph.get_state(config)
         state_values = snapshot_after_tailor.values
 
-        # tailor should have produced a TailoredResume object
+        # tailor should have produced a TailoredResume object with render-ready fields
         tailored = state_values["tailored"]
-        expected = TailoredResume(
-            name="Jane Doe",
-            email=tailored.email,
-            phone=tailored.phone,
-            location=tailored.location,
-            summary=tailored.summary,
-            skills_raw=tailored.skills_raw,
-            experience_raw=tailored.experience_raw,
-            education_raw=tailored.education_raw,
-        )
-        assert tailored == expected
+        actual = {
+            "is_tailored_resume": isinstance(tailored, TailoredResume),
+            "name": tailored.name,
+            "summary": tailored.summary,
+            "skills_raw": tailored.skills_raw,
+            "has_acme_experience": "Acme Corp" in (tailored.experience_raw or ""),
+            "has_experience_years": tailored.candidate_experience_years is not None,
+        }
+        expected = {
+            "is_tailored_resume": True,
+            "name": "Jane Doe",
+            "summary": MINIMAL_TAILORED_SECTIONS["summary"],
+            "skills_raw": "Additional: Python, FastAPI, PostgreSQL",
+            "has_acme_experience": True,
+            "has_experience_years": True,
+        }
+        assert actual == expected
 
     def test_graph_reaches_finalize_after_tailor(self, setup_e2e_session):
         """Graph completes all nodes from tailor through finalize."""
@@ -177,18 +183,24 @@ class TestApplyGraphE2E:
         state_values = snapshot.values
         tailored = state_values["tailored"]
 
-        # Verify TailoredResume object with expected name
-        expected = TailoredResume(
-            name="Jane Doe",
-            email=tailored.email,
-            phone=tailored.phone,
-            location=tailored.location,
-            summary=tailored.summary,
-            skills_raw=tailored.skills_raw,
-            experience_raw=tailored.experience_raw,
-            education_raw=tailored.education_raw,
-        )
-        assert tailored == expected
+        # Verify TailoredResume object with expected render-ready fields
+        actual = {
+            "is_tailored_resume": isinstance(tailored, TailoredResume),
+            "name": tailored.name,
+            "summary": tailored.summary,
+            "skills_raw": tailored.skills_raw,
+            "has_acme_experience": "Acme Corp" in (tailored.experience_raw or ""),
+            "has_experience_years": tailored.candidate_experience_years is not None,
+        }
+        expected = {
+            "is_tailored_resume": True,
+            "name": "Jane Doe",
+            "summary": MINIMAL_TAILORED_SECTIONS["summary"],
+            "skills_raw": "Additional: Python, FastAPI, PostgreSQL",
+            "has_acme_experience": True,
+            "has_experience_years": True,
+        }
+        assert actual == expected
 
     def test_m2_scenario_real_pdf_round_trip(self, setup_e2e_session_with_graph):
         """M2: pipeline produces a real PDF and non-empty parsed_final."""

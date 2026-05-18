@@ -7,7 +7,9 @@ Weights and thresholds match internal/config/defaults.json exactly.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
+from typing import Literal
 
 # ── Regex patterns used for scoring ────────────────────────────────────────────
 
@@ -30,7 +32,7 @@ YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
 ATS_SECTION_PATTERNS = [
     re.compile(r"(?i)^\s*(?:work\s+|professional\s+)?experience\s*:?\s*$"),
     re.compile(r"(?i)^\s*(?:academic\s+)?education\s*:?\s*$"),
-    re.compile(r"(?i)^\s*(?:technical\s+|core\s+)?skills?\s*:?\s*$"),
+    re.compile(r"(?i)^\s*(?:technical\s+|core\s+)?skills?(?:\s*&\s*abilities)?\s*:?\s*$"),
 ]
 
 
@@ -81,12 +83,21 @@ class ScoringConfig:
 
 
 @dataclass
+class ATSHeaderDiagnostic:
+    expected: str
+    observed: str | None
+    matched: bool
+    closeable_by: Literal["tailor", "render", "source_pdf"]
+
+
+@dataclass
 class ScoreBreakdown:
     keyword_match: float
     experience_fit: float
     impact_evidence: float
     ats_format: float
     readability: float
+    ats_diagnostics: list[ATSHeaderDiagnostic] = field(default_factory=list)
 
     def total(self) -> float:
         return (
@@ -133,12 +144,14 @@ def score(
     required_years: float = 0.0,
     seniority_match: str = "exact",
     cfg: ScoringConfig | None = None,
+    closeable_by: Literal["tailor", "render", "source_pdf"] = "source_pdf",
 ) -> ScoreResult:
     """Score resume_text against LLM-extracted JD keywords.
 
     All inputs are caller-supplied; this function has no I/O or side effects.
     seniority_match must be one of "exact", "one_off", "two_or_more_off".
     If required_years is 0, the years component defaults to full credit.
+    closeable_by is forwarded to _score_ats() to tag ATS diagnostics.
     """
     if cfg is None:
         cfg = ScoringConfig()
@@ -146,7 +159,7 @@ def score(
     kw_result, kw_score = _score_keywords(resume_text, required, preferred, cfg)
     exp_score = _score_experience(candidate_years, required_years, seniority_match, cfg)
     impact_score, metric_bullets = _score_impact(resume_text, cfg)
-    ats_score = _score_ats(resume_text, cfg)
+    ats_score, ats_diagnostics = _score_ats(resume_text, cfg, closeable_by=closeable_by)
     read_score, detected_fillers = _score_readability(resume_text, cfg)
 
     return ScoreResult(
@@ -156,6 +169,7 @@ def score(
             impact_evidence=impact_score,
             ats_format=ats_score,
             readability=read_score,
+            ats_diagnostics=ats_diagnostics,
         ),
         keywords=kw_result,
         metric_bullets=metric_bullets,
@@ -164,6 +178,16 @@ def score(
 
 
 # ── Scoring dimensions ────────────────────────────────────────────────────────
+
+
+_DASH_RE = re.compile(r"[-‐–—­‑​]")
+_WS_RE = re.compile(r"\s+")
+
+
+def _normalize_for_match(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text)
+    text = _DASH_RE.sub(" ", text)
+    return _WS_RE.sub(" ", text).strip()
 
 
 def _is_word_char(c: str) -> bool:
@@ -193,12 +217,20 @@ def _score_keywords(
     elif not preferred:
         req_w, pref_w = 1.0, 0.0
 
+    normalized_resume = _normalize_for_match(resume_text)
+
     def classify(keywords: list[str]) -> tuple[list[str], list[str], float]:
         if not keywords:
             return [], [], 0.0
         matched, unmatched = [], []
         for kw in keywords:
-            (matched if _compile_keyword_pattern(kw).search(resume_text) else unmatched).append(kw)
+            norm_kw = _normalize_for_match(kw)
+            bucket = (
+                matched
+                if _compile_keyword_pattern(norm_kw).search(normalized_resume)
+                else unmatched
+            )
+            bucket.append(kw)
         return matched, unmatched, len(matched) / len(keywords)
 
     req_matched, req_unmatched, req_pct = classify(required)
@@ -244,17 +276,55 @@ def _score_impact(resume_text: str, cfg: ScoringConfig) -> tuple[float, list[str
     return impact_score, bullets
 
 
-def _score_ats(resume_text: str, cfg: ScoringConfig) -> float:
+_ATS_SECTION_KEYWORDS = ["experience", "education", "skills"]
+_ATS_SECTION_EXPECTED = ["Experience", "Education", "Skills"]
+
+
+def _score_ats(
+    resume_text: str,
+    cfg: ScoringConfig,
+    closeable_by: Literal["tailor", "render", "source_pdf"] = "source_pdf",
+) -> tuple[float, list[ATSHeaderDiagnostic]]:
     lines = resume_text.splitlines()
-    found = sum(1 for pat in ATS_SECTION_PATTERNS if any(pat.match(line) for line in lines))
-    return found / len(ATS_SECTION_PATTERNS) * cfg.weights.ats_format
+    diagnostics: list[ATSHeaderDiagnostic] = []
+    found = 0
+    for pat, keyword, expected in zip(
+        ATS_SECTION_PATTERNS,
+        _ATS_SECTION_KEYWORDS,
+        _ATS_SECTION_EXPECTED,
+        strict=True,
+    ):
+        matched_line = next((line for line in lines if pat.match(line)), None)
+        if matched_line is not None:
+            diagnostics.append(
+                ATSHeaderDiagnostic(
+                    expected=expected,
+                    observed=matched_line,
+                    matched=True,
+                    closeable_by=closeable_by,
+                )
+            )
+            found += 1
+        else:
+            observed = next((line for line in lines if keyword.lower() in line.lower()), None)
+            diagnostics.append(
+                ATSHeaderDiagnostic(
+                    expected=expected,
+                    observed=observed,
+                    matched=False,
+                    closeable_by=closeable_by,
+                )
+            )
+    scalar_score = found / len(ATS_SECTION_PATTERNS) * cfg.weights.ats_format
+    return scalar_score, diagnostics
 
 
 def _score_readability(resume_text: str, cfg: ScoringConfig) -> tuple[float, list[str]]:
+    normalized_resume = _normalize_for_match(resume_text)
     detected = [
         phrase
         for phrase in cfg.filler_phrases
-        if re.search(r"(?i)\b" + re.escape(phrase) + r"\b", resume_text)
+        if re.search(r"(?i)\b" + re.escape(_normalize_for_match(phrase)) + r"\b", normalized_resume)
     ]
     read_score = max(
         cfg.weights.readability - len(detected) * cfg.readability_penalty_per_filler,

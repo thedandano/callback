@@ -2,7 +2,13 @@
 
 import pytest
 
-from pi_apply.scorer import ScoringConfig, score
+from pi_apply.scorer import (
+    ATSHeaderDiagnostic,
+    ScoringConfig,
+    _normalize_for_match,
+    _score_ats,
+    score,
+)
 
 RESUME_WITH_SECTIONS = """
 Experience
@@ -18,6 +24,19 @@ Python, FastAPI, Kubernetes, Docker, PostgreSQL
 """
 
 RESUME_PLAIN = "Python developer with experience in FastAPI and Docker."
+
+
+def _ats_diag(
+    expected: str,
+    observed: str | None,
+    matched: bool,
+) -> ATSHeaderDiagnostic:
+    return ATSHeaderDiagnostic(
+        expected=expected,
+        observed=observed,
+        matched=matched,
+        closeable_by="source_pdf",
+    )
 
 
 class TestKeywordScoring:
@@ -80,6 +99,30 @@ class TestATSFormatScoring:
         result = score("Just some text.", required=[], preferred=[])
         assert result.breakdown.ats_format == 0.0
 
+    def test_score_ats_all_headers_matched(self):
+        """_score_ats on text with all three canonical headers → full score, all matched=True."""
+        cfg = ScoringConfig()
+        text = "Experience\nSenior Engineer role.\n\nEducation\nB.Sc. CS\n\nSkills\nPython"
+        scalar, diags = _score_ats(text, cfg)
+        assert scalar == pytest.approx(cfg.weights.ats_format)
+        assert diags == [
+            _ats_diag("Experience", "Experience", True),
+            _ats_diag("Education", "Education", True),
+            _ats_diag("Skills", "Skills", True),
+        ]
+
+    def test_score_ats_missing_skills_header(self):
+        """_score_ats on text missing Skills header → 2/3 score, Skills diagnostic matched=False."""
+        cfg = ScoringConfig()
+        text = "Experience\nBuilt distributed systems.\n\nEducation\nB.Sc. CS"
+        scalar, diags = _score_ats(text, cfg)
+        assert scalar == pytest.approx(cfg.weights.ats_format * 2 / 3)
+        assert diags == [
+            _ats_diag("Experience", "Experience", True),
+            _ats_diag("Education", "Education", True),
+            _ats_diag("Skills", None, False),
+        ]
+
 
 class TestReadabilityScoring:
     def test_filler_phrase_detected(self):
@@ -119,6 +162,67 @@ class TestExperienceScoring:
         result_over = score("", required=[], preferred=[], candidate_years=12.0, required_years=5.0)
         result_exact = score("", required=[], preferred=[], candidate_years=5.0, required_years=5.0)
         assert result_over.breakdown.experience_fit < result_exact.breakdown.experience_fit
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("agent-based workflows", "agent based workflows"),
+        ("machine–learning", "machine learning"),
+        ("machine—learning", "machine learning"),
+        ("retrieval­augmented generation", "retrieval augmented generation"),
+        ("non‑breaking", "non breaking"),
+        ("zero​width", "zero width"),
+        ("ﬁnancial", "financial"),
+        ("CI/CD", "CI/CD"),
+        ("non-technical", "non technical"),
+        ("", ""),
+    ],
+)
+def test_normalize_for_match(text: str, expected: str) -> None:
+    assert _normalize_for_match(text) == expected
+
+
+def test_normalize_for_match_deterministic() -> None:
+    result_a = _normalize_for_match("agent-based workflows")
+    result_b = _normalize_for_match("agent-based workflows")
+    assert result_a == result_b == "agent based workflows"
+
+
+class TestNormalizedKeywordMatching:
+    def test_hyphen_keyword_matches_space_in_resume(self):
+        result = score(
+            "agent based workflows in production",
+            required=["agent-based workflows"],
+            preferred=[],
+        )
+        assert result.keywords.req_pct == 1.0
+        assert "agent-based workflows" in result.keywords.req_matched
+
+    def test_en_dash_in_resume_matches_hyphen_keyword(self):
+        result = score("machine–learning platform", required=["machine-learning"], preferred=[])
+        assert result.keywords.req_pct == 1.0
+
+    def test_soft_hyphen_in_resume_matches_keyword(self):
+        result = score(
+            "retrieval­augmented generation",
+            required=["retrieval-augmented generation"],
+            preferred=[],
+        )
+        assert result.keywords.req_pct == 1.0
+
+    def test_fi_ligature_in_resume_matches_keyword(self):
+        result = score("ﬁnancial modeling and analysis", required=["financial"], preferred=[])
+        assert result.keywords.req_pct == 1.0
+
+    def test_slash_term_still_matches(self):
+        result = score("CI/CD pipelines", required=["CI/CD"], preferred=[])
+        assert result.keywords.req_pct == 1.0
+
+    def test_false_positive_guard(self):
+        result = score("technical skills only", required=["non-technical"], preferred=[])
+        assert result.keywords.req_pct == 0.0
+        assert "non-technical" in result.keywords.req_unmatched
 
 
 class TestPassThreshold:

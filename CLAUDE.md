@@ -60,19 +60,26 @@ uv run python scripts/smoke_profile.py
 
 ### Two graphs, one server
 
-`server.py` (FastMCP) exposes five tools wired to two distinct LangGraph state graphs:
+`server.py` (FastMCP) exposes eight tools wired to two distinct LangGraph state graphs:
 
 | Tool             | Graph    | Behavior                                                    |
 |------------------|----------|-------------------------------------------------------------|
 | `load_jd`        | apply    | Runs through `jd_fetch`, then returns JD markdown plus extraction instructions. |
-| `submit_keywords`| apply    | Accepts validated host-extracted JDData, resumes through `keywords_accept`, then stops before parsing/scoring. |
+| `submit_keywords`| apply    | Accepts validated host-extracted JDData, runs parse/initial score, and returns score gaps plus tailor handoff guidance. |
+| `submit_tailor`  | apply    | Applies host edits, renders the tailored PDF, scores final output, and returns artifact paths/report data. |
+| `get_wiki_pages` | apply    | Returns selected profile wiki pages for host tailoring evidence. |
 | `onboard_user`   | profile  | Currently calls `profile_nodes.onboard` directly (skeleton).|
 | `compile_profile`| profile  | Currently calls `profile_nodes.compile_profile` directly.   |
 | `create_story`   | profile  | Currently calls `profile_nodes.create_story` directly.      |
+| `check_update`   | utility  | Returns current version, latest release tag, and update status. |
 
 All tools return JSON envelopes via `_ok` / `_err`:
-- Success: `{"session_id", "status": "ok", "next_action"?, "data"?}`
+- Success: `{"session_id", "status": "ok", "next_action"?, "data"?, "workflow"?}`
 - Error: `{"status": "error", "error": {"stage", "code", "message", "retriable"}, "session_id"?}`
+
+### Agent MCP Playbook
+
+When the user asks to use pi-apply for a job, call `load_jd`, extract JDData as the host, call `submit_keywords`, follow `workflow.next_tool`, and finish with `submit_tailor`. Return `data.pdf_path`, `data.archive_path`, `data.report`, and `data.outcome` to the user. If `workflow.next_tool` is `onboard_user` or `create_story`, collect the missing profile evidence, compile the profile, then restart the job flow with `load_jd`.
 
 ### Apply graph (`apply_graph.py`, `apply_nodes.py`)
 
@@ -118,13 +125,13 @@ Pure deterministic Python — no I/O, no LLM calls. Ported from go-apply's `scor
 | ATSFormat       | 10  | Standard section headers present          |
 | Readability     | 10  | Absence of filler phrases                 |
 
-**Why Python, not the Go binary:** go-apply has no standalone `score` CLI (only `serve`). Logic is ~250 lines of deterministic math. Python ecosystem covers PDF/DOCX/TXT extraction; go-apply only handles PDF.
+**Why Python, not the Go binary:** go-apply has no standalone `score` CLI (only `serve`). Logic is ~250 lines of deterministic math. Python ecosystem covers PDF/DOCX/TXT extraction.
 
 ### go-apply binary dependency (`bridge.py`)
 
 `bridge.py` resolves the go-apply binary at **import time** via `_resolve_binary()`. If the binary is not on `PATH`, set `GO_APPLY_BIN=/path/to/go-apply` before importing. In tests, `conftest.py` re-imports the module against a fake binary after resolution tests evict it from `sys.modules` — preserve this fixture when adding bridge tests.
 
-go-apply is used for PDF rendering only. `run_pdfrender` exists in `bridge.py`; the apply graph's `render` node currently uses `fpdf2` directly.
+The apply graph's `render` node uses HTML + Playwright via `pi_apply.render.html_builder`.
 
 ### Module map
 

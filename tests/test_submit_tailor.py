@@ -2,9 +2,38 @@
 
 import json
 import os
+from pathlib import Path
 
-from pi_apply.section_map import ContactInfo, ExperienceEntry, SectionMap, SkillsSection
+import pytest
+
+from pi_apply.section_map import (
+    ContactInfo,
+    ExperienceEntry,
+    ProjectEntry,
+    SectionMap,
+    SkillsSection,
+)
 from pi_apply.wiki import WikiStore
+
+
+@pytest.fixture(autouse=True)
+def fake_pdf_renderer(monkeypatch):
+    rendered_text: dict[str, str] = {}
+
+    def fake_render_resume(tailored, output_path):
+        text = "\n\n".join(
+            str(tailored.get(key) or "")
+            for key in ("summary", "skills_raw", "experience_raw", "projects_raw", "education_raw")
+        )
+        rendered_text[output_path] = text
+        Path(output_path).write_bytes(b"fake pdf")
+        return {"success": True, "pdf_path": output_path, "page_count": 1, "warnings": []}
+
+    def fake_extract(path):
+        return rendered_text.get(str(path), "")
+
+    monkeypatch.setattr("pi_apply.apply_nodes.render_resume", fake_render_resume)
+    monkeypatch.setattr("pi_apply.apply_nodes.resume_extractor.extract", fake_extract)
 
 
 def test_submit_tailor_rejects_unknown_session():
@@ -101,6 +130,7 @@ def test_submit_tailor_applies_valid_edits_and_rescores(tmp_path, monkeypatch):
     from pi_apply.server import submit_tailor
 
     resume_label = "test_resume"
+    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python", "Kubernetes"]})
@@ -124,6 +154,10 @@ def test_submit_tailor_applies_valid_edits_and_rescores(tmp_path, monkeypatch):
         "no_next_action": "next_action" not in result,
         "edits_applied": result["data"]["edits_applied"],
         "edits_rejected": result["data"]["edits_rejected"],
+        "pdf_exists": Path(result["data"]["pdf_path"]).exists(),
+        "archive_exists": Path(result["data"]["archive_path"]).exists(),
+        "workflow_phase": result["workflow"]["phase"],
+        "workflow_next_tool": result["workflow"]["next_tool"],
         "score_final_has_total": "total" in (result["data"]["score_final"] or {}),
         "report_has_delta": "delta" in (result["data"]["report"] or {}),
         "outcome_no_coverage": result["data"]["outcome"]["no_coverage"],
@@ -134,10 +168,15 @@ def test_submit_tailor_applies_valid_edits_and_rescores(tmp_path, monkeypatch):
         "no_next_action": True,
         "edits_applied": [0, 1, 2],
         "edits_rejected": [],
+        "pdf_exists": True,
+        "archive_exists": True,
+        "workflow_phase": "complete",
+        "workflow_next_tool": None,
         "score_final_has_total": True,
         "report_has_delta": True,
         "outcome_no_coverage": False,
     }
+    assert result["workflow"]["required_input"] == {}
 
 
 def test_submit_tailor_rejects_out_of_bounds_target(tmp_path, monkeypatch):
@@ -145,6 +184,7 @@ def test_submit_tailor_rejects_out_of_bounds_target(tmp_path, monkeypatch):
     from pi_apply.server import submit_tailor
 
     resume_label = "oob_resume"
+    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
     section_map = SectionMap(
         contact=ContactInfo(name="Jane Dev"),
         summary="Engineer",
@@ -197,6 +237,7 @@ def test_submit_tailor_flags_uncovered_skill(tmp_path, monkeypatch):
     from pi_apply.server import submit_tailor
 
     resume_label = "uncovered_resume"
+    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
     section_map = SectionMap(
         contact=ContactInfo(name="Jane Dev"),
         summary="Engineer",
@@ -232,6 +273,7 @@ def test_submit_tailor_does_not_flag_covered_skill(tmp_path, monkeypatch):
     from pi_apply.server import submit_tailor
 
     resume_label = "covered_resume"
+    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
     section_map = SectionMap(
         contact=ContactInfo(name="Jane Dev"),
         summary="Engineer",
@@ -264,3 +306,74 @@ def test_submit_tailor_does_not_flag_covered_skill(tmp_path, monkeypatch):
         "status": "ok",
         "kubernetes_not_uncovered": True,
     }
+
+
+def test_submit_tailor_project_bullet_replacement_can_match_required_keyword(tmp_path, monkeypatch):
+    from pi_apply.server import submit_tailor
+
+    resume_label = "project_keyword_resume"
+    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    rendered = {}
+
+    def fake_render_resume(tailored, output_path):
+        rendered["text"] = "\n\n".join(
+            str(tailored.get(key) or "")
+            for key in ("summary", "skills_raw", "experience_raw", "projects_raw", "education_raw")
+        )
+        with open(output_path, "wb") as handle:
+            handle.write(b"fake pdf")
+        return {"success": True, "pdf_path": output_path, "page_count": 1, "warnings": []}
+
+    def fake_extract(_path):
+        return rendered["text"]
+
+    monkeypatch.setattr("pi_apply.apply_nodes.render_resume", fake_render_resume)
+    monkeypatch.setattr("pi_apply.apply_nodes.resume_extractor.extract", fake_extract)
+
+    section_map = SectionMap(
+        contact=ContactInfo(name="Jane Dev"),
+        summary="Python engineer",
+        skills=SkillsSection(flat=["Python"]),
+        experience=[
+            ExperienceEntry(company="Co", role="SWE", bullets=["Built REST APIs with Python"]),
+        ],
+        projects=[
+            ProjectEntry(
+                name="Search Lab",
+                description="Explored ranking systems",
+                bullets=["Built prototype search APIs"],
+            )
+        ],
+    )
+    WikiStore().write_page(resume_label, "sections.json", section_map.model_dump_json())
+
+    jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python", "Vector Search"]})
+    session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
+
+    edits = [
+        {
+            "section": "projects",
+            "op": "replace",
+            "target": "proj-0-b0",
+            "value": "Built vector search ranking prototype for 250K documents",
+        }
+    ]
+    result = json.loads(submit_tailor(session_id=session_id, edits=edits))
+
+    actual = {
+        "status": result["status"],
+        "edits_applied": result["data"]["edits_applied"],
+        "edits_rejected": result["data"]["edits_rejected"],
+        "keyword_matched": "Vector Search" in result["data"]["score_final"]["req_matched"],
+        "keyword_unmatched": "Vector Search" in result["data"]["score_final"]["req_unmatched"],
+        "rendered_project_edit": "Built vector search ranking prototype" in rendered["text"],
+    }
+    expected = {
+        "status": "ok",
+        "edits_applied": [0],
+        "edits_rejected": [],
+        "keyword_matched": True,
+        "keyword_unmatched": False,
+        "rendered_project_edit": True,
+    }
+    assert actual == expected

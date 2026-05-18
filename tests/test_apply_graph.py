@@ -143,6 +143,26 @@ class TestKeywordHandoffInterrupts:
             "resume_label": "resume",
             "parsed_initial": "John Doe\nSoftware Engineer\n10 years experience",
             "score_initial": {
+                "ats_diagnostics": [
+                    {
+                        "expected": "Experience",
+                        "observed": "10 years experience",
+                        "matched": False,
+                        "closeable_by": "source_pdf",
+                    },
+                    {
+                        "expected": "Education",
+                        "observed": None,
+                        "matched": False,
+                        "closeable_by": "source_pdf",
+                    },
+                    {
+                        "expected": "Skills",
+                        "observed": None,
+                        "matched": False,
+                        "closeable_by": "source_pdf",
+                    },
+                ],
                 "ats_format": 0.0,
                 "experience_fit": 25.0,
                 "impact_evidence": 0.0,
