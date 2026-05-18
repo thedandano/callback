@@ -6,7 +6,6 @@ I/O only — no LLM/API calls. All inference is performed by the host (calling L
 
 import json
 import logging
-from pathlib import Path
 
 import pi_apply.extractor as extractor
 from pi_apply.profilecompiler import (
@@ -16,7 +15,7 @@ from pi_apply.profilecompiler import (
     save_compiled_profile,
 )
 from pi_apply.repository.accomplishments import AccomplishmentsStore
-from pi_apply.repository.resumes import list_resumes, save_resume
+from pi_apply.repository.resumes import clear_resumes, list_resumes, save_resume
 from pi_apply.section_map import SectionMap
 from pi_apply.state import CreatedStory, ProfileState
 from pi_apply.wiki import WikiStore
@@ -77,7 +76,8 @@ def onboard(state: ProfileState) -> dict:
     if not state.resume_path:
         return {"intake": {"status": "no_resume"}}
 
-    label = Path(state.resume_path).stem
+    label = "primary"
+    clear_resumes()
     save_resume(label, state.resume_path)
     text = extractor.extract(state.resume_path)
     section_map = extractor.extract_sections(text)

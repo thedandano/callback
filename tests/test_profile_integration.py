@@ -53,8 +53,8 @@ class TestProfileToolsEndToEnd:
             "status": "ok",
             "next_action": "compile_profile",
             "data": {
-                "intake": {"status": "onboarded", "resume_label": "jane_doe", "stories": []},
-                "resume_label": "jane_doe",
+                "intake": {"status": "onboarded", "resume_label": "primary", "stories": []},
+                "resume_label": "primary",
                 "sections": r1["data"]["sections"],
                 "warnings": [
                     {
@@ -67,21 +67,25 @@ class TestProfileToolsEndToEnd:
             },
         }
 
-        # compile: builds compiled_profile from (empty) stories
+        # compile: builds compiled_profile from (empty) stories — resume skills become orphans
         r2 = json.loads(compile_profile())
+        # skills_index is sorted alphabetically; orphan order follows resume extraction.
+        _skills_sorted = ["Docker", "Kubernetes", "Python"]
+        _orphans = r2["data"]["compiled_profile"]["orphaned_skills"]
+        assert {s["skill"] for s in _orphans} == set(_skills_sorted)
         assert r2 == {
             "session_id": r2["session_id"],
             "status": "ok",
             "data": {
                 "compiled_profile": {
                     "schema_version": "1",
-                    "skills_index": [],
+                    "skills_index": _skills_sorted,
                     "stories": [],
-                    "orphaned_skills": [],
+                    "orphaned_skills": _orphans,
                     "compiled_at": r2["data"]["compiled_profile"]["compiled_at"],
                 },
                 "skill_coverage_warnings": [],
-                "skills_index": [],
+                "skills_index": _skills_sorted,
             },
         }
 
@@ -108,7 +112,7 @@ class TestProfileToolsEndToEnd:
             },
         }
 
-        # compile again: picks up the new story — both skills now covered
+        # compile again: picks up the new story — Python+Kubernetes covered, Docker is orphan
         r4 = json.loads(compile_profile())
         assert r4 == {
             "session_id": r4["session_id"],
@@ -116,7 +120,7 @@ class TestProfileToolsEndToEnd:
             "data": {
                 "compiled_profile": r4["data"]["compiled_profile"],
                 "skill_coverage_warnings": [],
-                "skills_index": ["Kubernetes", "Python"],
+                "skills_index": ["Docker", "Kubernetes", "Python"],
             },
         }
 

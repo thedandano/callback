@@ -6,6 +6,7 @@ import pytest
 
 from pi_apply.repository.resumes import (
     ResumeNotFoundError,
+    clear_resumes,
     data_dir,
     get_resume,
     list_resumes,
@@ -134,3 +135,25 @@ class TestMultipleFormats:
         retrieved_path = get_resume("manager")
 
         assert returned_path == retrieved_path
+
+
+class TestClearResumes:
+    def test_clears_all_resume_files(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+
+        src = tmp_path / "resume.txt"
+        src.write_text("content")
+        save_resume("primary", str(src))
+
+        src2 = tmp_path / "old.pdf"
+        src2.write_bytes(b"old")
+        save_resume("old_label", str(src2))
+
+        clear_resumes()
+
+        assert list_resumes() == []
+
+    def test_no_op_when_dir_absent(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+
+        clear_resumes()  # must not raise

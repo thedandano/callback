@@ -38,7 +38,7 @@ _KNOWN_SECTIONS: dict[str, str] = {
     "publications": "certifications",
 }
 
-_BULLET_RE = re.compile(r"^[\-\•\*\d]")
+_BULLET_RE = re.compile(r"^(?:[\-\•\*]|\d+[\.)])")
 _MONTHS = (
     "jan",
     "feb",
@@ -54,13 +54,13 @@ _MONTHS = (
     "dec",
 )
 _DATE_RE = re.compile(
-    r"(?:" + "|".join(_MONTHS) + r"|\d{4}|present)",
+    r"\b(?:" + "|".join(_MONTHS) + r")\w*\b|\b\d{4}\b|\bpresent\b",
     re.IGNORECASE,
 )
 _DATE_RANGE_RE = re.compile(
-    r"((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{4}|\d{4})"
+    r"(\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{4}\b|\b\d{4}\b)"
     r"\s*[-–—]\s*"
-    r"((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{4}|\d{4}|present)",
+    r"(\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{4}\b|\b\d{4}\b|\bpresent\b)",
     re.IGNORECASE,
 )
 
@@ -81,9 +81,6 @@ def _canonical_header(line: str) -> str | None:
     lower = clean.lower()
     if lower in _KNOWN_SECTIONS:
         return _KNOWN_SECTIONS[lower]
-    # All-caps (at least one alpha char) → use lowercased text as key
-    if clean == clean.upper() and any(c.isalpha() for c in clean):
-        return lower
     return None
 
 
@@ -107,20 +104,41 @@ def _parse_summary(raw: list[str]) -> str | None:
     return " ".join(parts) if parts else None
 
 
+def _parse_preamble_summary(raw: list[str], contact: ContactInfo) -> str | None:
+    parts: list[str] = []
+    for line in raw:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped == contact.name:
+            continue
+        if contact.email and contact.email in stripped:
+            continue
+        if contact.linkedin and contact.linkedin in stripped:
+            continue
+        parts.append(stripped)
+    return "\n".join(parts) if parts else None
+
+
 def _parse_skills(raw: list[str]) -> SkillsSection:
     flat: list[str] = []
     categorized: dict[str, list[str]] = {}
+    current_category: str | None = None
     for line in raw:
         stripped = line.strip()
         if not stripped:
             continue
         if ":" in stripped:
             cat, _, rest = stripped.partition(":")
+            current_category = cat.strip()
             items = [s.strip() for s in rest.split(",") if s.strip()]
-            categorized[cat.strip()] = items
+            categorized[current_category] = items
         else:
             tokens = [s.strip() for s in stripped.split(",") if s.strip()]
-            flat.extend(tokens)
+            if current_category is not None:
+                categorized.setdefault(current_category, []).extend(tokens)
+            else:
+                flat.extend(tokens)
     return SkillsSection(flat=flat, categorized=categorized)
 
 
@@ -131,7 +149,7 @@ def _is_entry_header(line: str) -> bool:
         return False
     if _canonical_header(line) is not None:
         return False
-    return bool(_DATE_RE.search(stripped)) or "|" in stripped or "–" in stripped
+    return bool(_DATE_RANGE_RE.search(stripped)) or "|" in stripped
 
 
 def _extract_dates(text: str) -> tuple[str | None, str | None]:
@@ -161,31 +179,38 @@ def _parse_entry_header(line: str) -> tuple[str, str, str | None, str | None]:
     return company, role, start, end
 
 
-def _parse_experience(raw: list[str]) -> list[ExperienceEntry]:
+def _parse_experience(raw: list[str]) -> list[ExperienceEntry]:  # noqa: C901
     entries: list[ExperienceEntry] = []
     current: ExperienceEntry | None = None
+    pending_company: str | None = None
     for line in raw:
         stripped = line.strip()
         if not stripped:
             continue
         if _is_entry_header(line):
             company, role, start, end = _parse_entry_header(line)
+            if pending_company and not role:
+                role = company
+                company = pending_company
+            pending_company = None
             current = ExperienceEntry(company=company, role=role, start_date=start, end_date=end)
             entries.append(current)
         elif _BULLET_RE.match(stripped):
             bullet = re.sub(r"^[\-\•\*]\s*", "", stripped)
             if current is None:
-                current = ExperienceEntry(company="Unknown", role="")
+                current = ExperienceEntry(company=pending_company or "Unknown", role="")
                 entries.append(current)
+                pending_company = None
             current.bullets.append(bullet)
         else:
             if current is None:
-                current = ExperienceEntry(company=stripped, role="")
-                entries.append(current)
+                pending_company = stripped
+            elif current.bullets:
+                current.bullets[-1] = f"{current.bullets[-1]} {stripped}"
     return entries
 
 
-def _parse_projects(raw: list[str]) -> list[ProjectEntry]:
+def _parse_projects(raw: list[str]) -> list[ProjectEntry]:  # noqa: C901
     entries: list[ProjectEntry] = []
     current: ProjectEntry | None = None
     for line in raw:
@@ -198,6 +223,8 @@ def _parse_projects(raw: list[str]) -> list[ProjectEntry]:
                 current = ProjectEntry(name="Unknown")
                 entries.append(current)
             current.bullets.append(bullet)
+        elif current is not None and current.bullets:
+            current.bullets[-1] = f"{current.bullets[-1]} {stripped}"
         elif current is None or (current.description is not None and _is_new_project(stripped)):
             current = ProjectEntry(name=stripped)
             entries.append(current)
@@ -251,7 +278,9 @@ def _process_url_line(stripped: str) -> tuple[str | None, str | None]:
         url = url_m.group(0)
         return (url, None) if "linkedin.com" in url else (None, url)
     if "linkedin.com" in stripped.lower():
-        return stripped, None
+        li_m = re.search(r"(?:https?://)?(?:www\.)?linkedin\.com\S*", stripped, re.IGNORECASE)
+        if li_m:
+            return li_m.group(0), None
     return None, None
 
 
@@ -262,6 +291,23 @@ def _extract_phone_candidate(stripped: str) -> str | None:
         return None
     candidate = ph.group(0).strip()
     return candidate if len(re.sub(r"\D", "", candidate)) >= 7 else None
+
+
+def _extract_location_from_contact_line(stripped: str) -> str | None:
+    if "|" not in stripped:
+        return None
+    for part in (p.strip() for p in stripped.split("|")):
+        if (
+            part
+            and part.count(",") == 1
+            and len(part) <= 40
+            and ":" not in part
+            and "@" not in part
+            and "linkedin.com" not in part.lower()
+            and _extract_phone_candidate(part) is None
+        ):
+            return part
+    return None
 
 
 def _phase1_classify(
@@ -318,6 +364,8 @@ def _phase3_find_location(
             and i not in url_lines
             and i != name_idx
             and stripped.count(",") == 1
+            and len(stripped) <= 40
+            and ":" not in stripped
             and "@" not in stripped
             and not (stripped == stripped.upper() and any(c.isalpha() for c in stripped))
             and location is None
@@ -335,7 +383,20 @@ def _parse_contact_info(lines: list[str]) -> ContactInfo:
     email, phone, linkedin, website, email_lines, phone_lines, url_lines = _phase1_classify(lines)
     pre_classified = email_lines | phone_lines | url_lines
     name, name_idx = _phase2_find_name(lines, pre_classified)
-    location = _phase3_find_location(lines, email_lines, url_lines, name_idx)
+    contact_line_location = next(
+        (
+            loc
+            for line in lines
+            if (loc := _extract_location_from_contact_line(line.strip())) is not None
+        ),
+        None,
+    )
+    location = contact_line_location or _phase3_find_location(
+        lines,
+        email_lines,
+        url_lines,
+        name_idx,
+    )
     return ContactInfo(
         name=name,
         email=email,
@@ -351,7 +412,10 @@ def extract_sections(text: str) -> SectionMap:
     lines = text.splitlines()
     groups = _group_by_section(lines)
 
-    summary = _parse_summary(groups.get("summary", []))
+    contact = _parse_contact_info(lines[:15])
+    summary = _parse_summary(groups.get("summary", [])) or _parse_preamble_summary(
+        groups.get("_preamble", []), contact
+    )
     skills = _parse_skills(groups.get("skills", []))
     experience = _parse_experience(groups.get("experience", []))
     projects = _parse_projects(groups.get("projects", []))
@@ -359,8 +423,6 @@ def extract_sections(text: str) -> SectionMap:
 
     certifications = [ln.strip() for ln in groups.get("certifications", []) if ln.strip()]
     awards = [ln.strip() for ln in groups.get("awards", []) if ln.strip()]
-
-    contact = _parse_contact_info(lines[:15])
 
     section_map = SectionMap(
         summary=summary,
@@ -409,6 +471,11 @@ def _extract_pdf(path: Path) -> str:
 
     import pdfplumber
 
+    def _normalize_pdf_word(text: str) -> str:
+        # Some embedded fonts emit bullet glyphs as private-use codepoints.
+        # Normalize them so downstream bullet parsing remains stable.
+        return "".join("•" if 0xE000 <= ord(ch) <= 0xF8FF else ch for ch in text)
+
     page_texts: list[str] = []
     with pdfplumber.open(path) as pdf:
         for page in pdf.pages:
@@ -424,7 +491,7 @@ def _extract_pdf(path: Path) -> str:
             lines: list[str] = []
             for y in sorted(lines_by_y):
                 row = sorted(lines_by_y[y], key=lambda w: w["x0"])
-                lines.append(" ".join(w["text"] for w in row))
+                lines.append(" ".join(_normalize_pdf_word(w["text"]) for w in row))
             page_texts.append("\n".join(lines))
     text = "\n".join(page_texts).strip()
     if not text:

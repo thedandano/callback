@@ -48,3 +48,12 @@ def list_resumes() -> list[str]:
         for file in dest_dir.glob(f"*{ext}"):
             labels.add(file.stem)
     return sorted(labels)
+
+
+def clear_resumes() -> None:
+    dest_dir = data_dir()
+    if not dest_dir.exists():
+        return
+    for ext in SUPPORTED_EXTENSIONS:
+        for file in dest_dir.glob(f"*{ext}"):
+            file.unlink()

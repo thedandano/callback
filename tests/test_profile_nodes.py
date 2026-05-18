@@ -15,7 +15,7 @@ from pi_apply.profile_nodes import (
 )
 from pi_apply.profilecompiler import save_compiled_profile
 from pi_apply.repository.accomplishments import AccomplishmentsStore
-from pi_apply.repository.resumes import save_resume
+from pi_apply.repository.resumes import list_resumes, save_resume
 from pi_apply.state import (
     CompiledProfile,
     CreatedStory,
@@ -114,7 +114,7 @@ class TestOnboard:
 
         result = onboard(state)
 
-        sections_path = tmp_path / "profile-wiki" / "jane_doe" / "sections.json"
+        sections_path = tmp_path / "profile-wiki" / "primary" / "sections.json"
         assert sections_path.exists()
         assert json.loads(sections_path.read_text())["contact"]["name"] == "Jane Doe"
 
@@ -122,12 +122,12 @@ class TestOnboard:
         expected_sections = ext.extract_sections(text).model_dump()
 
         assert result == {
-            "resume_label": "jane_doe",
+            "resume_label": "primary",
             "resume_path": str(resume_file),
             "sections": expected_sections,
             "intake": {
                 "status": "onboarded",
-                "resume_label": "jane_doe",
+                "resume_label": "primary",
                 "stories": [],
             },
         }
@@ -229,3 +229,45 @@ class TestCreateStory:
                 "needs_compile": True,
             },
         }
+
+
+class TestOnboardIdempotency:
+    def test_re_onboard_replaces_resume(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+
+        resume1_txt = """\
+Jane Doe
+jane@example.com
+
+Experience
+Acme | Engineer | 2020 - 2021
+- Built systems
+
+Skills
+Python, Docker
+"""
+        resume1 = tmp_path / "first.txt"
+        resume1.write_text(resume1_txt, encoding="utf-8")
+
+        resume2_txt = """\
+Jane Doe
+jane@example.com
+
+Experience
+Beta | Senior Engineer | 2021 - 2022
+- Led projects
+
+Skills
+Rust, Go
+"""
+        resume2 = tmp_path / "second.txt"
+        resume2.write_text(resume2_txt, encoding="utf-8")
+
+        state1 = _make_state(resume_path=str(resume1))
+        onboard(state1)
+
+        state2 = _make_state(resume_path=str(resume2))
+        onboard(state2)
+
+        assert list_resumes() == ["primary"]
