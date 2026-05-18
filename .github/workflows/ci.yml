@@ -97,6 +97,8 @@ jobs:
 
       - run: uv sync --all-groups
 
+      - run: uv run playwright install chromium
+
       - run: uv run pytest tests/ -m "not integration and not local" --tb=short
 
   test-integration:
