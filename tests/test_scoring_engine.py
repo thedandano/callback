@@ -17,6 +17,26 @@ RESUME_WITH_KEYWORDS = (
 )
 
 
+def _expected_ats_diagnostics(
+    closeable_by: str = "source_pdf",
+    matched: bool = True,
+) -> list[dict]:
+    observed = {
+        "Experience": "Experience" if matched else None,
+        "Education": "Education" if matched else None,
+        "Skills": "Skills" if matched else None,
+    }
+    return [
+        {
+            "expected": expected,
+            "observed": observed[expected],
+            "matched": matched,
+            "closeable_by": closeable_by,
+        }
+        for expected in ("Experience", "Education", "Skills")
+    ]
+
+
 class TestRunScore:
     def test_returns_full_breakdown(self):
         result = _run_score(
@@ -34,6 +54,7 @@ class TestRunScore:
             "req_unmatched": [],
             "pref_matched": ["AWS"],
             "pref_unmatched": [],
+            "ats_diagnostics": _expected_ats_diagnostics(),
         }
         assert result == expected
 
@@ -51,6 +72,7 @@ class TestRunScore:
             "req_unmatched": ["Go"],
             "pref_matched": ["AWS"],
             "pref_unmatched": [],
+            "ats_diagnostics": _expected_ats_diagnostics(),
         }
         assert result == expected
 
@@ -69,6 +91,7 @@ class TestRunScore:
             "req_unmatched": ["ZZZNONEXISTENT"],
             "pref_matched": [],
             "pref_unmatched": [],
+            "ats_diagnostics": _expected_ats_diagnostics(matched=False),
         }
         expected_high_years = {**expected_no_years, "total": 25.0, "experience_fit": 15.0}
         assert no_years == expected_no_years
@@ -110,6 +133,7 @@ class TestScoreInitial:
                 "req_unmatched": [],
                 "pref_matched": ["AWS"],
                 "pref_unmatched": [],
+                "ats_diagnostics": _expected_ats_diagnostics(),
             }
         }
         assert score_initial(state) == expected
@@ -144,6 +168,7 @@ class TestScoreFinal:
                 "req_unmatched": [],
                 "pref_matched": ["AWS"],
                 "pref_unmatched": [],
+                "ats_diagnostics": _expected_ats_diagnostics(closeable_by="render"),
             }
         }
         assert score_final(state) == expected
@@ -219,7 +244,9 @@ class TestReport:
                 "format_gap_chars": 0,
                 "no_coverage": False,
                 "uncovered_skills": [],
-            }
+                "notes": [],
+            },
+            "tailor_diagnostics": [],
         }
 
     def test_handles_none_scores(self):
@@ -241,5 +268,7 @@ class TestReport:
                 "format_gap_chars": 0,
                 "no_coverage": False,
                 "uncovered_skills": [],
-            }
+                "notes": [],
+            },
+            "tailor_diagnostics": [],
         }

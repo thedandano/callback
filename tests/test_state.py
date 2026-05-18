@@ -63,12 +63,16 @@ class TestApplyStateBasic:
             "tailored",
             "tailored_sections",
             "pdf_path",
+            "render_page_count",
+            "render_warnings",
             "report",
             "uncovered_skills",
             "finalized",
             "finalized_at",
             "error",
             "no_coverage",
+            "applied_skill_values",
+            "tailor_diagnostics",
         }
         assert set(fields.keys()) == required_fields
 

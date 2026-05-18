@@ -213,13 +213,13 @@ h1 {
 <div class="page-header">
   <h1>pi-apply — Architecture</h1>
   <p class="subtitle">
-    Python LangGraph MCP server exposing the current host keyword handoff surface.
+    Python LangGraph MCP server exposing the current host handoff surface.
     <code style="font-family:ui-monospace,monospace;font-size:11px;background:#1B1921;padding:1px 5px;border-radius:3px;color:#80FFEA">load_jd</code>
     runs to the JD fetch interrupt, and
     <code style="font-family:ui-monospace,monospace;font-size:11px;background:#1B1921;padding:1px 5px;border-radius:3px;color:#80FFEA">submit_keywords</code>
-    injects host-extracted JDData and stops before parsing/scoring.
+    injects host-extracted JDData, runs initial parse/score, and returns tailor context.
     Sessions persist across server restarts via SqliteSaver at <code style="font-family:ui-monospace,monospace;font-size:11px;background:#1B1921;padding:1px 5px;border-radius:3px;color:#80FFEA">~/.local/share/pi-apply/apply-sessions.db</code>.
-    Walking skeleton: scoring, tailoring, rendering, reporting, and finalization are later node milestones.
+    Tailoring, rendering, reporting, and finalization are reached through <code>submit_tailor</code>.
   </p>
 </div>
 
@@ -248,7 +248,7 @@ h1 {
         <div class="node-body">
           Agentic orchestrator. Selects and invokes MCP tools in sequence, threading
           <code>session_id</code> through each call. Each tool returns a JSON envelope
-          with <code>next_action</code> signaling which tool to call next.
+          with <code>workflow.next_tool</code> signaling which tool to call next.
           <code>load_jd</code> mints the UUID; all subsequent calls consume it.
         </div>
       </div>
@@ -268,12 +268,12 @@ h1 {
           Current MCP tools registered via <code>@mcp.tool()</code>. Emits structured JSON logs
           (<code>timestamp</code>, <code>level</code>, <code>tool</code>, <code>session_id</code>)
           to stderr on every call. Returns uniform envelope:
-          <code>{"session_id", "status", "next_action", "data"}</code> or
+          <code>{"session_id", "status", "next_action", "data", "workflow"}</code> or
           <code>{"status": "error", "error": {stage, code, message, retriable}}</code>.
           <div class="route-list">
             <div class="route">
               <span class="method post">GRAPH</span>
-              <span class="route-path">load_jd · submit_keywords</span>
+              <span class="route-path">load_jd · submit_keywords · get_wiki_pages · submit_tailor</span>
               <span class="route-note">→ LangGraph node</span>
             </div>
             <div class="route">
@@ -323,7 +323,7 @@ h1 {
           Compiled with <code>interrupt_after=["jd_fetch","keywords_accept"]</code>
           and <code>SqliteSaver(sqlite3.connect(db_path, check_same_thread=False))</code>.
           <code>thread_id = session_id</code> — no separate lookup table.
-          The MCP surface currently exposes only the first two apply milestones.
+          The MCP surface exposes host handoff tools, not every internal graph node.
         </div>
       </div>
 
@@ -369,7 +369,7 @@ h1 {
       <div class="arrow-down">
         <div class="arrow-stem"></div>
         <div class="arrow-head"></div>
-        <div class="arrow-note">interrupt · next_action: "parse_initial" · later milestone resumes parsing/scoring</div>
+        <div class="arrow-note">interrupt · workflow.next_tool: "get_wiki_pages" or "submit_tailor"</div>
       </div>
 
       <div class="node logic">
@@ -379,8 +379,8 @@ h1 {
         <div class="node-body">
           <code>parse_initial</code>, <code>score_initial</code>, <code>tailor</code>,
           <code>render</code>, <code>parse_final</code>, <code>score_final</code>,
-          <code>report</code>, and <code>finalize</code> remain graph nodes, but are outside
-          the current MCP handoff surface. They are built out in later milestones.
+          <code>report</code>, and <code>finalize</code> remain graph nodes behind
+          <code>submit_keywords</code> and <code>submit_tailor</code>.
         </div>
       </div>
 
@@ -390,14 +390,14 @@ h1 {
           <div class="exit-title">JD markdown and extraction protocol</div>
           <div class="exit-body">
             <code>load_jd</code> returns <code>jd_text</code>, <code>extraction_protocol</code>,
-            and <code>next_action="extract_keywords"</code>.
+            and <code>workflow.next_tool="submit_keywords"</code>.
           </div>
         </div>
         <div class="exit exit-error">
           <div class="exit-title">Validated JDData stored</div>
           <div class="exit-body">
             <code>submit_keywords</code> validates compact JDData JSON, stores it on
-            <code>ApplyState.keywords</code>, and returns <code>next_action="parse_initial"</code>.
+            <code>ApplyState.keywords</code>, and returns score gaps plus tailor workflow guidance.
           </div>
         </div>
       </div>
@@ -465,11 +465,11 @@ h1 {
       </div>
     </div>
 
-    <!-- Go subprocess bridge -->
+    <!-- Legacy Go subprocess bridge -->
     <div class="panel">
       <div class="panel-title">
-        Go subprocess bridge ·
-        <span class="badge badge-bg">PDF rendering dependency</span>
+        Legacy Go subprocess bridge ·
+        <span class="badge badge-bg">isolated compatibility path</span>
       </div>
       <div class="vflow">
 
@@ -482,8 +482,8 @@ h1 {
             <code>GO_APPLY_BIN</code> env var → <code>shutil.which("go-apply")</code> → <code>EnvironmentError</code>.
             <code>_BIN: str = _resolve_binary()</code> — type is <code>str</code>, never <code>None</code>.
             <br><br>
-            Two transport functions:<br>
-            <code>run_pdfrender(args: list[str]) → bytes</code> — renders tailored resume to PDF<br>
+            Two legacy transport functions remain available outside the MCP handoff path:<br>
+            <code>run_pdfrender(args: list[str]) → bytes</code> — old Go PDF renderer bridge<br>
             <code>run_survival(args: list[str]) → str</code> — ATS round-trip diff, returns JSON with <code>survival_rate</code><br>
             <br>
             <code>SubprocessError(cmd, returncode, stderr)</code> raised on non-zero exit.
@@ -501,7 +501,7 @@ h1 {
             <span class="node-file">~/.local/bin/go-apply</span>
           </div>
           <div class="node-body">
-            Go binary. Exposes <code>pdfrender</code> subcommand (reads resume text, writes styled PDF bytes to stdout)
+            Go binary. Exposes legacy <code>pdfrender</code> subcommand (reads resume text, writes styled PDF bytes to stdout)
             and <code>survival-diff</code> subcommand (renders PDF, extracts text, diffs against original JD keywords,
             returns <code>survival_rate</code> metric surfacing silent ATS data loss).
           </div>
@@ -509,8 +509,8 @@ h1 {
 
       </div>
       <div class="callout callout-amber">
-        <code>go-apply</code> remains available for PDF rendering. Scoring and rendering are outside
-        this handoff milestone and will be wired when those nodes are implemented.
+        Rendering is now wired through the Python HTML + Playwright renderer. The legacy
+        <code>go-apply</code> bridge remains isolated from the MCP handoff path.
       </div>
     </div>
 

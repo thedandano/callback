@@ -1,8 +1,11 @@
 """Tests for score delta computation and finalize archive (M3)."""
 
 import json
+import re
 
-from pi_apply.apply_nodes import finalize, report
+from pi_apply.apply_nodes import _sections_to_text, finalize, report
+from pi_apply.scorer import ATS_SECTION_PATTERNS
+from pi_apply.section_map import EducationEntry, ExperienceEntry, SectionMap, SkillsSection
 from pi_apply.state import ApplyState, TailoredResume
 
 _SCORE_INITIAL = {
@@ -76,7 +79,9 @@ def test_report_delta_all_six_dimensions():
             "format_gap_chars": -150,
             "no_coverage": False,
             "uncovered_skills": [],
-        }
+            "notes": [],
+        },
+        "tailor_diagnostics": [],
     }
 
 
@@ -96,7 +101,9 @@ def test_report_format_gap_chars_negative_on_content_loss():
             "format_gap_chars": -150,
             "no_coverage": False,
             "uncovered_skills": [],
-        }
+            "notes": [],
+        },
+        "tailor_diagnostics": [],
     }
 
 
@@ -116,8 +123,32 @@ def test_report_format_gap_chars_positive_on_content_gain():
             "format_gap_chars": 200,
             "no_coverage": False,
             "uncovered_skills": [],
-        }
+            "notes": [],
+        },
+        "tailor_diagnostics": [],
     }
+
+
+def test_report_includes_render_warnings_as_notes():
+    warning = {
+        "code": "under_five_years_over_one_page",
+        "message": (
+            "Resume rendered to 2 pages; candidates with under 5 years of experience "
+            "should stay within 1 page."
+        ),
+        "page_count": 2,
+        "max_pages": 1,
+        "candidate_experience_years": 3.8,
+    }
+    state = ApplyState(
+        session_id="r-warning",
+        score_initial=_SCORE_INITIAL,
+        score_final=_SCORE_FINAL,
+        render_page_count=2,
+        render_warnings=[warning],
+    )
+    result = report(state)
+    assert result["report"]["notes"] == [warning["message"]]
 
 
 def test_finalize_archive_includes_scores_delta(tmp_path, monkeypatch):
@@ -196,7 +227,9 @@ def test_report_no_coverage_path():
             "format_gap_chars": -100,
             "no_coverage": True,
             "uncovered_skills": [],
-        }
+            "notes": [],
+        },
+        "tailor_diagnostics": [],
     }
 
 
@@ -224,3 +257,31 @@ def test_finalize_archive_outcome_field(tmp_path, monkeypatch):
             "scoring_engine_version": "v1",
         },
     }
+
+
+def test_sections_to_text_all_headers_injected():
+    """_sections_to_text with non-empty core sections matches all ATS headers."""
+    section_map = SectionMap(
+        skills=SkillsSection(flat=["Python"], categorized={}),
+        experience=[ExperienceEntry(company="ACME", role="Engineer", bullets=["Built services"])],
+        education=[EducationEntry(institution="State University")],
+    )
+    text = _sections_to_text(section_map)
+    assert (
+        sum(1 for pat in ATS_SECTION_PATTERNS if any(pat.match(line) for line in text.splitlines()))
+        == 3
+    )
+
+
+def test_sections_to_text_empty_education_no_education_header():
+    """_sections_to_text with empty education list → no standalone Education header in output."""
+    section_map = SectionMap(
+        skills=SkillsSection(flat=["Python"], categorized={}),
+        experience=[ExperienceEntry(company="ACME", role="Engineer", bullets=["Built services"])],
+        education=[],
+    )
+    text = _sections_to_text(section_map)
+    assert not any(
+        re.compile(r"(?i)^\s*(?:academic\s+)?education\s*:?\s*$").match(line)
+        for line in text.splitlines()
+    )

@@ -1,12 +1,14 @@
 """MCP server for pi-apply: host handoff and profile management.
 
-Exposes six tools:
+Exposes eight tools:
 1. load_jd — loads JD markdown and returns host extraction instructions
-2. submit_keywords — accepts host-extracted JDData and resumes keyword handoff
-3. onboard_user — enters profile graph at onboard node
-4. compile_profile — enters profile graph at compile_profile node
-5. create_story — enters profile graph at create_story node
-6. check_update — returns current version, latest release, and update_available flag
+2. submit_keywords — accepts host-extracted JDData and returns score/tailor context
+3. submit_tailor — accepts host edits and finalizes PDF/report artifacts
+4. get_wiki_pages — returns profile wiki pages selected by the host
+5. onboard_user — enters profile graph at onboard node
+6. compile_profile — enters profile graph at compile_profile node
+7. create_story — enters profile graph at create_story node
+8. check_update — returns current version, latest release, and update_available flag
 """
 
 import asyncio
@@ -15,8 +17,10 @@ import json
 import logging
 import os
 import re
+import sqlite3
 import subprocess
 import sys
+import traceback
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -34,7 +38,7 @@ from pi_apply.apply_graph import (
 from pi_apply.apply_graph import (
     make_config as make_apply_config,
 )
-from pi_apply.apply_nodes import _detect_uncovered_skills
+from pi_apply.apply_nodes import _detect_uncovered_skills, _get_apps_dir
 from pi_apply.jd_data import EXTRACTION_PROTOCOL, JDDataError, parse_jd_json
 from pi_apply.jd_fetcher import JDFetchError
 from pi_apply.profile_graph import build_profile_graph
@@ -45,19 +49,85 @@ from pi_apply.state import ApplyState, ProfileState
 from pi_apply.wiki import WikiStore
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
-logging.basicConfig(
-    level=LOG_LEVEL,
-    format="%(message)s",  # messages are already JSON strings
-    stream=sys.stderr,
-)
+_LOG_FORMAT = "%(message)s"  # messages are already JSON strings
+_LOG_PATH: Path | None = None
+DEFAULT_LOG_PATH = Path("~/.local/state/pi-apply/server.log").expanduser()
+
+
+def configure_logging(log_path: str | Path | None = None) -> None:
+    """Configure stderr logging plus an optional server log file."""
+    global _LOG_PATH
+    logging.basicConfig(
+        level=LOG_LEVEL,
+        format=_LOG_FORMAT,
+        stream=sys.stderr,
+    )
+    if log_path is None:
+        return
+
+    path = Path(log_path).expanduser()
+    root = logging.getLogger()
+    root.setLevel(LOG_LEVEL)
+    for handler in root.handlers:
+        if getattr(handler, "_pi_apply_log_path", None) == str(path):
+            _LOG_PATH = path
+            return
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handler = logging.FileHandler(path, encoding="utf-8")
+    except OSError as exc:
+        _LOG_PATH = None
+        root.warning(
+            json.dumps(
+                {
+                    "event": "file_logging_disabled",
+                    "path": str(path),
+                    "error": str(exc),
+                }
+            )
+        )
+        return
+
+    handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+    handler.setLevel(LOG_LEVEL)
+    handler._pi_apply_log_path = str(path)  # type: ignore[attr-defined]
+    root.addHandler(handler)
+    _LOG_PATH = path
+
+
+configure_logging(os.environ.get("PI_APPLY_LOG_PATH"))
 logger = logging.getLogger(__name__)
+
+
+def _write_log_line(line: str) -> None:
+    """Write directly to the pi-apply log file if configured."""
+    global _LOG_PATH
+    if _LOG_PATH is None:
+        return
+    try:
+        _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with _LOG_PATH.open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+    except OSError:
+        _LOG_PATH = None
 
 
 def _log(level: str, payload: dict) -> None:
     """Log a structured JSON message."""
     payload["timestamp"] = datetime.datetime.now(datetime.UTC).isoformat()
     payload["level"] = level
-    logger.info(json.dumps(payload))
+    line = json.dumps(payload)
+    _write_log_line(line)
+    logger.info(line)
+
+
+def _log_exception(payload: dict) -> None:
+    """Log an exception payload plus traceback to stderr and the server log file."""
+    payload["traceback"] = traceback.format_exc()
+    line = json.dumps(payload)
+    _write_log_line(line)
+    logger.exception(line)
 
 
 def _ensure_browsers() -> None:
@@ -96,13 +166,19 @@ _TAILOR_INSTRUCTIONS = (
     "Banned: passionate, driven, results-oriented, proven track record.\n"
     "- Context line per role: <Role> · <Domain/Team> · <Scale signal> · <Stack>"
     " — factual only, no adjectives.\n"
-    "- Skills: every keyword added to skills MUST appear in ≥1 dated experience bullet."
+    "- Skills: every keyword added to skills MUST appear in ≥1 dated experience bullet.\n"
+    "- Projects: use existing project descriptions or bullets when a missing required or "
+    "preferred keyword is truthfully supported by project evidence rather than dated "
+    "experience evidence. Project edits MUST be grounded in the source resume or "
+    "profile wiki and MUST NOT invent project facts, metrics, scope, users, dates, "
+    "employer context, or keyword-only text. Project evidence does not satisfy Skills "
+    "coverage unless the keyword also appears in a dated experience bullet."
 )
 
 mcp = FastMCP("pi-apply", lifespan=_lifespan)
 
 _NEXT_EXTRACT_KEYWORDS = "extract_keywords"
-_NEXT_PARSE_INITIAL = "parse_initial"
+_NEXT_ONBOARD_RESUME_FIRST = "onboard_resume_first"
 _NEXT_FETCH_WIKI_THEN_TAILOR = "fetch_wiki_then_tailor"
 _NEXT_ADD_STORY_FIRST = "add_story_first"
 
@@ -148,13 +224,39 @@ def _detect_orphaned_required(
 # ============================================================================
 
 
-def _ok(session_id: str, next_action: str | None = None, data: dict | None = None) -> str:
+def _workflow(
+    phase: str,
+    next_tool: str | None,
+    host_task: str,
+    required_input: dict,
+    allowed_next_tools: list[str] | None = None,
+) -> dict:
+    """Build host-facing workflow guidance for the next MCP handoff."""
+    workflow = {
+        "phase": phase,
+        "next_tool": next_tool,
+        "host_task": host_task,
+        "required_input": required_input,
+    }
+    if allowed_next_tools:
+        workflow["allowed_next_tools"] = allowed_next_tools
+    return workflow
+
+
+def _ok(
+    session_id: str,
+    next_action: str | None = None,
+    data: dict | None = None,
+    workflow: dict | None = None,
+) -> str:
     """Return a success envelope."""
     env: dict = {"session_id": session_id, "status": "ok"}
     if next_action:
         env["next_action"] = next_action
     if data:
         env["data"] = data
+    if workflow:
+        env["workflow"] = workflow
     return json.dumps(env)
 
 
@@ -245,7 +347,7 @@ def _resolve_resume_label(
 
 
 @mcp.tool()
-def load_jd(
+def load_jd(  # noqa: C901
     jd_url: str | None = None,
     jd_raw_text: str | None = None,
     resume_label: str | None = None,
@@ -269,7 +371,7 @@ def load_jd(
 
     Returns:
         JSON envelope with status, session_id, jd_text, extraction_protocol, and
-        next_action="extract_keywords".
+        workflow guidance telling the host to call submit_keywords next.
     """
     session_id = str(uuid.uuid4())
     if not (jd_url or jd_raw_text):
@@ -293,9 +395,9 @@ def load_jd(
         resume_label=resolved_label,
     )
 
-    graph = build_apply_graph()
-    config = make_apply_config(session_id)
     try:
+        graph = build_apply_graph()
+        config = make_apply_config(session_id)
         state = graph.invoke(initial_state, config)
     except JDFetchError as exc:
         reason = getattr(exc, "reason", None)
@@ -319,23 +421,140 @@ def load_jd(
                 retriable=False,
             )
         raise RuntimeError(f"unknown jd_fetch error reason: {reason}") from exc
+    except sqlite3.OperationalError:
+        _log_exception(
+            {
+                "tool": "load_jd",
+                "session_id": session_id,
+                "event": "session_store_error",
+            }
+        )
+        return _err(
+            stage="load_jd",
+            code="session_store_error",
+            message="unable to create or update apply session store",
+            session_id=session_id,
+            retriable=True,
+        )
+    except Exception:
+        _log_exception(
+            {
+                "tool": "load_jd",
+                "session_id": session_id,
+                "event": "unexpected_error",
+            }
+        )
+        return _err(
+            stage="load_jd",
+            code="unexpected_error",
+            message="unexpected load_jd failure; inspect pi-apply logs",
+            session_id=session_id,
+            retriable=False,
+        )
 
     data = {
         "jd_text": state.get("jd_text"),
         "extraction_protocol": EXTRACTION_PROTOCOL,
     }
-    return _ok(session_id, _NEXT_EXTRACT_KEYWORDS, data)
+    workflow = _workflow(
+        phase="keyword_extraction",
+        next_tool="submit_keywords",
+        host_task=(
+            "Extract compact JDData JSON from data.jd_text using "
+            "data.extraction_protocol, then call submit_keywords."
+        ),
+        required_input={
+            "session_id": session_id,
+            "jd_json": "<compact JDData JSON string>",
+        },
+    )
+    return _ok(session_id, _NEXT_EXTRACT_KEYWORDS, data, workflow)
 
 
 def _submit_keywords_next_action(wiki_index: str | None, orphaned_required: list[str]) -> str:
     if not wiki_index:
-        return _NEXT_PARSE_INITIAL
+        return _NEXT_ONBOARD_RESUME_FIRST
     return _NEXT_ADD_STORY_FIRST if orphaned_required else _NEXT_FETCH_WIKI_THEN_TAILOR
+
+
+def _submit_keywords_workflow(
+    session_id: str,
+    next_action: str,
+    orphaned_required: list[str],
+) -> dict:
+    if next_action == _NEXT_ONBOARD_RESUME_FIRST:
+        return _workflow(
+            phase="onboard_resume",
+            next_tool="onboard_user",
+            host_task=(
+                "Tailoring needs onboarded resume sections and profile wiki context. "
+                "Call onboard_user, compile the profile, then restart this job flow "
+                "with load_jd using the same job description."
+            ),
+            required_input={
+                "resume_path": "<path to PDF, DOCX, TXT, or Markdown resume>",
+                "skills_path": "<optional path to skills file>",
+                "accomplishments_path": "<optional path to accomplishments file>",
+            },
+        )
+    if next_action == _NEXT_ADD_STORY_FIRST:
+        return _workflow(
+            phase="story_evidence",
+            next_tool="create_story",
+            host_task=(
+                "Collect or create truthful story evidence for orphaned required "
+                "keywords before tailoring. After create_story and compile_profile, "
+                "restart this job flow with load_jd using the same job description."
+            ),
+            required_input={
+                "primary_skill": (
+                    orphaned_required[0] if orphaned_required else "<required keyword>"
+                ),
+                "skills": orphaned_required or ["<required keyword>"],
+                "story_type": "STAR",
+                "job_title": "<role title for the evidence>",
+                "situation": "<truthful situation>",
+                "behavior": "<truthful actions taken>",
+                "impact": "<truthful quantified or concrete outcome>",
+            },
+        )
+    return _workflow(
+        phase="tailor_evidence",
+        next_tool="get_wiki_pages",
+        allowed_next_tools=["get_wiki_pages", "submit_tailor"],
+        host_task=(
+            "Use data.sections, data.score_gap, data.wiki_index, and "
+            "data.tailor_instructions to choose relevant wiki pages and prepare "
+            "honest SectionMap edits. If the index already contains enough "
+            "evidence, submit_tailor is also valid."
+        ),
+        required_input={
+            "session_id": session_id,
+            "page_ids": ["experience/<page-id>.md"],
+        },
+    )
+
+
+def _complete_workflow() -> dict:
+    return _workflow(
+        phase="complete",
+        next_tool=None,
+        host_task="Return the artifact paths, score report, and outcome to the user.",
+        required_input={},
+    )
+
+
+def _submit_tailor_artifacts(final: dict, session_id: str) -> dict:
+    archive_path = str(_get_apps_dir() / f"{session_id}.json")
+    return {
+        "pdf_path": final.get("pdf_path"),
+        "archive_path": archive_path,
+    }
 
 
 @mcp.tool()
 def submit_keywords(session_id: str, jd_json: str) -> str:
-    """Accept host-extracted JDData and stop before resume parsing/scoring."""
+    """Accept host-extracted JDData and return score gaps plus tailor handoff guidance."""
     _log("INFO", {"tool": "submit_keywords", "session_id": session_id})
 
     try:
@@ -379,6 +598,7 @@ def submit_keywords(session_id: str, jd_json: str) -> str:
             "required_missing": score.get("req_unmatched", []),
             "preferred_missing": score.get("pref_unmatched", []),
         }
+        data["ats_format_gap"] = score.get("ats_diagnostics", [])
         orphaned_required = _detect_orphaned_required(
             score.get("req_unmatched", []),
             state.get("sections") or {},
@@ -390,7 +610,12 @@ def submit_keywords(session_id: str, jd_json: str) -> str:
         data["wiki_index"] = state.get("wiki_index")
         data["tailor_instructions"] = _TAILOR_INSTRUCTIONS
     next_action = _submit_keywords_next_action(state.get("wiki_index"), orphaned_required)
-    return _ok(session_id, next_action, data)
+    return _ok(
+        session_id,
+        next_action,
+        data,
+        _submit_keywords_workflow(session_id, next_action, orphaned_required),
+    )
 
 
 @mcp.tool()
@@ -411,7 +636,12 @@ def submit_tailor(session_id: str, edits: list[dict], no_coverage: bool = False)
     and returns real score_final and report from final graph state.
 
     Returns JSON envelope with edits_applied, edits_rejected, uncovered_skills,
-    score_final, report, and outcome.
+    pdf_path, archive_path, score_final, report, outcome, and tailor_diagnostics.
+    tailor_diagnostics is a per-skill-edit list of {value, applied_to_map,
+    present_in_rendered_text, suggested_alternatives} entries; empty for
+    non-skill edits.
+    report.notes is a list of plain-text messages for ATS format issues in the
+    rendered PDF that tailoring cannot fix (closeable_by != "tailor").
     """
     _log("INFO", {"tool": "submit_tailor", "session_id": session_id, "edit_count": len(edits)})
 
@@ -437,6 +667,7 @@ def submit_tailor(session_id: str, edits: list[dict], no_coverage: bool = False)
         final = final_snapshot.values
         if final.get("error"):
             return _err("submit_tailor", "pipeline_error", final["error"], session_id)
+        artifacts = _submit_tailor_artifacts(final, session_id)
         return _ok(
             session_id,
             next_action=None,
@@ -444,8 +675,11 @@ def submit_tailor(session_id: str, edits: list[dict], no_coverage: bool = False)
                 "edits_applied": [],
                 "edits_rejected": [],
                 "uncovered_skills": [],
+                "pdf_path": artifacts["pdf_path"],
+                "archive_path": artifacts["archive_path"],
                 "score_final": final.get("score_final"),
                 "report": final.get("report"),
+                "tailor_diagnostics": [],
                 "outcome": (final.get("report") or {}).get("no_coverage")
                 and {
                     "no_coverage": True,
@@ -453,6 +687,7 @@ def submit_tailor(session_id: str, edits: list[dict], no_coverage: bool = False)
                 }
                 or {"no_coverage": False, "reason": None},
             },
+            workflow=_complete_workflow(),
         )
 
     state_values = snapshot.values
@@ -481,6 +716,16 @@ def _apply_tailor_edits(session_id, graph, config, state_values, sections_dict, 
         else:
             edits_rejected.append({"index": i, "reason": result.rejection_reason})
 
+    applied_set = set(edits_applied)
+    applied_skill_values = [
+        edit["value"]
+        for i, edit in enumerate(edits)
+        if i in applied_set
+        and edit.get("section") == "skills"
+        and edit.get("op") in ("add", "replace")
+        and "value" in edit
+    ]
+
     uncovered_skills = _detect_uncovered_skills(section_map)
 
     graph.update_state(
@@ -488,6 +733,7 @@ def _apply_tailor_edits(session_id, graph, config, state_values, sections_dict, 
         {
             "tailored_sections": section_map.model_dump(),
             "uncovered_skills": uncovered_skills,
+            "applied_skill_values": applied_skill_values,
         },
     )
     graph.invoke(None, config)
@@ -496,6 +742,7 @@ def _apply_tailor_edits(session_id, graph, config, state_values, sections_dict, 
     final = final_snapshot.values
     if final.get("error"):
         return _err("submit_tailor", "pipeline_error", final["error"], session_id)
+    artifacts = _submit_tailor_artifacts(final, session_id)
     return _ok(
         session_id,
         next_action=None,
@@ -503,8 +750,11 @@ def _apply_tailor_edits(session_id, graph, config, state_values, sections_dict, 
             "edits_applied": edits_applied,
             "edits_rejected": edits_rejected,
             "uncovered_skills": uncovered_skills,
+            "pdf_path": artifacts["pdf_path"],
+            "archive_path": artifacts["archive_path"],
             "score_final": final.get("score_final"),
             "report": final.get("report"),
+            "tailor_diagnostics": final.get("tailor_diagnostics") or [],
             "outcome": (final.get("report") or {}).get("no_coverage")
             and {
                 "no_coverage": True,
@@ -512,6 +762,7 @@ def _apply_tailor_edits(session_id, graph, config, state_values, sections_dict, 
             }
             or {"no_coverage": False, "reason": None},
         },
+        workflow=_complete_workflow(),
     )
 
 
@@ -653,8 +904,11 @@ def compile_profile(story_tags: str | None = None) -> str:
             retriable=True,
         )
 
+    resume_label, _ = _resolve_resume_label(None, session_id)
+
     state = ProfileState(
         session_id=session_id,
+        resume_label=resume_label,
         compiled_profile={"host_tags": host_tags} if host_tags else None,
     )
     delta = profile_nodes.compile_profile(state)
@@ -766,7 +1020,27 @@ def get_wiki_pages(session_id: str, page_ids: list[str]) -> str:
 
     store = WikiStore()
     pages = store.read_pages(resume_label, page_ids)
-    return _ok(session_id, data={"pages": pages})
+    workflow = _workflow(
+        phase="tailor_editing",
+        next_tool="submit_tailor",
+        host_task=(
+            "Use these pages with the previously returned sections, score gaps, "
+            "and tailor instructions to construct honest edits, then call submit_tailor."
+        ),
+        required_input={
+            "session_id": session_id,
+            "edits": [
+                {
+                    "section": "experience",
+                    "op": "replace",
+                    "target": "exp-0-b0",
+                    "value": "<truthful revised bullet>",
+                }
+            ],
+            "no_coverage": False,
+        },
+    )
+    return _ok(session_id, data={"pages": pages}, workflow=workflow)
 
 
 # ============================================================================
@@ -782,6 +1056,9 @@ def check_update() -> str:
 
 def run() -> None:
     """Run the FastMCP stdio server."""
+    if _LOG_PATH is None:
+        configure_logging(os.environ.get("PI_APPLY_LOG_PATH") or DEFAULT_LOG_PATH)
+    _log("INFO", {"event": "server_start", "transport": "stdio"})
     _ensure_browsers()
     mcp.run()
 

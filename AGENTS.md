@@ -1,13 +1,13 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file provides guidance to Codex when working in this repository.
 
 ## Northstar
 
 **Get the user past the ATS gate so they talk to a human recruiter.**
 
 Every scoring, tailoring, and feedback decision must serve this goal:
-- Surface real keyword and format gaps — don't paper over them.
+- Surface real keyword and format gaps - don't paper over them.
 - Never fabricate experience, skills, or metrics.
 - Never keyword-stuff. Honest signal only.
 - A resume that passes ATS but misrepresents the candidate is a failure.
@@ -16,9 +16,10 @@ Every scoring, tailoring, and feedback decision must serve this goal:
 
 pi-apply is a LangGraph MCP server (stdio only) that replaces the Go FSM in go-apply.
 Differentiator: defensible LangGraph stateful-agent design for an AI-engineering portfolio.
-Finite maintenance horizon — build only what the walking skeleton needs (see `BRIEF.md`).
+Finite maintenance horizon - build only what the walking skeleton needs (see `BRIEF.md`).
 
 State persists via LangGraph SQLite checkpointers under `~/.local/share/pi-apply/`.
+Logs default to `~/.local/state/pi-apply/server.log`.
 
 ## Commands
 
@@ -26,8 +27,17 @@ State persists via LangGraph SQLite checkpointers under `~/.local/share/pi-apply
 # Install deps
 uv sync
 
+# Install Playwright Chromium for Crawl4AI URL fetching
+pi-apply install-browsers
+
 # Run the MCP server (stdio). go-apply binary must be on PATH or set GO_APPLY_BIN.
 GO_APPLY_BIN=/path/to/go-apply uv run python -m pi_apply.server
+
+# Or run the packaged CLI
+uv run pi-apply serve
+
+# Register the MCP server with Claude and Codex
+uv run pi-apply setup-mcp
 
 # All tests
 uv run pytest
@@ -42,96 +52,145 @@ uv run pyright
 # Smoke scripts (end-to-end exercises against the graphs)
 uv run python scripts/smoke_apply.py
 uv run python scripts/smoke_profile.py
-
 ```
+
+## Environment
+
+- `GO_APPLY_BIN`: Path to the go-apply binary used by `bridge.py`.
+- `LOG_LEVEL`: Server log level.
+- `PI_APPLY_LOG_PATH`: Override the server log file path.
+- `PI_APPLY_APPS_DIR`: Override where application PDFs and JSON archives are written.
+- `PI_APPLY_FETCH_PAGE_TIMEOUT_MS`: Crawl4AI per-page timeout in milliseconds.
+- `PI_APPLY_FETCH_WAIT_UNTIL`: Crawl4AI wait strategy.
+- `PI_APPLY_FETCH_OUTER_TIMEOUT_S`: Outer fetch timeout in seconds.
+- `PI_APPLY_FETCH_MAGIC`: Enable or disable Crawl4AI stealth mode.
+- `XDG_DATA_HOME`: Overrides resume, wiki, and profile data roots.
 
 ## Architecture
 
 ### Two graphs, one server
 
-`server.py` (FastMCP) exposes four tools wired to two distinct LangGraph state graphs:
+`server.py` (FastMCP) exposes eight tools wired to two distinct LangGraph state graphs:
 
-| Tool             | Graph    | Behavior                                                    |
-|------------------|----------|-------------------------------------------------------------|
-| `apply`          | apply    | Runs end-to-end in a single `.invoke()` — no interrupts.    |
-| `onboard_user`   | profile  | Currently calls `profile_nodes.onboard` directly (skeleton).|
-| `compile_profile`| profile  | Currently calls `profile_nodes.compile_profile` directly.   |
-| `create_story`   | profile  | Currently calls `profile_nodes.create_story` directly.      |
+| Tool | Graph | Behavior |
+|---|---|---|
+| `load_jd` | apply | Loads JD markdown, resolves a resume label, and returns host extraction instructions. |
+| `submit_keywords` | apply | Accepts host-extracted JDData, runs parse/initial score, and returns score gaps plus tailor handoff guidance. |
+| `submit_tailor` | apply | Applies host edits, resumes the graph, and finalizes the PDF/report artifacts. |
+| `get_wiki_pages` | apply | Reads wiki pages for the active resume label. |
+| `onboard_user` | profile | Starts profile intake and registers the resume plus optional source files. |
+| `compile_profile` | profile | Recompiles the profile from stored stories and host tags. |
+| `create_story` | profile | Persists a behavioral story for a skill. |
+| `check_update` | utility | Returns current version, latest release tag, and update status. |
 
 All tools return JSON envelopes via `_ok` / `_err`:
-- Success: `{"session_id", "status": "ok", "next_action"?, "data"?}`
+- Success: `{"session_id", "status": "ok", "next_action"?, "data"?, "workflow"?}`
 - Error: `{"status": "error", "error": {"stage", "code", "message", "retriable"}, "session_id"?}`
+
+### Agent MCP Playbook
+
+When the user asks to use pi-apply for a job, the host should follow the workflow metadata:
+
+1. Call `load_jd` with `jd_url` or `jd_raw_text`.
+2. Extract compact JDData from `data.jd_text` using `data.extraction_protocol`.
+3. Call `submit_keywords` with the same `session_id` and the compact `jd_json` string.
+4. If `workflow.next_tool` is `get_wiki_pages`, use `data.wiki_index` to fetch relevant evidence pages, then call `submit_tailor`.
+5. If `workflow.next_tool` is `submit_tailor`, create honest edits from `data.sections`, `data.score_gap`, wiki evidence, and `data.tailor_instructions`.
+6. If `workflow.next_tool` is `onboard_user` or `create_story`, collect the missing profile evidence, compile the profile, then restart the job flow with `load_jd`.
+7. After `submit_tailor`, return `data.pdf_path`, `data.archive_path`, `data.report`, and `data.outcome` to the user.
+
+The host owns keyword extraction and tailoring judgment. pi-apply owns state, validation, rendering, scoring, and archival.
 
 ### Apply graph (`apply_graph.py`, `apply_nodes.py`)
 
-Linear, no interrupts, runs to completion in one `invoke()`:
+Linear graph with host handoff interrupts after `jd_fetch` and `keywords_accept`:
 
+```text
+jd_fetch -> keywords_accept -> parse_initial -> score_initial -> tailor -> render
+        -> parse_final -> score_final -> report -> finalize -> END
 ```
-jd_fetch → keywords_extract → parse_initial → score_initial → tailor → render
-        → parse_final → score_final → report → finalize → END
-```
+
+`submit_tailor` resumes at `tailor`.
 
 Checkpointer DB: `~/.local/share/pi-apply/apply-sessions.db`.
-State schema: `ApplyState` in `state.py` (single Pydantic model — entire graph state).
+State schema: `ApplyState` in `state.py` (single Pydantic model - entire graph state).
+Keyword extraction is host-owned: `load_jd` returns the JD markdown and extraction protocol, then `submit_keywords` stores only validated JDData submitted by the host.
 
 ### Profile graph (`profile_graph.py`, `profile_nodes.py`)
 
-Cyclic, with interrupts after `onboard` and `create_story`:
+Cyclic, with interrupts after `onboard`, `compile_profile`, and `create_story`:
 
-```
-check_profile ──(no profile)──▶ onboard ─▶ compile_profile ─▶ check_orphans
-              └─(exists)──────────────────────────────────────▶ check_orphans
-                                                                 │
-                              create_story ◀─(orphans exist)─────┤
-                                    └─▶ compile_profile (cycle)  │
-                                                                 ▼
-                                                  END (no orphans)
+```text
+check_profile -> onboard -> compile_profile -> check_orphans
+      |            ^             |
+      |            |             v
+      +---------- check_orphans <- create_story
 ```
 
 Checkpointer DB: `~/.local/share/pi-apply/profile-sessions.db`.
 State schema: `ProfileState` in `state.py`.
 
-**Note:** The profile MCP tools currently bypass the graph and invoke nodes directly (skeleton state). Real implementation will use graph state injection to re-enter at the appropriate node — preserve this intent when extending.
+Current profile MCP behavior:
+- `onboard_user` enters the profile graph.
+- `compile_profile` and `create_story` still call node functions directly.
+- Preserve the graph-state-injection intent when extending these tools.
+
+### JD Fetching (`jd_fetcher.py`)
+
+URL fetching uses Crawl4AI. The fetch surface is controlled by:
+- `PI_APPLY_FETCH_PAGE_TIMEOUT_MS`
+- `PI_APPLY_FETCH_WAIT_UNTIL`
+- `PI_APPLY_FETCH_OUTER_TIMEOUT_S`
+- `PI_APPLY_FETCH_MAGIC`
+
+Do not add a silent fallback path if URL fetch fails.
 
 ### Scoring (`scorer.py`)
 
-Pure deterministic Python — no I/O, no LLM calls. Ported from go-apply's `scorer.go`.
+Pure deterministic Python - no I/O, no LLM calls. Ported from go-apply's `scorer.go`.
 
-| Dimension       | Max | Signal                                    |
-|-----------------|-----|-------------------------------------------|
-| KeywordMatch    | 45  | Required (0.7) + preferred (0.3) keywords |
-| ExperienceFit   | 25  | Years met + seniority match               |
-| ImpactEvidence  | 10  | Quantified metric bullets                 |
-| ATSFormat       | 10  | Standard section headers present          |
-| Readability     | 10  | Absence of filler phrases                 |
+| Dimension | Max | Signal |
+|---|---|---|
+| KeywordMatch | 45 | Required (0.7) + preferred (0.3) keywords |
+| ExperienceFit | 25 | Years met + seniority match |
+| ImpactEvidence | 10 | Quantified metric bullets |
+| ATSFormat | 10 | Standard section headers present |
+| Readability | 10 | Absence of filler phrases |
 
-**Why Python, not the Go binary:** go-apply has no standalone `score` CLI (only `serve`). Logic is ~250 lines of deterministic math. Python ecosystem covers PDF/DOCX/TXT extraction; go-apply only handles PDF.
+### Rendering and bridge (`render/`, `bridge.py`)
 
-### go-apply binary dependency (`bridge.py`)
-
-`bridge.py` resolves the go-apply binary at **import time** via `_resolve_binary()`. If the binary is not on `PATH`, set `GO_APPLY_BIN=/path/to/go-apply` before importing. In tests, `conftest.py` re-imports the module against a fake binary after resolution tests evict it from `sys.modules` — preserve this fixture when adding bridge tests.
-
-go-apply is used for PDF rendering only. `run_pdfrender` exists in `bridge.py`; the apply graph's `render` node currently uses `fpdf2` directly.
+PDF rendering uses HTML + Playwright in `pi_apply/render/html_builder.py`.
+`bridge.py` still resolves the go-apply binary at import time and exposes subprocess helpers for the legacy Go CLI.
+If the binary is not on `PATH`, set `GO_APPLY_BIN=/path/to/go-apply` before importing.
 
 ### Module map
 
-| Module               | Role |
-|----------------------|------|
-| `server.py`          | FastMCP tool definitions; envelope helpers (`_ok`/`_err`); structured stderr JSON logging |
-| `apply_graph.py`     | `build_apply_graph()` — linear, no-interrupt apply pipeline |
-| `apply_nodes.py`     | 10 apply nodes (`jd_fetch`, `keywords_extract`, `parse_initial`, `score_initial`, `tailor`, `render`, `parse_final`, `score_final`, `report`, `finalize`) |
-| `profile_graph.py`   | `build_profile_graph()` — cyclic profile graph with router edges and interrupts |
-| `profile_nodes.py`   | Profile nodes (`check_profile`, `onboard`, `compile_profile`, `check_orphans`, `create_story`) |
-| `state.py`           | `ApplyState`, `ProfileState` — Pydantic schemas for each graph |
-| `scorer.py`          | Deterministic ATS scorer (no I/O, no LLM) |
-| `extractor.py`       | Resume text extraction (PDF via pdfplumber, DOCX via python-docx, TXT) |
-| `bridge.py`          | go-apply subprocess wrapper; resolves binary at import time |
+| Module | Role |
+|---|---|
+| `server.py` | FastMCP tool definitions, envelope helpers, structured JSON logging |
+| `apply_graph.py` | `build_apply_graph()` - linear apply pipeline with host handoff interrupts |
+| `apply_nodes.py` | Apply nodes (`jd_fetch`, `keywords_accept`, `parse_initial`, `score_initial`, `tailor`, `render`, `parse_final`, `score_final`, `report`, `finalize`) |
+| `profile_graph.py` | `build_profile_graph()` - cyclic profile graph with router edges and interrupts |
+| `profile_nodes.py` | Profile nodes (`check_profile`, `onboard`, `compile_profile`, `check_orphans`, `create_story`) |
+| `state.py` | `ApplyState`, `ProfileState`, and related profile data models |
+| `scorer.py` | Deterministic ATS scorer |
+| `jd_data.py` | JD JSON schema, extraction protocol, and validators |
+| `jd_fetcher.py` | Crawl4AI job-description fetcher |
+| `extractor.py` | Resume text extraction (PDF, DOCX, TXT, Markdown/plain text) |
+| `section_map.py` | Resume section editing helpers |
+| `wiki.py` | Wiki storage for resume-linked behavioral stories |
+| `repository/` | Resume and accomplishments persistence helpers |
+| `profilecompiler.py` | Compiles skills and stories into a profile summary |
+| `render/` | HTML + Playwright resume rendering |
+| `bridge.py` | go-apply subprocess wrapper |
+| `cli.py` | `pi-apply` CLI entry point |
+| `version_check.py` | Current-vs-latest release comparison |
 
 ## Change Discipline
 
 - Touch only what the current task requires.
 - Don't add scoring heuristics not present in go-apply unless explicitly requested.
-- Scoring weights live in config — don't hardcode them.
+- Scoring weights live in config - don't hardcode them.
 - All fallbacks must be explicit, logged, and approved.
-- Don't add complexity beyond the walking skeleton (see `BRIEF.md`). When tempted toward pgvector / LLM-as-judge / eval harness before the graph runs end-to-end, stop.
+- Don't add complexity beyond the walking skeleton (see `BRIEF.md`). When tempted toward pgvector, LLM-as-judge, or an eval harness before the graph runs end-to-end, stop.
 - Active design proposals live in `openspec/changes/`. Check there before redesigning a graph.

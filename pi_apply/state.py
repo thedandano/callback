@@ -39,6 +39,7 @@ class TailoredResume(BaseModel):
     projects_raw: str | None = None
     volunteer_raw: str | None = None
     education_raw: str | None = None
+    candidate_experience_years: float | None = None
     max_pages: int = 1
 
 
@@ -60,12 +61,16 @@ class ApplyState(BaseModel):
     tailored: TailoredResume | None = Field(default=None)
     tailored_sections: dict | None = Field(default=None)
     pdf_path: str | None = Field(default=None)
+    render_page_count: int | None = Field(default=None)
+    render_warnings: list[dict] | None = Field(default=None)
     report: dict | None = Field(default=None)
     uncovered_skills: list | None = Field(default=None)
     finalized: bool | None = Field(default=None)
     finalized_at: str | None = Field(default=None)
     error: str | None = Field(default=None)
     no_coverage: bool | None = Field(default=None)
+    applied_skill_values: list[str] | None = Field(default=None)
+    tailor_diagnostics: list[dict] | None = Field(default=None)
 
 
 class ProfileState(BaseModel):

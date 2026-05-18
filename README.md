@@ -74,6 +74,20 @@ Once the server is running, your MCP host can call these tools:
 | `create_story` | Persist a new behavioral story (SBI format) for a skill. |
 | `check_update` | Return current version, latest GitHub release tag, and `update_available` flag. |
 
+### Agent MCP Playbook
+
+When a user asks to use pi-apply for a job, the MCP host should follow the workflow metadata returned by each tool:
+
+1. Call `load_jd` with `jd_url` or `jd_raw_text`.
+2. Extract compact JDData from `data.jd_text` using `data.extraction_protocol`.
+3. Call `submit_keywords` with the same `session_id` and the compact `jd_json` string.
+4. If `workflow.next_tool` is `get_wiki_pages`, use `data.wiki_index` to fetch relevant evidence pages, then call `submit_tailor`.
+5. If `workflow.next_tool` is `submit_tailor`, create honest edits from `data.sections`, `data.score_gap`, wiki evidence, and `data.tailor_instructions`.
+6. If `workflow.next_tool` is `onboard_user` or `create_story`, collect the missing profile evidence, compile the profile, then restart the job flow with `load_jd`.
+7. After `submit_tailor`, return `data.pdf_path`, `data.archive_path`, `data.report`, and `data.outcome` to the user.
+
+The host owns keyword extraction and tailoring judgment. pi-apply owns state, validation, rendering, scoring, and archival.
+
 ### Scoring dimensions
 
 | Dimension | Max pts | Signal |
@@ -103,6 +117,6 @@ uv run pytest
 # Type check
 uv run pyright
 
-# Run the MCP server locally (requires go-apply binary for PDF rendering)
-GO_APPLY_BIN=/path/to/go-apply uv run python -m pi_apply.server
+# Run the MCP server locally
+uv run python -m pi_apply.server
 ```

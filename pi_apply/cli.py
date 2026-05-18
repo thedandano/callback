@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import datetime
 import importlib.metadata
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -165,7 +167,24 @@ def _remove_server_from_codex(path: Path) -> None:
 @app.command()
 def serve() -> None:
     """Start the pi-apply MCP server."""
-    from pi_apply.server import run
+    os.environ.setdefault("PI_APPLY_LOG_PATH", str(DEFAULT_LOG_PATH))
+    log_path = Path(os.environ["PI_APPLY_LOG_PATH"]).expanduser()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps(
+                {
+                    "event": "cli_serve_start",
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
+                    "level": "INFO",
+                }
+            )
+            + "\n"
+        )
+
+    from pi_apply.server import configure_logging, run
+
+    configure_logging(os.environ["PI_APPLY_LOG_PATH"])
 
     run()
 

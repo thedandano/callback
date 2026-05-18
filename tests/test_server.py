@@ -1,7 +1,9 @@
 """Tests for pi_apply.server MCP tool registration and routing."""
 
 import json
+import sqlite3
 import uuid
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -31,6 +33,33 @@ EXPECTED_PARTIAL_KEYWORDS = {
     "pay_range_min": None,
     "pay_range_max": None,
 }
+
+
+def _expected_load_jd_workflow(session_id: str) -> dict:
+    return {
+        "phase": "keyword_extraction",
+        "next_tool": "submit_keywords",
+        "host_task": (
+            "Extract compact JDData JSON from data.jd_text using "
+            "data.extraction_protocol, then call submit_keywords."
+        ),
+        "required_input": {
+            "session_id": session_id,
+            "jd_json": "<compact JDData JSON string>",
+        },
+    }
+
+
+def _missing_ats_format_gap() -> list[dict]:
+    return [
+        {
+            "expected": expected,
+            "observed": None,
+            "matched": False,
+            "closeable_by": "source_pdf",
+        }
+        for expected in ("Experience", "Education", "Skills")
+    ]
 
 
 def _tool_names(server) -> set[str]:
@@ -109,9 +138,75 @@ def test_load_jd_returns_handoff_envelope():
             "jd_text": jd_text,
             "extraction_protocol": EXTRACTION_PROTOCOL,
         },
+        "workflow": _expected_load_jd_workflow(session_id),
     }
 
     assert result == expected
+
+
+def test_load_jd_returns_error_when_session_store_is_readonly():
+    from pi_apply.server import load_jd
+
+    class ReadonlyGraph:
+        def invoke(self, initial_state, config):
+            raise sqlite3.OperationalError("attempt to write a readonly database")
+
+    with (
+        patch("pi_apply.server.list_resumes", return_value=["resume"]),
+        patch("pi_apply.server.build_apply_graph", return_value=ReadonlyGraph()),
+    ):
+        result = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+
+    expected = {
+        "session_id": result["session_id"],
+        "status": "error",
+        "error": {
+            "stage": "load_jd",
+            "code": "session_store_error",
+            "message": "unable to create or update apply session store",
+            "retriable": True,
+        },
+    }
+    assert result == expected
+
+
+def test_load_jd_returns_error_when_unexpected_exception_escapes_graph():
+    from pi_apply.server import load_jd
+
+    class BrokenGraph:
+        def invoke(self, initial_state, config):
+            raise ValueError("boom")
+
+    with (
+        patch("pi_apply.server.list_resumes", return_value=["resume"]),
+        patch("pi_apply.server.build_apply_graph", return_value=BrokenGraph()),
+    ):
+        result = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+
+    expected = {
+        "session_id": result["session_id"],
+        "status": "error",
+        "error": {
+            "stage": "load_jd",
+            "code": "unexpected_error",
+            "message": "unexpected load_jd failure; inspect pi-apply logs",
+            "retriable": False,
+        },
+    }
+    assert result == expected
+
+
+def test_configure_logging_writes_server_log(tmp_path):
+    import logging
+
+    from pi_apply.server import configure_logging
+
+    log_path = tmp_path / "server.log"
+    configure_logging(log_path)
+
+    logging.getLogger("pi_apply.server").info("test log line")
+
+    assert "test log line" in log_path.read_text(encoding="utf-8")
 
 
 def test_load_jd_accepts_url_with_raw_text_fallback():
@@ -141,13 +236,14 @@ def test_load_jd_accepts_url_with_raw_text_fallback():
             "jd_text": jd_text,
             "extraction_protocol": EXTRACTION_PROTOCOL,
         },
+        "workflow": _expected_load_jd_workflow(session_id),
     }
 
     assert result == expected
     fetch_mock.assert_awaited_once_with(jd_url)
 
 
-def test_submit_keywords_stores_jddata_and_stops_before_parsing():
+def test_submit_keywords_stores_jddata_and_routes_missing_wiki_to_onboarding():
     from pi_apply.server import load_jd, submit_keywords
 
     with patch("pi_apply.server.list_resumes", return_value=["resume"]):
@@ -158,18 +254,30 @@ def test_submit_keywords_stores_jddata_and_stops_before_parsing():
     expected = {
         "session_id": session_id,
         "status": "ok",
-        "next_action": "parse_initial",
+        "next_action": "onboard_resume_first",
         "data": {
             "keywords": EXPECTED_PARTIAL_KEYWORDS,
             "score_gap": {
                 "required_missing": result["data"]["score_gap"]["required_missing"],
                 "preferred_missing": result["data"]["score_gap"]["preferred_missing"],
             },
+            "ats_format_gap": _missing_ats_format_gap(),
             "orphaned_required": result["data"]["orphaned_required"],
+        },
+        "workflow": {
+            "phase": "onboard_resume",
+            "next_tool": "onboard_user",
+            "host_task": result["workflow"]["host_task"],
+            "required_input": {
+                "resume_path": "<path to PDF, DOCX, TXT, or Markdown resume>",
+                "skills_path": "<optional path to skills file>",
+                "accomplishments_path": "<optional path to accomplishments file>",
+            },
         },
     }
 
     assert result == expected
+    assert "restart this job flow with load_jd" in result["workflow"]["host_task"]
 
 
 def test_submit_keywords_rejects_invalid_jd_json():
@@ -269,6 +377,197 @@ def test_submit_keywords_rejects_session_not_waiting_for_keywords():
     assert result == expected
 
 
+def test_submit_keywords_ats_format_gap_has_three_entries():
+    """submit_keywords returns one ATS gap entry per required header."""
+    from pi_apply.server import load_jd, submit_keywords
+
+    with patch("pi_apply.server.list_resumes", return_value=["resume"]):
+        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+    session_id = loaded["session_id"]
+
+    result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+
+    actual = {
+        "entry_count": len(result["data"]["ats_format_gap"]),
+        "entries": result["data"]["ats_format_gap"],
+    }
+    expected = {
+        "entry_count": 3,
+        "entries": _missing_ats_format_gap(),
+    }
+    assert actual == expected
+
+
+def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, monkeypatch):
+    from pi_apply.server import load_jd, submit_keywords
+    from pi_apply.wiki import WikiStore
+
+    resume_label = "project_guidance_resume"
+    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    sections = {
+        "summary": "Python engineer",
+        "skills": {"flat": ["Python"], "categorized": {}},
+        "experience": [
+            {
+                "company": "ACME",
+                "role": "Engineer",
+                "bullets": ["Built Python services"],
+            }
+        ],
+        "projects": [
+            {
+                "name": "Search Lab",
+                "description": "Explored ranking systems",
+                "bullets": ["Built prototype search APIs"],
+            }
+        ],
+        "education": [],
+        "contact": {"name": "Jane Dev"},
+        "certifications": [],
+        "awards": [],
+    }
+    store = WikiStore()
+    store.write_page(resume_label, "sections.json", json.dumps(sections))
+    store.write_index(resume_label, "Python evidence in dated experience")
+
+    with patch("pi_apply.server.list_resumes", return_value=[resume_label]):
+        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+    result = json.loads(submit_keywords(session_id=loaded["session_id"], jd_json=PARTIAL_JD_JSON))
+
+    instructions = result["data"]["tailor_instructions"]
+    actual = {
+        "next_action": result["next_action"],
+        "workflow_phase": result["workflow"]["phase"],
+        "workflow_next_tool": result["workflow"]["next_tool"],
+        "allowed_next_tools": result["workflow"]["allowed_next_tools"],
+        "required_input": result["workflow"]["required_input"],
+        "host_task_mentions_sections": "data.sections" in result["workflow"]["host_task"],
+        "mentions_project_descriptions": "existing project descriptions or bullets" in instructions,
+        "mentions_wiki_source": "source resume or profile wiki" in instructions,
+        "rejects_invented_project_facts": "MUST NOT invent project facts" in instructions,
+        "rejects_keyword_only_text": "keyword-only text" in instructions,
+        "keeps_skills_coverage_dated": "dated experience bullet" in instructions,
+    }
+    expected = {
+        "next_action": "fetch_wiki_then_tailor",
+        "workflow_phase": "tailor_evidence",
+        "workflow_next_tool": "get_wiki_pages",
+        "allowed_next_tools": ["get_wiki_pages", "submit_tailor"],
+        "required_input": {
+            "session_id": loaded["session_id"],
+            "page_ids": ["experience/<page-id>.md"],
+        },
+        "host_task_mentions_sections": True,
+        "mentions_project_descriptions": True,
+        "mentions_wiki_source": True,
+        "rejects_invented_project_facts": True,
+        "rejects_keyword_only_text": True,
+        "keeps_skills_coverage_dated": True,
+    }
+    assert actual == expected
+
+
+def test_submit_keywords_orphaned_required_routes_to_create_story(tmp_path, monkeypatch):
+    from pi_apply.server import load_jd, submit_keywords
+    from pi_apply.wiki import WikiStore
+
+    resume_label = "orphan_workflow_resume"
+    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    resume_path = tmp_path / "resume.txt"
+    resume_path.write_text(
+        "Jane Dev\nExperience\nBuilt backend APIs\nEducation\nBS Computer Science\n",
+        encoding="utf-8",
+    )
+    sections = {
+        "summary": "Backend engineer",
+        "skills": {"flat": ["Kafka"], "categorized": {}},
+        "experience": [{"company": "ACME", "role": "Engineer", "bullets": ["Built APIs"]}],
+        "projects": [],
+        "education": [],
+        "contact": {"name": "Jane Dev"},
+        "certifications": [],
+        "awards": [],
+    }
+    store = WikiStore()
+    store.write_page(resume_label, "sections.json", json.dumps(sections))
+    store.write_index(resume_label, "Python evidence only")
+
+    jd_json = json.dumps({"title": "Backend Engineer", "company": "Co", "required": ["Kafka"]})
+    with (
+        patch("pi_apply.server.list_resumes", return_value=[resume_label]),
+        patch("pi_apply.apply_nodes.get_resume", return_value=str(resume_path)),
+    ):
+        loaded = json.loads(load_jd(jd_raw_text="Kafka engineer needed"))
+        result = json.loads(submit_keywords(session_id=loaded["session_id"], jd_json=jd_json))
+
+    actual = {
+        "next_action": result["next_action"],
+        "orphaned_required": result["data"]["orphaned_required"],
+        "workflow_phase": result["workflow"]["phase"],
+        "workflow_next_tool": result["workflow"]["next_tool"],
+        "primary_skill": result["workflow"]["required_input"]["primary_skill"],
+        "host_task_restarts_flow": "restart this job flow with load_jd"
+        in result["workflow"]["host_task"],
+    }
+    expected = {
+        "next_action": "add_story_first",
+        "orphaned_required": ["Kafka"],
+        "workflow_phase": "story_evidence",
+        "workflow_next_tool": "create_story",
+        "primary_skill": "Kafka",
+        "host_task_restarts_flow": True,
+    }
+    assert actual == expected
+
+
+def test_get_wiki_pages_returns_submit_tailor_workflow(tmp_path, monkeypatch):
+    from pi_apply.server import get_wiki_pages, load_jd, submit_keywords
+    from pi_apply.wiki import WikiStore
+
+    resume_label = "wiki_pages_workflow_resume"
+    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    sections = {
+        "summary": "Python engineer",
+        "skills": {"flat": ["Python"], "categorized": {}},
+        "experience": [{"company": "ACME", "role": "Engineer", "bullets": ["Built Python"]}],
+        "projects": [],
+        "education": [],
+        "contact": {"name": "Jane Dev"},
+        "certifications": [],
+        "awards": [],
+    }
+    store = WikiStore()
+    store.write_page(resume_label, "sections.json", json.dumps(sections))
+    store.write_index(resume_label, "- experience/acme.md")
+    store.write_page(resume_label, "experience/acme.md", "Built Python services.")
+
+    with patch("pi_apply.server.list_resumes", return_value=[resume_label]):
+        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+    json.loads(submit_keywords(session_id=loaded["session_id"], jd_json=PARTIAL_JD_JSON))
+
+    result = json.loads(
+        get_wiki_pages(session_id=loaded["session_id"], page_ids=["experience/acme.md"])
+    )
+
+    actual = {
+        "status": result["status"],
+        "pages": result["data"]["pages"],
+        "workflow_phase": result["workflow"]["phase"],
+        "workflow_next_tool": result["workflow"]["next_tool"],
+        "required_session_id": result["workflow"]["required_input"]["session_id"],
+        "required_no_coverage": result["workflow"]["required_input"]["no_coverage"],
+    }
+    expected = {
+        "status": "ok",
+        "pages": {"experience/acme.md": "Built Python services."},
+        "workflow_phase": "tailor_editing",
+        "workflow_next_tool": "submit_tailor",
+        "required_session_id": loaded["session_id"],
+        "required_no_coverage": False,
+    }
+    assert actual == expected
+
+
 class TestOrphanDetection:
     """Tests for _detect_orphaned_required orphan classification logic."""
 
@@ -349,6 +648,10 @@ class TestSubmitTailorNoCoverage:
             "edits_applied": result["data"]["edits_applied"],
             "edits_rejected": result["data"]["edits_rejected"],
             "uncovered_skills": result["data"]["uncovered_skills"],
+            "pdf_path": result["data"]["pdf_path"],
+            "archive_exists": Path(result["data"]["archive_path"]).exists(),
+            "workflow_phase": result["workflow"]["phase"],
+            "workflow_next_tool": result["workflow"]["next_tool"],
             "score_final_is_none_or_dict": result["data"]["score_final"] is None
             or isinstance(result["data"]["score_final"], dict),
             "report_no_coverage": (result["data"]["report"] or {}).get("no_coverage"),
@@ -361,10 +664,38 @@ class TestSubmitTailorNoCoverage:
             "edits_applied": [],
             "edits_rejected": [],
             "uncovered_skills": [],
+            "pdf_path": None,
+            "archive_exists": True,
+            "workflow_phase": "complete",
+            "workflow_next_tool": None,
             "score_final_is_none_or_dict": True,
             "report_no_coverage": True,
             "outcome_no_coverage": True,
         }
+        assert result["workflow"]["required_input"] == {}
+
+    def test_submit_tailor_no_coverage_report_notes_is_list(self, tmp_path, monkeypatch):
+        """submit_tailor report.notes is present and is a list."""
+        from pi_apply.server import load_jd, submit_keywords, submit_tailor
+
+        monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path / "applications"))
+
+        with patch("pi_apply.server.list_resumes", return_value=["resume"]):
+            session_id = json.loads(load_jd(jd_raw_text="Python engineer needed"))["session_id"]
+        json.loads(submit_keywords(session_id=session_id, jd_json=_NO_COVERAGE_JD_JSON))
+
+        result = json.loads(submit_tailor(session_id=session_id, edits=[], no_coverage=True))
+
+        report = result["data"]["report"]
+        actual = {
+            "status": result["status"],
+            "notes_is_list": isinstance(report["notes"], list),
+        }
+        expected = {
+            "status": "ok",
+            "notes_is_list": True,
+        }
+        assert actual == expected
 
 
 # ============================================================================
@@ -393,6 +724,7 @@ def test_load_jd_auto_selects_single_registered_resume():
         "status": "ok",
         "next_action": "extract_keywords",
         "data": {"jd_text": "Python engineer needed", "extraction_protocol": EXTRACTION_PROTOCOL},
+        "workflow": _expected_load_jd_workflow(session_id),
     }
     assert result == expected
     assert snapshot.values.get("resume_label") == "default"
@@ -457,6 +789,7 @@ def test_load_jd_passes_explicit_label_through_to_state():
         "status": "ok",
         "next_action": "extract_keywords",
         "data": {"jd_text": "Python engineer needed", "extraction_protocol": EXTRACTION_PROTOCOL},
+        "workflow": _expected_load_jd_workflow(session_id),
     }
     assert result == expected
     assert snapshot.values.get("resume_label") == "senior"
@@ -518,8 +851,171 @@ def test_parse_initial_wiki_miss_resume_not_found_returns_noop_sentinel():
     assert result == {"parsed_initial": "<noop:parse:no-source>"}
 
 
+MINIMAL_SECTIONS_JSON = json.dumps(
+    {
+        "summary": None,
+        "skills": {"flat": ["Python"], "categorized": {}},
+        "experience": [{"company": "ACME", "role": "Engineer", "bullets": ["built things"]}],
+        "projects": [],
+        "education": [],
+        "contact": None,
+        "certifications": [],
+        "awards": [],
+    }
+)
+
+
+def test_parse_initial_wiki_hit_uses_pdf_for_parsed_initial(tmp_path):
+    """Wiki hit: parsed_initial comes from PDF, sections/wiki_index from wiki."""
+    from pi_apply.apply_nodes import parse_initial
+    from pi_apply.state import ApplyState
+
+    resume = tmp_path / "resume.txt"
+    resume.write_text("Experience\nBuilt Python services.\n\nSkills\nPython")
+    state = ApplyState(session_id="s1", resume_label="eng")
+
+    with (
+        patch("pi_apply.apply_nodes._load_wiki_sections") as mock_wiki,
+        patch("pi_apply.apply_nodes.get_resume", return_value=str(resume)),
+    ):
+        mock_wiki.return_value = (
+            MINIMAL_SECTIONS_JSON,
+            "index content",
+            "Python ACME Engineer built things",
+        )
+        result = parse_initial(state)
+
+    actual = {
+        "parsed_initial": result["parsed_initial"],
+        "has_sections": result["sections"] is not None,
+        "wiki_index": result["wiki_index"],
+    }
+    expected = {
+        "parsed_initial": "Experience\nBuilt Python services.\n\nSkills\nPython",
+        "has_sections": True,
+        "wiki_index": "index content",
+    }
+    assert actual == expected
+
+
+def test_parse_initial_wiki_hit_pdf_missing_falls_back_to_sections_text():
+    """Wiki hit + ResumeNotFoundError: falls back to _sections_to_text, emits warning."""
+    from pi_apply.apply_nodes import parse_initial
+    from pi_apply.repository.resumes import ResumeNotFoundError
+    from pi_apply.state import ApplyState
+
+    state = ApplyState(session_id="s1", resume_label="eng")
+    sections_text = "Python ACME Engineer built things"
+
+    with (
+        patch("pi_apply.apply_nodes._load_wiki_sections") as mock_wiki,
+        patch("pi_apply.apply_nodes.get_resume", side_effect=ResumeNotFoundError("eng")),
+    ):
+        mock_wiki.return_value = (MINIMAL_SECTIONS_JSON, "index", sections_text)
+        result = parse_initial(state)
+
+    actual = {
+        "parsed_initial": result["parsed_initial"],
+        "has_sections": result["sections"] is not None,
+    }
+    expected = {
+        "parsed_initial": sections_text,
+        "has_sections": True,
+    }
+    assert actual == expected
+
+
 # ============================================================================
 # check_update MCP tool — in-process transport tests
+# ============================================================================
+# tailor_diagnostics — _compute_tailor_diagnostics unit tests
+# ============================================================================
+
+
+class TestTailorDiagnostics:
+    def test_matched_skill_present_in_rendered_text(self):
+        from pi_apply.apply_nodes import _compute_tailor_diagnostics
+
+        result = _compute_tailor_diagnostics(
+            ["machine learning"],
+            "Experience with machine learning and Python.",
+        )
+        assert result == [
+            {
+                "value": "machine learning",
+                "applied_to_map": True,
+                "present_in_rendered_text": True,
+                "suggested_alternatives": [],
+            }
+        ]
+
+    def test_hyphen_dropped_by_pdf_extraction_not_present(self):
+        from pi_apply.apply_nodes import _compute_tailor_diagnostics
+
+        result = _compute_tailor_diagnostics(
+            ["agent-based workflows"],
+            "Experience with agent based workflows.",  # hyphen dropped
+        )
+        assert result == [
+            {
+                "value": "agent-based workflows",
+                "applied_to_map": True,
+                "present_in_rendered_text": False,
+                "suggested_alternatives": ["agent based workflows"],
+            }
+        ]
+
+    def test_suggested_alternatives_uses_normalization(self):
+        from pi_apply.apply_nodes import _compute_tailor_diagnostics
+
+        result = _compute_tailor_diagnostics(
+            ["retrieval-augmented generation (RAG)"],
+            "retrieval augmented generation (RAG)",
+        )
+        assert result == [
+            {
+                "value": "retrieval-augmented generation (RAG)",
+                "applied_to_map": True,
+                "present_in_rendered_text": False,
+                "suggested_alternatives": ["retrieval augmented generation (RAG)"],
+            }
+        ]
+
+    def test_no_applied_skill_values_returns_empty(self):
+        from pi_apply.apply_nodes import _compute_tailor_diagnostics
+
+        assert _compute_tailor_diagnostics(None, "some text") == []
+        assert _compute_tailor_diagnostics([], "some text") == []
+
+    def test_case_insensitive_match(self):
+        from pi_apply.apply_nodes import _compute_tailor_diagnostics
+
+        result = _compute_tailor_diagnostics(["Python"], "built with PYTHON and Django")
+        actual = {
+            "present_in_rendered_text": result[0]["present_in_rendered_text"],
+            "suggested_alternatives": result[0]["suggested_alternatives"],
+        }
+        expected = {
+            "present_in_rendered_text": True,
+            "suggested_alternatives": [],
+        }
+        assert actual == expected
+
+    def test_all_matched_returns_empty_alternatives(self):
+        from pi_apply.apply_nodes import _compute_tailor_diagnostics
+
+        result = _compute_tailor_diagnostics(["Python", "Go"], "Python and Go are used.")
+        actual = {
+            "all_present": all(r["present_in_rendered_text"] for r in result),
+            "all_alternatives_empty": all(r["suggested_alternatives"] == [] for r in result),
+        }
+        expected = {
+            "all_present": True,
+            "all_alternatives_empty": True,
+        }
+        assert actual == expected
+
+
 # ============================================================================
 
 
