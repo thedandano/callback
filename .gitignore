@@ -16,6 +16,9 @@ wheels/
 # Codex local 
 .agents
 .codex
+.serena/
 
 # dev
 openspec/
+.coverage
+scripts/_run_*.py
