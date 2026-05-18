@@ -6,6 +6,32 @@
 
 - Existing users must re-run `onboard_user` after upgrading to the HTML renderer + extractor fixes. Older `sections.json` files may contain corrupted contact fields (for example duplicated email or incorrect location).
 
+## [0.3.0](https://github.com/thedandano/pi-apply/compare/v0.2.0...v0.3.0) (2026-05-18)
+
+
+### Features
+
+* **cli:** add install-browsers, uninstall (--purge), and update commands ([881a45e](https://github.com/thedandano/pi-apply/commit/881a45e4095818ecd7b28a333838048a9ec2b5e7))
+* **extractor,profile:** improve PDF extraction and feed resume skills into compiler ([88f7712](https://github.com/thedandano/pi-apply/commit/88f771250cdd736dc66b651dcb0329855b8eb307))
+* **render:** switch resume PDFs to HTML ([326b714](https://github.com/thedandano/pi-apply/commit/326b714d6a56e2fe68ff7a920fdffbc4afe2c474))
+* **server:** browser check at startup + check_update MCP tool + update notification ([fb4e3cf](https://github.com/thedandano/pi-apply/commit/fb4e3cf0a254b5db677f7626fb25b6e455028372))
+* **server:** expose workflow diagnostics ([1e30785](https://github.com/thedandano/pi-apply/commit/1e3078580ab7e9021c21a9b997de7ebbb9e02d32))
+* **server:** remove resume_path from load_jd; add auto-discovery via registry ([34e1698](https://github.com/thedandano/pi-apply/commit/34e16984db09f737bccadc6d1fa8a83b570ea306))
+* use candidate-company naming for rendered resumes ([b1cf280](https://github.com/thedandano/pi-apply/commit/b1cf2809b624bffd680112616715ba0d752bf91f))
+
+
+### Bug Fixes
+
+* **cli:** setup-mcp writes absolute binary path so Claude can find the server ([bfa0f76](https://github.com/thedandano/pi-apply/commit/bfa0f765a84599a84e7390692dc84eb5b037e0bf))
+* **profile:** stabilize resume parsing and onboarding ([d6895da](https://github.com/thedandano/pi-apply/commit/d6895da2f37146ded74a90c80a7430d749b8758c))
+* **render:** bundle Inter font; eliminate system font scan on first call ([a8a8ff9](https://github.com/thedandano/pi-apply/commit/a8a8ff99916a1b0c426e7a94d5177fde1b371a44))
+* **render:** tolerate browser test doubles ([70f2d3c](https://github.com/thedandano/pi-apply/commit/70f2d3ca4b1a8c386ed52e5db8915715d523768a))
+
+
+### Documentation
+
+* add README with install, update, uninstall, and how-to-use ([db1f8a2](https://github.com/thedandano/pi-apply/commit/db1f8a218168586c6a92f62ee1a630795ccf6d4d))
+
 ## [0.2.0](https://github.com/thedandano/pi-apply/compare/v0.1.0...v0.2.0) (2026-05-06)
 
 
