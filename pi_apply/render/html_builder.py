@@ -197,7 +197,9 @@ async def _render_async(tailored: dict, output_path: str) -> None:
                 format="Letter",
             )
         finally:
-            await browser.close()
+            close = getattr(browser, "close", None)
+            if close is not None:
+                await close()
 
 
 def render_resume(tailored: dict, output_path: str) -> dict:
