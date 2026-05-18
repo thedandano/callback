@@ -16,7 +16,8 @@ Every scoring, tailoring, and feedback decision must serve this goal:
 
 pi-apply is a LangGraph MCP server (stdio only) that replaces the Go FSM in go-apply.
 Differentiator: defensible LangGraph stateful-agent design for an AI-engineering portfolio.
-Finite maintenance horizon - build only what the walking skeleton needs (see `BRIEF.md`).
+Finite maintenance horizon - build only what the walking skeleton needs.
+`BRIEF.md` is the project charter/history; this file is the active working guide.
 
 State persists via LangGraph SQLite checkpointers under `~/.local/share/pi-apply/`.
 Logs default to `~/.local/state/pi-apply/server.log`.
@@ -30,8 +31,8 @@ uv sync
 # Install Playwright Chromium for Crawl4AI URL fetching
 pi-apply install-browsers
 
-# Run the MCP server (stdio). go-apply binary must be on PATH or set GO_APPLY_BIN.
-GO_APPLY_BIN=/path/to/go-apply uv run python -m pi_apply.server
+# Run the MCP server (stdio)
+uv run python -m pi_apply.server
 
 # Or run the packaged CLI
 uv run pi-apply serve
@@ -67,6 +68,34 @@ uv run python scripts/smoke_profile.py
 - `XDG_DATA_HOME`: Overrides resume, wiki, and profile data roots.
 
 ## Architecture
+
+### Architecture pattern
+
+Use a workflow-first ports-and-adapters shape around LangGraph. This is not an
+MVC or MVVM app; those patterns fit UI applications. For pi-apply, think:
+
+```text
+MCP adapter / controller
+        |
+LangGraph workflow
+        |
+Workflow nodes / use cases
+        |
+Domain services
+        |
+Infrastructure adapters
+```
+
+Layer rules:
+- `server.py` is the MCP adapter: tool definitions, envelope shaping, session handoff, and host-facing workflow guidance.
+- `apply_graph.py` and `profile_graph.py` own graph wiring, routing, checkpointers, and interrupt boundaries.
+- `apply_nodes.py` and `profile_nodes.py` own workflow step handlers. Keep them focused on graph state transitions and use existing services/adapters for specialized work.
+- Domain services stay deterministic and easy to test: `scorer.py`, `section_map.py`, `jd_data.py`, and `profilecompiler.py`.
+- Infrastructure adapters own I/O boundaries: `jd_fetcher.py`, `extractor.py`, `render/`, `wiki.py`, `repository/`, `bridge.py`, and `version_check.py`.
+
+The key boundary: the host owns LLM reasoning and judgment. pi-apply owns state,
+validation, deterministic scoring, rendering, archival, and explicit workflow
+handoff metadata.
 
 ### Two graphs, one server
 
@@ -192,5 +221,7 @@ If the binary is not on `PATH`, set `GO_APPLY_BIN=/path/to/go-apply` before impo
 - Don't add scoring heuristics not present in go-apply unless explicitly requested.
 - Scoring weights live in config - don't hardcode them.
 - All fallbacks must be explicit, logged, and approved.
-- Don't add complexity beyond the walking skeleton (see `BRIEF.md`). When tempted toward pgvector, LLM-as-judge, or an eval harness before the graph runs end-to-end, stop.
+- Don't add complexity beyond the walking skeleton. When tempted toward pgvector, LLM-as-judge, provider clients, RAG, or an eval harness, stop unless there is an explicit OpenSpec proposal for it.
+- Do not move keyword extraction, evidence selection, or resume-tailoring judgment into pi-apply server-side LLM calls unless explicitly requested through a proposal.
+- Do not organize new work as MVC/MVVM. Use the workflow-first ports-and-adapters pattern above.
 - Active design proposals live in `openspec/changes/`. Check there before redesigning a graph.
