@@ -8,7 +8,9 @@ endif
 
 install:
 	@printf 'Build version: %s\n' '$(BUILD_VERSION)'
-	PI_APPLY_BUILD_VERSION="$(BUILD_VERSION)" $(INSTALL_PREFIX) uv tool install --force .
+	rm -rf build
+	PI_APPLY_BUILD_VERSION="$(BUILD_VERSION)" $(INSTALL_PREFIX) uv tool install \
+		--force --reinstall-package pi-apply --refresh-package pi-apply .
 	@command -v pi-apply >/dev/null 2>&1 && command -v pi-apply || true
 
 build:
@@ -33,5 +35,5 @@ type:
 	uv run pyright
 
 clean:
-	rm -rf dist .ruff_cache
+	rm -rf build dist .ruff_cache
 	find . -type d -name __pycache__ -prune -exec rm -rf '{}' +
