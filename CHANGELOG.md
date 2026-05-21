@@ -6,6 +6,13 @@
 
 - Existing users must re-run `onboard_user` after upgrading to the HTML renderer + extractor fixes. Older `sections.json` files may contain corrupted contact fields (for example duplicated email or incorrect location).
 
+## [0.3.1](https://github.com/thedandano/pi-apply/compare/v0.3.0...v0.3.1) (2026-05-21)
+
+
+### Documentation
+
+* clarify pi-apply architecture guidance ([d4c0af7](https://github.com/thedandano/pi-apply/commit/d4c0af747cac81b5909b920a606ba80bd7f7743f))
+
 ## [0.3.0](https://github.com/thedandano/pi-apply/compare/v0.2.0...v0.3.0) (2026-05-18)
 
 
