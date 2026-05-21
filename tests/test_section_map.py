@@ -238,6 +238,57 @@ def test_project_bullet_replace() -> None:
     assert sm.projects[0].bullets == expected_bullets
 
 
+def test_project_entry_replace() -> None:
+    sm = SectionMap(
+        projects=[
+            ProjectEntry(
+                name="Howe-2",
+                description="Nonprofit website",
+                bullets=["Built adoption site"],
+            )
+        ]
+    )
+    result = apply_edit(
+        sm,
+        {
+            "section": "projects",
+            "op": "replace",
+            "target": "proj-0",
+            "value": {
+                "name": "Personal Voice LLM",
+                "description": "Fine-tuning pipeline",
+                "bullets": ["Built ChatML dataset for 17,027 records"],
+            },
+        },
+    )
+    expected_result = EditResult(applied=True)
+    expected_project = ProjectEntry(
+        name="Personal Voice LLM",
+        description="Fine-tuning pipeline",
+        bullets=["Built ChatML dataset for 17,027 records"],
+    )
+    assert result == expected_result
+    assert sm.projects[0] == expected_project
+
+
+def test_project_entry_replace_rejects_missing_name() -> None:
+    sm = SectionMap(projects=[ProjectEntry(name="Howe-2")])
+    result = apply_edit(
+        sm,
+        {
+            "section": "projects",
+            "op": "replace",
+            "target": "proj-0",
+            "value": {"description": "Missing name"},
+        },
+    )
+    assert result == EditResult(
+        applied=False,
+        rejection_reason="project replacement value must include name",
+    )
+    assert sm.projects[0].name == "Howe-2"
+
+
 def test_non_editable_section_rejected() -> None:
     sm = make_full_section_map()
     result = apply_edit(
