@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 _EXP_BULLET_RE = re.compile(r"^exp-(\d+)-b(\d+)$")
 _EXP_CTX_RE = re.compile(r"^exp-(\d+)-context$")
+_PROJ_ENTRY_RE = re.compile(r"^proj-(\d+)$")
 _PROJ_DESC_RE = re.compile(r"^proj-(\d+)-desc$")
 _PROJ_BULLET_RE = re.compile(r"^proj-(\d+)-b(\d+)$")
 _SKILLS_IDX_RE = re.compile(r"^skills-(\d+)$")
@@ -91,24 +92,52 @@ def _validate_experience_target(entries: list[ExperienceEntry], target: str) -> 
     return None
 
 
-def _validate_project_target(projects: list[ProjectEntry], target: str) -> str | None:
+def _validate_project_target(
+    projects: list[ProjectEntry], target: str, edit: dict[str, Any]
+) -> str | None:
+    m = _PROJ_ENTRY_RE.match(target)
+    if m:
+        return _validate_project_entry_target(projects, int(m.group(1)), edit)
     m = _PROJ_DESC_RE.match(target)
     if m:
-        i = int(m.group(1))
-        if i >= len(projects):
-            return f"project index {i} out of bounds (have {len(projects)})"
-        return None
+        return _validate_project_index(projects, int(m.group(1)))
     m = _PROJ_BULLET_RE.match(target)
     if m:
-        i, j = int(m.group(1)), int(m.group(2))
-        if i >= len(projects):
-            return f"project index {i} out of bounds (have {len(projects)})"
-        if j >= len(projects[i].bullets):
-            n = len(projects[i].bullets)
-            return f"projects[{i}] bullet index {j} out of bounds (have {n})"
-        return None
+        return _validate_project_bullet_target(projects, int(m.group(1)), int(m.group(2)))
     if target:
         return f"invalid project target format: {target}"
+    return None
+
+
+def _validate_project_index(projects: list[ProjectEntry], index: int) -> str | None:
+    if index >= len(projects):
+        return f"project index {index} out of bounds (have {len(projects)})"
+    return None
+
+
+def _validate_project_entry_target(
+    projects: list[ProjectEntry], index: int, edit: dict[str, Any]
+) -> str | None:
+    index_error = _validate_project_index(projects, index)
+    if index_error is not None:
+        return index_error
+    value = edit.get("value")
+    if not isinstance(value, dict):
+        return "project replacement value must be an object"
+    if not value.get("name"):
+        return "project replacement value must include name"
+    return None
+
+
+def _validate_project_bullet_target(
+    projects: list[ProjectEntry], project_index: int, bullet_index: int
+) -> str | None:
+    index_error = _validate_project_index(projects, project_index)
+    if index_error is not None:
+        return index_error
+    if bullet_index >= len(projects[project_index].bullets):
+        n = len(projects[project_index].bullets)
+        return f"projects[{project_index}] bullet index {bullet_index} out of bounds (have {n})"
     return None
 
 
@@ -121,7 +150,7 @@ def validate_edit_target(section_map: SectionMap, edit: dict[str, Any]) -> str |
     if section == "experience":
         return _validate_experience_target(section_map.experience, target)
     if section == "projects":
-        return _validate_project_target(section_map.projects, target)
+        return _validate_project_target(section_map.projects, target, edit)
     return None
 
 
@@ -155,7 +184,13 @@ def _apply_experience_edit(entry: ExperienceEntry, target: str, value: str) -> N
         entry.context_line = value
 
 
-def _apply_project_edit(project: ProjectEntry, target: str, value: str) -> None:
+def _apply_project_edit(projects: list[ProjectEntry], target: str, value: Any) -> None:
+    m = _PROJ_ENTRY_RE.match(target)
+    if m:
+        projects[int(m.group(1))] = ProjectEntry.model_validate(value)
+        return
+    target_match = _PROJ_DESC_RE.match(target) or _PROJ_BULLET_RE.match(target)
+    project = projects[int(target_match.group(1))]  # type: ignore[union-attr]
     if _PROJ_DESC_RE.match(target):
         project.description = value
         return
@@ -172,17 +207,17 @@ def apply_edit(section_map: SectionMap, edit: dict[str, Any]) -> EditResult:
 
     section = edit.get("section", "")
     target = edit.get("target", "")
-    value: str = edit.get("value", "")
+    value: Any = edit.get("value", "")
 
     if section == "summary":
         section_map.summary = value
     elif section == "skills":
         _apply_skills_edit(section_map, edit)
     elif section == "experience":
-        i = int((_EXP_BULLET_RE.match(target) or _EXP_CTX_RE.match(target)).group(1))  # type: ignore[union-attr]
+        target_match = _EXP_BULLET_RE.match(target) or _EXP_CTX_RE.match(target)
+        i = int(target_match.group(1))  # type: ignore[union-attr]
         _apply_experience_edit(section_map.experience[i], target, value)
     elif section == "projects":
-        i = int((_PROJ_DESC_RE.match(target) or _PROJ_BULLET_RE.match(target)).group(1))  # type: ignore[union-attr]
-        _apply_project_edit(section_map.projects[i], target, value)
+        _apply_project_edit(section_map.projects, target, value)
 
     return EditResult(applied=True)

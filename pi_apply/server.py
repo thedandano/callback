@@ -172,7 +172,9 @@ _TAILOR_INSTRUCTIONS = (
     "experience evidence. Project edits MUST be grounded in the source resume or "
     "profile wiki and MUST NOT invent project facts, metrics, scope, users, dates, "
     "employer context, or keyword-only text. Project evidence does not satisfy Skills "
-    "coverage unless the keyword also appears in a dated experience bullet."
+    "coverage unless the keyword also appears in a dated experience bullet. When "
+    "project_candidates are present, compare them against the visible resume project "
+    "and replace the project if a candidate better fits the JD keywords or theme."
 )
 
 mcp = FastMCP("pi-apply", lifespan=_lifespan)
@@ -217,6 +219,140 @@ def _detect_orphaned_required(
         if in_skills and not in_wiki:
             orphans.append(kw)
     return orphans
+
+
+_WIKI_LINK_RE = re.compile(r"\[[^\]]+\]\((experience/[^)]+\.md)\)")
+
+
+def _normalize_match_text(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def _keyword_matches_text(keyword: str, text: str) -> bool:
+    normalized_keyword = _normalize_match_text(keyword)
+    if not normalized_keyword:
+        return False
+    normalized_text = _normalize_match_text(text)
+    return bool(re.search(rf"(?<!\w){re.escape(normalized_keyword)}(?!\w)", normalized_text))
+
+
+def _matched_keywords(keywords: list[str], text: str) -> list[str]:
+    return [keyword for keyword in keywords if _keyword_matches_text(keyword, text)]
+
+
+def _project_story_name(content: str) -> str:
+    first_line = next(
+        (line.removeprefix("#").strip() for line in content.splitlines() if line.startswith("#")),
+        "",
+    )
+    return re.sub(r"\s+—\s+Sbi$", "", first_line)
+
+
+def _project_story_skills(content: str) -> list[str]:
+    match = re.search(r"^Skills:\s*(.+)$", content, re.MULTILINE)
+    if not match:
+        return []
+    return [skill.strip() for skill in match.group(1).split(",") if skill.strip()]
+
+
+def _is_project_story(content: str) -> bool:
+    return bool(re.search(r"^\*\*Job Title:\*\*\s*Project\s*$", content, re.MULTILINE))
+
+
+def _evidence_preview(content: str) -> str:
+    lines = [
+        line.strip()
+        for line in content.splitlines()
+        if line.strip() and not line.startswith("#") and not line.startswith("**Job Title:**")
+    ]
+    return re.sub(r"\s+", " ", " ".join(lines))[:240]
+
+
+def _project_score(required: list[str], preferred: list[str], text: str) -> float:
+    possible = len(required) * 2 + len(preferred)
+    if possible == 0:
+        return 0.0
+    matched = len(_matched_keywords(required, text)) * 2 + len(_matched_keywords(preferred, text))
+    return round(matched / possible, 4)
+
+
+def _project_page_ids(wiki_index: str) -> list[str]:
+    seen: set[str] = set()
+    page_ids: list[str] = []
+    for match in _WIKI_LINK_RE.finditer(wiki_index):
+        page_id = match.group(1)
+        if page_id not in seen:
+            seen.add(page_id)
+            page_ids.append(page_id)
+    return page_ids
+
+
+def _rank_project_candidates(resume_label: str, keywords: dict, wiki_index: str) -> list[dict]:
+    required = keywords.get("required") or []
+    preferred = keywords.get("preferred") or []
+    page_ids = _project_page_ids(wiki_index)
+    pages = WikiStore().read_pages(resume_label, page_ids)
+    candidates: list[dict] = []
+    for page_id in page_ids:
+        content = pages.get(page_id) or ""
+        if not _is_project_story(content):
+            continue
+        required_matched = _matched_keywords(required, content)
+        preferred_matched = _matched_keywords(preferred, content)
+        score = _project_score(required, preferred, content)
+        if score == 0:
+            continue
+        candidates.append(
+            {
+                "page_id": page_id,
+                "name": _project_story_name(content),
+                "skills": _project_story_skills(content),
+                "score": score,
+                "required_matched": required_matched,
+                "preferred_matched": preferred_matched,
+                "evidence_preview": _evidence_preview(content),
+            }
+        )
+    return sorted(
+        candidates,
+        key=lambda candidate: (
+            candidate["score"],
+            len(candidate["required_matched"]),
+            len(candidate["preferred_matched"]),
+            candidate["name"],
+        ),
+        reverse=True,
+    )
+
+
+def _project_text(project: dict) -> str:
+    parts = [project.get("name") or "", project.get("description") or ""]
+    parts.extend(project.get("bullets") or [])
+    return "\n".join(parts)
+
+
+def _project_swap_recommendation(
+    candidates: list[dict], keywords: dict, sections: dict
+) -> dict | None:
+    projects = sections.get("projects") or []
+    if not candidates or not projects:
+        return None
+
+    required = keywords.get("required") or []
+    preferred = keywords.get("preferred") or []
+    scored_projects = [
+        (index, _project_score(required, preferred, _project_text(project)))
+        for index, project in enumerate(projects)
+    ]
+    replace_index, visible_score = min(scored_projects, key=lambda item: item[1])
+    candidate = candidates[0]
+    if candidate["score"] <= visible_score:
+        return None
+    return {
+        "replace_target": f"proj-{replace_index}",
+        "visible_project_score": visible_score,
+        "candidate": candidate,
+    }
 
 
 # ============================================================================
@@ -554,7 +690,12 @@ def _submit_tailor_artifacts(final: dict, session_id: str) -> dict:
 
 @mcp.tool()
 def submit_keywords(session_id: str, jd_json: str) -> str:
-    """Accept host-extracted JDData and return score gaps plus tailor handoff guidance."""
+    """Accept host-extracted JDData and return score gaps plus tailor handoff guidance.
+
+    When profile wiki project stories exist, the response also includes ranked
+    project_candidates and an optional project_swap_recommendation for the host
+    to consider during tailoring.
+    """
     _log("INFO", {"tool": "submit_keywords", "session_id": session_id})
 
     try:
@@ -609,6 +750,17 @@ def submit_keywords(session_id: str, jd_json: str) -> str:
     if state.get("wiki_index"):
         data["wiki_index"] = state.get("wiki_index")
         data["tailor_instructions"] = _TAILOR_INSTRUCTIONS
+        candidates = _rank_project_candidates(
+            state.get("resume_label") or "",
+            state.get("keywords") or {},
+            state.get("wiki_index") or "",
+        )
+        data["project_candidates"] = candidates
+        data["project_swap_recommendation"] = _project_swap_recommendation(
+            candidates,
+            state.get("keywords") or {},
+            state.get("sections") or {},
+        )
     next_action = _submit_keywords_next_action(state.get("wiki_index"), orphaned_required)
     return _ok(
         session_id,
@@ -625,8 +777,8 @@ def submit_tailor(session_id: str, edits: list[dict], no_coverage: bool = False)
     Accepts a list of port.Edit-style dicts. Each edit must have:
       section: str (summary | skills | experience | projects)
       op: str (add | replace | remove)
-      target: str (required for experience/projects)
-      value: str (required for add/replace)
+      target: str (required for experience/projects; use proj-N to replace a whole project)
+      value: str | dict (required for add/replace; project replacement uses a ProjectEntry dict)
       category: str (optional, for categorized skills)
 
     When no_coverage=True, skips edit application entirely, sets no_coverage in
