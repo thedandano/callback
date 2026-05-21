@@ -29,6 +29,7 @@ from pathlib import Path
 from fastmcp import FastMCP
 
 import pi_apply.profile_nodes as profile_nodes
+import pi_apply.scorer as scorer
 import pi_apply.version_check as version_check
 from pi_apply.apply_graph import (
     KEYWORDS_ACCEPT_NODE,
@@ -224,16 +225,12 @@ def _detect_orphaned_required(
 _WIKI_LINK_RE = re.compile(r"\[[^\]]+\]\((experience/[^)]+\.md)\)")
 
 
-def _normalize_match_text(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
-
-
 def _keyword_matches_text(keyword: str, text: str) -> bool:
-    normalized_keyword = _normalize_match_text(keyword)
+    normalized_keyword = scorer._normalize_for_match(keyword)
     if not normalized_keyword:
         return False
-    normalized_text = _normalize_match_text(text)
-    return bool(re.search(rf"(?<!\w){re.escape(normalized_keyword)}(?!\w)", normalized_text))
+    normalized_text = scorer._normalize_for_match(text)
+    return bool(scorer._compile_keyword_pattern(normalized_keyword).search(normalized_text))
 
 
 def _matched_keywords(keywords: list[str], text: str) -> list[str]:
