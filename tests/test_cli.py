@@ -58,6 +58,82 @@ def test_serve_uses_server_runner():
     run.assert_called_once_with()
 
 
+def test_serve_without_flags_uses_home_state_log(monkeypatch):
+    run = Mock()
+    configure_logging = Mock()
+    startup_events: list[tuple[Path, str]] = []
+
+    monkeypatch.delenv("PI_APPLY_LOG_PATH", raising=False)
+
+    def fake_write_startup_event(log_path: Path, line: str) -> None:
+        startup_events.append((log_path, line))
+
+    with (
+        patch("pi_apply.cli._write_startup_log_event", side_effect=fake_write_startup_event),
+        patch("pi_apply.server.configure_logging", configure_logging),
+        patch("pi_apply.server.run", run),
+    ):
+        result = runner.invoke(app, ["serve"])
+
+    actual = {
+        "exit_code": result.exit_code,
+        "startup_log_path": startup_events[0][0],
+    }
+    expected = {
+        "exit_code": 0,
+        "startup_log_path": Path("~/.local/state/pi-apply/server.log").expanduser(),
+    }
+    assert actual == expected
+    configure_logging.assert_called_once_with(
+        str(Path("~/.local/state/pi-apply/server.log").expanduser())
+    )
+    run.assert_called_once_with()
+
+
+def test_serve_project_logs_uses_project_log(tmp_path, monkeypatch):
+    run = Mock()
+    configure_logging = Mock()
+    startup_events: list[tuple[Path, str]] = []
+
+    monkeypatch.delenv("PI_APPLY_LOG_PATH", raising=False)
+    monkeypatch.chdir(tmp_path)
+
+    def fake_write_startup_event(log_path: Path, line: str) -> None:
+        startup_events.append((log_path, line))
+
+    with (
+        patch("pi_apply.cli._write_startup_log_event", side_effect=fake_write_startup_event),
+        patch("pi_apply.server.configure_logging", configure_logging),
+        patch("pi_apply.server.run", run),
+    ):
+        result = runner.invoke(app, ["serve", "--project-logs"], catch_exceptions=False)
+
+    expected_log_path = tmp_path / ".pi-apply" / "server.log"
+    actual = {
+        "exit_code": result.exit_code,
+        "startup_log_path": startup_events[0][0],
+    }
+    expected = {"exit_code": 0, "startup_log_path": expected_log_path}
+    assert actual == expected
+    configure_logging.assert_called_once_with(str(expected_log_path))
+    run.assert_called_once_with()
+
+
+def test_serve_unwritable_log_path_still_runs(tmp_path):
+    blocked_path = tmp_path / "blocked" / "server.log"
+    run = Mock()
+
+    with (
+        patch("pi_apply.cli._write_startup_log_event", side_effect=OSError("blocked")),
+        patch("pi_apply.server.configure_logging"),
+        patch("pi_apply.server.run", run),
+    ):
+        result = runner.invoke(app, ["serve", "--log-path", str(blocked_path)])
+
+    assert result.exit_code == 0
+    run.assert_called_once_with()
+
+
 def test_logs_reports_missing_file(tmp_path):
     missing = tmp_path / "server.log"
 
@@ -75,6 +151,32 @@ def test_logs_prints_trailing_lines(tmp_path):
 
     assert result.exit_code == 0
     assert result.stdout.splitlines() == ["two", "three"]
+
+
+def test_logs_auto_selects_project_log(tmp_path, monkeypatch):
+    project_log = tmp_path / ".pi-apply" / "server.log"
+    project_log.parent.mkdir()
+    project_log.write_text("project\nlog\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["logs", "--lines", "1"])
+
+    assert result.exit_code == 0
+    assert result.stdout.splitlines() == ["log"]
+
+
+def test_logs_project_logs_flag_uses_project_log(tmp_path, monkeypatch):
+    project_log = tmp_path / ".pi-apply" / "server.log"
+    project_log.parent.mkdir()
+    project_log.write_text("project\nlog\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["logs", "--project-logs"])
+
+    assert result.exit_code == 0
+    assert result.stdout.splitlines() == ["project", "log"]
 
 
 def test_configure_claude_creates_entry_and_preserves_unrelated_keys(tmp_path):
@@ -121,7 +223,7 @@ def test_configure_codex_creates_entry_and_preserves_unrelated_keys(tmp_path):
         "mcp_servers": {
             "pi-apply": {
                 "command": "pi-apply",
-                "args": ["serve"],
+                "args": ["serve", "--project-logs"],
             },
         },
     }
@@ -168,7 +270,7 @@ def test_setup_mcp_writes_both_configs(tmp_path):
     }
     assert _read_toml(codex_path)["mcp_servers"]["pi-apply"] == {
         "command": "/usr/local/bin/pi-apply",
-        "args": ["serve"],
+        "args": ["serve", "--project-logs"],
     }
     import sys
 
@@ -203,7 +305,7 @@ def test_setup_mcp_skip_browsers_writes_configs_without_install(tmp_path):
     }
     assert _read_toml(codex_path)["mcp_servers"]["pi-apply"] == {
         "command": "/usr/local/bin/pi-apply",
-        "args": ["serve"],
+        "args": ["serve", "--project-logs"],
     }
 
 
@@ -305,9 +407,15 @@ def test_uninstall_without_purge_preserves_data_dir(tmp_path):
     data_dir.mkdir()
 
     state_dir = tmp_path / "state"
-    with patch("pi_apply.cli._DATA_DIR", data_dir), patch("pi_apply.cli._STATE_DIR", state_dir):
-        runner.invoke(app, ["uninstall"])
+    with (
+        patch("pi_apply.cli._DATA_DIR", data_dir),
+        patch("pi_apply.cli._STATE_DIR", state_dir),
+        patch("pi_apply.cli._remove_server_from_claude"),
+        patch("pi_apply.cli._remove_server_from_codex"),
+    ):
+        result = runner.invoke(app, ["uninstall"])
 
+    assert result.exit_code == 0
     assert data_dir.exists()
 
 
@@ -317,9 +425,15 @@ def test_uninstall_purge_deletes_data_and_state_dirs(tmp_path):
     data_dir.mkdir()
     state_dir.mkdir()
 
-    with patch("pi_apply.cli._DATA_DIR", data_dir), patch("pi_apply.cli._STATE_DIR", state_dir):
-        runner.invoke(app, ["uninstall", "--purge"])
+    with (
+        patch("pi_apply.cli._DATA_DIR", data_dir),
+        patch("pi_apply.cli._STATE_DIR", state_dir),
+        patch("pi_apply.cli._remove_server_from_claude"),
+        patch("pi_apply.cli._remove_server_from_codex"),
+    ):
+        result = runner.invoke(app, ["uninstall", "--purge"])
 
+    assert result.exit_code == 0
     assert not data_dir.exists()
     assert not state_dir.exists()
 
@@ -328,7 +442,12 @@ def test_uninstall_purge_skips_absent_dirs(tmp_path):
     data_dir = tmp_path / "share"
     state_dir = tmp_path / "state"
 
-    with patch("pi_apply.cli._DATA_DIR", data_dir), patch("pi_apply.cli._STATE_DIR", state_dir):
+    with (
+        patch("pi_apply.cli._DATA_DIR", data_dir),
+        patch("pi_apply.cli._STATE_DIR", state_dir),
+        patch("pi_apply.cli._remove_server_from_claude"),
+        patch("pi_apply.cli._remove_server_from_codex"),
+    ):
         invoke_result = runner.invoke(app, ["uninstall", "--purge"])
 
     assert invoke_result.exit_code == 0

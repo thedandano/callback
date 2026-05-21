@@ -26,6 +26,11 @@ pi-apply setup-mcp
 
 After `setup-mcp`, restart your MCP host (Claude Desktop, etc.) to pick up the new server.
 
+`setup-mcp` keeps Claude on the default server log at
+`~/.local/state/pi-apply/server.log`. Codex is registered with
+`pi-apply serve --project-logs`, so sandboxed Codex runs write audit logs to
+`./.pi-apply/server.log` in the active project.
+
 For local development installs from this repository, prefer:
 
 ```bash
@@ -36,6 +41,17 @@ make install && pi-apply setup-mcp
 `origin/main` print the package version, while local commits ahead of
 `origin/main` print a suffix like `0.3.0-01-abc1234`; uncommitted changes add
 `-dirty`.
+
+## Logs
+
+```bash
+pi-apply logs --follow
+```
+
+When `./.pi-apply/server.log` exists, `pi-apply logs` reads that project log.
+Otherwise it reads the default `~/.local/state/pi-apply/server.log`. Use
+`--project-logs` to force the project log, or `--log-path <path>` to override
+both.
 
 ---
 
