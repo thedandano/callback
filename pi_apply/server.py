@@ -1059,8 +1059,7 @@ def run() -> None:
     if _LOG_PATH is None:
         configure_logging(os.environ.get("PI_APPLY_LOG_PATH") or DEFAULT_LOG_PATH)
     _log("INFO", {"event": "server_start", "transport": "stdio"})
-    _ensure_browsers()
-    mcp.run()
+    mcp.run(transport="stdio", show_banner=False)
 
 
 if __name__ == "__main__":

@@ -143,8 +143,13 @@ def test_configure_codex_is_idempotent(tmp_path):
 def test_setup_mcp_writes_both_configs(tmp_path):
     claude_path = tmp_path / ".claude.json"
     codex_path = tmp_path / ".codex" / "config.toml"
+    mock_result = MagicMock()
+    mock_result.returncode = 0
 
-    with patch("pi_apply.cli._resolve_command", return_value="/usr/local/bin/pi-apply"):
+    with (
+        patch("pi_apply.cli._resolve_command", return_value="/usr/local/bin/pi-apply"),
+        patch("pi_apply.cli.subprocess.run", return_value=mock_result) as mock_run,
+    ):
         result = runner.invoke(
             app,
             [
@@ -165,6 +170,65 @@ def test_setup_mcp_writes_both_configs(tmp_path):
         "command": "/usr/local/bin/pi-apply",
         "args": ["serve"],
     }
+    import sys
+
+    mock_run.assert_called_once_with([sys.executable, "-m", "playwright", "install", "chromium"])
+
+
+def test_setup_mcp_skip_browsers_writes_configs_without_install(tmp_path):
+    claude_path = tmp_path / ".claude.json"
+    codex_path = tmp_path / ".codex" / "config.toml"
+
+    with (
+        patch("pi_apply.cli._resolve_command", return_value="/usr/local/bin/pi-apply"),
+        patch("pi_apply.cli.subprocess.run") as mock_run,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "setup-mcp",
+                "--skip-browsers",
+                "--claude-config",
+                str(claude_path),
+                "--codex-config",
+                str(codex_path),
+            ],
+        )
+
+    assert result.exit_code == 0
+    mock_run.assert_not_called()
+    assert json.loads(claude_path.read_text(encoding="utf-8"))["mcpServers"]["pi-apply"] == {
+        "command": "/usr/local/bin/pi-apply",
+        "args": ["serve"],
+    }
+    assert _read_toml(codex_path)["mcp_servers"]["pi-apply"] == {
+        "command": "/usr/local/bin/pi-apply",
+        "args": ["serve"],
+    }
+
+
+def test_setup_mcp_browser_install_failure_leaves_configs_unwritten(tmp_path):
+    claude_path = tmp_path / ".claude.json"
+    codex_path = tmp_path / ".codex" / "config.toml"
+    mock_result = MagicMock()
+    mock_result.returncode = 7
+
+    with patch("pi_apply.cli.subprocess.run", return_value=mock_result):
+        result = runner.invoke(
+            app,
+            [
+                "setup-mcp",
+                "--claude-config",
+                str(claude_path),
+                "--codex-config",
+                str(codex_path),
+            ],
+        )
+
+    assert result.exit_code == 7
+    assert "browser install failed" in result.stderr
+    assert not claude_path.exists()
+    assert not codex_path.exists()
 
 
 def test_setup_mcp_rejects_invalid_codex_toml_without_overwrite(tmp_path):
@@ -173,20 +237,22 @@ def test_setup_mcp_rejects_invalid_codex_toml_without_overwrite(tmp_path):
     original = "[broken"
     codex_path.write_text(original, encoding="utf-8")
 
-    result = runner.invoke(
-        app,
-        [
-            "setup-mcp",
-            "--claude-config",
-            str(claude_path),
-            "--codex-config",
-            str(codex_path),
-        ],
-    )
+    with patch("pi_apply.cli.subprocess.run") as mock_run:
+        result = runner.invoke(
+            app,
+            [
+                "setup-mcp",
+                "--claude-config",
+                str(claude_path),
+                "--codex-config",
+                str(codex_path),
+            ],
+        )
 
     assert result.exit_code == 1
     assert "not valid TOML" in result.stderr
     assert codex_path.read_text(encoding="utf-8") == original
+    mock_run.assert_not_called()
 
 
 # ============================================================================

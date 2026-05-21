@@ -101,6 +101,20 @@ def test_legacy_apply_tool_absent():
     assert _tool_names(server).intersection(legacy) == set()
 
 
+def test_run_starts_mcp_without_browser_install():
+    import pi_apply.server as server
+
+    with (
+        patch.object(server, "_ensure_browsers") as ensure_browsers,
+        patch.object(server, "_log"),
+        patch.object(server.mcp, "run") as mcp_run,
+    ):
+        server.run()
+
+    ensure_browsers.assert_not_called()
+    mcp_run.assert_called_once_with(transport="stdio", show_banner=False)
+
+
 def test_load_jd_rejects_missing_jd_input():
     from pi_apply.server import load_jd
 
