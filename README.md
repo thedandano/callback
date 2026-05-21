@@ -26,6 +26,17 @@ pi-apply setup-mcp
 
 After `setup-mcp`, restart your MCP host (Claude Desktop, etc.) to pick up the new server.
 
+For local development installs from this repository, prefer:
+
+```bash
+make install && pi-apply setup-mcp
+```
+
+`make install` embeds a local build version in the CLI. Clean installs on
+`origin/main` print the package version, while local commits ahead of
+`origin/main` print a suffix like `0.3.0-01-abc1234`; uncommitted changes add
+`-dirty`.
+
 ---
 
 ## Update

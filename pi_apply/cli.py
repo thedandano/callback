@@ -289,11 +289,26 @@ def update() -> None:
     raise typer.Exit(result.returncode)
 
 
+def _read_build_version() -> str | None:
+    try:
+        from pi_apply._build_info import BUILD_VERSION
+    except ImportError:
+        return None
+    return BUILD_VERSION or None
+
+
+def _display_version() -> str:
+    build_version = _read_build_version()
+    if build_version:
+        return build_version
+    return importlib.metadata.version("pi-apply")
+
+
 @app.command()
 def version() -> None:
-    """Print the installed pi-apply package version."""
+    """Print the installed pi-apply build version."""
     try:
-        console.print(importlib.metadata.version("pi-apply"))
+        console.print(_display_version())
     except importlib.metadata.PackageNotFoundError as exc:
         error_console.print("pi-apply is not installed as a package")
         raise typer.Exit(1) from exc
