@@ -144,6 +144,27 @@ def configure_codex(path: Path, command: str | None = None) -> None:
     _write_text_atomic(path, _dump_toml(config))
 
 
+def _validate_claude_config(path: Path) -> None:
+    config = _read_json_config(path)
+    servers = config.get("mcpServers", {})
+    if not isinstance(servers, dict):
+        raise ConfigError(f'{path} key "mcpServers" must be an object')
+
+
+def _validate_codex_config(path: Path) -> None:
+    config = _read_toml_config(path)
+    servers = config.get("mcp_servers", {})
+    if not isinstance(servers, dict):
+        raise ConfigError(f'{path} key "mcp_servers" must be a table')
+
+
+def _install_browsers() -> int:
+    result = subprocess.run(
+        [sys.executable, "-m", "playwright", "install", "chromium"],
+    )
+    return result.returncode
+
+
 def _remove_server_from_claude(path: Path) -> None:
     if not path.exists():
         return
@@ -199,12 +220,30 @@ def setup_mcp(
         Path | None,
         typer.Option("--codex-config", help="Codex TOML config path."),
     ] = None,
+    skip_browsers: Annotated[
+        bool,
+        typer.Option(
+            "--skip-browsers",
+            help="Skip Playwright Chromium installation during setup.",
+        ),
+    ] = False,
 ) -> None:
     """Install pi-apply MCP server entries for Claude and Codex."""
     claude_path = claude_config or Path("~/.claude.json").expanduser()
     codex_path = codex_config or Path("~/.codex/config.toml").expanduser()
     command = _resolve_command()
     try:
+        _validate_claude_config(claude_path)
+        _validate_codex_config(codex_path)
+        if not skip_browsers:
+            console.print("Installing Playwright Chromium for pi-apply...")
+            browser_install_returncode = _install_browsers()
+            if browser_install_returncode != 0:
+                error_console.print(
+                    "setup-mcp failed: browser install failed; "
+                    "run `pi-apply install-browsers` for details"
+                )
+                raise typer.Exit(browser_install_returncode)
         configure_claude(claude_path, command)
         configure_codex(codex_path, command)
     except ConfigError as exc:
@@ -250,10 +289,7 @@ def logs(
 @app.command("install-browsers")
 def install_browsers() -> None:
     """Install Playwright Chromium browser in the tool's isolated environment."""
-    result = subprocess.run(
-        [sys.executable, "-m", "playwright", "install", "chromium"],
-    )
-    raise typer.Exit(result.returncode)
+    raise typer.Exit(_install_browsers())
 
 
 @app.command()
