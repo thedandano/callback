@@ -29,12 +29,23 @@ def test_cli_help_lists_commands():
 
 
 def test_version_prints_installed_distribution_version(monkeypatch):
+    monkeypatch.setattr("pi_apply.cli._read_build_version", lambda: None)
     monkeypatch.setattr("pi_apply.cli.importlib.metadata.version", lambda name: "0.1.0")
 
     result = runner.invoke(app, ["version"])
 
     assert result.exit_code == 0
     assert result.stdout.strip() == "0.1.0"
+
+
+def test_version_prefers_generated_build_version(monkeypatch):
+    monkeypatch.setattr("pi_apply.cli._read_build_version", lambda: "0.3.0-01-abc1234")
+    monkeypatch.setattr("pi_apply.cli.importlib.metadata.version", lambda name: "0.3.0")
+
+    result = runner.invoke(app, ["version"])
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "0.3.0-01-abc1234"
 
 
 def test_serve_uses_server_runner():
