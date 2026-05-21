@@ -223,7 +223,7 @@ def test_configure_codex_creates_entry_and_preserves_unrelated_keys(tmp_path):
         "mcp_servers": {
             "pi-apply": {
                 "command": "pi-apply",
-                "args": ["serve", "--project-logs"],
+                "args": ["serve"],
             },
         },
     }
@@ -270,7 +270,7 @@ def test_setup_mcp_writes_both_configs(tmp_path):
     }
     assert _read_toml(codex_path)["mcp_servers"]["pi-apply"] == {
         "command": "/usr/local/bin/pi-apply",
-        "args": ["serve", "--project-logs"],
+        "args": ["serve"],
     }
     import sys
 
@@ -305,7 +305,7 @@ def test_setup_mcp_skip_browsers_writes_configs_without_install(tmp_path):
     }
     assert _read_toml(codex_path)["mcp_servers"]["pi-apply"] == {
         "command": "/usr/local/bin/pi-apply",
-        "args": ["serve", "--project-logs"],
+        "args": ["serve"],
     }
 
 

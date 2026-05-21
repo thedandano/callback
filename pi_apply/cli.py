@@ -27,7 +27,7 @@ error_console = Console(stderr=True, soft_wrap=True)
 SERVER_NAME = "pi-apply"
 SERVER_COMMAND = "pi-apply"
 SERVER_ARGS = ["serve"]
-CODEX_SERVER_ARGS = ["serve", "--project-logs"]
+PROJECT_LOG_SERVER_ARGS = ["serve", "--project-logs"]
 DEFAULT_LOG_PATH = Path("~/.local/state/pi-apply/server.log").expanduser()
 _DATA_DIR = Path("~/.local/share/pi-apply").expanduser()
 _STATE_DIR = Path("~/.local/state/pi-apply").expanduser()
@@ -48,7 +48,7 @@ def mcp_server_config(
     project_logs: bool = False,
 ) -> dict[str, object]:
     """Return the launcher config shared by supported MCP clients."""
-    args = CODEX_SERVER_ARGS if project_logs else SERVER_ARGS
+    args = PROJECT_LOG_SERVER_ARGS if project_logs else SERVER_ARGS
     return {"command": command or SERVER_COMMAND, "args": list(args)}
 
 
@@ -173,7 +173,7 @@ def configure_codex(path: Path, command: str | None = None) -> None:
     servers = config.setdefault("mcp_servers", {})
     if not isinstance(servers, dict):
         raise ConfigError(f'{path} key "mcp_servers" must be a table')
-    servers[SERVER_NAME] = mcp_server_config(command, project_logs=True)
+    servers[SERVER_NAME] = mcp_server_config(command)
     _write_text_atomic(path, _dump_toml(config))
 
 
