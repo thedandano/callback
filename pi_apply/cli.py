@@ -27,6 +27,7 @@ error_console = Console(stderr=True, soft_wrap=True)
 SERVER_NAME = "pi-apply"
 SERVER_COMMAND = "pi-apply"
 SERVER_ARGS = ["serve"]
+CODEX_SERVER_ARGS = ["serve", "--project-logs"]
 DEFAULT_LOG_PATH = Path("~/.local/state/pi-apply/server.log").expanduser()
 _DATA_DIR = Path("~/.local/share/pi-apply").expanduser()
 _STATE_DIR = Path("~/.local/state/pi-apply").expanduser()
@@ -41,9 +42,41 @@ def _resolve_command() -> str:
     return shutil.which(SERVER_COMMAND) or SERVER_COMMAND
 
 
-def mcp_server_config(command: str | None = None) -> dict[str, object]:
+def mcp_server_config(
+    command: str | None = None,
+    *,
+    project_logs: bool = False,
+) -> dict[str, object]:
     """Return the launcher config shared by supported MCP clients."""
-    return {"command": command or SERVER_COMMAND, "args": list(SERVER_ARGS)}
+    args = CODEX_SERVER_ARGS if project_logs else SERVER_ARGS
+    return {"command": command or SERVER_COMMAND, "args": list(args)}
+
+
+def _project_log_path() -> Path:
+    return Path.cwd() / ".pi-apply" / "server.log"
+
+
+def _resolve_log_path(
+    log_path: Path | None = None,
+    *,
+    project_logs: bool = False,
+    auto_project: bool = False,
+) -> Path:
+    """Resolve the audit log path for commands that read or write server logs."""
+    if log_path is not None:
+        return log_path.expanduser()
+
+    project_log_path = _project_log_path()
+    if project_logs or (auto_project and project_log_path.exists()):
+        return project_log_path
+
+    return DEFAULT_LOG_PATH
+
+
+def _write_startup_log_event(log_path: Path, line: str) -> None:
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(line + "\n")
 
 
 def _write_text_atomic(path: Path, content: str) -> None:
@@ -140,7 +173,7 @@ def configure_codex(path: Path, command: str | None = None) -> None:
     servers = config.setdefault("mcp_servers", {})
     if not isinstance(servers, dict):
         raise ConfigError(f'{path} key "mcp_servers" must be a table')
-    servers[SERVER_NAME] = mcp_server_config(command)
+    servers[SERVER_NAME] = mcp_server_config(command, project_logs=True)
     _write_text_atomic(path, _dump_toml(config))
 
 
@@ -186,26 +219,47 @@ def _remove_server_from_codex(path: Path) -> None:
 
 
 @app.command()
-def serve() -> None:
+def serve(
+    log_path: Annotated[
+        Path | None,
+        typer.Option("--log-path", help="Server log path."),
+    ] = None,
+    project_logs: Annotated[
+        bool,
+        typer.Option(
+            "--project-logs",
+            help="Write logs to .pi-apply/server.log under the current project.",
+        ),
+    ] = False,
+) -> None:
     """Start the pi-apply MCP server."""
-    os.environ.setdefault("PI_APPLY_LOG_PATH", str(DEFAULT_LOG_PATH))
-    log_path = Path(os.environ["PI_APPLY_LOG_PATH"]).expanduser()
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    with log_path.open("a", encoding="utf-8") as handle:
-        handle.write(
+    resolved_log_path = _resolve_log_path(log_path, project_logs=project_logs)
+    os.environ["PI_APPLY_LOG_PATH"] = str(resolved_log_path)
+    startup_event = json.dumps(
+        {
+            "event": "cli_serve_start",
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
+            "level": "INFO",
+        }
+    )
+    try:
+        _write_startup_log_event(resolved_log_path, startup_event)
+    except OSError as exc:
+        error_console.print(
             json.dumps(
                 {
-                    "event": "cli_serve_start",
+                    "event": "cli_serve_log_unavailable",
                     "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
-                    "level": "INFO",
+                    "level": "WARNING",
+                    "path": str(resolved_log_path),
+                    "error": str(exc),
                 }
             )
-            + "\n"
         )
 
     from pi_apply.server import configure_logging, run
 
-    configure_logging(os.environ["PI_APPLY_LOG_PATH"])
+    configure_logging(str(resolved_log_path))
 
     run()
 
@@ -256,9 +310,10 @@ def setup_mcp(
 
 @app.command()
 def logs(
-    log_path: Annotated[Path, typer.Option("--log-path", help="Server log path.")] = (
-        DEFAULT_LOG_PATH
-    ),
+    log_path: Annotated[
+        Path | None,
+        typer.Option("--log-path", help="Server log path."),
+    ] = None,
     lines: Annotated[
         int, typer.Option("--lines", "-n", min=1, help="Number of trailing lines.")
     ] = 50,
@@ -266,13 +321,25 @@ def logs(
         bool,
         typer.Option("--follow", help="Continue streaming new log lines."),
     ] = False,
+    project_logs: Annotated[
+        bool,
+        typer.Option(
+            "--project-logs",
+            help="Read logs from .pi-apply/server.log under the current project.",
+        ),
+    ] = False,
 ) -> None:
     """Print the tail of the pi-apply server log."""
-    if not log_path.exists():
-        error_console.print(f"Log file not found: {log_path}")
+    resolved_log_path = _resolve_log_path(
+        log_path,
+        project_logs=project_logs,
+        auto_project=True,
+    )
+    if not resolved_log_path.exists():
+        error_console.print(f"Log file not found: {resolved_log_path}")
         raise typer.Exit(1)
 
-    with log_path.open(encoding="utf-8") as handle:
+    with resolved_log_path.open(encoding="utf-8") as handle:
         entries = handle.readlines()
         for line in entries[-lines:]:
             console.print(line.rstrip("\n"))
