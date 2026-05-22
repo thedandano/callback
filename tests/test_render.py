@@ -222,10 +222,20 @@ def test_render_async_skips_zoom_when_content_already_fits(tmp_path, monkeypatch
 
     asyncio.run(_render_async({"name": "Jane Doe", "max_pages": 1}, str(tmp_path / "resume.pdf")))
 
+    evaluate_scripts = [script for script, _args in page.evaluate_calls]
     assert {
-        "zoom_calls": len(page.evaluate_calls),
+        "measured_page_height": evaluate_scripts[0].startswith("() => Math.max("),
+        "applied_zoom": any("document.body.style.zoom" in script for script in evaluate_scripts),
+        "applied_vertical_centering": any("translateY" in script for script in evaluate_scripts),
+        "centering_height": page.evaluate_calls[-1][1],
         "has_pdf_kwargs": page.pdf_kwargs is not None,
-    } == {"zoom_calls": 1, "has_pdf_kwargs": True}
+    } == {
+        "measured_page_height": True,
+        "applied_zoom": False,
+        "applied_vertical_centering": True,
+        "centering_height": (render_builder._PRINTABLE_HEIGHT_PX,),
+        "has_pdf_kwargs": True,
+    }
 
 
 def test_parse_final_halts_on_missing_pdf_path():
@@ -302,6 +312,27 @@ def test_render_html_structures_title_contact_and_timeline_rows():
     assert '<span class="entry-role">Software Development Engineer II</span>' in html
     assert '<span class="entry-date">December 2024 – January 2026</span>' in html
     assert '<span class="entry-date">September 2020 – Present</span>' in html
+
+
+def test_render_html_keeps_summary_divider_when_title_is_absent():
+    html = _render_html(
+        {
+            "name": "Jane Doe",
+            "location": "Anytown, USA",
+            "summary": "Backend and data engineer.",
+        }
+    )
+
+    assert '<div class="summary-divider" aria-hidden="true"></div>' in html
+    divider_index = html.rindex('<div class="summary-divider" aria-hidden="true"></div>')
+    assert html.index("Anytown, USA") < divider_index
+    assert divider_index < html.index("Backend and data engineer.")
+
+
+def test_render_async_vertical_centering_targets_resume_container():
+    assert 'document.querySelector(".container")' in render_builder._VERTICAL_CENTER_SCRIPT
+    assert "container.getBoundingClientRect().height" in render_builder._VERTICAL_CENTER_SCRIPT
+    assert "translateY" in render_builder._VERTICAL_CENTER_SCRIPT
 
 
 def test_render_html_uses_consistent_body_font_for_contact_summary_and_skills():

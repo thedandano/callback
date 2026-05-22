@@ -19,6 +19,20 @@ _PAGE_MARGIN_X_IN = 1.0
 _PAGE_MARGIN_Y_IN = 0.46
 _PRINTABLE_WIDTH_PX = round((_LETTER_WIDTH_IN - _PAGE_MARGIN_X_IN) * _CSS_DPI)
 _PRINTABLE_HEIGHT_PX = (_LETTER_HEIGHT_IN - _PAGE_MARGIN_Y_IN) * _CSS_DPI
+_VERTICAL_CENTER_SCRIPT = """
+(printableHeight) => {
+  const container = document.querySelector(".container");
+  if (!container) {
+    return 0;
+  }
+  const contentHeight = container.getBoundingClientRect().height;
+  const offset = Math.max(0, (printableHeight - contentHeight) / 2);
+  if (offset > 1) {
+    container.style.transform = `translateY(${offset}px)`;
+  }
+  return offset;
+}
+"""
 
 _JINJA = Environment(
     loader=FileSystemLoader(str(_RENDER_DIR)),
@@ -190,6 +204,7 @@ async def _render_async(tailored: dict, output_path: str) -> None:
                         "(zoom) => { document.body.style.zoom = String(zoom); }",
                         fit_zoom,
                     )
+                await page.evaluate(_VERTICAL_CENTER_SCRIPT, _PRINTABLE_HEIGHT_PX)
             await page.pdf(
                 path=output_path,
                 print_background=True,
