@@ -242,6 +242,78 @@ def test_submit_tailor_replaces_project_entry(tmp_path, monkeypatch):
     assert actual == expected
 
 
+def test_submit_tailor_removes_weak_bullet_and_adds_second_project(tmp_path, monkeypatch):
+    from pi_apply.server import submit_tailor
+
+    resume_label = "project_add_resume"
+    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    section_map = SectionMap(
+        contact=ContactInfo(name="Jane Dev"),
+        summary="Python engineer",
+        skills=SkillsSection(flat=["Python"]),
+        experience=[
+            ExperienceEntry(
+                company="Acme",
+                role="SWE",
+                bullets=[
+                    "Built Python services serving 500K users",
+                    "Mentored teammates",
+                ],
+            )
+        ],
+        projects=[
+            ProjectEntry(
+                name="Howe-2",
+                description="Nonprofit website",
+                bullets=["Built AWS adoption site"],
+            )
+        ],
+    )
+    WikiStore().write_page(resume_label, "sections.json", section_map.model_dump_json())
+
+    jd_json = json.dumps(
+        {"title": "SWE", "company": "Co", "required": ["Python", "ChatML"], "preferred": ["AWS"]}
+    )
+    session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
+
+    edits = [
+        {"section": "experience", "op": "remove", "target": "exp-0-b1"},
+        {
+            "section": "projects",
+            "op": "add",
+            "target": "proj-end",
+            "value": {
+                "name": "Personal Voice LLM",
+                "description": "Gemma fine-tuning pipeline",
+                "bullets": ["Built ChatML dataset with 17,027 records using Python"],
+            },
+        },
+    ]
+    result = json.loads(submit_tailor(session_id=session_id, edits=edits))
+
+    archive = json.loads(Path(result["data"]["archive_path"]).read_text())
+    rendered_text = archive["tailored_resume_text"]
+    actual = {
+        "status": result["status"],
+        "edits_applied": result["data"]["edits_applied"],
+        "edits_rejected": result["data"]["edits_rejected"],
+        "rendered_keeps_old_project": "Howe-2" in rendered_text,
+        "rendered_has_new_project": "Personal Voice LLM" in rendered_text,
+        "removed_weak_bullet": "Mentored teammates" not in rendered_text,
+        "chatml_matched": "ChatML" in result["data"]["score_final"]["req_matched"],
+    }
+    expected = {
+        "status": "ok",
+        "edits_applied": [0, 1],
+        "edits_rejected": [],
+        "rendered_keeps_old_project": True,
+        "rendered_has_new_project": True,
+        "removed_weak_bullet": True,
+        "chatml_matched": True,
+    }
+    assert actual == expected
+
+
 def test_submit_tailor_rejects_out_of_bounds_target(tmp_path, monkeypatch):
     """Out-of-bounds experience target is rejected; in-bounds edits still applied."""
     from pi_apply.server import submit_tailor
