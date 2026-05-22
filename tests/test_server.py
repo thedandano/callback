@@ -601,6 +601,185 @@ Skills: Python, MCP, LangGraph, SQL
     assert actual == expected
 
 
+def test_submit_keywords_recommends_project_append_and_trim_candidates(tmp_path, monkeypatch):
+    from pi_apply.server import load_jd, submit_keywords
+    from pi_apply.wiki import WikiStore
+
+    resume_label = "project_append_resume"
+    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    sections = {
+        "summary": "Python engineer",
+        "skills": {"flat": ["Python"], "categorized": {}},
+        "experience": [
+            {
+                "company": "ACME",
+                "role": "Engineer",
+                "bullets": [
+                    "Built Python services",
+                    "Mentored teammates",
+                ],
+            }
+        ],
+        "projects": [
+            {
+                "name": "Howe-2",
+                "description": "Nonprofit website",
+                "bullets": ["Built AWS adoption site"],
+            }
+        ],
+        "education": [],
+        "contact": {"name": "Jane Dev"},
+        "certifications": [],
+        "awards": [],
+    }
+    store = WikiStore()
+    store.write_page(resume_label, "sections.json", json.dumps(sections))
+    store.write_index(
+        resume_label,
+        "\n".join(
+            [
+                "# Profile Index",
+                "- [Personal Voice LLM](experience/story-013.md)",
+            ]
+        ),
+    )
+    store.write_page(
+        resume_label,
+        "experience/story-013.md",
+        """# Personal Voice LLM — Gemma Fine-Tuning — May 2026
+
+**Job Title:** Project
+
+Skills: Python, RAG, ChatML, LLMs
+
+**Behavior:** Built a Python pipeline for RAG and ChatML records.
+""",
+    )
+    jd_json = json.dumps(
+        {
+            "title": "GenAI Engineer",
+            "company": "Co",
+            "required": ["Python", "RAG", "ChatML"],
+            "preferred": ["AWS"],
+        }
+    )
+
+    with patch("pi_apply.server.list_resumes", return_value=[resume_label]):
+        loaded = json.loads(load_jd(jd_raw_text="GenAI engineer needed"))
+        result = json.loads(submit_keywords(session_id=loaded["session_id"], jd_json=jd_json))
+
+    layout = result["data"]["project_layout_recommendation"]
+    trim_candidates = result["data"]["trim_candidates"]
+    actual = {
+        "layout_strategy": layout["strategy"],
+        "layout_add_target": layout["add_target"],
+        "layout_max_visible_projects": layout["max_visible_projects"],
+        "layout_candidate": layout["candidate"]["name"],
+        "trim_targets": [candidate["target"] for candidate in trim_candidates],
+        "first_trim_score": trim_candidates[0]["score"],
+        "first_trim_required": trim_candidates[0]["required_matched"],
+        "project_trim_preferred": trim_candidates[1]["preferred_matched"],
+    }
+    expected = {
+        "layout_strategy": "append",
+        "layout_add_target": "proj-end",
+        "layout_max_visible_projects": 2,
+        "layout_candidate": "Personal Voice LLM — Gemma Fine-Tuning — May 2026",
+        "trim_targets": ["exp-0-b1", "proj-0-b0", "exp-0-b0"],
+        "first_trim_score": 0.0,
+        "first_trim_required": [],
+        "project_trim_preferred": ["AWS"],
+    }
+    assert actual == expected
+
+
+def test_submit_keywords_recommends_project_replace_when_two_visible_projects(
+    tmp_path, monkeypatch
+):
+    from pi_apply.server import load_jd, submit_keywords
+    from pi_apply.wiki import WikiStore
+
+    resume_label = "project_replace_layout_resume"
+    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    sections = {
+        "summary": "Python engineer",
+        "skills": {"flat": ["Python"], "categorized": {}},
+        "experience": [
+            {
+                "company": "ACME",
+                "role": "Engineer",
+                "bullets": ["Built Python services"],
+            }
+        ],
+        "projects": [
+            {
+                "name": "Howe-2",
+                "description": "Nonprofit website",
+                "bullets": ["Built adoption site"],
+            },
+            {
+                "name": "Search Lab",
+                "description": "Python search project",
+                "bullets": ["Built Python search API"],
+            },
+        ],
+        "education": [],
+        "contact": {"name": "Jane Dev"},
+        "certifications": [],
+        "awards": [],
+    }
+    store = WikiStore()
+    store.write_page(resume_label, "sections.json", json.dumps(sections))
+    store.write_index(
+        resume_label,
+        "\n".join(
+            [
+                "# Profile Index",
+                "- [Personal Voice LLM](experience/story-013.md)",
+            ]
+        ),
+    )
+    store.write_page(
+        resume_label,
+        "experience/story-013.md",
+        """# Personal Voice LLM — Gemma Fine-Tuning — May 2026
+
+**Job Title:** Project
+
+Skills: Python, RAG, ChatML, LLMs
+
+**Behavior:** Built a Python RAG and ChatML pipeline for LLM fine-tuning.
+""",
+    )
+    jd_json = json.dumps(
+        {
+            "title": "GenAI Engineer",
+            "company": "Co",
+            "required": ["Python", "RAG", "ChatML"],
+            "preferred": [],
+        }
+    )
+
+    with patch("pi_apply.server.list_resumes", return_value=[resume_label]):
+        loaded = json.loads(load_jd(jd_raw_text="GenAI engineer needed"))
+        result = json.loads(submit_keywords(session_id=loaded["session_id"], jd_json=jd_json))
+
+    layout = result["data"]["project_layout_recommendation"]
+    actual = {
+        "strategy": layout["strategy"],
+        "replace_target": layout["replace_target"],
+        "candidate": layout["candidate"]["name"],
+        "max_visible_projects": layout["max_visible_projects"],
+    }
+    expected = {
+        "strategy": "replace",
+        "replace_target": "proj-0",
+        "candidate": "Personal Voice LLM — Gemma Fine-Tuning — May 2026",
+        "max_visible_projects": 2,
+    }
+    assert actual == expected
+
+
 def test_submit_keywords_orphaned_required_routes_to_create_story(tmp_path, monkeypatch):
     from pi_apply.server import load_jd, submit_keywords
     from pi_apply.wiki import WikiStore

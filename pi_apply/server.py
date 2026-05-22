@@ -175,7 +175,11 @@ _TAILOR_INSTRUCTIONS = (
     "employer context, or keyword-only text. Project evidence does not satisfy Skills "
     "coverage unless the keyword also appears in a dated experience bullet. When "
     "project_candidates are present, compare them against the visible resume project "
-    "and replace the project if a candidate better fits the JD keywords or theme."
+    "and prefer up to two visible projects when both projects improve JD keyword "
+    "match or theme. Remove or shorten low-score, off-theme visible bullets before "
+    "adding a second project. If two projects are already visible, replace the "
+    "weakest visible project only when the candidate better fits the JD keywords "
+    "or theme."
 )
 
 mcp = FastMCP("pi-apply", lifespan=_lifespan)
@@ -350,6 +354,84 @@ def _project_swap_recommendation(
         "visible_project_score": visible_score,
         "candidate": candidate,
     }
+
+
+_MAX_VISIBLE_PROJECTS = 2
+
+
+def _project_layout_recommendation(candidates: list[dict], keywords: dict, sections: dict) -> dict:
+    recommendation: dict = {
+        "strategy": "none",
+        "max_visible_projects": _MAX_VISIBLE_PROJECTS,
+    }
+    if not candidates:
+        return recommendation
+
+    projects = sections.get("projects") or []
+    if len(projects) < _MAX_VISIBLE_PROJECTS:
+        return {
+            **recommendation,
+            "strategy": "append",
+            "add_target": "proj-end",
+            "candidate": candidates[0],
+        }
+
+    swap = _project_swap_recommendation(candidates, keywords, sections)
+    if not swap:
+        return recommendation
+    return {
+        **recommendation,
+        "strategy": "replace",
+        "replace_target": swap["replace_target"],
+        "visible_project_score": swap["visible_project_score"],
+        "candidate": swap["candidate"],
+    }
+
+
+def _bullet_trim_candidate(section: str, target: str, text: str, keywords: dict) -> dict:
+    required = keywords.get("required") or []
+    preferred = keywords.get("preferred") or []
+    return {
+        "target": target,
+        "section": section,
+        "text": text,
+        "required_matched": _matched_keywords(required, text),
+        "preferred_matched": _matched_keywords(preferred, text),
+        "score": _project_score(required, preferred, text),
+    }
+
+
+def _trim_candidates(keywords: dict, sections: dict) -> list[dict]:
+    candidates: list[dict] = []
+    for exp_index, entry in enumerate(sections.get("experience") or []):
+        for bullet_index, bullet in enumerate(entry.get("bullets") or []):
+            candidates.append(
+                _bullet_trim_candidate(
+                    "experience",
+                    f"exp-{exp_index}-b{bullet_index}",
+                    str(bullet),
+                    keywords,
+                )
+            )
+    for project_index, project in enumerate(sections.get("projects") or []):
+        for bullet_index, bullet in enumerate(project.get("bullets") or []):
+            candidates.append(
+                _bullet_trim_candidate(
+                    "projects",
+                    f"proj-{project_index}-b{bullet_index}",
+                    str(bullet),
+                    keywords,
+                )
+            )
+    return sorted(
+        candidates,
+        key=lambda candidate: (
+            candidate["score"],
+            len(candidate["required_matched"]),
+            len(candidate["preferred_matched"]),
+            candidate["target"],
+        ),
+    )
 
 
 # ============================================================================
@@ -728,6 +810,10 @@ def submit_keywords(session_id: str, jd_json: str) -> str:
 
     if state.get("sections"):
         data["sections"] = state.get("sections")
+        data["trim_candidates"] = _trim_candidates(
+            state.get("keywords") or {},
+            state.get("sections") or {},
+        )
 
     orphaned_required: list[str] = []
     score = state.get("score_initial")
@@ -758,6 +844,11 @@ def submit_keywords(session_id: str, jd_json: str) -> str:
             state.get("keywords") or {},
             state.get("sections") or {},
         )
+        data["project_layout_recommendation"] = _project_layout_recommendation(
+            candidates,
+            state.get("keywords") or {},
+            state.get("sections") or {},
+        )
     next_action = _submit_keywords_next_action(state.get("wiki_index"), orphaned_required)
     return _ok(
         session_id,
@@ -774,8 +865,9 @@ def submit_tailor(session_id: str, edits: list[dict], no_coverage: bool = False)
     Accepts a list of port.Edit-style dicts. Each edit must have:
       section: str (summary | skills | experience | projects)
       op: str (add | replace | remove)
-      target: str (required for experience/projects; use proj-N to replace a whole project)
-      value: str | dict (required for add/replace; project replacement uses a ProjectEntry dict)
+      target: str (required for experience/projects; use proj-N to replace a whole project,
+        proj-end to append one project, exp-N-bM/proj-N-bM to remove bullets)
+      value: str | dict (required for add/replace; project add/replacement uses a ProjectEntry dict)
       category: str (optional, for categorized skills)
 
     When no_coverage=True, skips edit application entirely, sets no_coverage in
