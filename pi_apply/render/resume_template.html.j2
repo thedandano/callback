@@ -64,6 +64,12 @@
       margin: 0.35em 0 0.5em;
     }
 
+    .summary-divider {
+      border-bottom: 0.55pt solid #000;
+      height: 0;
+      margin: 0.25em 0 0.35em;
+    }
+
     .section {
       margin-top: 0.55em;
     }
@@ -155,6 +161,9 @@
     </section>
     {% endif %}
     {% if summary %}
+    {% if not title %}
+    <div class="summary-divider" aria-hidden="true"></div>
+    {% endif %}
     <div class="summary">{{ summary }}</div>
     {% endif %}
 
