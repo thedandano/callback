@@ -155,6 +155,26 @@ def test_experience_bullet_replace_valid() -> None:
     assert sm.experience[0].bullets == expected_bullets
 
 
+def test_experience_bullet_remove_valid() -> None:
+    sm = SectionMap(
+        experience=[
+            ExperienceEntry(
+                company="Acme",
+                role="Engineer",
+                bullets=["Keep this", "Remove this", "Keep also"],
+            )
+        ]
+    )
+    result = apply_edit(
+        sm,
+        {"section": "experience", "op": "remove", "target": "exp-0-b1"},
+    )
+    expected_result = EditResult(applied=True)
+    expected_bullets = ["Keep this", "Keep also"]
+    assert result == expected_result
+    assert sm.experience[0].bullets == expected_bullets
+
+
 def test_experience_bullet_out_of_bounds_i() -> None:
     sm = SectionMap(
         experience=[ExperienceEntry(company="Acme", role="Engineer", bullets=["Bullet"])]
@@ -238,6 +258,29 @@ def test_project_bullet_replace() -> None:
     assert sm.projects[0].bullets == expected_bullets
 
 
+def test_project_bullet_remove_valid() -> None:
+    sm = SectionMap(
+        projects=[
+            ProjectEntry(
+                name="MyProject",
+                bullets=["Keep this", "Remove this", "Keep also"],
+            )
+        ]
+    )
+    result = apply_edit(
+        sm,
+        {
+            "section": "projects",
+            "op": "remove",
+            "target": "proj-0-b1",
+        },
+    )
+    expected_result = EditResult(applied=True)
+    expected_bullets = ["Keep this", "Keep also"]
+    assert result == expected_result
+    assert sm.projects[0].bullets == expected_bullets
+
+
 def test_project_entry_replace() -> None:
     sm = SectionMap(
         projects=[
@@ -269,6 +312,53 @@ def test_project_entry_replace() -> None:
     )
     assert result == expected_result
     assert sm.projects[0] == expected_project
+
+
+def test_project_entry_add_appends_at_end() -> None:
+    sm = SectionMap(projects=[ProjectEntry(name="Howe-2", bullets=["Built adoption site"])])
+    result = apply_edit(
+        sm,
+        {
+            "section": "projects",
+            "op": "add",
+            "target": "proj-end",
+            "value": {
+                "name": "Personal Voice LLM",
+                "description": "Fine-tuning pipeline",
+                "bullets": ["Built ChatML dataset for 17,027 records"],
+            },
+        },
+    )
+    expected_result = EditResult(applied=True)
+    actual = {
+        "result": result,
+        "project_names": [project.name for project in sm.projects],
+        "new_project_description": sm.projects[1].description,
+    }
+    expected = {
+        "result": expected_result,
+        "project_names": ["Howe-2", "Personal Voice LLM"],
+        "new_project_description": "Fine-tuning pipeline",
+    }
+    assert actual == expected
+
+
+def test_project_entry_add_rejects_missing_name() -> None:
+    sm = SectionMap(projects=[ProjectEntry(name="Howe-2")])
+    result = apply_edit(
+        sm,
+        {
+            "section": "projects",
+            "op": "add",
+            "target": "proj-end",
+            "value": {"description": "Missing name"},
+        },
+    )
+    assert result == EditResult(
+        applied=False,
+        rejection_reason="project add value must include name",
+    )
+    assert [project.name for project in sm.projects] == ["Howe-2"]
 
 
 def test_project_entry_replace_rejects_missing_name() -> None:

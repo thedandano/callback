@@ -13,6 +13,7 @@ _EXP_CTX_RE = re.compile(r"^exp-(\d+)-context$")
 _PROJ_ENTRY_RE = re.compile(r"^proj-(\d+)$")
 _PROJ_DESC_RE = re.compile(r"^proj-(\d+)-desc$")
 _PROJ_BULLET_RE = re.compile(r"^proj-(\d+)-b(\d+)$")
+_PROJ_END_TARGET = "proj-end"
 _SKILLS_IDX_RE = re.compile(r"^skills-(\d+)$")
 
 _EDITABLE = {"summary", "skills", "experience", "projects"}
@@ -95,9 +96,12 @@ def _validate_experience_target(entries: list[ExperienceEntry], target: str) -> 
 def _validate_project_target(
     projects: list[ProjectEntry], target: str, edit: dict[str, Any]
 ) -> str | None:
+    op = edit.get("op", "replace")
+    if target == _PROJ_END_TARGET:
+        return _validate_project_append_target(edit, op)
     m = _PROJ_ENTRY_RE.match(target)
     if m:
-        return _validate_project_entry_target(projects, int(m.group(1)), edit)
+        return _validate_project_entry_target_for_op(projects, int(m.group(1)), edit, op)
     m = _PROJ_DESC_RE.match(target)
     if m:
         return _validate_project_index(projects, int(m.group(1)))
@@ -109,10 +113,24 @@ def _validate_project_target(
     return None
 
 
+def _validate_project_append_target(edit: dict[str, Any], op: str) -> str | None:
+    if op != "add":
+        return "proj-end target only supports add"
+    return _validate_project_value(edit, "add")
+
+
 def _validate_project_index(projects: list[ProjectEntry], index: int) -> str | None:
     if index >= len(projects):
         return f"project index {index} out of bounds (have {len(projects)})"
     return None
+
+
+def _validate_project_entry_target_for_op(
+    projects: list[ProjectEntry], index: int, edit: dict[str, Any], op: str
+) -> str | None:
+    if op != "replace":
+        return "project entry target only supports replace"
+    return _validate_project_entry_target(projects, index, edit)
 
 
 def _validate_project_entry_target(
@@ -121,11 +139,15 @@ def _validate_project_entry_target(
     index_error = _validate_project_index(projects, index)
     if index_error is not None:
         return index_error
+    return _validate_project_value(edit, "replacement")
+
+
+def _validate_project_value(edit: dict[str, Any], operation: str) -> str | None:
     value = edit.get("value")
     if not isinstance(value, dict):
-        return "project replacement value must be an object"
+        return f"project {operation} value must be an object"
     if not value.get("name"):
-        return "project replacement value must include name"
+        return f"project {operation} value must include name"
     return None
 
 
@@ -174,17 +196,24 @@ def _apply_skills_edit(section_map: SectionMap, edit: dict[str, Any]) -> None:
             section_map.skills.flat = [value]
 
 
-def _apply_experience_edit(entry: ExperienceEntry, target: str, value: str) -> None:
+def _apply_experience_edit(entry: ExperienceEntry, target: str, value: str, op: str) -> None:
     m = _EXP_BULLET_RE.match(target)
     if m:
-        entry.bullets[int(m.group(2))] = value
+        bullet_index = int(m.group(2))
+        if op == "remove":
+            del entry.bullets[bullet_index]
+        else:
+            entry.bullets[bullet_index] = value
         return
     m = _EXP_CTX_RE.match(target)
     if m:
-        entry.context_line = value
+        entry.context_line = None if op == "remove" else value
 
 
-def _apply_project_edit(projects: list[ProjectEntry], target: str, value: Any) -> None:
+def _apply_project_edit(projects: list[ProjectEntry], target: str, value: Any, op: str) -> None:
+    if target == _PROJ_END_TARGET:
+        projects.append(ProjectEntry.model_validate(value))
+        return
     m = _PROJ_ENTRY_RE.match(target)
     if m:
         projects[int(m.group(1))] = ProjectEntry.model_validate(value)
@@ -192,11 +221,15 @@ def _apply_project_edit(projects: list[ProjectEntry], target: str, value: Any) -
     target_match = _PROJ_DESC_RE.match(target) or _PROJ_BULLET_RE.match(target)
     project = projects[int(target_match.group(1))]  # type: ignore[union-attr]
     if _PROJ_DESC_RE.match(target):
-        project.description = value
+        project.description = None if op == "remove" else value
         return
     m = _PROJ_BULLET_RE.match(target)
     if m:
-        project.bullets[int(m.group(2))] = value
+        bullet_index = int(m.group(2))
+        if op == "remove":
+            del project.bullets[bullet_index]
+        else:
+            project.bullets[bullet_index] = value
 
 
 def apply_edit(section_map: SectionMap, edit: dict[str, Any]) -> EditResult:
@@ -206,6 +239,7 @@ def apply_edit(section_map: SectionMap, edit: dict[str, Any]) -> EditResult:
         return EditResult(applied=False, rejection_reason=reason)
 
     section = edit.get("section", "")
+    op = edit.get("op", "replace")
     target = edit.get("target", "")
     value: Any = edit.get("value", "")
 
@@ -216,8 +250,8 @@ def apply_edit(section_map: SectionMap, edit: dict[str, Any]) -> EditResult:
     elif section == "experience":
         target_match = _EXP_BULLET_RE.match(target) or _EXP_CTX_RE.match(target)
         i = int(target_match.group(1))  # type: ignore[union-attr]
-        _apply_experience_edit(section_map.experience[i], target, value)
+        _apply_experience_edit(section_map.experience[i], target, value, op)
     elif section == "projects":
-        _apply_project_edit(section_map.projects, target, value)
+        _apply_project_edit(section_map.projects, target, value, op)
 
     return EditResult(applied=True)
