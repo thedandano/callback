@@ -81,6 +81,51 @@ def test_render_names_pdf_from_candidate_and_company(tmp_path, monkeypatch):
     assert result == {"pdf_path": expected_path, "render_page_count": 1, "render_warnings": []}
 
 
+def test_render_proper_cases_uppercase_name_and_company(tmp_path, monkeypatch):
+    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path))
+
+    def fake_render_resume(_tailored: dict, output_path: str) -> dict:
+        Path(output_path).write_bytes(b"%PDF fake")
+        return {"success": True, "pdf_path": output_path, "page_count": 1, "warnings": []}
+
+    monkeypatch.setattr("pi_apply.apply_nodes.render_resume", fake_render_resume)
+    state = ApplyState(
+        session_id="caps-session",
+        keywords={"company": "GOOGLE"},
+        tailored=TailoredResume(name="JANE DOE", summary="Engineer"),
+    )
+
+    expected_path = str(tmp_path / "Jane_Doe_Google_Resume.pdf")
+    result = render(state)
+
+    assert result == {"pdf_path": expected_path, "render_page_count": 1, "render_warnings": []}
+
+
+def test_render_redirects_to_output_dir(tmp_path, monkeypatch):
+    apps_dir = tmp_path / "apps"
+    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(apps_dir))
+    output_dir = tmp_path / "sandbox_out"
+
+    def fake_render_resume(_tailored: dict, output_path: str) -> dict:
+        Path(output_path).write_bytes(b"%PDF fake")
+        return {"success": True, "pdf_path": output_path, "page_count": 1, "warnings": []}
+
+    monkeypatch.setattr("pi_apply.apply_nodes.render_resume", fake_render_resume)
+    state = ApplyState(
+        session_id="redirect-session",
+        keywords={"company": "Acme Corp"},
+        tailored=TailoredResume(name="Jane Doe", summary="Engineer"),
+        output_dir=str(output_dir),
+    )
+
+    expected_path = str(output_dir / "Jane_Doe_Acme_Corp_Resume.pdf")
+    result = render(state)
+
+    assert result == {"pdf_path": expected_path, "render_page_count": 1, "render_warnings": []}
+    assert Path(expected_path).exists()
+    assert not apps_dir.exists()
+
+
 def test_render_halts_when_tailored_is_none(tmp_path, monkeypatch):
     monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path))
     state = ApplyState(session_id="s3")

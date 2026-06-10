@@ -767,6 +767,45 @@ def _submit_tailor_artifacts(final: dict, session_id: str) -> dict:
     }
 
 
+def _resolve_output_dir(output_dir: str | None, session_id: str) -> tuple[str | None, str | None]:
+    """Validate and create an optional output_dir for the final PDF.
+
+    Returns (resolved_abs_dir, None) on success (resolved is None when output_dir
+    is falsy), or (None, error_envelope) when the path is relative or uncreatable.
+    """
+    if not output_dir:
+        return None, None
+    resolved = Path(output_dir).expanduser()
+    if not resolved.is_absolute():
+        return None, _err(
+            "submit_tailor",
+            "invalid_output_dir",
+            f"output_dir must be an absolute path: {output_dir}",
+            session_id,
+            retriable=True,
+        )
+    try:
+        resolved.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        _log(
+            "ERROR",
+            {
+                "tool": "submit_tailor",
+                "session_id": session_id,
+                "invalid_output_dir": output_dir,
+                "error": str(exc),
+            },
+        )
+        return None, _err(
+            "submit_tailor",
+            "invalid_output_dir",
+            f"cannot write to output_dir: {exc}",
+            session_id,
+            retriable=True,
+        )
+    return str(resolved), None
+
+
 @mcp.tool()
 def submit_keywords(session_id: str, jd_json: str) -> str:
     """Accept host-extracted JDData and return score gaps plus tailor handoff guidance.
@@ -859,7 +898,12 @@ def submit_keywords(session_id: str, jd_json: str) -> str:
 
 
 @mcp.tool()
-def submit_tailor(session_id: str, edits: list[dict], no_coverage: bool = False) -> str:
+def submit_tailor(
+    session_id: str,
+    edits: list[dict],
+    no_coverage: bool = False,
+    output_dir: str | None = None,
+) -> str:
     """Apply host-submitted edits to the resume SectionMap and run the graph to finalize.
 
     Accepts a list of port.Edit-style dicts. Each edit must have:
@@ -869,6 +913,12 @@ def submit_tailor(session_id: str, edits: list[dict], no_coverage: bool = False)
         proj-end to append one project, exp-N-bM/proj-N-bM to remove bullets)
       value: str | dict (required for add/replace; project add/replacement uses a ProjectEntry dict)
       category: str (optional, for categorized skills)
+
+    output_dir (optional): an absolute directory to write the final PDF into instead of the
+    default applications dir. Recommended for sandboxed hosts (Claude/Codex) whose filesystem
+    cannot reach pi-apply's default output. The PDF is written there directly (a redirect, not
+    a copy); data.pdf_path points inside it. An unwritable path returns an invalid_output_dir
+    error rather than silently falling back.
 
     When no_coverage=True, skips edit application entirely, sets no_coverage in
     graph state, and runs the graph directly to finalize.
@@ -901,8 +951,12 @@ def submit_tailor(session_id: str, edits: list[dict], no_coverage: bool = False)
             session_id,
         )
 
+    resolved_output_dir, output_dir_error = _resolve_output_dir(output_dir, session_id)
+    if output_dir_error is not None:
+        return output_dir_error
+
     if no_coverage:
-        graph.update_state(config, {"no_coverage": True})
+        graph.update_state(config, {"no_coverage": True, "output_dir": resolved_output_dir})
         graph.invoke(None, config)
         final_snapshot = graph.get_state(config)
         final = final_snapshot.values
@@ -941,10 +995,14 @@ def submit_tailor(session_id: str, edits: list[dict], no_coverage: bool = False)
             session_id,
         )
 
-    return _apply_tailor_edits(session_id, graph, config, state_values, sections_dict, edits)
+    return _apply_tailor_edits(
+        session_id, graph, config, state_values, sections_dict, edits, resolved_output_dir
+    )
 
 
-def _apply_tailor_edits(session_id, graph, config, state_values, sections_dict, edits):
+def _apply_tailor_edits(
+    session_id, graph, config, state_values, sections_dict, edits, output_dir=None
+):
     """Apply edits to the SectionMap, run the graph to finalize, and return real scores."""
     section_map = SectionMap.model_validate(sections_dict)
     edits_applied = []
@@ -975,6 +1033,7 @@ def _apply_tailor_edits(session_id, graph, config, state_values, sections_dict, 
             "tailored_sections": section_map.model_dump(),
             "uncovered_skills": uncovered_skills,
             "applied_skill_values": applied_skill_values,
+            "output_dir": output_dir,
         },
     )
     graph.invoke(None, config)
