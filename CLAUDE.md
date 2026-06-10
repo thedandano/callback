@@ -66,7 +66,7 @@ uv run python scripts/smoke_profile.py
 |------------------|----------|-------------------------------------------------------------|
 | `load_jd`        | apply    | Runs through `jd_fetch`, then returns JD markdown plus extraction instructions. |
 | `submit_keywords`| apply    | Accepts validated host-extracted JDData, runs parse/initial score, and returns score gaps plus tailor handoff guidance. |
-| `submit_tailor`  | apply    | Applies host edits, renders the tailored PDF, scores final output, and returns artifact paths/report data. |
+| `submit_tailor`  | apply    | Applies host edits, renders the tailored PDF, scores final output, and returns artifact paths/report data. Optional `output_dir` redirects the final PDF into a caller directory (e.g. a sandbox). |
 | `get_wiki_pages` | apply    | Returns selected profile wiki pages for host tailoring evidence. |
 | `onboard_user`   | profile  | Currently calls `profile_nodes.onboard` directly (skeleton).|
 | `compile_profile`| profile  | Currently calls `profile_nodes.compile_profile` directly.   |
@@ -80,6 +80,8 @@ All tools return JSON envelopes via `_ok` / `_err`:
 ### Agent MCP Playbook
 
 When the user asks to use pi-apply for a job, call `load_jd`, extract JDData as the host, call `submit_keywords`, follow `workflow.next_tool`, and finish with `submit_tailor`. Return `data.pdf_path`, `data.archive_path`, `data.report`, and `data.outcome` to the user. If `workflow.next_tool` is `onboard_user` or `create_story`, collect the missing profile evidence, compile the profile, then restart the job flow with `load_jd`.
+
+If you run in a sandboxed filesystem, pi-apply's default output (`~/.local/share/pi-apply/applications/`) is outside your reach. Before calling `submit_tailor`, ask the user for a full output directory inside your sandbox and pass it as `output_dir`; the final PDF (`data.pdf_path`) is then written there directly.
 
 ### Apply graph (`apply_graph.py`, `apply_nodes.py`)
 

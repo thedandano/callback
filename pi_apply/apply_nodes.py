@@ -50,8 +50,8 @@ def _get_apps_dir() -> Path:
 
 def _resume_filename_part(value: str | None, fallback: str) -> str:
     raw = (value or "").strip() or fallback
-    safe = re.sub(r"[^A-Za-z0-9]+", "_", raw).strip("_")
-    return safe or fallback
+    safe = re.sub(r"[^A-Za-z0-9]+", "_", raw).strip("_") or fallback
+    return "_".join(part.capitalize() for part in safe.split("_"))
 
 
 def _resume_pdf_filename(candidate_name: str | None, company_name: str | None) -> str:
@@ -442,10 +442,13 @@ def render(state: ApplyState) -> dict:
     if state.tailored is None:
         return {"error": "render: state.tailored is None — tailor node must run first"}
 
-    apps_dir = _get_apps_dir()
-    apps_dir.mkdir(parents=True, exist_ok=True)
+    base_dir = Path(state.output_dir) if state.output_dir else _get_apps_dir()
+    try:
+        base_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return {"error": f"render: cannot create output dir {base_dir}: {exc}"}
     company_name = state.keywords.get("company") if state.keywords else None
-    output_path = str(apps_dir / _resume_pdf_filename(state.tailored.name, company_name))
+    output_path = str(base_dir / _resume_pdf_filename(state.tailored.name, company_name))
 
     result = render_resume(state.tailored.model_dump(), output_path)
     if result["success"]:

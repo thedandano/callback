@@ -512,3 +512,166 @@ def test_submit_tailor_project_bullet_replacement_can_match_required_keyword(tmp
         "rendered_project_edit": True,
     }
     assert actual == expected
+
+
+def test_submit_tailor_redirects_pdf_to_output_dir(tmp_path, monkeypatch):
+    """output_dir redirects the final PDF there; archive stays in apps_dir; no PDF in apps_dir."""
+    from pi_apply.server import submit_tailor
+
+    resume_label = "redirect_resume"
+    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    _make_section_map_and_write(resume_label)
+
+    jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
+    session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
+
+    output_dir = tmp_path / "sandbox_out"
+    apps_dir = tmp_path / "applications"
+    edits = [{"section": "summary", "op": "replace", "value": "Python engineer."}]
+    result = json.loads(
+        submit_tailor(session_id=session_id, edits=edits, output_dir=str(output_dir))
+    )
+
+    pdf_path = Path(result["data"]["pdf_path"])
+    actual = {
+        "status": result["status"],
+        "pdf_in_output_dir": pdf_path.parent == output_dir,
+        "pdf_exists": pdf_path.exists(),
+        "no_pdf_in_apps_dir": list(apps_dir.glob("*.pdf")) == [],
+        "archive_in_apps_dir": Path(result["data"]["archive_path"]).parent == apps_dir,
+        "archive_exists": Path(result["data"]["archive_path"]).exists(),
+    }
+    assert actual == {
+        "status": "ok",
+        "pdf_in_output_dir": True,
+        "pdf_exists": True,
+        "no_pdf_in_apps_dir": True,
+        "archive_in_apps_dir": True,
+        "archive_exists": True,
+    }
+
+
+def test_submit_tailor_no_coverage_accepts_output_dir_without_error(tmp_path, monkeypatch):
+    """no_coverage skips render (no PDF to produce), so output_dir is accepted but unused."""
+    from pi_apply.server import submit_tailor
+
+    resume_label = "no_cov_redirect_resume"
+    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    _make_section_map_and_write(resume_label)
+
+    jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
+    session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
+
+    output_dir = tmp_path / "no_cov_out"
+    result = json.loads(
+        submit_tailor(session_id=session_id, edits=[], no_coverage=True, output_dir=str(output_dir))
+    )
+
+    pdfs_anywhere = list((tmp_path / "applications").glob("*.pdf")) + list(output_dir.glob("*.pdf"))
+    actual = {
+        "status": result["status"],
+        "no_coverage": result["data"]["outcome"]["no_coverage"],
+        "pdf_path": result["data"]["pdf_path"],
+        "no_pdf_written": pdfs_anywhere == [],
+    }
+    assert actual == {
+        "status": "ok",
+        "no_coverage": True,
+        "pdf_path": None,
+        "no_pdf_written": True,
+    }
+
+
+def test_submit_tailor_rejects_relative_output_dir(tmp_path, monkeypatch):
+    """A relative output_dir is rejected up front (contract is an absolute path)."""
+    from pi_apply.server import submit_tailor
+
+    resume_label = "rel_dir_resume"
+    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    _make_section_map_and_write(resume_label)
+
+    jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
+    session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
+
+    edits = [{"section": "summary", "op": "replace", "value": "Python engineer."}]
+    result = json.loads(
+        submit_tailor(session_id=session_id, edits=edits, output_dir="relative/out")
+    )
+
+    actual = {
+        "status": result["status"],
+        "stage": result["error"]["stage"],
+        "code": result["error"]["code"],
+        "retriable": result["error"]["retriable"],
+        "session_id": result["session_id"],
+    }
+    assert actual == {
+        "status": "error",
+        "stage": "submit_tailor",
+        "code": "invalid_output_dir",
+        "retriable": True,
+        "session_id": session_id,
+    }
+
+
+def test_submit_tailor_without_output_dir_writes_to_apps_dir(tmp_path, monkeypatch):
+    """Default (no output_dir): PDF lands in apps_dir, unchanged from prior behavior."""
+    from pi_apply.server import submit_tailor
+
+    resume_label = "default_dir_resume"
+    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    _make_section_map_and_write(resume_label)
+
+    jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
+    session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
+
+    apps_dir = tmp_path / "applications"
+    edits = [{"section": "summary", "op": "replace", "value": "Python engineer."}]
+    result = json.loads(submit_tailor(session_id=session_id, edits=edits))
+
+    pdf_path = Path(result["data"]["pdf_path"])
+    actual = {
+        "status": result["status"],
+        "pdf_in_apps_dir": pdf_path.parent == apps_dir,
+        "pdf_exists": pdf_path.exists(),
+    }
+    assert actual == {"status": "ok", "pdf_in_apps_dir": True, "pdf_exists": True}
+
+
+def test_submit_tailor_rejects_unwritable_output_dir(tmp_path, monkeypatch):
+    """An output_dir that cannot be created returns invalid_output_dir, not a silent fallback."""
+    from pi_apply.server import submit_tailor
+
+    resume_label = "bad_dir_resume"
+    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    _make_section_map_and_write(resume_label)
+
+    jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
+    session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
+
+    # mkdir fails because a regular file already occupies the parent path.
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a dir")
+    bad_output_dir = blocker / "nested"
+
+    edits = [{"section": "summary", "op": "replace", "value": "Python engineer."}]
+    result = json.loads(
+        submit_tailor(session_id=session_id, edits=edits, output_dir=str(bad_output_dir))
+    )
+
+    actual = {
+        "status": result["status"],
+        "stage": result["error"]["stage"],
+        "code": result["error"]["code"],
+        "retriable": result["error"]["retriable"],
+        "session_id": result["session_id"],
+        "no_pdf_written": list((tmp_path / "applications").glob("*.pdf")) == [],
+    }
+    assert actual == {
+        "status": "error",
+        "stage": "submit_tailor",
+        "code": "invalid_output_dir",
+        "retriable": True,
+        "session_id": session_id,
+        "no_pdf_written": True,
+    }

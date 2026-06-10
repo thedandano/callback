@@ -61,6 +61,7 @@ class ApplyState(BaseModel):
     tailored: TailoredResume | None = Field(default=None)
     tailored_sections: dict | None = Field(default=None)
     pdf_path: str | None = Field(default=None)
+    output_dir: str | None = Field(default=None)
     render_page_count: int | None = Field(default=None)
     render_warnings: list[dict] | None = Field(default=None)
     report: dict | None = Field(default=None)
