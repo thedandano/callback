@@ -20,6 +20,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+import time
 import traceback
 import uuid
 from collections.abc import AsyncIterator
@@ -42,6 +43,7 @@ from pi_apply.apply_graph import (
 from pi_apply.apply_nodes import _detect_uncovered_skills, _get_apps_dir
 from pi_apply.jd_data import EXTRACTION_PROTOCOL, JDDataError, parse_jd_json
 from pi_apply.jd_fetcher import JDFetchError
+from pi_apply.observability import invoke_graph_without_native_tracing, trace_tool
 from pi_apply.profile_graph import build_profile_graph
 from pi_apply.profile_graph import make_config as make_profile_config
 from pi_apply.repository.resumes import list_resumes
@@ -589,6 +591,22 @@ def load_jd(  # noqa: C901
         workflow guidance telling the host to call submit_keywords next.
     """
     session_id = str(uuid.uuid4())
+    return _load_jd_impl(
+        session_id,
+        jd_raw_text,
+        jd_url=jd_url,
+        resume_label=resume_label,
+    )
+
+
+@trace_tool("load_jd", graph_name="apply")
+def _load_jd_impl(  # noqa: C901
+    session_id: str,
+    jd_raw_text: str | None,
+    *,
+    jd_url: str | None = None,
+    resume_label: str | None = None,
+) -> str:
     if not (jd_url or jd_raw_text):
         return _err(
             "load_jd",
@@ -612,8 +630,12 @@ def load_jd(  # noqa: C901
 
     try:
         graph = build_apply_graph()
-        config = make_apply_config(session_id)
-        state = graph.invoke(initial_state, config)
+        config = make_apply_config(
+            session_id,
+            tool_name="load_jd",
+            resume_label=resolved_label,
+        )
+        state = invoke_graph_without_native_tracing(graph, initial_state, config)
     except JDFetchError as exc:
         reason = getattr(exc, "reason", None)
         if reason == "fetch_failed":
@@ -814,6 +836,11 @@ def submit_keywords(session_id: str, jd_json: str) -> str:
     project_candidates and an optional project_swap_recommendation for the host
     to consider during tailoring.
     """
+    return _submit_keywords_impl(session_id, jd_json)
+
+
+@trace_tool("submit_keywords", graph_name="apply")
+def _submit_keywords_impl(session_id: str, jd_json: str) -> str:
     _log("INFO", {"tool": "submit_keywords", "session_id": session_id})
 
     try:
@@ -828,14 +855,14 @@ def submit_keywords(session_id: str, jd_json: str) -> str:
         )
 
     graph = build_apply_graph()
-    config = make_apply_config(session_id)
+    config = make_apply_config(session_id, tool_name="submit_keywords")
     state_error = _submit_keywords_state_error(graph, config, session_id)
     if state_error is not None:
         return state_error
 
     try:
         graph.update_state(config, {"keywords": keywords})
-        state = graph.invoke(None, config)
+        state = invoke_graph_without_native_tracing(graph, None, config)
     except ValueError as exc:
         return _err(
             stage="submit_keywords",
@@ -934,10 +961,21 @@ def submit_tailor(
     report.notes is a list of plain-text messages for ATS format issues in the
     rendered PDF that tailoring cannot fix (closeable_by != "tailor").
     """
+    return _submit_tailor_impl(session_id, edits, no_coverage=no_coverage, output_dir=output_dir)
+
+
+@trace_tool("submit_tailor", graph_name="apply")
+def _submit_tailor_impl(
+    session_id: str,
+    edits: list[dict],
+    *,
+    no_coverage: bool = False,
+    output_dir: str | None = None,
+) -> str:
     _log("INFO", {"tool": "submit_tailor", "session_id": session_id, "edit_count": len(edits)})
 
     graph = build_apply_graph()
-    config = make_apply_config(session_id)
+    config = make_apply_config(session_id, tool_name="submit_tailor")
     snapshot = graph.get_state(config)
 
     if not snapshot.values:
@@ -957,7 +995,7 @@ def submit_tailor(
 
     if no_coverage:
         graph.update_state(config, {"no_coverage": True, "output_dir": resolved_output_dir})
-        graph.invoke(None, config)
+        invoke_graph_without_native_tracing(graph, None, config)
         final_snapshot = graph.get_state(config)
         final = final_snapshot.values
         if final.get("error"):
@@ -1036,7 +1074,7 @@ def _apply_tailor_edits(
             "output_dir": output_dir,
         },
     )
-    graph.invoke(None, config)
+    invoke_graph_without_native_tracing(graph, None, config)
 
     final_snapshot = graph.get_state(config)
     final = final_snapshot.values
@@ -1134,6 +1172,22 @@ def onboard_user(
         containing intake, resume_label, sections, and optional warnings.
     """
     session_id = str(uuid.uuid4())
+    return _onboard_user_impl(
+        session_id,
+        resume_path,
+        skills_path=skills_path,
+        accomplishments_path=accomplishments_path,
+    )
+
+
+@trace_tool("onboard_user", graph_name="profile")
+def _onboard_user_impl(
+    session_id: str,
+    resume_path: str | None,
+    *,
+    skills_path: str | None = None,
+    accomplishments_path: str | None = None,
+) -> str:
     _log(
         "INFO",
         {
@@ -1166,8 +1220,8 @@ def onboard_user(
         intake=intake if intake else None,
     )
     graph = build_profile_graph()
-    config = make_profile_config(session_id)
-    graph.invoke(initial_state, config)
+    config = make_profile_config(session_id, tool_name="onboard_user")
+    invoke_graph_without_native_tracing(graph, initial_state, config)
     state_values = graph.get_state(config).values
 
     return _ok(session_id, "compile_profile", _build_onboard_data(state_values, warnings))
@@ -1294,10 +1348,15 @@ def get_wiki_pages(session_id: str, page_ids: list[str]) -> str:
         JSON envelope with pages dict {page_id: content}.
         Missing pages return empty string.
     """
+    return _get_wiki_pages_impl(session_id, page_ids)
+
+
+@trace_tool("get_wiki_pages", graph_name="apply")
+def _get_wiki_pages_impl(session_id: str, page_ids: list[str]) -> str:
     _log("INFO", {"tool": "get_wiki_pages", "session_id": session_id, "page_count": len(page_ids)})
 
     graph = build_apply_graph()
-    config = make_apply_config(session_id)
+    config = make_apply_config(session_id, tool_name="get_wiki_pages")
     snapshot = graph.get_state(config)
 
     if not snapshot.values:
@@ -1358,8 +1417,39 @@ def run() -> None:
     """Run the FastMCP stdio server."""
     if _LOG_PATH is None:
         configure_logging(os.environ.get("PI_APPLY_LOG_PATH") or DEFAULT_LOG_PATH)
-    _log("INFO", {"event": "server_start", "transport": "stdio"})
-    mcp.run(transport="stdio", show_banner=False)
+    started_at = time.monotonic()
+    _log(
+        "INFO",
+        {
+            "event": "server_start",
+            "transport": "stdio",
+            "pid": os.getpid(),
+            "cwd": str(Path.cwd()),
+            "log_path": str(_LOG_PATH) if _LOG_PATH is not None else None,
+        },
+    )
+    try:
+        mcp.run(transport="stdio", show_banner=False)
+    except Exception as exc:
+        _log_exception(
+            {
+                "event": "server_crash",
+                "transport": "stdio",
+                "pid": os.getpid(),
+                "uptime_ms": int((time.monotonic() - started_at) * 1000),
+            }
+        )
+        raise RuntimeError("pi-apply MCP stdio server crashed") from exc
+    finally:
+        _log(
+            "INFO",
+            {
+                "event": "server_stop",
+                "transport": "stdio",
+                "pid": os.getpid(),
+                "uptime_ms": int((time.monotonic() - started_at) * 1000),
+            },
+        )
 
 
 if __name__ == "__main__":

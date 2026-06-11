@@ -106,13 +106,66 @@ def test_run_starts_mcp_without_browser_install():
 
     with (
         patch.object(server, "_ensure_browsers") as ensure_browsers,
-        patch.object(server, "_log"),
+        patch.object(server, "_log") as log,
         patch.object(server.mcp, "run") as mcp_run,
     ):
         server.run()
 
     ensure_browsers.assert_not_called()
     mcp_run.assert_called_once_with(transport="stdio", show_banner=False)
+    assert [call.args[1]["event"] for call in log.call_args_list] == [
+        "server_start",
+        "server_stop",
+    ]
+
+
+def test_run_logs_crash_before_raising_explicit_error():
+    import pi_apply.server as server
+
+    error = RuntimeError("transport failed")
+    with (
+        patch.object(server, "_log") as log,
+        patch.object(server, "_log_exception") as log_exception,
+        patch.object(server.mcp, "run", side_effect=error),
+        pytest.raises(RuntimeError, match="pi-apply MCP stdio server crashed") as exc_info,
+    ):
+        server.run()
+
+    actual = {
+        "cause": exc_info.value.__cause__,
+        "crash_event": log_exception.call_args.args[0]["event"],
+        "events": [call.args[1]["event"] for call in log.call_args_list],
+    }
+    expected = {
+        "cause": error,
+        "crash_event": "server_crash",
+        "events": ["server_start", "server_stop"],
+    }
+
+    assert actual == expected
+
+
+def test_run_logs_crash_traceback_before_raising():
+    import pi_apply.server as server
+
+    captured_payloads: list[dict] = []
+    original_log_exception = server._log_exception
+
+    def fake_log_exception(payload: dict) -> None:
+        original_log_exception(payload)
+        captured_payloads.append(payload)
+
+    with (
+        patch.object(server, "_write_log_line"),
+        patch.object(server.logger, "exception"),
+        patch.object(server, "_log"),
+        patch.object(server, "_log_exception", side_effect=fake_log_exception),
+        patch.object(server.mcp, "run", side_effect=RuntimeError("transport failed")),
+        pytest.raises(RuntimeError, match="pi-apply MCP stdio server crashed"),
+    ):
+        server.run()
+
+    assert "RuntimeError: transport failed" in captured_payloads[0]["traceback"]
 
 
 def test_load_jd_rejects_missing_jd_input():
@@ -156,6 +209,64 @@ def test_load_jd_returns_handoff_envelope():
     }
 
     assert result == expected
+
+
+def test_load_jd_trace_payload_carries_jd_text_and_full_output_data(monkeypatch):
+    import pi_apply.server as server
+    from pi_apply.server import load_jd
+
+    captured: dict = {}
+
+    class FakeGraph:
+        def invoke(self, initial_state, config):
+            return {"jd_text": "secret jd body"}
+
+    def fake_traceable(**options):
+        def decorator(func):
+            def wrapped(*args, **kwargs):
+                result = func(*args, **kwargs)
+                captured["inputs"] = options["process_inputs"](
+                    {
+                        "session_id": args[0],
+                        "jd_raw_text": args[1],
+                        "jd_url": None,
+                        "resume_label": "resume",
+                    }
+                )
+                captured["outputs"] = options["process_outputs"](result)
+                return result
+
+            return wrapped
+
+        return decorator
+
+    monkeypatch.setenv("PI_APPLY_TRACE_BACKEND", "langsmith")
+    monkeypatch.setenv("LANGSMITH_TRACING", "true")
+    monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2-secret")
+
+    with (
+        patch.object(server, "list_resumes", return_value=["resume"]),
+        patch.object(server, "build_apply_graph", return_value=FakeGraph()),
+        patch("pi_apply.observability._get_traceable", return_value=fake_traceable),
+    ):
+        result = json.loads(load_jd(jd_raw_text="secret jd body"))
+
+    # Full business content is present in trace; contact PII is redacted (none here).
+    # jd_raw_text survives in inputs; full output data is present (not minimized).
+    actual = {
+        "status": result["status"],
+        "input_jd_raw_text": captured["inputs"]["jd_raw_text"],
+        "output_data_has_jd_text": "jd_text" in captured["outputs"]["data"],
+        "output_data_has_extraction_protocol": "extraction_protocol" in captured["outputs"]["data"],
+    }
+    expected = {
+        "status": "ok",
+        "input_jd_raw_text": "secret jd body",
+        "output_data_has_jd_text": True,
+        "output_data_has_extraction_protocol": True,
+    }
+
+    assert actual == expected
 
 
 def test_load_jd_returns_error_when_session_store_is_readonly():

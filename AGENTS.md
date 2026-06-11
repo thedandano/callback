@@ -40,6 +40,15 @@ uv run pi-apply serve
 # Register the MCP server with Claude and Codex
 uv run pi-apply setup-mcp
 
+# Configure LangSmith tracing env vars in Claude/Codex MCP configs
+uv run pi-apply config langsmith
+uv run pi-apply config status
+uv run pi-apply config env list
+uv run pi-apply config env set PI_APPLY_TRACE_BACKEND langsmith
+uv run pi-apply config env unset PI_APPLY_TRACE_BACKEND
+uv run pi-apply trace-check --target env
+uv run pi-apply trace-check --target codex --emit-test-trace
+
 # All tests
 uv run pytest
 
@@ -65,7 +74,27 @@ uv run python scripts/smoke_profile.py
 - `PI_APPLY_FETCH_WAIT_UNTIL`: Crawl4AI wait strategy.
 - `PI_APPLY_FETCH_OUTER_TIMEOUT_S`: Outer fetch timeout in seconds.
 - `PI_APPLY_FETCH_MAGIC`: Enable or disable Crawl4AI stealth mode.
+- `PI_APPLY_TRACE_BACKEND`: Optional tracing backend. Set to `langsmith` to enable the LangSmith adapter.
+- `LANGSMITH_TRACING`: Must be `true` when `PI_APPLY_TRACE_BACKEND=langsmith`.
+- `LANGSMITH_ENDPOINT`: LangSmith API endpoint. Defaults to `https://api.smith.langchain.com`.
+- `LANGSMITH_API_KEY`: Required for LangSmith tracing.
+- `LANGSMITH_PROJECT`: LangSmith project name. Defaults to `Pi-Apply` when tracing is enabled.
 - `XDG_DATA_HOME`: Overrides resume, wiki, and profile data roots.
+
+`pi-apply setup-mcp` is noninteractive and only registers the MCP server entry.
+Use `pi-apply config langsmith` or `pi-apply config env ...` to write env vars
+into Claude/Codex MCP config `env` maps. Use `pi-apply config status` to compare
+Claude/Codex env maps without writing files. Restart the MCP host after config
+changes. Tracing is opt-in; trace metadata must stay safe and compact:
+`session_id`, `tool_name`, `resume_label`, `graph_name`, and `transport` only.
+Do not include resume text, JD body text, wiki page content, API keys, or edits
+in trace metadata.
+LangSmith decorator spans may additionally include safe booleans/counts and
+state/update key names, but never raw values or file paths. Use
+`pi-apply trace-check` to verify import/auth/project reachability before a demo.
+MCP graph invokes suppress native LangChain/LangGraph auto-tracing because
+pi-apply pauses graphs at host handoff points; rely on sanitized `pi-apply.*`
+tool/node spans for LangSmith demos.
 
 ## Architecture
 
@@ -92,6 +121,7 @@ Layer rules:
 - `apply_nodes.py` and `profile_nodes.py` own workflow step handlers. Keep them focused on graph state transitions and use existing services/adapters for specialized work.
 - Domain services stay deterministic and easy to test: `scorer.py`, `section_map.py`, `jd_data.py`, and `profilecompiler.py`.
 - Infrastructure adapters own I/O boundaries: `jd_fetcher.py`, `extractor.py`, `render/`, `wiki.py`, `repository/`, `bridge.py`, and `version_check.py`.
+- Observability adapters live behind `observability.py`; graph code may ask for trace config, but workflow nodes should not know vendor details.
 
 The key boundary: the host owns LLM reasoning and judgment. pi-apply owns state,
 validation, deterministic scoring, rendering, archival, and explicit workflow
@@ -213,6 +243,7 @@ If the binary is not on `PATH`, set `GO_APPLY_BIN=/path/to/go-apply` before impo
 | `render/` | HTML + Playwright resume rendering |
 | `bridge.py` | go-apply subprocess wrapper |
 | `cli.py` | `pi-apply` CLI entry point |
+| `observability.py` | Trace config port and LangSmith adapter |
 | `version_check.py` | Current-vs-latest release comparison |
 
 ## Change Discipline

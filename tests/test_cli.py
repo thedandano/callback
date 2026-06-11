@@ -23,7 +23,17 @@ def test_cli_help_lists_commands():
     result = runner.invoke(app, ["--help"])
 
     assert result.exit_code == 0
-    commands = ("serve", "setup-mcp", "install-browsers", "uninstall", "update", "logs", "version")
+    commands = (
+        "serve",
+        "setup-mcp",
+        "install-browsers",
+        "uninstall",
+        "update",
+        "logs",
+        "trace-check",
+        "version",
+        "config",
+    )
     for command in commands:
         assert command in result.stdout
 
@@ -153,17 +163,22 @@ def test_logs_prints_trailing_lines(tmp_path):
     assert result.stdout.splitlines() == ["two", "three"]
 
 
-def test_logs_auto_selects_project_log(tmp_path, monkeypatch):
+def test_logs_defaults_to_home_state_log_even_when_project_log_exists(tmp_path, monkeypatch):
+    state_log = tmp_path / "state" / "server.log"
+    state_log.parent.mkdir()
+    state_log.write_text("state\nstate-tail\n", encoding="utf-8")
+
     project_log = tmp_path / ".pi-apply" / "server.log"
     project_log.parent.mkdir()
     project_log.write_text("project\nlog\n", encoding="utf-8")
 
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("pi_apply.cli.DEFAULT_LOG_PATH", state_log)
 
     result = runner.invoke(app, ["logs", "--lines", "1"])
 
     assert result.exit_code == 0
-    assert result.stdout.splitlines() == ["log"]
+    assert result.stdout.splitlines() == ["state-tail"]
 
 
 def test_logs_project_logs_flag_uses_project_log(tmp_path, monkeypatch):
@@ -210,6 +225,33 @@ def test_configure_claude_is_idempotent(tmp_path):
     assert list(second["mcpServers"]) == ["pi-apply"]
 
 
+def test_configure_claude_preserves_existing_env(tmp_path):
+    config_path = tmp_path / ".claude.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "pi-apply": {
+                        "command": "old",
+                        "args": ["serve"],
+                        "env": {"PI_APPLY_TRACE_BACKEND": "langsmith"},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    configure_claude(config_path, "/usr/local/bin/pi-apply")
+
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    assert config["mcpServers"]["pi-apply"] == {
+        "command": "/usr/local/bin/pi-apply",
+        "args": ["serve"],
+        "env": {"PI_APPLY_TRACE_BACKEND": "langsmith"},
+    }
+
+
 def test_configure_codex_creates_entry_and_preserves_unrelated_keys(tmp_path):
     config_path = tmp_path / "config.toml"
     config_path.write_text('model = "gpt-5.5"\n[profiles.default]\nservice_tier = "fast"\n')
@@ -240,6 +282,29 @@ def test_configure_codex_is_idempotent(tmp_path):
 
     assert first == second
     assert list(second["mcp_servers"]) == ["pi-apply"]
+
+
+def test_configure_codex_preserves_existing_env(tmp_path):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        (
+            "[mcp_servers.pi-apply]\n"
+            'args = ["serve"]\n'
+            'command = "old"\n'
+            "[mcp_servers.pi-apply.env]\n"
+            'PI_APPLY_TRACE_BACKEND = "langsmith"\n'
+        ),
+        encoding="utf-8",
+    )
+
+    configure_codex(config_path, "/usr/local/bin/pi-apply")
+
+    config = _read_toml(config_path)
+    assert config["mcp_servers"]["pi-apply"] == {
+        "command": "/usr/local/bin/pi-apply",
+        "args": ["serve"],
+        "env": {"PI_APPLY_TRACE_BACKEND": "langsmith"},
+    }
 
 
 def test_setup_mcp_writes_both_configs(tmp_path):
@@ -275,6 +340,717 @@ def test_setup_mcp_writes_both_configs(tmp_path):
     import sys
 
     mock_run.assert_called_once_with([sys.executable, "-m", "playwright", "install", "chromium"])
+    assert "pi-apply config langsmith" in result.stdout
+    assert "restart your MCP host" in result.stdout
+
+
+def test_setup_mcp_preserves_existing_env(tmp_path):
+    claude_path = tmp_path / ".claude.json"
+    codex_path = tmp_path / "config.toml"
+    claude_path.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "pi-apply": {
+                        "command": "old",
+                        "args": ["serve"],
+                        "env": {"LANGSMITH_PROJECT": "demo"},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    codex_path.write_text(
+        (
+            "[mcp_servers.pi-apply]\n"
+            'args = ["serve"]\n'
+            'command = "old"\n'
+            "[mcp_servers.pi-apply.env]\n"
+            'LANGSMITH_PROJECT = "demo"\n'
+        ),
+        encoding="utf-8",
+    )
+
+    with (
+        patch("pi_apply.cli._resolve_command", return_value="/usr/local/bin/pi-apply"),
+        patch("pi_apply.cli.subprocess.run") as mock_run,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "setup-mcp",
+                "--skip-browsers",
+                "--claude-config",
+                str(claude_path),
+                "--codex-config",
+                str(codex_path),
+            ],
+        )
+
+    assert result.exit_code == 0
+    mock_run.assert_not_called()
+    assert json.loads(claude_path.read_text(encoding="utf-8"))["mcpServers"]["pi-apply"] == {
+        "command": "/usr/local/bin/pi-apply",
+        "args": ["serve"],
+        "env": {"LANGSMITH_PROJECT": "demo"},
+    }
+    assert _read_toml(codex_path)["mcp_servers"]["pi-apply"] == {
+        "command": "/usr/local/bin/pi-apply",
+        "args": ["serve"],
+        "env": {"LANGSMITH_PROJECT": "demo"},
+    }
+
+
+def test_config_env_set_list_unset_claude(tmp_path):
+    claude_path = tmp_path / ".claude.json"
+    codex_path = tmp_path / "config.toml"
+
+    result = runner.invoke(
+        app,
+        [
+            "config",
+            "env",
+            "set",
+            "LANGSMITH_API_KEY",
+            "secret-value",
+            "--target",
+            "claude",
+            "--claude-config",
+            str(claude_path),
+            "--codex-config",
+            str(codex_path),
+        ],
+    )
+
+    config = json.loads(claude_path.read_text(encoding="utf-8"))
+    actual = {
+        "exit_code": result.exit_code,
+        "env": config["mcpServers"]["pi-apply"]["env"],
+        "codex_exists": codex_path.exists(),
+    }
+    expected = {
+        "exit_code": 0,
+        "env": {"LANGSMITH_API_KEY": "secret-value"},
+        "codex_exists": False,
+    }
+
+    assert actual == expected
+
+    list_result = runner.invoke(
+        app,
+        [
+            "config",
+            "env",
+            "list",
+            "--target",
+            "claude",
+            "--claude-config",
+            str(claude_path),
+        ],
+    )
+
+    actual = {
+        "exit_code": list_result.exit_code,
+        "redacted": "LANGSMITH_API_KEY=********" in list_result.stdout,
+        "secret_hidden": "secret-value" not in list_result.stdout,
+    }
+    expected = {
+        "exit_code": 0,
+        "redacted": True,
+        "secret_hidden": True,
+    }
+
+    assert actual == expected
+
+    show_result = runner.invoke(
+        app,
+        [
+            "config",
+            "env",
+            "list",
+            "--target",
+            "claude",
+            "--claude-config",
+            str(claude_path),
+            "--show-secrets",
+        ],
+    )
+
+    actual = {
+        "exit_code": show_result.exit_code,
+        "secret_shown": "LANGSMITH_API_KEY=secret-value" in show_result.stdout,
+    }
+    expected = {
+        "exit_code": 0,
+        "secret_shown": True,
+    }
+
+    assert actual == expected
+
+    unset_result = runner.invoke(
+        app,
+        [
+            "config",
+            "env",
+            "unset",
+            "LANGSMITH_API_KEY",
+            "--target",
+            "claude",
+            "--claude-config",
+            str(claude_path),
+        ],
+    )
+
+    config = json.loads(claude_path.read_text(encoding="utf-8"))
+    actual = {
+        "exit_code": unset_result.exit_code,
+        "env": config["mcpServers"]["pi-apply"]["env"],
+    }
+    expected = {
+        "exit_code": 0,
+        "env": {},
+    }
+
+    assert actual == expected
+
+
+def test_config_env_set_unset_codex(tmp_path):
+    codex_path = tmp_path / "config.toml"
+
+    set_result = runner.invoke(
+        app,
+        [
+            "config",
+            "env",
+            "set",
+            "PI_APPLY_TRACE_BACKEND",
+            "langsmith",
+            "--target",
+            "codex",
+            "--codex-config",
+            str(codex_path),
+        ],
+    )
+
+    config = _read_toml(codex_path)
+    actual = {
+        "exit_code": set_result.exit_code,
+        "env": config["mcp_servers"]["pi-apply"]["env"],
+    }
+    expected = {
+        "exit_code": 0,
+        "env": {"PI_APPLY_TRACE_BACKEND": "langsmith"},
+    }
+
+    assert actual == expected
+
+    unset_result = runner.invoke(
+        app,
+        [
+            "config",
+            "env",
+            "unset",
+            "PI_APPLY_TRACE_BACKEND",
+            "--target",
+            "codex",
+            "--codex-config",
+            str(codex_path),
+        ],
+    )
+
+    config = _read_toml(codex_path)
+    actual = {
+        "exit_code": unset_result.exit_code,
+        "env": config["mcp_servers"]["pi-apply"]["env"],
+    }
+    expected = {
+        "exit_code": 0,
+        "env": {},
+    }
+
+    assert actual == expected
+
+
+def test_config_env_list_prints_literal_target_headers(tmp_path):
+    claude_path = tmp_path / ".claude.json"
+    claude_path.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "pi-apply": {
+                        "command": "pi-apply",
+                        "args": ["serve"],
+                        "env": {"LANGSMITH_PROJECT": "Pi-Apply"},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "config",
+            "env",
+            "list",
+            "--target",
+            "claude",
+            "--claude-config",
+            str(claude_path),
+        ],
+    )
+
+    actual = {
+        "exit_code": result.exit_code,
+        "has_header": "[claude]" in result.stdout,
+        "has_env": "LANGSMITH_PROJECT=Pi-Apply" in result.stdout,
+    }
+    expected = {
+        "exit_code": 0,
+        "has_header": True,
+        "has_env": True,
+    }
+
+    assert actual == expected
+
+
+def test_config_status_reports_same_env_for_all_targets(tmp_path):
+    claude_path = tmp_path / ".claude.json"
+    codex_path = tmp_path / "config.toml"
+    expected_env = {
+        "PI_APPLY_TRACE_BACKEND": "langsmith",
+        "LANGSMITH_TRACING": "true",
+        "LANGSMITH_API_KEY": "lsv2-secret",
+    }
+    claude_path.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "pi-apply": {
+                        "command": "pi-apply",
+                        "args": ["serve"],
+                        "env": expected_env,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    codex_path.write_text(
+        (
+            "[mcp_servers.pi-apply]\n"
+            'command = "pi-apply"\n'
+            'args = ["serve"]\n'
+            "[mcp_servers.pi-apply.env]\n"
+            'PI_APPLY_TRACE_BACKEND = "langsmith"\n'
+            'LANGSMITH_TRACING = "true"\n'
+            'LANGSMITH_API_KEY = "lsv2-secret"\n'
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "config",
+            "status",
+            "--claude-config",
+            str(claude_path),
+            "--codex-config",
+            str(codex_path),
+        ],
+    )
+
+    actual = {
+        "exit_code": result.exit_code,
+        "has_backend": "PI_APPLY_TRACE_BACKEND" in result.stdout,
+        "has_same": "same" in result.stdout,
+        "redacts_key": "LANGSMITH_API_KEY" in result.stdout
+        and "********" in result.stdout
+        and "lsv2-secret" not in result.stdout,
+    }
+    expected = {
+        "exit_code": 0,
+        "has_backend": True,
+        "has_same": True,
+        "redacts_key": True,
+    }
+
+    assert actual == expected
+
+
+def test_config_status_reports_missing_and_different_values(tmp_path):
+    claude_path = tmp_path / ".claude.json"
+    codex_path = tmp_path / "config.toml"
+    claude_path.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "pi-apply": {
+                        "command": "pi-apply",
+                        "args": ["serve"],
+                        "env": {
+                            "LANGSMITH_PROJECT": "Pi-Apply",
+                            "LANGSMITH_TRACING": "true",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    codex_path.write_text(
+        (
+            "[mcp_servers.pi-apply]\n"
+            'command = "pi-apply"\n'
+            'args = ["serve"]\n'
+            "[mcp_servers.pi-apply.env]\n"
+            'LANGSMITH_PROJECT = "Other"\n'
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "config",
+            "status",
+            "--claude-config",
+            str(claude_path),
+            "--codex-config",
+            str(codex_path),
+        ],
+    )
+
+    actual = {
+        "exit_code": result.exit_code,
+        "project_different": "LANGSMITH_PROJECT" in result.stdout and "different" in result.stdout,
+        "tracing_missing": "LANGSMITH_TRACING" in result.stdout and "missing" in result.stdout,
+        "shows_unset_cell": "(unset)" in result.stdout,
+    }
+    expected = {
+        "exit_code": 0,
+        "project_different": True,
+        "tracing_missing": True,
+        "shows_unset_cell": True,
+    }
+
+    assert actual == expected
+
+
+def test_config_status_show_secrets_reveals_secret_values(tmp_path):
+    claude_path = tmp_path / ".claude.json"
+    codex_path = tmp_path / "config.toml"
+    claude_path.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "pi-apply": {
+                        "command": "pi-apply",
+                        "args": ["serve"],
+                        "env": {"LANGSMITH_API_KEY": "lsv2-secret"},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    codex_path.write_text(
+        (
+            "[mcp_servers.pi-apply]\n"
+            'command = "pi-apply"\n'
+            'args = ["serve"]\n'
+            "[mcp_servers.pi-apply.env]\n"
+            'LANGSMITH_API_KEY = "lsv2-secret"\n'
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "config",
+            "status",
+            "--show-secrets",
+            "--claude-config",
+            str(claude_path),
+            "--codex-config",
+            str(codex_path),
+        ],
+    )
+
+    actual = {
+        "exit_code": result.exit_code,
+        "shows_secret": "lsv2-secret" in result.stdout,
+        "does_not_redact": "********" not in result.stdout,
+    }
+    expected = {
+        "exit_code": 0,
+        "shows_secret": True,
+        "does_not_redact": True,
+    }
+
+    assert actual == expected
+
+
+def test_config_status_target_claude_does_not_read_or_write_codex(tmp_path):
+    claude_path = tmp_path / ".claude.json"
+    codex_path = tmp_path / "config.toml"
+    claude_path.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "pi-apply": {
+                        "command": "pi-apply",
+                        "args": ["serve"],
+                        "env": {"LANGSMITH_PROJECT": "Pi-Apply"},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "config",
+            "status",
+            "--target",
+            "claude",
+            "--claude-config",
+            str(claude_path),
+            "--codex-config",
+            str(codex_path),
+        ],
+    )
+
+    actual = {
+        "exit_code": result.exit_code,
+        "has_claude_value": "Pi-Apply" in result.stdout,
+        "codex_not_checked": "not checked" in result.stdout,
+        "codex_exists": codex_path.exists(),
+    }
+    expected = {
+        "exit_code": 0,
+        "has_claude_value": True,
+        "codex_not_checked": True,
+        "codex_exists": False,
+    }
+
+    assert actual == expected
+
+
+def test_config_status_missing_env_maps_reports_unset_without_writing(tmp_path):
+    claude_path = tmp_path / ".claude.json"
+    codex_path = tmp_path / "config.toml"
+
+    result = runner.invoke(
+        app,
+        [
+            "config",
+            "status",
+            "--claude-config",
+            str(claude_path),
+            "--codex-config",
+            str(codex_path),
+        ],
+    )
+
+    actual = {
+        "exit_code": result.exit_code,
+        "has_none": "(none)" in result.stdout,
+        "has_unset": "unset" in result.stdout,
+        "claude_exists": claude_path.exists(),
+        "codex_exists": codex_path.exists(),
+    }
+    expected = {
+        "exit_code": 0,
+        "has_none": True,
+        "has_unset": True,
+        "claude_exists": False,
+        "codex_exists": False,
+    }
+
+    assert actual == expected
+
+
+def test_config_env_rejects_invalid_name_without_writing(tmp_path):
+    claude_path = tmp_path / ".claude.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "config",
+            "env",
+            "set",
+            "bad-name",
+            "value",
+            "--target",
+            "claude",
+            "--claude-config",
+            str(claude_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "invalid env var name" in result.stderr
+    assert not claude_path.exists()
+
+
+def test_config_langsmith_sets_expected_env_for_all_targets(tmp_path):
+    claude_path = tmp_path / ".claude.json"
+    codex_path = tmp_path / "config.toml"
+
+    result = runner.invoke(
+        app,
+        [
+            "config",
+            "langsmith",
+            "--api-key",
+            "lsv2-key",
+            "--project",
+            "pi-apply-demo",
+            "--target",
+            "all",
+            "--claude-config",
+            str(claude_path),
+            "--codex-config",
+            str(codex_path),
+        ],
+    )
+
+    expected_env = {
+        "PI_APPLY_TRACE_BACKEND": "langsmith",
+        "LANGSMITH_TRACING": "true",
+        "LANGSMITH_API_KEY": "lsv2-key",
+        "LANGSMITH_ENDPOINT": "https://api.smith.langchain.com",
+        "LANGSMITH_PROJECT": "pi-apply-demo",
+    }
+    assert result.exit_code == 0
+    assert (
+        json.loads(claude_path.read_text(encoding="utf-8"))["mcpServers"]["pi-apply"]["env"]
+        == expected_env
+    )
+    assert _read_toml(codex_path)["mcp_servers"]["pi-apply"]["env"] == expected_env
+
+
+def test_config_langsmith_defaults_to_pi_apply_project_and_langsmith_endpoint(tmp_path):
+    claude_path = tmp_path / ".claude.json"
+    codex_path = tmp_path / "config.toml"
+
+    result = runner.invoke(
+        app,
+        [
+            "config",
+            "langsmith",
+            "--api-key",
+            "lsv2-key",
+            "--target",
+            "claude",
+            "--claude-config",
+            str(claude_path),
+            "--codex-config",
+            str(codex_path),
+        ],
+    )
+
+    actual = {
+        "exit_code": result.exit_code,
+        "env": json.loads(claude_path.read_text(encoding="utf-8"))["mcpServers"]["pi-apply"]["env"],
+    }
+    expected = {
+        "exit_code": 0,
+        "env": {
+            "PI_APPLY_TRACE_BACKEND": "langsmith",
+            "LANGSMITH_TRACING": "true",
+            "LANGSMITH_API_KEY": "lsv2-key",
+            "LANGSMITH_ENDPOINT": "https://api.smith.langchain.com",
+            "LANGSMITH_PROJECT": "Pi-Apply",
+        },
+    }
+
+    assert actual == expected
+
+
+def test_trace_check_reports_missing_langsmith_key(monkeypatch):
+    monkeypatch.setenv("PI_APPLY_TRACE_BACKEND", "langsmith")
+    monkeypatch.setenv("LANGSMITH_TRACING", "true")
+    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+
+    result = runner.invoke(app, ["trace-check"])
+
+    assert result.exit_code == 1
+    assert "LANGSMITH_API_KEY is required" in result.stderr
+
+
+def test_trace_check_claude_reads_config_and_emits_safe_trace(tmp_path):
+    claude_path = tmp_path / ".claude.json"
+    claude_path.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "pi-apply": {
+                        "command": "pi-apply",
+                        "args": ["serve"],
+                        "env": {
+                            "PI_APPLY_TRACE_BACKEND": "langsmith",
+                            "LANGSMITH_TRACING": "true",
+                            "LANGSMITH_API_KEY": "lsv2-secret",
+                            "LANGSMITH_PROJECT": "pi-apply-demo",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class FakeClient:
+        def list_projects(self, limit: int):
+            assert limit == 1
+            return iter([object()])
+
+    with (
+        patch("pi_apply.cli._make_langsmith_client", return_value=FakeClient()) as make_client,
+        patch("pi_apply.cli.emit_trace_check_probe") as emit_trace,
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "trace-check",
+                "--target",
+                "claude",
+                "--claude-config",
+                str(claude_path),
+                "--emit-test-trace",
+            ],
+        )
+
+    assert result.exit_code == 0
+    assert "claude: ok" in result.stdout
+    assert "lsv2-secret" not in result.stdout
+    make_client.assert_called_once()
+    emit_trace.assert_called_once()
+
+
+def test_trace_check_redacts_secret_on_auth_failure(monkeypatch):
+    monkeypatch.setenv("PI_APPLY_TRACE_BACKEND", "langsmith")
+    monkeypatch.setenv("LANGSMITH_TRACING", "true")
+    monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2-secret")
+
+    class FakeClient:
+        def list_projects(self, limit: int):
+            raise RuntimeError("bad token lsv2-secret")
+
+    with patch("pi_apply.cli._make_langsmith_client", return_value=FakeClient()):
+        result = runner.invoke(app, ["trace-check"])
+
+    assert result.exit_code == 1
+    assert "bad token" in result.stderr
+    assert "lsv2-secret" not in result.stderr
 
 
 def test_setup_mcp_skip_browsers_writes_configs_without_install(tmp_path):

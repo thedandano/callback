@@ -31,6 +31,7 @@ from pi_apply.apply_nodes import (
     score_initial,
     tailor,
 )
+from pi_apply.observability import build_graph_config
 from pi_apply.state import ApplyState
 
 DB_PATH = Path.home() / ".local" / "share" / "pi-apply" / "apply-sessions.db"
@@ -63,9 +64,21 @@ REPORT_NODE = "report"
 FINALIZE_NODE = "finalize"
 
 
-def make_config(session_id: str) -> RunnableConfig:
+def make_config(
+    session_id: str,
+    *,
+    tool_name: str | None = None,
+    resume_label: str | None = None,
+) -> RunnableConfig:
     """Create a RunnableConfig for a session."""
-    return RunnableConfig(configurable={"thread_id": session_id})
+    if tool_name is None:
+        return RunnableConfig(configurable={"thread_id": session_id})
+    return build_graph_config(
+        session_id=session_id,
+        graph_name="apply",
+        tool_name=tool_name,
+        resume_label=resume_label,
+    )
 
 
 def build_apply_graph(db_path: Path = DB_PATH):
