@@ -2,8 +2,8 @@
 
 import pytest
 
-from pi_apply.apply_nodes import _run_score, parse_final, report, score_final, score_initial
-from pi_apply.state import ApplyState
+from callback.apply_nodes import _run_score, parse_final, report, score_final, score_initial
+from callback.state import ApplyState
 
 RESUME_WITH_KEYWORDS = (
     "Experience\n"

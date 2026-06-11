@@ -1,5 +1,5 @@
 def main():
-    print("Hello from pi-apply!")
+    print("Hello from callback!")
 
 
 if __name__ == "__main__":

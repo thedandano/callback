@@ -1,4 +1,4 @@
-"""Command-line interface for pi-apply."""
+"""Command-line interface for callback."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from pi_apply.observability import (
+from callback.observability import (
     DEFAULT_LANGSMITH_ENDPOINT,
     DEFAULT_LANGSMITH_PROJECT,
     emit_trace_check_probe,
@@ -36,19 +36,19 @@ config_app.add_typer(env_app, name="env")
 console = Console(soft_wrap=True)
 error_console = Console(stderr=True, soft_wrap=True)
 
-SERVER_NAME = "pi-apply"
-SERVER_COMMAND = "pi-apply"
+SERVER_NAME = "callback"
+SERVER_COMMAND = "callback"
 SERVER_ARGS = ["serve"]
 PROJECT_LOG_SERVER_ARGS = ["serve", "--project-logs"]
-DEFAULT_LOG_PATH = Path("~/.local/state/pi-apply/server.log").expanduser()
+DEFAULT_LOG_PATH = Path("~/.local/state/callback/server.log").expanduser()
 DEFAULT_CLAUDE_CONFIG = Path("~/.claude.json").expanduser()
 DEFAULT_CODEX_CONFIG = Path("~/.codex/config.toml").expanduser()
-_DATA_DIR = Path("~/.local/share/pi-apply").expanduser()
-_STATE_DIR = Path("~/.local/state/pi-apply").expanduser()
+_DATA_DIR = Path("~/.local/share/callback").expanduser()
+_STATE_DIR = Path("~/.local/state/callback").expanduser()
 ENV_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 SECRET_ENV_MARKERS = ("KEY", "TOKEN", "SECRET", "PASSWORD")
 LANGSMITH_ENV_DEFAULTS = {
-    "PI_APPLY_TRACE_BACKEND": "langsmith",
+    "CALLBACK_TRACE_BACKEND": "langsmith",
     "LANGSMITH_TRACING": "true",
     "LANGSMITH_ENDPOINT": DEFAULT_LANGSMITH_ENDPOINT,
     "LANGSMITH_PROJECT": DEFAULT_LANGSMITH_PROJECT,
@@ -56,7 +56,7 @@ LANGSMITH_ENV_DEFAULTS = {
 CONFIG_TARGETS = ("claude", "codex", "all")
 TRACE_CHECK_TARGETS = ("env", "claude", "codex", "all")
 LANGSMITH_TRACE_KEYS = (
-    "PI_APPLY_TRACE_BACKEND",
+    "CALLBACK_TRACE_BACKEND",
     "LANGSMITH_TRACING",
     "LANGSMITH_API_KEY",
     "LANGSMITH_PROJECT",
@@ -75,7 +75,7 @@ class TraceCheckError(Exception):
 
 
 def _resolve_command() -> str:
-    """Return absolute path to the pi-apply binary, falling back to the bare name."""
+    """Return absolute path to the callback binary, falling back to the bare name."""
     return shutil.which(SERVER_COMMAND) or SERVER_COMMAND
 
 
@@ -94,7 +94,7 @@ def mcp_server_config(
 
 
 def _project_log_path() -> Path:
-    return Path.cwd() / ".pi-apply" / "server.log"
+    return Path.cwd() / ".callback" / "server.log"
 
 
 def _resolve_log_path(
@@ -429,7 +429,7 @@ def _build_config_status_table(
     *,
     show_secrets: bool,
 ) -> Table:
-    table = Table(title="pi-apply MCP env status")
+    table = Table(title="callback MCP env status")
     table.add_column("env var")
     table.add_column("Claude")
     table.add_column("Codex")
@@ -460,8 +460,8 @@ def _env_value_enabled(value: str | None) -> bool:
 
 
 def _validate_trace_env(env: Mapping[str, str]) -> None:
-    if env.get("PI_APPLY_TRACE_BACKEND", "").strip().lower() != "langsmith":
-        raise TraceCheckError("PI_APPLY_TRACE_BACKEND=langsmith is required")
+    if env.get("CALLBACK_TRACE_BACKEND", "").strip().lower() != "langsmith":
+        raise TraceCheckError("CALLBACK_TRACE_BACKEND=langsmith is required")
     if not _env_value_enabled(env.get("LANGSMITH_TRACING")):
         raise TraceCheckError("LANGSMITH_TRACING=true is required")
     if not env.get("LANGSMITH_API_KEY"):
@@ -596,13 +596,13 @@ def serve(
         bool,
         typer.Option(
             "--project-logs",
-            help="Write logs to .pi-apply/server.log under the current project.",
+            help="Write logs to .callback/server.log under the current project.",
         ),
     ] = False,
 ) -> None:
-    """Start the pi-apply MCP server."""
+    """Start the callback MCP server."""
     resolved_log_path = _resolve_log_path(log_path, project_logs=project_logs)
-    os.environ["PI_APPLY_LOG_PATH"] = str(resolved_log_path)
+    os.environ["CALLBACK_LOG_PATH"] = str(resolved_log_path)
     startup_event = json.dumps(
         {
             "event": "cli_serve_start",
@@ -625,7 +625,7 @@ def serve(
             )
         )
 
-    from pi_apply.server import configure_logging, run
+    from callback.server import configure_logging, run
 
     configure_logging(str(resolved_log_path))
 
@@ -650,7 +650,7 @@ def setup_mcp(
         ),
     ] = False,
 ) -> None:
-    """Install pi-apply MCP server entries for Claude and Codex."""
+    """Install callback MCP server entries for Claude and Codex."""
     claude_path = claude_config or DEFAULT_CLAUDE_CONFIG
     codex_path = codex_config or DEFAULT_CODEX_CONFIG
     command = _resolve_command()
@@ -658,12 +658,12 @@ def setup_mcp(
         _validate_claude_config(claude_path)
         _validate_codex_config(codex_path)
         if not skip_browsers:
-            console.print("Installing Playwright Chromium for pi-apply...")
+            console.print("Installing Playwright Chromium for callback...")
             browser_install_returncode = _install_browsers()
             if browser_install_returncode != 0:
                 error_console.print(
                     "setup-mcp failed: browser install failed; "
-                    "run `pi-apply install-browsers` for details"
+                    "run `callback install-browsers` for details"
                 )
                 raise typer.Exit(browser_install_returncode)
         configure_claude(claude_path, command)
@@ -674,9 +674,9 @@ def setup_mcp(
 
     console.print(f"Updated Claude config: {claude_path}")
     console.print(f"Updated Codex config: {codex_path}")
-    console.print("Next: run `pi-apply config langsmith` to enable LangSmith tracing.")
+    console.print("Next: run `callback config langsmith` to enable LangSmith tracing.")
     console.print("Then restart your MCP host so Claude or Codex reloads the config.")
-    console.print("Use `pi-apply logs --follow` to watch server logs.")
+    console.print("Use `callback logs --follow` to watch server logs.")
 
 
 @config_app.command("langsmith")
@@ -735,7 +735,7 @@ def config_langsmith(
 
     console.print(f"Updated LangSmith env for: {', '.join(targets)}")
     console.print("Restart your MCP host so it reloads the new environment.")
-    console.print("Use `pi-apply logs --follow` to inspect startup or tracing warnings.")
+    console.print("Use `callback logs --follow` to inspect startup or tracing warnings.")
 
 
 @config_app.command("status")
@@ -757,7 +757,7 @@ def config_status(
         typer.Option("--show-secrets", help="Print secret-like values instead of redacting."),
     ] = False,
 ) -> None:
-    """Show pi-apply MCP env status for Claude and Codex."""
+    """Show callback MCP env status for Claude and Codex."""
     try:
         targets = _target_names(target)
         paths = _config_paths(claude_config=claude_config, codex_config=codex_config)
@@ -786,7 +786,7 @@ def config_env_set(
         typer.Option("--codex-config", help="Codex TOML config path."),
     ] = None,
 ) -> None:
-    """Set one MCP environment variable for pi-apply."""
+    """Set one MCP environment variable for callback."""
     try:
         env_key = _validate_env_name(key)
         targets = _target_names(target)
@@ -820,7 +820,7 @@ def config_env_unset(
         typer.Option("--codex-config", help="Codex TOML config path."),
     ] = None,
 ) -> None:
-    """Unset one MCP environment variable for pi-apply."""
+    """Unset one MCP environment variable for callback."""
     try:
         env_key = _validate_env_name(key)
         targets = _target_names(target)
@@ -857,7 +857,7 @@ def config_env_list(
         typer.Option("--show-secrets", help="Print secret-like values instead of redacting."),
     ] = False,
 ) -> None:
-    """List pi-apply MCP environment variables."""
+    """List callback MCP environment variables."""
     try:
         targets = _target_names(target)
         paths = _config_paths(claude_config=claude_config, codex_config=codex_config)
@@ -947,11 +947,11 @@ def logs(
         bool,
         typer.Option(
             "--project-logs",
-            help="Read logs from .pi-apply/server.log under the current project.",
+            help="Read logs from .callback/server.log under the current project.",
         ),
     ] = False,
 ) -> None:
-    """Print the tail of the pi-apply server log."""
+    """Print the tail of the callback server log."""
     resolved_log_path = _resolve_log_path(
         log_path,
         project_logs=project_logs,
@@ -987,7 +987,7 @@ def uninstall(
         typer.Option("--purge", help="Also delete application data and state directories."),
     ] = False,
 ) -> None:
-    """Remove pi-apply MCP server entries from Claude and Codex configs."""
+    """Remove callback MCP server entries from Claude and Codex configs."""
     claude_path = DEFAULT_CLAUDE_CONFIG
     codex_path = DEFAULT_CODEX_CONFIG
     try:
@@ -1008,14 +1008,14 @@ def uninstall(
 
 @app.command()
 def update() -> None:
-    """Upgrade pi-apply to the latest version via uv."""
-    result = subprocess.run(["uv", "tool", "upgrade", "pi-apply"])
+    """Upgrade callback to the latest version via uv."""
+    result = subprocess.run(["uv", "tool", "upgrade", "callback"])
     raise typer.Exit(result.returncode)
 
 
 def _read_build_version() -> str | None:
     try:
-        from pi_apply._build_info import BUILD_VERSION
+        from callback._build_info import BUILD_VERSION
     except ImportError:
         return None
     return BUILD_VERSION or None
@@ -1025,16 +1025,16 @@ def _display_version() -> str:
     build_version = _read_build_version()
     if build_version:
         return build_version
-    return importlib.metadata.version("pi-apply")
+    return importlib.metadata.version("callback")
 
 
 @app.command()
 def version() -> None:
-    """Print the installed pi-apply build version."""
+    """Print the installed callback build version."""
     try:
         console.print(_display_version())
     except importlib.metadata.PackageNotFoundError as exc:
-        error_console.print("pi-apply is not installed as a package")
+        error_console.print("callback is not installed as a package")
         raise typer.Exit(1) from exc
 
 

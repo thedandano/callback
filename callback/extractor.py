@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from pi_apply.section_map import (
+from callback.section_map import (
     ContactInfo,
     EducationEntry,
     ExperienceEntry,

@@ -1,11 +1,11 @@
-"""Tests for pi_apply.wikirenderer — WikiRenderer."""
+"""Tests for callback.wikirenderer — WikiRenderer."""
 
 from pathlib import Path
 
-from pi_apply.profilecompiler import ProfileCompiler
-from pi_apply.state import CompiledProfile, CreatedStory
-from pi_apply.wiki import WikiStore
-from pi_apply.wikirenderer import WikiRenderer
+from callback.profilecompiler import ProfileCompiler
+from callback.state import CompiledProfile, CreatedStory
+from callback.wiki import WikiStore
+from callback.wikirenderer import WikiRenderer
 
 
 def _make_story(

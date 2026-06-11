@@ -1,4 +1,4 @@
-"""Unit tests for pi_apply.bridge module."""
+"""Unit tests for callback.bridge module."""
 
 import importlib
 import sys
@@ -16,14 +16,14 @@ def test_resolution_failure_raises_environment_error(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda _: None)
 
     # Remove the module from sys.modules to force reimport
-    sys.modules.pop("pi_apply.bridge", None)
+    sys.modules.pop("callback.bridge", None)
 
     # Attempt to import should raise EnvironmentError
     with pytest.raises(EnvironmentError, match="GO_APPLY_BIN"):
-        importlib.import_module("pi_apply.bridge")
+        importlib.import_module("callback.bridge")
 
     # Clean up for other tests
-    sys.modules.pop("pi_apply.bridge", None)
+    sys.modules.pop("callback.bridge", None)
 
 
 def test_resolution_from_env_var(monkeypatch, tmp_path):
@@ -36,14 +36,14 @@ def test_resolution_from_env_var(monkeypatch, tmp_path):
     monkeypatch.setenv("GO_APPLY_BIN", str(fake_bin))
 
     # Remove the module to force reimport
-    sys.modules.pop("pi_apply.bridge", None)
+    sys.modules.pop("callback.bridge", None)
 
     # Import should succeed
-    bridge = importlib.import_module("pi_apply.bridge")
+    bridge = importlib.import_module("callback.bridge")
     assert str(fake_bin) == bridge._BIN
 
     # Clean up
-    sys.modules.pop("pi_apply.bridge", None)
+    sys.modules.pop("callback.bridge", None)
 
 
 def test_resolution_from_path(monkeypatch):
@@ -57,19 +57,19 @@ def test_resolution_from_path(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda _: fake_bin_path)
 
     # Remove the module to force reimport
-    sys.modules.pop("pi_apply.bridge", None)
+    sys.modules.pop("callback.bridge", None)
 
     # Import should succeed
-    bridge = importlib.import_module("pi_apply.bridge")
+    bridge = importlib.import_module("callback.bridge")
     assert fake_bin_path == bridge._BIN
 
     # Clean up
-    sys.modules.pop("pi_apply.bridge", None)
+    sys.modules.pop("callback.bridge", None)
 
 
 def test_run_pdfrender_success():
     """Test successful run_pdfrender execution."""
-    import pi_apply.bridge as bridge
+    import callback.bridge as bridge
 
     expected_output = b"pdf-bytes"
 
@@ -93,7 +93,7 @@ def test_run_pdfrender_success():
 
 def test_run_pdfrender_failure():
     """Test run_pdfrender raises SubprocessError on failure."""
-    import pi_apply.bridge as bridge
+    import callback.bridge as bridge
 
     with patch("subprocess.run") as mock_run:
         mock_result = MagicMock()
@@ -113,7 +113,7 @@ def test_run_pdfrender_failure():
 
 def test_run_survival_success():
     """Test successful run_survival execution."""
-    import pi_apply.bridge as bridge
+    import callback.bridge as bridge
 
     expected_output = "test output"
 
@@ -137,7 +137,7 @@ def test_run_survival_success():
 
 def test_run_survival_failure():
     """Test run_survival raises SubprocessError on failure."""
-    import pi_apply.bridge as bridge
+    import callback.bridge as bridge
 
     with patch("subprocess.run") as mock_run:
         mock_result = MagicMock()
@@ -157,7 +157,7 @@ def test_run_survival_failure():
 
 def test_subprocess_error_attributes():
     """Test SubprocessError has correct attributes."""
-    import pi_apply.bridge as bridge
+    import callback.bridge as bridge
 
     cmd = ["test", "command"]
     returncode = 42

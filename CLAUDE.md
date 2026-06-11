@@ -14,11 +14,11 @@ Every scoring, tailoring, and feedback decision must serve this goal:
 
 ## Project Context
 
-pi-apply is a LangGraph MCP server (stdio only) that replaces the Go FSM in go-apply.
+callback is a LangGraph MCP server (stdio only) that replaces the Go FSM in go-apply.
 Differentiator: defensible LangGraph stateful-agent design for an AI-engineering portfolio.
 Finite maintenance horizon — build only what the walking skeleton needs (see `BRIEF.md`).
 
-State persists via LangGraph SQLite checkpointers under `~/.local/share/pi-apply/`.
+State persists via LangGraph SQLite checkpointers under `~/.local/share/callback/`.
 
 ## Commands
 
@@ -30,17 +30,17 @@ uv sync
 uv run playwright install chromium
 
 # Run the MCP server (stdio). go-apply binary must be on PATH or set GO_APPLY_BIN.
-GO_APPLY_BIN=/path/to/go-apply uv run python -m pi_apply.server
+GO_APPLY_BIN=/path/to/go-apply uv run python -m callback.server
 
 # Register MCP server entries and configure tracing env vars
-uv run pi-apply setup-mcp
-uv run pi-apply config langsmith
-uv run pi-apply config status
-uv run pi-apply config env list
-uv run pi-apply config env set PI_APPLY_TRACE_BACKEND langsmith
-uv run pi-apply config env unset PI_APPLY_TRACE_BACKEND
-uv run pi-apply trace-check --target env
-uv run pi-apply trace-check --target codex --emit-test-trace
+uv run callback setup-mcp
+uv run callback config langsmith
+uv run callback config status
+uv run callback config env list
+uv run callback config env set CALLBACK_TRACE_BACKEND langsmith
+uv run callback config env unset CALLBACK_TRACE_BACKEND
+uv run callback trace-check --target env
+uv run callback trace-check --target codex --emit-test-trace
 
 # All tests
 uv run pytest
@@ -60,30 +60,30 @@ uv run python scripts/smoke_profile.py
 
 ## Env Vars
 
-- `PI_APPLY_APPS_DIR`: Override where application PDFs and JSON archives are written.
-- `PI_APPLY_FETCH_PAGE_TIMEOUT_MS`: Override Crawl4AI per-page timeout in milliseconds. Default: `30000`.
-- `PI_APPLY_FETCH_WAIT_UNTIL`: Override Crawl4AI wait strategy. Default: `networkidle`.
-- `PI_APPLY_FETCH_OUTER_TIMEOUT_S`: Override the outer fetch timeout in seconds. Default: `35`.
-- `PI_APPLY_FETCH_MAGIC`: Toggle Crawl4AI stealth mode. Default: `1`; set `0`, `false`, or empty string to disable.
-- `PI_APPLY_TRACE_BACKEND`: Optional tracing backend. Set to `langsmith` to enable LangSmith tracing.
-- `LANGSMITH_TRACING`: Must be `true` when `PI_APPLY_TRACE_BACKEND=langsmith`.
+- `CALLBACK_APPS_DIR`: Override where application PDFs and JSON archives are written.
+- `CALLBACK_FETCH_PAGE_TIMEOUT_MS`: Override Crawl4AI per-page timeout in milliseconds. Default: `30000`.
+- `CALLBACK_FETCH_WAIT_UNTIL`: Override Crawl4AI wait strategy. Default: `networkidle`.
+- `CALLBACK_FETCH_OUTER_TIMEOUT_S`: Override the outer fetch timeout in seconds. Default: `35`.
+- `CALLBACK_FETCH_MAGIC`: Toggle Crawl4AI stealth mode. Default: `1`; set `0`, `false`, or empty string to disable.
+- `CALLBACK_TRACE_BACKEND`: Optional tracing backend. Set to `langsmith` to enable LangSmith tracing.
+- `LANGSMITH_TRACING`: Must be `true` when `CALLBACK_TRACE_BACKEND=langsmith`.
 - `LANGSMITH_ENDPOINT`: LangSmith API endpoint. Defaults to `https://api.smith.langchain.com`.
 - `LANGSMITH_API_KEY`: Required for LangSmith tracing.
-- `LANGSMITH_PROJECT`: LangSmith project name. Defaults to `Pi-Apply` when tracing is enabled.
+- `LANGSMITH_PROJECT`: LangSmith project name. Defaults to `Callback` when tracing is enabled.
 
 `setup-mcp` only registers the MCP server and stays noninteractive for install
-scripts. Use `pi-apply config langsmith` or `pi-apply config env ...` to write
+scripts. Use `callback config langsmith` or `callback config env ...` to write
 env vars into Claude/Codex MCP config `env` maps. Use
-`pi-apply config status` to compare Claude/Codex env maps without writing files,
+`callback config status` to compare Claude/Codex env maps without writing files,
 then restart the MCP host after config changes.
 Tracing metadata must stay safe: `session_id`, `tool_name`, `resume_label`,
 `graph_name`, and `transport` only. Never include resume text, JD body text,
 wiki content, API keys, or proposed edits in trace metadata.
 LangSmith decorator spans may also include safe booleans/counts and state/update
-key names. Use `pi-apply trace-check` to verify import/auth/project reachability
+key names. Use `callback trace-check` to verify import/auth/project reachability
 before a demo.
 MCP graph invokes suppress native LangChain/LangGraph auto-tracing because
-pi-apply pauses graphs at host handoff points; rely on sanitized `pi-apply.*`
+callback pauses graphs at host handoff points; rely on sanitized `callback.*`
 tool/node spans for LangSmith demos.
 
 ## Architecture
@@ -109,9 +109,9 @@ All tools return JSON envelopes via `_ok` / `_err`:
 
 ### Agent MCP Playbook
 
-When the user asks to use pi-apply for a job, call `load_jd`, extract JDData as the host, call `submit_keywords`, follow `workflow.next_tool`, and finish with `submit_tailor`. Return `data.pdf_path`, `data.archive_path`, `data.report`, and `data.outcome` to the user. If `workflow.next_tool` is `onboard_user` or `create_story`, collect the missing profile evidence, compile the profile, then restart the job flow with `load_jd`.
+When the user asks to use callback for a job, call `load_jd`, extract JDData as the host, call `submit_keywords`, follow `workflow.next_tool`, and finish with `submit_tailor`. Return `data.pdf_path`, `data.archive_path`, `data.report`, and `data.outcome` to the user. If `workflow.next_tool` is `onboard_user` or `create_story`, collect the missing profile evidence, compile the profile, then restart the job flow with `load_jd`.
 
-If you run in a sandboxed filesystem, pi-apply's default output (`~/.local/share/pi-apply/applications/`) is outside your reach. Before calling `submit_tailor`, ask the user for a full output directory inside your sandbox and pass it as `output_dir`; the final PDF (`data.pdf_path`) is then written there directly.
+If you run in a sandboxed filesystem, callback's default output (`~/.local/share/callback/applications/`) is outside your reach. Before calling `submit_tailor`, ask the user for a full output directory inside your sandbox and pass it as `output_dir`; the final PDF (`data.pdf_path`) is then written there directly.
 
 ### Apply graph (`apply_graph.py`, `apply_nodes.py`)
 
@@ -122,9 +122,9 @@ jd_fetch → keywords_accept → parse_initial → score_initial → tailor → 
         → parse_final → score_final → report → finalize → END
 ```
 
-Checkpointer DB: `~/.local/share/pi-apply/apply-sessions.db`.
+Checkpointer DB: `~/.local/share/callback/apply-sessions.db`.
 State schema: `ApplyState` in `state.py` (single Pydantic model — entire graph state).
-Keyword extraction is host-owned: `pi-apply` returns the JD markdown and extraction protocol, then stores only validated JDData submitted by the host.
+Keyword extraction is host-owned: `callback` returns the JD markdown and extraction protocol, then stores only validated JDData submitted by the host.
 
 ### Profile graph (`profile_graph.py`, `profile_nodes.py`)
 
@@ -140,7 +140,7 @@ check_profile ──(no profile)──▶ onboard ─▶ compile_profile ─▶ 
                                                   END (no orphans)
 ```
 
-Checkpointer DB: `~/.local/share/pi-apply/profile-sessions.db`.
+Checkpointer DB: `~/.local/share/callback/profile-sessions.db`.
 State schema: `ProfileState` in `state.py`.
 
 **Note:** `onboard_user` enters the profile graph. `compile_profile` and
@@ -165,7 +165,7 @@ Pure deterministic Python — no I/O, no LLM calls. Ported from go-apply's `scor
 
 `bridge.py` resolves the go-apply binary at **import time** via `_resolve_binary()`. If the binary is not on `PATH`, set `GO_APPLY_BIN=/path/to/go-apply` before importing. In tests, `conftest.py` re-imports the module against a fake binary after resolution tests evict it from `sys.modules` — preserve this fixture when adding bridge tests.
 
-The apply graph's `render` node uses HTML + Playwright via `pi_apply.render.html_builder`.
+The apply graph's `render` node uses HTML + Playwright via `callback.render.html_builder`.
 
 ### Module map
 

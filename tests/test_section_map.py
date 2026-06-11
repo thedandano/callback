@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from pi_apply.section_map import (
+from callback.section_map import (
     ContactInfo,
     EditResult,
     EducationEntry,
@@ -46,7 +46,7 @@ def make_full_section_map() -> SectionMap:
         ],
         projects=[
             ProjectEntry(
-                name="pi-apply",
+                name="callback",
                 description="LangGraph MCP server for resume tailoring",
                 bullets=["Implemented holistic tailor pass", "Reduced ATS rejection rate"],
             )

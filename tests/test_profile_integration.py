@@ -9,10 +9,10 @@ from pathlib import Path
 
 import pytest
 
-import pi_apply.server as server_module
-import pi_apply.wiki as wiki_module
-from pi_apply.profile_graph import build_profile_graph
-from pi_apply.server import compile_profile, create_story, onboard_user
+import callback.server as server_module
+import callback.wiki as wiki_module
+from callback.profile_graph import build_profile_graph
+from callback.server import compile_profile, create_story, onboard_user
 
 RESUME_TEXT = """\
 Jane Doe

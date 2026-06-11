@@ -5,10 +5,10 @@ import base64
 import re
 from pathlib import Path
 
-import pi_apply.render.html_builder as render_builder
-from pi_apply import extractor as resume_extractor
-from pi_apply.apply_nodes import parse_final, render
-from pi_apply.render.html_builder import (
+import callback.render.html_builder as render_builder
+from callback import extractor as resume_extractor
+from callback.apply_nodes import parse_final, render
+from callback.render.html_builder import (
     _render_async,
     _render_html,
     _render_page_warnings,
@@ -18,12 +18,12 @@ from pi_apply.render.html_builder import (
     _strip_bullet,
     render_resume,
 )
-from pi_apply.scorer import ScoringConfig, _score_ats
-from pi_apply.state import ApplyState, TailoredResume
+from callback.scorer import ScoringConfig, _score_ats
+from callback.state import ApplyState, TailoredResume
 
 
 def test_render_produces_real_pdf(tmp_path, monkeypatch):
-    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path))
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
     state = ApplyState(
         session_id="s1",
         keywords={"company": "Acme Corp"},
@@ -38,7 +38,7 @@ def test_render_produces_real_pdf(tmp_path, monkeypatch):
 
 def test_render_keyword_round_trip(tmp_path, monkeypatch):
     """skills_raw keyword survives render → extract round-trip."""
-    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path))
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
     state = ApplyState(
         session_id="s2",
         keywords={"company": "Kafka Systems"},
@@ -60,7 +60,7 @@ def test_render_keyword_round_trip(tmp_path, monkeypatch):
 
 
 def test_render_halts_when_tailored_is_none(tmp_path, monkeypatch):
-    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path))
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
     state = ApplyState(session_id="s3")
     result = render(state)
     assert result == {"error": "render: state.tailored is None — tailor node must run first"}
@@ -266,7 +266,7 @@ def test_render_html_contains_font_face_embed():
     assert payload_m is not None
     payload_len = len(payload_m.group(1))
     font_bytes = (
-        Path(__file__).parent.parent / "pi_apply" / "render" / "fonts" / "InterVariable.ttf"
+        Path(__file__).parent.parent / "callback" / "render" / "fonts" / "InterVariable.ttf"
     ).read_bytes()
     expected_len = len(base64.b64encode(font_bytes).decode())
     assert payload_len == expected_len

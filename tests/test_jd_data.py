@@ -4,7 +4,7 @@ from dataclasses import is_dataclass
 import pytest
 from dataclass_wizard import JSONWizard
 
-from pi_apply.jd_data import EXTRACTION_PROTOCOL, JDData, JDDataError, parse_jd_json
+from callback.jd_data import EXTRACTION_PROTOCOL, JDData, JDDataError, parse_jd_json
 
 FULL_JD = {
     "title": "Senior Platform Engineer",

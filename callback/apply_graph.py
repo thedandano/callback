@@ -9,7 +9,7 @@ Finish point: finalize
 Interrupts after jd_fetch and keywords_accept so the host can extract and
 submit JDData before later milestones parse and score resumes.
 
-State is persisted in SQLite checkpointer at ~/.local/share/pi-apply/apply-sessions.db.
+State is persisted in SQLite checkpointer at ~/.local/share/callback/apply-sessions.db.
 """
 
 import sqlite3
@@ -19,7 +19,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, StateGraph
 
-from pi_apply.apply_nodes import (
+from callback.apply_nodes import (
     finalize,
     jd_fetch,
     keywords_accept,
@@ -31,10 +31,10 @@ from pi_apply.apply_nodes import (
     score_initial,
     tailor,
 )
-from pi_apply.observability import build_graph_config
-from pi_apply.state import ApplyState
+from callback.observability import build_graph_config
+from callback.state import ApplyState
 
-DB_PATH = Path.home() / ".local" / "share" / "pi-apply" / "apply-sessions.db"
+DB_PATH = Path.home() / ".local" / "share" / "callback" / "apply-sessions.db"
 
 
 def _route_or_halt(next_node: str):
@@ -90,7 +90,7 @@ def build_apply_graph(db_path: Path = DB_PATH):
 
     Args:
         db_path: Path to the SQLite checkpointer DB.
-                 Defaults to ~/.local/share/pi-apply/apply-sessions.db
+                 Defaults to ~/.local/share/callback/apply-sessions.db
 
     Returns:
         Compiled LangGraph StateGraph for ApplyState. The graph interrupts after

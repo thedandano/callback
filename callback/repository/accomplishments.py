@@ -2,7 +2,7 @@ import json
 import os
 from pathlib import Path
 
-from pi_apply.state import CreatedStory
+from callback.state import CreatedStory
 
 
 class StoryNotFoundError(Exception):
@@ -11,8 +11,8 @@ class StoryNotFoundError(Exception):
 
 def data_dir() -> Path:
     if xdg_data_home := os.environ.get("XDG_DATA_HOME"):
-        return Path(xdg_data_home) / "pi-apply"
-    return Path.home() / ".local" / "share" / "pi-apply"
+        return Path(xdg_data_home) / "callback"
+    return Path.home() / ".local" / "share" / "callback"
 
 
 class AccomplishmentsStore:

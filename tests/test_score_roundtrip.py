@@ -3,10 +3,10 @@
 import json
 import re
 
-from pi_apply.apply_nodes import _sections_to_text, finalize, report
-from pi_apply.scorer import ATS_SECTION_PATTERNS
-from pi_apply.section_map import EducationEntry, ExperienceEntry, SectionMap, SkillsSection
-from pi_apply.state import ApplyState, TailoredResume
+from callback.apply_nodes import _sections_to_text, finalize, report
+from callback.scorer import ATS_SECTION_PATTERNS
+from callback.section_map import EducationEntry, ExperienceEntry, SectionMap, SkillsSection
+from callback.state import ApplyState, TailoredResume
 
 _SCORE_INITIAL = {
     "total": 35.0,
@@ -152,7 +152,7 @@ def test_report_includes_render_warnings_as_notes():
 
 
 def test_finalize_archive_includes_scores_delta(tmp_path, monkeypatch):
-    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path))
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
     report_data = {
         "delta": _DELTA,
         "format_gap_chars": -150,
@@ -181,7 +181,7 @@ def test_finalize_archive_includes_scores_delta(tmp_path, monkeypatch):
 
 
 def test_finalize_archive_scoring_engine_version(tmp_path, monkeypatch):
-    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path))
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
     state = ApplyState(
         session_id="r5",
         score_initial=_SCORE_INITIAL,
@@ -234,7 +234,7 @@ def test_report_no_coverage_path():
 
 
 def test_finalize_archive_outcome_field(tmp_path, monkeypatch):
-    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path))
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
     state = ApplyState(
         session_id="r7",
         score_initial=_SCORE_INITIAL,

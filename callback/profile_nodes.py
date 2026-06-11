@@ -7,20 +7,20 @@ I/O only — no LLM/API calls. All inference is performed by the host (calling L
 import json
 import logging
 
-import pi_apply.extractor as extractor
-from pi_apply.observability import trace_node
-from pi_apply.profilecompiler import (
+import callback.extractor as extractor
+from callback.observability import trace_node
+from callback.profilecompiler import (
     ProfileCompiler,
     ProfileMissingError,
     load_compiled_profile,
     save_compiled_profile,
 )
-from pi_apply.repository.accomplishments import AccomplishmentsStore
-from pi_apply.repository.resumes import clear_resumes, list_resumes, save_resume
-from pi_apply.section_map import SectionMap
-from pi_apply.state import CreatedStory, ProfileState
-from pi_apply.wiki import WikiStore
-from pi_apply.wikirenderer import WikiRenderer
+from callback.repository.accomplishments import AccomplishmentsStore
+from callback.repository.resumes import clear_resumes, list_resumes, save_resume
+from callback.section_map import SectionMap
+from callback.state import CreatedStory, ProfileState
+from callback.wiki import WikiStore
+from callback.wikirenderer import WikiRenderer
 
 logger = logging.getLogger(__name__)
 

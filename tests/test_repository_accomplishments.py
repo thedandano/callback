@@ -1,14 +1,14 @@
-"""Unit tests for pi_apply.repository.accomplishments."""
+"""Unit tests for callback.repository.accomplishments."""
 
 import json
 
 import pytest
 
-from pi_apply.repository.accomplishments import (
+from callback.repository.accomplishments import (
     AccomplishmentsStore,
     StoryNotFoundError,
 )
-from pi_apply.state import CreatedStory
+from callback.state import CreatedStory
 
 
 def _make_story(**overrides) -> CreatedStory:

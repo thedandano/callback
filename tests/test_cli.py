@@ -1,4 +1,4 @@
-"""Tests for the pi-apply CLI."""
+"""Tests for the callback CLI."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 from typer.testing import CliRunner
 
-from pi_apply.cli import app, configure_claude, configure_codex
+from callback.cli import app, configure_claude, configure_codex
 
 runner = CliRunner()
 
@@ -39,8 +39,8 @@ def test_cli_help_lists_commands():
 
 
 def test_version_prints_installed_distribution_version(monkeypatch):
-    monkeypatch.setattr("pi_apply.cli._read_build_version", lambda: None)
-    monkeypatch.setattr("pi_apply.cli.importlib.metadata.version", lambda name: "0.1.0")
+    monkeypatch.setattr("callback.cli._read_build_version", lambda: None)
+    monkeypatch.setattr("callback.cli.importlib.metadata.version", lambda name: "0.1.0")
 
     result = runner.invoke(app, ["version"])
 
@@ -49,8 +49,8 @@ def test_version_prints_installed_distribution_version(monkeypatch):
 
 
 def test_version_prefers_generated_build_version(monkeypatch):
-    monkeypatch.setattr("pi_apply.cli._read_build_version", lambda: "0.3.0-01-abc1234")
-    monkeypatch.setattr("pi_apply.cli.importlib.metadata.version", lambda name: "0.3.0")
+    monkeypatch.setattr("callback.cli._read_build_version", lambda: "0.3.0-01-abc1234")
+    monkeypatch.setattr("callback.cli.importlib.metadata.version", lambda name: "0.3.0")
 
     result = runner.invoke(app, ["version"])
 
@@ -61,7 +61,7 @@ def test_version_prefers_generated_build_version(monkeypatch):
 def test_serve_uses_server_runner():
     run = Mock()
 
-    with patch("pi_apply.server.run", run):
+    with patch("callback.server.run", run):
         result = runner.invoke(app, ["serve"])
 
     assert result.exit_code == 0
@@ -73,15 +73,15 @@ def test_serve_without_flags_uses_home_state_log(monkeypatch):
     configure_logging = Mock()
     startup_events: list[tuple[Path, str]] = []
 
-    monkeypatch.delenv("PI_APPLY_LOG_PATH", raising=False)
+    monkeypatch.delenv("CALLBACK_LOG_PATH", raising=False)
 
     def fake_write_startup_event(log_path: Path, line: str) -> None:
         startup_events.append((log_path, line))
 
     with (
-        patch("pi_apply.cli._write_startup_log_event", side_effect=fake_write_startup_event),
-        patch("pi_apply.server.configure_logging", configure_logging),
-        patch("pi_apply.server.run", run),
+        patch("callback.cli._write_startup_log_event", side_effect=fake_write_startup_event),
+        patch("callback.server.configure_logging", configure_logging),
+        patch("callback.server.run", run),
     ):
         result = runner.invoke(app, ["serve"])
 
@@ -91,11 +91,11 @@ def test_serve_without_flags_uses_home_state_log(monkeypatch):
     }
     expected = {
         "exit_code": 0,
-        "startup_log_path": Path("~/.local/state/pi-apply/server.log").expanduser(),
+        "startup_log_path": Path("~/.local/state/callback/server.log").expanduser(),
     }
     assert actual == expected
     configure_logging.assert_called_once_with(
-        str(Path("~/.local/state/pi-apply/server.log").expanduser())
+        str(Path("~/.local/state/callback/server.log").expanduser())
     )
     run.assert_called_once_with()
 
@@ -105,20 +105,20 @@ def test_serve_project_logs_uses_project_log(tmp_path, monkeypatch):
     configure_logging = Mock()
     startup_events: list[tuple[Path, str]] = []
 
-    monkeypatch.delenv("PI_APPLY_LOG_PATH", raising=False)
+    monkeypatch.delenv("CALLBACK_LOG_PATH", raising=False)
     monkeypatch.chdir(tmp_path)
 
     def fake_write_startup_event(log_path: Path, line: str) -> None:
         startup_events.append((log_path, line))
 
     with (
-        patch("pi_apply.cli._write_startup_log_event", side_effect=fake_write_startup_event),
-        patch("pi_apply.server.configure_logging", configure_logging),
-        patch("pi_apply.server.run", run),
+        patch("callback.cli._write_startup_log_event", side_effect=fake_write_startup_event),
+        patch("callback.server.configure_logging", configure_logging),
+        patch("callback.server.run", run),
     ):
         result = runner.invoke(app, ["serve", "--project-logs"], catch_exceptions=False)
 
-    expected_log_path = tmp_path / ".pi-apply" / "server.log"
+    expected_log_path = tmp_path / ".callback" / "server.log"
     actual = {
         "exit_code": result.exit_code,
         "startup_log_path": startup_events[0][0],
@@ -134,9 +134,9 @@ def test_serve_unwritable_log_path_still_runs(tmp_path):
     run = Mock()
 
     with (
-        patch("pi_apply.cli._write_startup_log_event", side_effect=OSError("blocked")),
-        patch("pi_apply.server.configure_logging"),
-        patch("pi_apply.server.run", run),
+        patch("callback.cli._write_startup_log_event", side_effect=OSError("blocked")),
+        patch("callback.server.configure_logging"),
+        patch("callback.server.run", run),
     ):
         result = runner.invoke(app, ["serve", "--log-path", str(blocked_path)])
 
@@ -168,12 +168,12 @@ def test_logs_defaults_to_home_state_log_even_when_project_log_exists(tmp_path, 
     state_log.parent.mkdir()
     state_log.write_text("state\nstate-tail\n", encoding="utf-8")
 
-    project_log = tmp_path / ".pi-apply" / "server.log"
+    project_log = tmp_path / ".callback" / "server.log"
     project_log.parent.mkdir()
     project_log.write_text("project\nlog\n", encoding="utf-8")
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("pi_apply.cli.DEFAULT_LOG_PATH", state_log)
+    monkeypatch.setattr("callback.cli.DEFAULT_LOG_PATH", state_log)
 
     result = runner.invoke(app, ["logs", "--lines", "1"])
 
@@ -182,7 +182,7 @@ def test_logs_defaults_to_home_state_log_even_when_project_log_exists(tmp_path, 
 
 
 def test_logs_project_logs_flag_uses_project_log(tmp_path, monkeypatch):
-    project_log = tmp_path / ".pi-apply" / "server.log"
+    project_log = tmp_path / ".callback" / "server.log"
     project_log.parent.mkdir()
     project_log.write_text("project\nlog\n", encoding="utf-8")
 
@@ -204,8 +204,8 @@ def test_configure_claude_creates_entry_and_preserves_unrelated_keys(tmp_path):
     expected = {
         "theme": "dark",
         "mcpServers": {
-            "pi-apply": {
-                "command": "pi-apply",
+            "callback": {
+                "command": "callback",
                 "args": ["serve"],
             },
         },
@@ -222,7 +222,7 @@ def test_configure_claude_is_idempotent(tmp_path):
     second = json.loads(config_path.read_text(encoding="utf-8"))
 
     assert first == second
-    assert list(second["mcpServers"]) == ["pi-apply"]
+    assert list(second["mcpServers"]) == ["callback"]
 
 
 def test_configure_claude_preserves_existing_env(tmp_path):
@@ -231,10 +231,10 @@ def test_configure_claude_preserves_existing_env(tmp_path):
         json.dumps(
             {
                 "mcpServers": {
-                    "pi-apply": {
+                    "callback": {
                         "command": "old",
                         "args": ["serve"],
-                        "env": {"PI_APPLY_TRACE_BACKEND": "langsmith"},
+                        "env": {"CALLBACK_TRACE_BACKEND": "langsmith"},
                     }
                 }
             }
@@ -242,13 +242,13 @@ def test_configure_claude_preserves_existing_env(tmp_path):
         encoding="utf-8",
     )
 
-    configure_claude(config_path, "/usr/local/bin/pi-apply")
+    configure_claude(config_path, "/usr/local/bin/callback")
 
     config = json.loads(config_path.read_text(encoding="utf-8"))
-    assert config["mcpServers"]["pi-apply"] == {
-        "command": "/usr/local/bin/pi-apply",
+    assert config["mcpServers"]["callback"] == {
+        "command": "/usr/local/bin/callback",
         "args": ["serve"],
-        "env": {"PI_APPLY_TRACE_BACKEND": "langsmith"},
+        "env": {"CALLBACK_TRACE_BACKEND": "langsmith"},
     }
 
 
@@ -263,8 +263,8 @@ def test_configure_codex_creates_entry_and_preserves_unrelated_keys(tmp_path):
         "model": "gpt-5.5",
         "profiles": {"default": {"service_tier": "fast"}},
         "mcp_servers": {
-            "pi-apply": {
-                "command": "pi-apply",
+            "callback": {
+                "command": "callback",
                 "args": ["serve"],
             },
         },
@@ -281,29 +281,29 @@ def test_configure_codex_is_idempotent(tmp_path):
     second = _read_toml(config_path)
 
     assert first == second
-    assert list(second["mcp_servers"]) == ["pi-apply"]
+    assert list(second["mcp_servers"]) == ["callback"]
 
 
 def test_configure_codex_preserves_existing_env(tmp_path):
     config_path = tmp_path / "config.toml"
     config_path.write_text(
         (
-            "[mcp_servers.pi-apply]\n"
+            "[mcp_servers.callback]\n"
             'args = ["serve"]\n'
             'command = "old"\n'
-            "[mcp_servers.pi-apply.env]\n"
-            'PI_APPLY_TRACE_BACKEND = "langsmith"\n'
+            "[mcp_servers.callback.env]\n"
+            'CALLBACK_TRACE_BACKEND = "langsmith"\n'
         ),
         encoding="utf-8",
     )
 
-    configure_codex(config_path, "/usr/local/bin/pi-apply")
+    configure_codex(config_path, "/usr/local/bin/callback")
 
     config = _read_toml(config_path)
-    assert config["mcp_servers"]["pi-apply"] == {
-        "command": "/usr/local/bin/pi-apply",
+    assert config["mcp_servers"]["callback"] == {
+        "command": "/usr/local/bin/callback",
         "args": ["serve"],
-        "env": {"PI_APPLY_TRACE_BACKEND": "langsmith"},
+        "env": {"CALLBACK_TRACE_BACKEND": "langsmith"},
     }
 
 
@@ -314,8 +314,8 @@ def test_setup_mcp_writes_both_configs(tmp_path):
     mock_result.returncode = 0
 
     with (
-        patch("pi_apply.cli._resolve_command", return_value="/usr/local/bin/pi-apply"),
-        patch("pi_apply.cli.subprocess.run", return_value=mock_result) as mock_run,
+        patch("callback.cli._resolve_command", return_value="/usr/local/bin/callback"),
+        patch("callback.cli.subprocess.run", return_value=mock_result) as mock_run,
     ):
         result = runner.invoke(
             app,
@@ -329,18 +329,18 @@ def test_setup_mcp_writes_both_configs(tmp_path):
         )
 
     assert result.exit_code == 0
-    assert json.loads(claude_path.read_text(encoding="utf-8"))["mcpServers"]["pi-apply"] == {
-        "command": "/usr/local/bin/pi-apply",
+    assert json.loads(claude_path.read_text(encoding="utf-8"))["mcpServers"]["callback"] == {
+        "command": "/usr/local/bin/callback",
         "args": ["serve"],
     }
-    assert _read_toml(codex_path)["mcp_servers"]["pi-apply"] == {
-        "command": "/usr/local/bin/pi-apply",
+    assert _read_toml(codex_path)["mcp_servers"]["callback"] == {
+        "command": "/usr/local/bin/callback",
         "args": ["serve"],
     }
     import sys
 
     mock_run.assert_called_once_with([sys.executable, "-m", "playwright", "install", "chromium"])
-    assert "pi-apply config langsmith" in result.stdout
+    assert "callback config langsmith" in result.stdout
     assert "restart your MCP host" in result.stdout
 
 
@@ -351,7 +351,7 @@ def test_setup_mcp_preserves_existing_env(tmp_path):
         json.dumps(
             {
                 "mcpServers": {
-                    "pi-apply": {
+                    "callback": {
                         "command": "old",
                         "args": ["serve"],
                         "env": {"LANGSMITH_PROJECT": "demo"},
@@ -363,18 +363,18 @@ def test_setup_mcp_preserves_existing_env(tmp_path):
     )
     codex_path.write_text(
         (
-            "[mcp_servers.pi-apply]\n"
+            "[mcp_servers.callback]\n"
             'args = ["serve"]\n'
             'command = "old"\n'
-            "[mcp_servers.pi-apply.env]\n"
+            "[mcp_servers.callback.env]\n"
             'LANGSMITH_PROJECT = "demo"\n'
         ),
         encoding="utf-8",
     )
 
     with (
-        patch("pi_apply.cli._resolve_command", return_value="/usr/local/bin/pi-apply"),
-        patch("pi_apply.cli.subprocess.run") as mock_run,
+        patch("callback.cli._resolve_command", return_value="/usr/local/bin/callback"),
+        patch("callback.cli.subprocess.run") as mock_run,
     ):
         result = runner.invoke(
             app,
@@ -390,13 +390,13 @@ def test_setup_mcp_preserves_existing_env(tmp_path):
 
     assert result.exit_code == 0
     mock_run.assert_not_called()
-    assert json.loads(claude_path.read_text(encoding="utf-8"))["mcpServers"]["pi-apply"] == {
-        "command": "/usr/local/bin/pi-apply",
+    assert json.loads(claude_path.read_text(encoding="utf-8"))["mcpServers"]["callback"] == {
+        "command": "/usr/local/bin/callback",
         "args": ["serve"],
         "env": {"LANGSMITH_PROJECT": "demo"},
     }
-    assert _read_toml(codex_path)["mcp_servers"]["pi-apply"] == {
-        "command": "/usr/local/bin/pi-apply",
+    assert _read_toml(codex_path)["mcp_servers"]["callback"] == {
+        "command": "/usr/local/bin/callback",
         "args": ["serve"],
         "env": {"LANGSMITH_PROJECT": "demo"},
     }
@@ -426,7 +426,7 @@ def test_config_env_set_list_unset_claude(tmp_path):
     config = json.loads(claude_path.read_text(encoding="utf-8"))
     actual = {
         "exit_code": result.exit_code,
-        "env": config["mcpServers"]["pi-apply"]["env"],
+        "env": config["mcpServers"]["callback"]["env"],
         "codex_exists": codex_path.exists(),
     }
     expected = {
@@ -505,7 +505,7 @@ def test_config_env_set_list_unset_claude(tmp_path):
     config = json.loads(claude_path.read_text(encoding="utf-8"))
     actual = {
         "exit_code": unset_result.exit_code,
-        "env": config["mcpServers"]["pi-apply"]["env"],
+        "env": config["mcpServers"]["callback"]["env"],
     }
     expected = {
         "exit_code": 0,
@@ -524,7 +524,7 @@ def test_config_env_set_unset_codex(tmp_path):
             "config",
             "env",
             "set",
-            "PI_APPLY_TRACE_BACKEND",
+            "CALLBACK_TRACE_BACKEND",
             "langsmith",
             "--target",
             "codex",
@@ -536,11 +536,11 @@ def test_config_env_set_unset_codex(tmp_path):
     config = _read_toml(codex_path)
     actual = {
         "exit_code": set_result.exit_code,
-        "env": config["mcp_servers"]["pi-apply"]["env"],
+        "env": config["mcp_servers"]["callback"]["env"],
     }
     expected = {
         "exit_code": 0,
-        "env": {"PI_APPLY_TRACE_BACKEND": "langsmith"},
+        "env": {"CALLBACK_TRACE_BACKEND": "langsmith"},
     }
 
     assert actual == expected
@@ -551,7 +551,7 @@ def test_config_env_set_unset_codex(tmp_path):
             "config",
             "env",
             "unset",
-            "PI_APPLY_TRACE_BACKEND",
+            "CALLBACK_TRACE_BACKEND",
             "--target",
             "codex",
             "--codex-config",
@@ -562,7 +562,7 @@ def test_config_env_set_unset_codex(tmp_path):
     config = _read_toml(codex_path)
     actual = {
         "exit_code": unset_result.exit_code,
-        "env": config["mcp_servers"]["pi-apply"]["env"],
+        "env": config["mcp_servers"]["callback"]["env"],
     }
     expected = {
         "exit_code": 0,
@@ -578,10 +578,10 @@ def test_config_env_list_prints_literal_target_headers(tmp_path):
         json.dumps(
             {
                 "mcpServers": {
-                    "pi-apply": {
-                        "command": "pi-apply",
+                    "callback": {
+                        "command": "callback",
                         "args": ["serve"],
-                        "env": {"LANGSMITH_PROJECT": "Pi-Apply"},
+                        "env": {"LANGSMITH_PROJECT": "Callback"},
                     }
                 }
             }
@@ -605,7 +605,7 @@ def test_config_env_list_prints_literal_target_headers(tmp_path):
     actual = {
         "exit_code": result.exit_code,
         "has_header": "[claude]" in result.stdout,
-        "has_env": "LANGSMITH_PROJECT=Pi-Apply" in result.stdout,
+        "has_env": "LANGSMITH_PROJECT=Callback" in result.stdout,
     }
     expected = {
         "exit_code": 0,
@@ -620,7 +620,7 @@ def test_config_status_reports_same_env_for_all_targets(tmp_path):
     claude_path = tmp_path / ".claude.json"
     codex_path = tmp_path / "config.toml"
     expected_env = {
-        "PI_APPLY_TRACE_BACKEND": "langsmith",
+        "CALLBACK_TRACE_BACKEND": "langsmith",
         "LANGSMITH_TRACING": "true",
         "LANGSMITH_API_KEY": "lsv2-secret",
     }
@@ -628,8 +628,8 @@ def test_config_status_reports_same_env_for_all_targets(tmp_path):
         json.dumps(
             {
                 "mcpServers": {
-                    "pi-apply": {
-                        "command": "pi-apply",
+                    "callback": {
+                        "command": "callback",
                         "args": ["serve"],
                         "env": expected_env,
                     }
@@ -640,11 +640,11 @@ def test_config_status_reports_same_env_for_all_targets(tmp_path):
     )
     codex_path.write_text(
         (
-            "[mcp_servers.pi-apply]\n"
-            'command = "pi-apply"\n'
+            "[mcp_servers.callback]\n"
+            'command = "callback"\n'
             'args = ["serve"]\n'
-            "[mcp_servers.pi-apply.env]\n"
-            'PI_APPLY_TRACE_BACKEND = "langsmith"\n'
+            "[mcp_servers.callback.env]\n"
+            'CALLBACK_TRACE_BACKEND = "langsmith"\n'
             'LANGSMITH_TRACING = "true"\n'
             'LANGSMITH_API_KEY = "lsv2-secret"\n'
         ),
@@ -665,7 +665,7 @@ def test_config_status_reports_same_env_for_all_targets(tmp_path):
 
     actual = {
         "exit_code": result.exit_code,
-        "has_backend": "PI_APPLY_TRACE_BACKEND" in result.stdout,
+        "has_backend": "CALLBACK_TRACE_BACKEND" in result.stdout,
         "has_same": "same" in result.stdout,
         "redacts_key": "LANGSMITH_API_KEY" in result.stdout
         and "********" in result.stdout
@@ -688,11 +688,11 @@ def test_config_status_reports_missing_and_different_values(tmp_path):
         json.dumps(
             {
                 "mcpServers": {
-                    "pi-apply": {
-                        "command": "pi-apply",
+                    "callback": {
+                        "command": "callback",
                         "args": ["serve"],
                         "env": {
-                            "LANGSMITH_PROJECT": "Pi-Apply",
+                            "LANGSMITH_PROJECT": "Callback",
                             "LANGSMITH_TRACING": "true",
                         },
                     }
@@ -703,10 +703,10 @@ def test_config_status_reports_missing_and_different_values(tmp_path):
     )
     codex_path.write_text(
         (
-            "[mcp_servers.pi-apply]\n"
-            'command = "pi-apply"\n'
+            "[mcp_servers.callback]\n"
+            'command = "callback"\n'
             'args = ["serve"]\n'
-            "[mcp_servers.pi-apply.env]\n"
+            "[mcp_servers.callback.env]\n"
             'LANGSMITH_PROJECT = "Other"\n'
         ),
         encoding="utf-8",
@@ -747,8 +747,8 @@ def test_config_status_show_secrets_reveals_secret_values(tmp_path):
         json.dumps(
             {
                 "mcpServers": {
-                    "pi-apply": {
-                        "command": "pi-apply",
+                    "callback": {
+                        "command": "callback",
                         "args": ["serve"],
                         "env": {"LANGSMITH_API_KEY": "lsv2-secret"},
                     }
@@ -759,10 +759,10 @@ def test_config_status_show_secrets_reveals_secret_values(tmp_path):
     )
     codex_path.write_text(
         (
-            "[mcp_servers.pi-apply]\n"
-            'command = "pi-apply"\n'
+            "[mcp_servers.callback]\n"
+            'command = "callback"\n'
             'args = ["serve"]\n'
-            "[mcp_servers.pi-apply.env]\n"
+            "[mcp_servers.callback.env]\n"
             'LANGSMITH_API_KEY = "lsv2-secret"\n'
         ),
         encoding="utf-8",
@@ -802,10 +802,10 @@ def test_config_status_target_claude_does_not_read_or_write_codex(tmp_path):
         json.dumps(
             {
                 "mcpServers": {
-                    "pi-apply": {
-                        "command": "pi-apply",
+                    "callback": {
+                        "command": "callback",
                         "args": ["serve"],
-                        "env": {"LANGSMITH_PROJECT": "Pi-Apply"},
+                        "env": {"LANGSMITH_PROJECT": "Callback"},
                     }
                 }
             }
@@ -829,7 +829,7 @@ def test_config_status_target_claude_does_not_read_or_write_codex(tmp_path):
 
     actual = {
         "exit_code": result.exit_code,
-        "has_claude_value": "Pi-Apply" in result.stdout,
+        "has_claude_value": "Callback" in result.stdout,
         "codex_not_checked": "not checked" in result.stdout,
         "codex_exists": codex_path.exists(),
     }
@@ -912,7 +912,7 @@ def test_config_langsmith_sets_expected_env_for_all_targets(tmp_path):
             "--api-key",
             "lsv2-key",
             "--project",
-            "pi-apply-demo",
+            "callback-demo",
             "--target",
             "all",
             "--claude-config",
@@ -923,21 +923,21 @@ def test_config_langsmith_sets_expected_env_for_all_targets(tmp_path):
     )
 
     expected_env = {
-        "PI_APPLY_TRACE_BACKEND": "langsmith",
+        "CALLBACK_TRACE_BACKEND": "langsmith",
         "LANGSMITH_TRACING": "true",
         "LANGSMITH_API_KEY": "lsv2-key",
         "LANGSMITH_ENDPOINT": "https://api.smith.langchain.com",
-        "LANGSMITH_PROJECT": "pi-apply-demo",
+        "LANGSMITH_PROJECT": "callback-demo",
     }
     assert result.exit_code == 0
     assert (
-        json.loads(claude_path.read_text(encoding="utf-8"))["mcpServers"]["pi-apply"]["env"]
+        json.loads(claude_path.read_text(encoding="utf-8"))["mcpServers"]["callback"]["env"]
         == expected_env
     )
-    assert _read_toml(codex_path)["mcp_servers"]["pi-apply"]["env"] == expected_env
+    assert _read_toml(codex_path)["mcp_servers"]["callback"]["env"] == expected_env
 
 
-def test_config_langsmith_defaults_to_pi_apply_project_and_langsmith_endpoint(tmp_path):
+def test_config_langsmith_defaults_to_callback_project_and_langsmith_endpoint(tmp_path):
     claude_path = tmp_path / ".claude.json"
     codex_path = tmp_path / "config.toml"
 
@@ -959,16 +959,16 @@ def test_config_langsmith_defaults_to_pi_apply_project_and_langsmith_endpoint(tm
 
     actual = {
         "exit_code": result.exit_code,
-        "env": json.loads(claude_path.read_text(encoding="utf-8"))["mcpServers"]["pi-apply"]["env"],
+        "env": json.loads(claude_path.read_text(encoding="utf-8"))["mcpServers"]["callback"]["env"],
     }
     expected = {
         "exit_code": 0,
         "env": {
-            "PI_APPLY_TRACE_BACKEND": "langsmith",
+            "CALLBACK_TRACE_BACKEND": "langsmith",
             "LANGSMITH_TRACING": "true",
             "LANGSMITH_API_KEY": "lsv2-key",
             "LANGSMITH_ENDPOINT": "https://api.smith.langchain.com",
-            "LANGSMITH_PROJECT": "Pi-Apply",
+            "LANGSMITH_PROJECT": "Callback",
         },
     }
 
@@ -976,7 +976,7 @@ def test_config_langsmith_defaults_to_pi_apply_project_and_langsmith_endpoint(tm
 
 
 def test_trace_check_reports_missing_langsmith_key(monkeypatch):
-    monkeypatch.setenv("PI_APPLY_TRACE_BACKEND", "langsmith")
+    monkeypatch.setenv("CALLBACK_TRACE_BACKEND", "langsmith")
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
 
@@ -992,14 +992,14 @@ def test_trace_check_claude_reads_config_and_emits_safe_trace(tmp_path):
         json.dumps(
             {
                 "mcpServers": {
-                    "pi-apply": {
-                        "command": "pi-apply",
+                    "callback": {
+                        "command": "callback",
                         "args": ["serve"],
                         "env": {
-                            "PI_APPLY_TRACE_BACKEND": "langsmith",
+                            "CALLBACK_TRACE_BACKEND": "langsmith",
                             "LANGSMITH_TRACING": "true",
                             "LANGSMITH_API_KEY": "lsv2-secret",
-                            "LANGSMITH_PROJECT": "pi-apply-demo",
+                            "LANGSMITH_PROJECT": "callback-demo",
                         },
                     }
                 }
@@ -1014,8 +1014,8 @@ def test_trace_check_claude_reads_config_and_emits_safe_trace(tmp_path):
             return iter([object()])
 
     with (
-        patch("pi_apply.cli._make_langsmith_client", return_value=FakeClient()) as make_client,
-        patch("pi_apply.cli.emit_trace_check_probe") as emit_trace,
+        patch("callback.cli._make_langsmith_client", return_value=FakeClient()) as make_client,
+        patch("callback.cli.emit_trace_check_probe") as emit_trace,
     ):
         result = runner.invoke(
             app,
@@ -1037,7 +1037,7 @@ def test_trace_check_claude_reads_config_and_emits_safe_trace(tmp_path):
 
 
 def test_trace_check_redacts_secret_on_auth_failure(monkeypatch):
-    monkeypatch.setenv("PI_APPLY_TRACE_BACKEND", "langsmith")
+    monkeypatch.setenv("CALLBACK_TRACE_BACKEND", "langsmith")
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2-secret")
 
@@ -1045,7 +1045,7 @@ def test_trace_check_redacts_secret_on_auth_failure(monkeypatch):
         def list_projects(self, limit: int):
             raise RuntimeError("bad token lsv2-secret")
 
-    with patch("pi_apply.cli._make_langsmith_client", return_value=FakeClient()):
+    with patch("callback.cli._make_langsmith_client", return_value=FakeClient()):
         result = runner.invoke(app, ["trace-check"])
 
     assert result.exit_code == 1
@@ -1058,8 +1058,8 @@ def test_setup_mcp_skip_browsers_writes_configs_without_install(tmp_path):
     codex_path = tmp_path / ".codex" / "config.toml"
 
     with (
-        patch("pi_apply.cli._resolve_command", return_value="/usr/local/bin/pi-apply"),
-        patch("pi_apply.cli.subprocess.run") as mock_run,
+        patch("callback.cli._resolve_command", return_value="/usr/local/bin/callback"),
+        patch("callback.cli.subprocess.run") as mock_run,
     ):
         result = runner.invoke(
             app,
@@ -1075,12 +1075,12 @@ def test_setup_mcp_skip_browsers_writes_configs_without_install(tmp_path):
 
     assert result.exit_code == 0
     mock_run.assert_not_called()
-    assert json.loads(claude_path.read_text(encoding="utf-8"))["mcpServers"]["pi-apply"] == {
-        "command": "/usr/local/bin/pi-apply",
+    assert json.loads(claude_path.read_text(encoding="utf-8"))["mcpServers"]["callback"] == {
+        "command": "/usr/local/bin/callback",
         "args": ["serve"],
     }
-    assert _read_toml(codex_path)["mcp_servers"]["pi-apply"] == {
-        "command": "/usr/local/bin/pi-apply",
+    assert _read_toml(codex_path)["mcp_servers"]["callback"] == {
+        "command": "/usr/local/bin/callback",
         "args": ["serve"],
     }
 
@@ -1091,7 +1091,7 @@ def test_setup_mcp_browser_install_failure_leaves_configs_unwritten(tmp_path):
     mock_result = MagicMock()
     mock_result.returncode = 7
 
-    with patch("pi_apply.cli.subprocess.run", return_value=mock_result):
+    with patch("callback.cli.subprocess.run", return_value=mock_result):
         result = runner.invoke(
             app,
             [
@@ -1115,7 +1115,7 @@ def test_setup_mcp_rejects_invalid_codex_toml_without_overwrite(tmp_path):
     original = "[broken"
     codex_path.write_text(original, encoding="utf-8")
 
-    with patch("pi_apply.cli.subprocess.run") as mock_run:
+    with patch("callback.cli.subprocess.run") as mock_run:
         result = runner.invoke(
             app,
             [
@@ -1142,7 +1142,7 @@ def test_install_browsers_calls_playwright():
     mock_result = MagicMock()
     mock_result.returncode = 0
 
-    with patch("pi_apply.cli.subprocess.run", return_value=mock_result) as mock_run:
+    with patch("callback.cli.subprocess.run", return_value=mock_result) as mock_run:
         result = runner.invoke(app, ["install-browsers"])
 
     import sys
@@ -1152,11 +1152,11 @@ def test_install_browsers_calls_playwright():
 
 
 def test_uninstall_removes_claude_entry(tmp_path):
-    from pi_apply.cli import _remove_server_from_claude
+    from callback.cli import _remove_server_from_claude
 
     claude_path = tmp_path / ".claude.json"
-    entry = {"command": "pi-apply", "args": ["serve"]}
-    existing = {"theme": "dark", "mcpServers": {"pi-apply": entry}}
+    entry = {"command": "callback", "args": ["serve"]}
+    existing = {"theme": "dark", "mcpServers": {"callback": entry}}
     claude_path.write_text(json.dumps(existing), encoding="utf-8")
 
     _remove_server_from_claude(claude_path)
@@ -1166,7 +1166,7 @@ def test_uninstall_removes_claude_entry(tmp_path):
 
 
 def test_uninstall_skips_missing_config_files(tmp_path):
-    from pi_apply.cli import _remove_server_from_claude, _remove_server_from_codex
+    from callback.cli import _remove_server_from_claude, _remove_server_from_codex
 
     missing_claude = tmp_path / ".claude.json"
     missing_codex = tmp_path / "config.toml"
@@ -1179,15 +1179,15 @@ def test_uninstall_skips_missing_config_files(tmp_path):
 
 
 def test_uninstall_without_purge_preserves_data_dir(tmp_path):
-    data_dir = tmp_path / "pi-apply-data"
+    data_dir = tmp_path / "callback-data"
     data_dir.mkdir()
 
     state_dir = tmp_path / "state"
     with (
-        patch("pi_apply.cli._DATA_DIR", data_dir),
-        patch("pi_apply.cli._STATE_DIR", state_dir),
-        patch("pi_apply.cli._remove_server_from_claude"),
-        patch("pi_apply.cli._remove_server_from_codex"),
+        patch("callback.cli._DATA_DIR", data_dir),
+        patch("callback.cli._STATE_DIR", state_dir),
+        patch("callback.cli._remove_server_from_claude"),
+        patch("callback.cli._remove_server_from_codex"),
     ):
         result = runner.invoke(app, ["uninstall"])
 
@@ -1202,10 +1202,10 @@ def test_uninstall_purge_deletes_data_and_state_dirs(tmp_path):
     state_dir.mkdir()
 
     with (
-        patch("pi_apply.cli._DATA_DIR", data_dir),
-        patch("pi_apply.cli._STATE_DIR", state_dir),
-        patch("pi_apply.cli._remove_server_from_claude"),
-        patch("pi_apply.cli._remove_server_from_codex"),
+        patch("callback.cli._DATA_DIR", data_dir),
+        patch("callback.cli._STATE_DIR", state_dir),
+        patch("callback.cli._remove_server_from_claude"),
+        patch("callback.cli._remove_server_from_codex"),
     ):
         result = runner.invoke(app, ["uninstall", "--purge"])
 
@@ -1219,10 +1219,10 @@ def test_uninstall_purge_skips_absent_dirs(tmp_path):
     state_dir = tmp_path / "state"
 
     with (
-        patch("pi_apply.cli._DATA_DIR", data_dir),
-        patch("pi_apply.cli._STATE_DIR", state_dir),
-        patch("pi_apply.cli._remove_server_from_claude"),
-        patch("pi_apply.cli._remove_server_from_codex"),
+        patch("callback.cli._DATA_DIR", data_dir),
+        patch("callback.cli._STATE_DIR", state_dir),
+        patch("callback.cli._remove_server_from_claude"),
+        patch("callback.cli._remove_server_from_codex"),
     ):
         invoke_result = runner.invoke(app, ["uninstall", "--purge"])
 
@@ -1233,8 +1233,8 @@ def test_update_calls_uv_tool_upgrade():
     mock_result = MagicMock()
     mock_result.returncode = 0
 
-    with patch("pi_apply.cli.subprocess.run", return_value=mock_result) as mock_run:
+    with patch("callback.cli.subprocess.run", return_value=mock_result) as mock_run:
         result = runner.invoke(app, ["update"])
 
-    mock_run.assert_called_once_with(["uv", "tool", "upgrade", "pi-apply"])
+    mock_run.assert_called_once_with(["uv", "tool", "upgrade", "callback"])
     assert result.exit_code == 0

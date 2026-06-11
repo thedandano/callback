@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from pi_apply.state import (
+from callback.state import (
     ApplyState,
     CompiledProfile,
     CreatedStory,

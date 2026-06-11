@@ -10,7 +10,7 @@ Implements the 10 nodes of the linear apply pipeline:
 - parse_final: extracts text from the rendered PDF for final scoring
 - score_final: scores the rendered PDF text against JD keywords
 - report: generates a before/after comparison report
-- finalize: archives the application PDF and JSON record to PI_APPLY_APPS_DIR
+- finalize: archives the application PDF and JSON record to CALLBACK_APPS_DIR
 """
 
 import asyncio
@@ -25,28 +25,28 @@ from time import perf_counter
 
 from pydantic import ValidationError
 
-from pi_apply import extractor as resume_extractor
-from pi_apply import scorer
-from pi_apply.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError, fetch_url_to_markdown
-from pi_apply.observability import trace_node
-from pi_apply.render import render_resume
-from pi_apply.repository.resumes import ResumeNotFoundError, get_resume
-from pi_apply.section_map import SectionMap
-from pi_apply.state import ApplyState, TailoredResume
-from pi_apply.wiki import WikiStore
+from callback import extractor as resume_extractor
+from callback import scorer
+from callback.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError, fetch_url_to_markdown
+from callback.observability import trace_node
+from callback.render import render_resume
+from callback.repository.resumes import ResumeNotFoundError, get_resume
+from callback.section_map import SectionMap
+from callback.state import ApplyState, TailoredResume
+from callback.wiki import WikiStore
 
 logger = logging.getLogger(__name__)
-jd_fetcher_logger = logging.getLogger("pi_apply.jd_fetcher")
+jd_fetcher_logger = logging.getLogger("callback.jd_fetcher")
 _DASH_RE = re.compile(r"[-‐–—\u00ad\u2011\u200b]")
 _WS_RE = re.compile(r"\s+")
 
 
 # Module-level constant for applications directory, overridable by env var
 def _get_apps_dir() -> Path:
-    env_path = os.getenv("PI_APPLY_APPS_DIR")
+    env_path = os.getenv("CALLBACK_APPS_DIR")
     if env_path:
         return Path(env_path)
-    return Path.home() / ".local" / "share" / "pi-apply" / "applications"
+    return Path.home() / ".local" / "share" / "callback" / "applications"
 
 
 def _resume_filename_part(value: str | None, fallback: str) -> str:

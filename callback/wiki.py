@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-BASE_DIR = Path.home() / ".local" / "share" / "pi-apply" / "profile-wiki"
+BASE_DIR = Path.home() / ".local" / "share" / "callback" / "profile-wiki"
 
 
 def company_slug(company_name: str) -> str:

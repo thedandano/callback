@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from pi_apply.state import TailoredResume
+from callback.state import TailoredResume
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SAMPLE_JD = (FIXTURES / "sample_jd.txt").read_text()
@@ -69,10 +69,10 @@ MINIMAL_TAILORED_SECTIONS = {
 @pytest.fixture
 def setup_e2e_session(tmp_path, monkeypatch):
     """Setup e2e test session: return session_id at the tailor interrupt."""
-    from pi_apply.repository.resumes import save_resume
-    from pi_apply.server import load_jd, submit_keywords
+    from callback.repository.resumes import save_resume
+    from callback.server import load_jd, submit_keywords
 
-    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path / "applications"))
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
 
     resume_file = tmp_path / "resume.txt"
@@ -96,7 +96,7 @@ def _inject_tailored_sections_and_invoke(session_id: str, tailored_sections: dic
 
     Returns (graph, config) after the graph has run to completion.
     """
-    from pi_apply.apply_graph import build_apply_graph, make_config
+    from callback.apply_graph import build_apply_graph, make_config
 
     graph = build_apply_graph()
     config = make_config(session_id)
@@ -118,7 +118,7 @@ class TestApplyGraphE2E:
 
     def test_tailor_produces_tailored_resume_object(self, setup_e2e_session):
         """Injecting tailored_sections at tailor interrupt produces TailoredResume."""
-        from pi_apply.apply_graph import build_apply_graph, make_config
+        from callback.apply_graph import build_apply_graph, make_config
 
         session_id = setup_e2e_session
         graph = build_apply_graph()
@@ -168,7 +168,7 @@ class TestApplyGraphE2E:
 
     def test_m1_scenario_tailored_resume_has_name(self, setup_e2e_session):
         """M1 scenario: tailored resume object populated after tailor node."""
-        from pi_apply.apply_graph import build_apply_graph, make_config
+        from callback.apply_graph import build_apply_graph, make_config
 
         session_id = setup_e2e_session
         graph = build_apply_graph()
@@ -228,10 +228,10 @@ class TestApplyGraphE2E:
 @pytest.fixture
 def setup_m3_session_with_graph(tmp_path, monkeypatch):
     """M3 fixture: pipeline run through finalize with Redis as extra required keyword."""
-    from pi_apply.repository.resumes import save_resume
-    from pi_apply.server import load_jd, submit_keywords
+    from callback.repository.resumes import save_resume
+    from callback.server import load_jd, submit_keywords
 
-    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path / "applications"))
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
 
     resume_file = tmp_path / "resume.txt"

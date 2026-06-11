@@ -1,4 +1,4 @@
-"""Tracing configuration adapters for pi-apply workflows."""
+"""Tracing configuration adapters for callback workflows."""
 
 from __future__ import annotations
 
@@ -15,14 +15,14 @@ from langchain_core.runnables import RunnableConfig
 
 logger = logging.getLogger(__name__)
 
-TRACE_BACKEND_ENV = "PI_APPLY_TRACE_BACKEND"
+TRACE_BACKEND_ENV = "CALLBACK_TRACE_BACKEND"
 LANGSMITH_BACKEND = "langsmith"
 LANGSMITH_TRACING_ENV = "LANGSMITH_TRACING"
 LANGSMITH_API_KEY_ENV = "LANGSMITH_API_KEY"
 LANGSMITH_ENDPOINT_ENV = "LANGSMITH_ENDPOINT"
 LANGSMITH_PROJECT_ENV = "LANGSMITH_PROJECT"
 DEFAULT_LANGSMITH_ENDPOINT = "https://api.smith.langchain.com"
-DEFAULT_LANGSMITH_PROJECT = "Pi-Apply"
+DEFAULT_LANGSMITH_PROJECT = "Callback"
 TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
 TRANSPORT = "stdio"
 
@@ -362,14 +362,14 @@ def trace_tool(
             if not _trace_enabled():
                 return func(*args, **kwargs)
 
-            name_parts = ["pi-apply"]
+            name_parts = ["callback"]
             if graph_name:
                 name_parts.append(graph_name)
             name_parts.append(tool_name)
             traced = _get_traceable()(
                 name=".".join(name_parts),
                 run_type="tool",
-                tags=["pi-apply", "mcp-tool", tool_name],
+                tags=["callback", "mcp-tool", tool_name],
                 metadata={"tool_name": tool_name, "graph_name": graph_name, "transport": TRANSPORT},
                 enabled=True,
                 process_inputs=_sanitize_tool_inputs(tool_name, graph_name),
@@ -405,9 +405,9 @@ def trace_node(
                 return func(*args, **kwargs)
 
             traced = _get_traceable()(
-                name=f"pi-apply.{graph_name}.{node_name}",
+                name=f"callback.{graph_name}.{node_name}",
                 run_type="chain",
-                tags=["pi-apply", graph_name, node_name],
+                tags=["callback", graph_name, node_name],
                 metadata={"graph_name": graph_name, "node_name": node_name, "transport": TRANSPORT},
                 enabled=True,
                 process_inputs=_sanitize_node_inputs(graph_name, node_name),
@@ -459,7 +459,7 @@ def build_graph_config(
         "resume_label": resume_label,
         "transport": transport,
     }
-    config["run_name"] = f"pi-apply.{graph_name}.{effective_tool}"
-    config["tags"] = ["pi-apply", graph_name, effective_tool]
+    config["run_name"] = f"callback.{graph_name}.{effective_tool}"
+    config["tags"] = ["callback", graph_name, effective_tool]
     config["metadata"] = metadata
     return config

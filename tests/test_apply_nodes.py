@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 import pytest
 
-from pi_apply.apply_nodes import parse_final, parse_initial, render, score_initial, tailor
-from pi_apply.state import ApplyState, TailoredResume
+from callback.apply_nodes import parse_final, parse_initial, render, score_initial, tailor
+from callback.state import ApplyState, TailoredResume
 
 
 def test_parse_initial_falls_back_to_text_extraction(tmp_path):
@@ -17,7 +17,7 @@ def test_parse_initial_falls_back_to_text_extraction(tmp_path):
         resume_label="resume",
         keywords={"required": ["Python"], "preferred": [], "required_years": 0.0},
     )
-    with patch("pi_apply.apply_nodes.get_resume", return_value=str(resume)):
+    with patch("callback.apply_nodes.get_resume", return_value=str(resume)):
         result = parse_initial(state)
     expected = {
         "parsed_initial": "EXPERIENCE\nAcme | Engineer\nBuilt REST API",
@@ -45,7 +45,7 @@ def test_score_initial_raises_on_missing_keywords(tmp_path):
 
 
 def test_render_produces_pdf_from_tailored_resume(tmp_path, monkeypatch):
-    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path))
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
     state = ApplyState(
         session_id="s1",
         tailored=TailoredResume(name="Jane Doe", summary="Experienced engineer"),
@@ -59,7 +59,7 @@ def test_render_produces_pdf_from_tailored_resume(tmp_path, monkeypatch):
 
 
 def test_render_names_pdf_from_candidate_and_company(tmp_path, monkeypatch):
-    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path))
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
     calls: list[str] = []
 
     def fake_render_resume(_tailored: dict, output_path: str) -> dict:
@@ -67,7 +67,7 @@ def test_render_names_pdf_from_candidate_and_company(tmp_path, monkeypatch):
         Path(output_path).write_bytes(b"%PDF fake")
         return {"success": True, "pdf_path": output_path, "page_count": 1, "warnings": []}
 
-    monkeypatch.setattr("pi_apply.apply_nodes.render_resume", fake_render_resume)
+    monkeypatch.setattr("callback.apply_nodes.render_resume", fake_render_resume)
     state = ApplyState(
         session_id="legacy-session-id",
         keywords={"company": "Brain Corp / Robotics"},
@@ -82,13 +82,13 @@ def test_render_names_pdf_from_candidate_and_company(tmp_path, monkeypatch):
 
 
 def test_render_proper_cases_uppercase_name_and_company(tmp_path, monkeypatch):
-    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path))
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
 
     def fake_render_resume(_tailored: dict, output_path: str) -> dict:
         Path(output_path).write_bytes(b"%PDF fake")
         return {"success": True, "pdf_path": output_path, "page_count": 1, "warnings": []}
 
-    monkeypatch.setattr("pi_apply.apply_nodes.render_resume", fake_render_resume)
+    monkeypatch.setattr("callback.apply_nodes.render_resume", fake_render_resume)
     state = ApplyState(
         session_id="caps-session",
         keywords={"company": "GOOGLE"},
@@ -103,14 +103,14 @@ def test_render_proper_cases_uppercase_name_and_company(tmp_path, monkeypatch):
 
 def test_render_redirects_to_output_dir(tmp_path, monkeypatch):
     apps_dir = tmp_path / "apps"
-    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(apps_dir))
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(apps_dir))
     output_dir = tmp_path / "sandbox_out"
 
     def fake_render_resume(_tailored: dict, output_path: str) -> dict:
         Path(output_path).write_bytes(b"%PDF fake")
         return {"success": True, "pdf_path": output_path, "page_count": 1, "warnings": []}
 
-    monkeypatch.setattr("pi_apply.apply_nodes.render_resume", fake_render_resume)
+    monkeypatch.setattr("callback.apply_nodes.render_resume", fake_render_resume)
     state = ApplyState(
         session_id="redirect-session",
         keywords={"company": "Acme Corp"},
@@ -127,7 +127,7 @@ def test_render_redirects_to_output_dir(tmp_path, monkeypatch):
 
 
 def test_render_halts_when_tailored_is_none(tmp_path, monkeypatch):
-    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path))
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
     state = ApplyState(session_id="s3")
     result = render(state)
     assert "error" in result

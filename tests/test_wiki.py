@@ -1,5 +1,5 @@
-import pi_apply.wiki as wiki_module
-from pi_apply.wiki import WikiStore, company_slug
+import callback.wiki as wiki_module
+from callback.wiki import WikiStore, company_slug
 
 
 def store(tmp_path, monkeypatch):

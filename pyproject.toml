@@ -1,5 +1,5 @@
 [project]
-name = "pi-apply"
+name = "callback"
 version = "0.5.0"
 description = "Add your description here"
 requires-python = ">=3.12"
@@ -23,17 +23,17 @@ dependencies = [
 ]
 
 [project.scripts]
-pi-apply = "pi_apply.cli:app"
+callback = "callback.cli:app"
 
 [build-system]
 requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["pi_apply*"]
+include = ["callback*"]
 
 [tool.setuptools.package-data]
-"pi_apply.render" = ["*.html.j2", "fonts/*.ttf"]
+"callback.render" = ["*.html.j2", "fonts/*.ttf"]
 
 [dependency-groups]
 dev = [

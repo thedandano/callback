@@ -1,5 +1,5 @@
-from pi_apply.state import CompiledProfile, CreatedStory
-from pi_apply.wiki import WikiStore, company_slug
+from callback.state import CompiledProfile, CreatedStory
+from callback.wiki import WikiStore, company_slug
 
 _WIKI_STORE = WikiStore()
 
