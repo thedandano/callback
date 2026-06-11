@@ -72,9 +72,10 @@ parity CI, and release-please for semver releases driven by conventional commits
 - [x] Add `typer` and `rich` to dependencies
 - [x] Create `pi_apply/cli.py` with `typer.Typer()` app
   - [x] `pi-apply serve` — starts the FastMCP MCP server (replaces `uv run python main.py`)
-  - [x] `pi-apply setup-mcp` — create a resusable interface
+  - [x] `pi-apply setup-mcp` — creates a reusable interface
   - [x] `pi-apply setup-mcp` — implements the interface to write MCP server config to `~/.claude.json` under `mcpServers["pi-apply"]`
-  - [x] `pi-apply setup-mcp` — implements the interface to write MCP server config to `~/.codex/config.toml` under `mcpServers["pi-apply"]`. use docs mcp
+  - [x] `pi-apply setup-mcp` — implements the interface to write MCP server config to `~/.codex/config.toml` under `mcp_servers["pi-apply"]`
+  - [x] `pi-apply config` — manages MCP server env maps for tracing and local setup
   - [x] `pi-apply logs` — tails `~/.local/state/pi-apply/server.log` (XDG state dir)
   - [x] `pi-apply version` — prints version from `importlib.metadata`
 - [x] Add entry point to `pyproject.toml`:
@@ -274,16 +275,29 @@ go-apply subprocess use after `pdfrender` was deemed not a CLI.
 
 ---
 
-## Epic 7 — LangSmith Observability
+## Epic 7 — LangSmith Observability via Observability Port
 
-Traces LangGraph graph execution — node timings, state transitions, interrupt points.
+Traces LangGraph graph execution through an opt-in adapter. The port keeps
+vendor details out of workflow nodes and limits trace metadata to safe fields
+only.
 
-- [ ] Add `langsmith` to dependencies
-- [ ] `LANGCHAIN_TRACING_V2=true`, `LANGCHAIN_API_KEY`, `LANGCHAIN_PROJECT` in `.env.example`
-- [ ] LangSmith project name: `pi-apply`
-- [ ] Custom trace metadata on each run: `session_id`, `tool_name`, `resume_label`
-- [ ] `make trace` — convenience target that opens LangSmith project URL
-- [ ] Verify: E2E run produces visible trace in LangSmith dashboard
+- [x] `pi_apply/observability.py` port for graph `RunnableConfig` tracing metadata
+- [x] Direct `langsmith` runtime dependency declared for tracing support
+- [x] LangSmith adapter enabled by `PI_APPLY_TRACE_BACKEND=langsmith`
+- [x] Required env guardrails: `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY`
+- [x] Default LangSmith endpoint: `LANGSMITH_ENDPOINT=https://api.smith.langchain.com`
+- [x] Default LangSmith project name: `LANGSMITH_PROJECT=Pi-Apply`
+- [x] Safe trace metadata only: `session_id`, `tool_name`, `resume_label`, `graph_name`, `transport`
+- [x] Sanitized LangSmith decorator spans for MCP tools and graph nodes
+- [x] Suppress native paused LangGraph traces during MCP graph invokes
+- [x] `pi-apply config langsmith` guided config command
+- [x] `pi-apply config env list|set|unset` for Claude/Codex MCP env maps
+- [x] `pi-apply config status` for read-only Claude/Codex env drift checks
+- [x] `pi-apply trace-check` for LangSmith import/auth/project verification and safe test trace emission
+- [x] `setup-mcp` remains noninteractive and preserves existing `env` maps
+- [x] Docs updated for CLI config, logs, restart requirements, and safe metadata
+- [ ] Manual trace verification: E2E run produces visible trace in LangSmith dashboard
+- [ ] _Optional polish:_ `make trace` convenience target that opens the LangSmith project URL
 
 ---
 

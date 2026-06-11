@@ -28,6 +28,7 @@ from pydantic import ValidationError
 from pi_apply import extractor as resume_extractor
 from pi_apply import scorer
 from pi_apply.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError, fetch_url_to_markdown
+from pi_apply.observability import trace_node
 from pi_apply.render import render_resume
 from pi_apply.repository.resumes import ResumeNotFoundError, get_resume
 from pi_apply.section_map import SectionMap
@@ -116,6 +117,7 @@ def _run_score(
     }
 
 
+@trace_node("apply", "jd_fetch")
 def jd_fetch(state: ApplyState) -> dict:
     """Fetch or accept a job description.
 
@@ -170,6 +172,7 @@ def jd_fetch(state: ApplyState) -> dict:
     raise ValueError("neither jd_url nor jd_raw_text provided")
 
 
+@trace_node("apply", "keywords_accept")
 def keywords_accept(state: ApplyState) -> dict:
     """Accept host-submitted JDData without extracting from jd_text.
 
@@ -229,6 +232,7 @@ def _load_wiki_sections(resume_label: str) -> tuple[str, str, str]:
     return sections_json, wiki_index, resume_text
 
 
+@trace_node("apply", "parse_initial")
 def parse_initial(state: ApplyState) -> dict:
     """Load sections.json from wiki for tailoring; extract original PDF for scoring."""
     _log_enter("parse_initial", state)
@@ -261,6 +265,7 @@ def parse_initial(state: ApplyState) -> dict:
     return {**base, "parsed_initial": text}
 
 
+@trace_node("apply", "score_initial")
 def score_initial(state: ApplyState) -> dict:
     """Score the parsed resume against JD keywords using scorer.py."""
     _log_enter("score_initial", state)
@@ -368,12 +373,23 @@ def _split_title_summary(summary: str | None) -> tuple[str | None, str | None]:
     return None, summary
 
 
-def _section_map_to_tailored_resume(section_map: SectionMap) -> TailoredResume:
+def _normalize_resume_title(title: str | None) -> str | None:
+    if not isinstance(title, str):
+        return None
+    stripped = title.strip()
+    return stripped.upper() if stripped else None
+
+
+def _section_map_to_tailored_resume(
+    section_map: SectionMap,
+    fallback_title: str | None = None,
+) -> TailoredResume:
     """Convert a SectionMap to a TailoredResume for rendering."""
     contact = section_map.contact
     if contact is None:
         raise ValueError("_section_map_to_tailored_resume: section_map.contact is required")
     title, summary = _split_title_summary(section_map.summary)
+    title = title or _normalize_resume_title(fallback_title)
     proj_blocks: list[str] = []
     for proj in section_map.projects:
         block_lines = [proj.name]
@@ -400,6 +416,7 @@ def _section_map_to_tailored_resume(section_map: SectionMap) -> TailoredResume:
     )
 
 
+@trace_node("apply", "tailor")
 def tailor(state: ApplyState) -> dict:
     """Convert tailored_sections SectionMap to TailoredResume, or skip if no_coverage."""
     _log_enter("tailor", state)
@@ -408,7 +425,10 @@ def tailor(state: ApplyState) -> dict:
     if state.tailored_sections:
         try:
             section_map = SectionMap.model_validate(state.tailored_sections)
-            return {"tailored": _section_map_to_tailored_resume(section_map)}
+            fallback_title = None
+            if isinstance(state.keywords, dict):
+                fallback_title = state.keywords.get("title")
+            return {"tailored": _section_map_to_tailored_resume(section_map, fallback_title)}
         except (ValidationError, ValueError) as exc:
             return {"error": f"tailor: invalid tailored_sections: {exc}"}
     return {"error": "tailor: no tailored_sections and no_coverage not set"}
@@ -436,6 +456,7 @@ def _resolve_tailored_text(state: ApplyState) -> str:
     return ""
 
 
+@trace_node("apply", "render")
 def render(state: ApplyState) -> dict:
     """Render tailored resume to PDF via HTML + Playwright."""
     _log_enter("render", state)
@@ -467,6 +488,7 @@ def render(state: ApplyState) -> dict:
         return {"error": f"render: {result['error']}"}
 
 
+@trace_node("apply", "parse_final")
 def parse_final(state: ApplyState) -> dict:
     """Extract text from the rendered PDF for final ATS scoring."""
     _log_enter("parse_final", state)
@@ -486,6 +508,7 @@ def parse_final(state: ApplyState) -> dict:
     return {"parsed_final": text}
 
 
+@trace_node("apply", "score_final")
 def score_final(state: ApplyState) -> dict:
     """Score the extracted PDF text against JD keywords."""
     _log_enter("score_final", state)
@@ -523,6 +546,7 @@ def _compute_tailor_diagnostics(
     return result
 
 
+@trace_node("apply", "report")
 def report(state: ApplyState) -> dict:
     """Compute per-dimension score delta and format gap between initial and final pass.
 
@@ -560,6 +584,7 @@ def report(state: ApplyState) -> dict:
     }
 
 
+@trace_node("apply", "finalize")
 def finalize(state: ApplyState) -> dict:
     """Archive the complete application record.
 

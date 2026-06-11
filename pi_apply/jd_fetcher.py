@@ -43,8 +43,8 @@ def _wait_until() -> str:
     return os.getenv("PI_APPLY_FETCH_WAIT_UNTIL", DEFAULT_WAIT_UNTIL)
 
 
-def _outer_timeout_s() -> int:
-    return int(os.getenv("PI_APPLY_FETCH_OUTER_TIMEOUT_S", DEFAULT_OUTER_TIMEOUT_S))
+def _outer_timeout_s() -> float:
+    return float(os.getenv("PI_APPLY_FETCH_OUTER_TIMEOUT_S", DEFAULT_OUTER_TIMEOUT_S))
 
 
 def _magic() -> bool:
@@ -56,9 +56,7 @@ def _log(event: str, **fields: object) -> None:
     logger.info(json.dumps({"event": event, **fields}))
 
 
-async def fetch_url_to_markdown(url: str) -> str:
-    """Fetch a URL with Crawl4AI and return pruned fit markdown."""
-
+async def _fetch_url_to_markdown_unbounded(url: str) -> str:
     config = CrawlerRunConfig(
         markdown_generator=DefaultMarkdownGenerator(content_filter=PruningContentFilter()),
         wait_until=_wait_until(),
@@ -66,8 +64,14 @@ async def fetch_url_to_markdown(url: str) -> str:
     )
 
     async with AsyncWebCrawler(headless=True, magic=_magic()) as crawler:
-        result: Any = await asyncio.wait_for(
-            crawler.arun(url=url, config=config),
-            timeout=_outer_timeout_s(),
-        )
+        result: Any = await crawler.arun(url=url, config=config)
     return result.markdown.fit_markdown
+
+
+async def fetch_url_to_markdown(url: str) -> str:
+    """Fetch a URL with Crawl4AI and return pruned fit markdown."""
+
+    return await asyncio.wait_for(
+        _fetch_url_to_markdown_unbounded(url),
+        timeout=_outer_timeout_s(),
+    )

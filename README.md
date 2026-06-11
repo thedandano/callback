@@ -26,9 +26,11 @@ pi-apply setup-mcp
 
 After `setup-mcp`, restart your MCP host (Claude Desktop, etc.) to pick up the new server.
 
-`setup-mcp` registers both Claude and Codex with the default server log at
-`~/.local/state/pi-apply/server.log`. Project-local logs are opt-in for manual
-debugging with `pi-apply serve --project-logs`.
+`setup-mcp` is intentionally noninteractive: it only registers the `pi-apply`
+server entry for Claude and Codex. It preserves any existing `env` map on the
+`pi-apply` server entry, but it does not ask for API keys or configure tracing.
+Server logs default to `~/.local/state/pi-apply/server.log`. Project-local logs
+are opt-in for manual debugging with `pi-apply serve --project-logs`.
 
 For local development installs from this repository, prefer:
 
@@ -41,16 +43,77 @@ make install && pi-apply setup-mcp
 `origin/main` print a suffix like `0.3.0-01-abc1234`; uncommitted changes add
 `-dirty`.
 
+## Config
+
+MCP hosts launch `pi-apply serve` as a subprocess, so tracing environment
+variables must live in the Claude/Codex MCP config `env` maps.
+
+```bash
+# Guided LangSmith setup for both Claude and Codex
+pi-apply config langsmith
+
+# Noninteractive LangSmith setup
+pi-apply config langsmith --api-key lsv2-... --project Pi-Apply
+
+# Inspect configured env vars. Secret-like keys are redacted by default.
+pi-apply config status
+pi-apply config env list
+pi-apply config env list --show-secrets
+
+# Set or unset one env var
+pi-apply config env set PI_APPLY_TRACE_BACKEND langsmith --target all
+pi-apply config env unset LANGSMITH_API_KEY --target codex
+
+# Verify active LangSmith configuration and optionally emit a safe test span
+pi-apply trace-check --target codex
+pi-apply trace-check --target codex --emit-test-trace
+```
+
+LangSmith tracing is opt-in. To enable it, configure:
+
+- `PI_APPLY_TRACE_BACKEND=langsmith`
+- `LANGSMITH_TRACING=true`
+- `LANGSMITH_ENDPOINT=https://api.smith.langchain.com`
+- `LANGSMITH_API_KEY=<your LangSmith API key>`
+- `LANGSMITH_PROJECT=Pi-Apply` unless you choose another project name
+
+LangSmith offers hosted accounts, including free-tier signup paths. pi-apply
+does not require LangSmith to run; without the env vars above, tracing is a
+no-op and normal logs still work.
+
+pi-apply uses two tracing layers when LangSmith is enabled:
+
+- LangGraph `RunnableConfig` metadata for graph runs.
+- Sanitized LangSmith decorator spans for MCP tool calls and graph nodes.
+
+The MCP server suppresses native LangChain/LangGraph auto-tracing around graph
+invocation because pi-apply intentionally pauses graphs at host handoff points.
+Without this, the LangSmith UI can show a native graph run as pending while it is
+waiting for the next MCP tool call. The sanitized `pi-apply.*` tool and node
+spans are the supported observability surface for MCP demos.
+
+The decorator spans are intentionally redacted. They include safe fields such as
+`session_id`, `tool_name`, `graph_name`, `node_name`, `resume_label`, counts, and
+key names. They do not include resume text, JD body text, wiki page content,
+host-submitted edits, file paths, or API keys.
+
+After any `pi-apply config ...` change, restart Claude/Codex so the MCP host
+reloads the subprocess environment.
+
+Use `pi-apply config status` before or after `setup-mcp` to compare the
+Claude/Codex `pi-apply` env maps. It is read-only and reports `same`,
+`different`, `missing`, or `unset` so you can confirm existing env vars were not
+overwritten.
+
 ## Logs
 
 ```bash
 pi-apply logs --follow
 ```
 
-When `./.pi-apply/server.log` exists, `pi-apply logs` reads that project log.
-Otherwise it reads the default `~/.local/state/pi-apply/server.log`. Use
-`--project-logs` to force the project log, or `--log-path <path>` to override
-both.
+`pi-apply logs` reads the default `~/.local/state/pi-apply/server.log`. Use
+`--project-logs` to read `./.pi-apply/server.log`, or `--log-path <path>` to
+override both.
 
 ---
 
