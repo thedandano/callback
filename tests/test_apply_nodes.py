@@ -169,6 +169,31 @@ class TestTailorNode:
             max_pages=1,
         )
 
+    def test_tailor_uses_jd_title_when_summary_has_no_title_line(self):
+        state = ApplyState(
+            session_id="s",
+            keywords={"title": "Staff Software Engineer, Applied AI"},
+            tailored_sections={
+                "contact": {"name": "Jane Doe"},
+                "summary": "Backend engineer with applied AI experience.",
+                "skills": {"flat": ["Python"], "categorized": {}},
+                "experience": [],
+            },
+        )
+
+        result = tailor(state)
+
+        actual = {
+            "title": result["tailored"].title,
+            "summary": result["tailored"].summary,
+        }
+        expected = {
+            "title": "STAFF SOFTWARE ENGINEER, APPLIED AI",
+            "summary": "Backend engineer with applied AI experience.",
+        }
+
+        assert actual == expected
+
     def test_tailor_no_coverage_returns_empty(self):
         state = ApplyState(session_id="s", no_coverage=True)
         result = tailor(state)

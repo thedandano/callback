@@ -8,6 +8,7 @@ import json
 import logging
 
 import pi_apply.extractor as extractor
+from pi_apply.observability import trace_node
 from pi_apply.profilecompiler import (
     ProfileCompiler,
     ProfileMissingError,
@@ -61,6 +62,7 @@ def _render_wiki(label: str, profile) -> None:
     renderer.render_index(label, profile)
 
 
+@trace_node("profile", "check_profile")
 def check_profile(state: ProfileState) -> dict:
     _log_enter("check_profile", state)
     try:
@@ -71,6 +73,7 @@ def check_profile(state: ProfileState) -> dict:
         return {"profile_exists": False}
 
 
+@trace_node("profile", "onboard")
 def onboard(state: ProfileState) -> dict:
     _log_enter("onboard", state)
     if not state.resume_path:
@@ -99,6 +102,7 @@ def onboard(state: ProfileState) -> dict:
     }
 
 
+@trace_node("profile", "compile_profile")
 def compile_profile(state: ProfileState) -> dict:
     _log_enter("compile_profile", state)
     stories = AccomplishmentsStore().list_stories()
@@ -124,6 +128,7 @@ def compile_profile(state: ProfileState) -> dict:
     }
 
 
+@trace_node("profile", "check_orphans")
 def check_orphans(state: ProfileState) -> dict:
     _log_enter("check_orphans", state)
     try:
@@ -134,6 +139,7 @@ def check_orphans(state: ProfileState) -> dict:
         return {"orphaned_skills": []}
 
 
+@trace_node("profile", "create_story")
 def create_story(state: ProfileState) -> dict:
     _log_enter("create_story", state)
     intake = state.intake or {}

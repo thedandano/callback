@@ -18,6 +18,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, StateGraph
 
+from pi_apply.observability import build_graph_config
 from pi_apply.profile_nodes import (
     check_orphans,
     check_profile,
@@ -30,9 +31,21 @@ from pi_apply.state import ProfileState
 DB_PATH = Path.home() / ".local" / "share" / "pi-apply" / "profile-sessions.db"
 
 
-def make_config(session_id: str) -> RunnableConfig:
+def make_config(
+    session_id: str,
+    *,
+    tool_name: str | None = None,
+    resume_label: str | None = None,
+) -> RunnableConfig:
     """Create a RunnableConfig for a session."""
-    return RunnableConfig(configurable={"thread_id": session_id})
+    if tool_name is None:
+        return RunnableConfig(configurable={"thread_id": session_id})
+    return build_graph_config(
+        session_id=session_id,
+        graph_name="profile",
+        tool_name=tool_name,
+        resume_label=resume_label,
+    )
 
 
 def _route_check_profile(state: ProfileState) -> str:

@@ -100,3 +100,23 @@ def test_fetch_url_to_markdown_propagates_outer_timeout(monkeypatch):
 
     with pytest.raises(asyncio.TimeoutError):
         asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
+
+
+def test_fetch_url_to_markdown_outer_timeout_covers_crawler_startup(monkeypatch):
+    async def slow_enter():
+        await asyncio.sleep(0.02)
+        return crawler
+
+    monkeypatch.setattr(jd_fetcher, "_outer_timeout_s", lambda: 0.01)
+    crawler = Mock()
+    crawler.arun = AsyncMock(return_value=_result("too late"))
+    crawler_cls = Mock()
+    context = crawler_cls.return_value
+    context.__aenter__ = AsyncMock(side_effect=slow_enter)
+    context.__aexit__ = AsyncMock(return_value=None)
+    monkeypatch.setattr(jd_fetcher, "AsyncWebCrawler", crawler_cls)
+
+    with pytest.raises(asyncio.TimeoutError):
+        asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
+
+    crawler.arun.assert_not_awaited()
