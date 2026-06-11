@@ -11,8 +11,8 @@ class ResumeNotFoundError(Exception):
 
 def data_dir() -> Path:
     if "XDG_DATA_HOME" in os.environ:
-        return Path(os.environ["XDG_DATA_HOME"]) / "pi-apply" / "inputs"
-    return Path.home() / ".local" / "share" / "pi-apply" / "inputs"
+        return Path(os.environ["XDG_DATA_HOME"]) / "callback" / "inputs"
+    return Path.home() / ".local" / "share" / "callback" / "inputs"
 
 
 def save_resume(label: str, path: str) -> str:

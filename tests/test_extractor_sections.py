@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from pi_apply.extractor import extract_sections
-from pi_apply.section_map import SectionMap
+from callback.extractor import extract_sections
+from callback.section_map import SectionMap
 
 RESUME_TEXT = """
 John Doe
@@ -31,7 +31,7 @@ Startup Inc | Software Engineer | Mar 2018 – Dec 2020
 - Migrated monolith to microservices, reducing p99 latency by 60%
 
 PROJECTS
-pi-apply
+callback
 LangGraph MCP server for resume tailoring
 - Implemented holistic tailor pass replacing two-tier T1/T2 system
 - Achieved 95% ATS pass rate in testing
@@ -81,7 +81,7 @@ def test_projects_count(sm: SectionMap) -> None:
 
 
 def test_projects_name(sm: SectionMap) -> None:
-    assert "pi-apply" in sm.projects[0].name
+    assert "callback" in sm.projects[0].name
 
 
 def test_projects_bullets(sm: SectionMap) -> None:

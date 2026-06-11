@@ -2,9 +2,9 @@
 
 import json
 
-import pi_apply.profile_nodes as pnodes
-import pi_apply.server as server_module
-from pi_apply.server import compile_profile, create_story, onboard_user
+import callback.profile_nodes as pnodes
+import callback.server as server_module
+from callback.server import compile_profile, create_story, onboard_user
 
 
 def _fake_graph(state_values: dict):

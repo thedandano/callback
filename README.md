@@ -1,11 +1,11 @@
-# pi-apply
+# callback
 
-[![CI](https://github.com/thedandano/pi-apply/actions/workflows/ci.yml/badge.svg)](https://github.com/thedandano/pi-apply/actions/workflows/ci.yml)
+[![CI](https://github.com/thedandano/callback/actions/workflows/ci.yml/badge.svg)](https://github.com/thedandano/callback/actions/workflows/ci.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/downloads/)
 
 **Get past the ATS gate so you talk to a human recruiter.**
 
-pi-apply is a [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server for job applications. It fetches job descriptions, scores your resume against ATS keyword requirements, tailors resume bullets using your wiki of behavioral stories, and renders a PDF — all orchestrated by your MCP host (Claude, Codex, etc.).
+callback is a [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server for job applications. It fetches job descriptions, scores your resume against ATS keyword requirements, tailors resume bullets using your wiki of behavioral stories, and renders a PDF — all orchestrated by your MCP host (Claude, Codex, etc.).
 
 ---
 
@@ -14,28 +14,28 @@ pi-apply is a [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) s
 > **Requires** `uv` — [install uv](https://docs.astral.sh/uv/getting-started/installation/)
 
 ```bash
-# 1. Install pi-apply from GitHub
-uv tool install git+https://github.com/thedandano/pi-apply.git
+# 1. Install callback from GitHub
+uv tool install git+https://github.com/thedandano/callback.git
 
 # 2. Install Playwright Chromium (needed for URL-based JD fetching)
-pi-apply install-browsers
+callback install-browsers
 
 # 3. Register the MCP server with Claude and Codex
-pi-apply setup-mcp
+callback setup-mcp
 ```
 
 After `setup-mcp`, restart your MCP host (Claude Desktop, etc.) to pick up the new server.
 
-`setup-mcp` is intentionally noninteractive: it only registers the `pi-apply`
+`setup-mcp` is intentionally noninteractive: it only registers the `callback`
 server entry for Claude and Codex. It preserves any existing `env` map on the
-`pi-apply` server entry, but it does not ask for API keys or configure tracing.
-Server logs default to `~/.local/state/pi-apply/server.log`. Project-local logs
-are opt-in for manual debugging with `pi-apply serve --project-logs`.
+`callback` server entry, but it does not ask for API keys or configure tracing.
+Server logs default to `~/.local/state/callback/server.log`. Project-local logs
+are opt-in for manual debugging with `callback serve --project-logs`.
 
 For local development installs from this repository, prefer:
 
 ```bash
-make install && pi-apply setup-mcp
+make install && callback setup-mcp
 ```
 
 `make install` embeds a local build version in the CLI. Clean installs on
@@ -45,51 +45,51 @@ make install && pi-apply setup-mcp
 
 ## Config
 
-MCP hosts launch `pi-apply serve` as a subprocess, so tracing environment
+MCP hosts launch `callback serve` as a subprocess, so tracing environment
 variables must live in the Claude/Codex MCP config `env` maps.
 
 ```bash
 # Guided LangSmith setup for both Claude and Codex
-pi-apply config langsmith
+callback config langsmith
 
 # Noninteractive LangSmith setup
-pi-apply config langsmith --api-key lsv2-... --project Pi-Apply
+callback config langsmith --api-key lsv2-... --project Callback
 
 # Inspect configured env vars. Secret-like keys are redacted by default.
-pi-apply config status
-pi-apply config env list
-pi-apply config env list --show-secrets
+callback config status
+callback config env list
+callback config env list --show-secrets
 
 # Set or unset one env var
-pi-apply config env set PI_APPLY_TRACE_BACKEND langsmith --target all
-pi-apply config env unset LANGSMITH_API_KEY --target codex
+callback config env set CALLBACK_TRACE_BACKEND langsmith --target all
+callback config env unset LANGSMITH_API_KEY --target codex
 
 # Verify active LangSmith configuration and optionally emit a safe test span
-pi-apply trace-check --target codex
-pi-apply trace-check --target codex --emit-test-trace
+callback trace-check --target codex
+callback trace-check --target codex --emit-test-trace
 ```
 
 LangSmith tracing is opt-in. To enable it, configure:
 
-- `PI_APPLY_TRACE_BACKEND=langsmith`
+- `CALLBACK_TRACE_BACKEND=langsmith`
 - `LANGSMITH_TRACING=true`
 - `LANGSMITH_ENDPOINT=https://api.smith.langchain.com`
 - `LANGSMITH_API_KEY=<your LangSmith API key>`
-- `LANGSMITH_PROJECT=Pi-Apply` unless you choose another project name
+- `LANGSMITH_PROJECT=Callback` unless you choose another project name
 
-LangSmith offers hosted accounts, including free-tier signup paths. pi-apply
+LangSmith offers hosted accounts, including free-tier signup paths. callback
 does not require LangSmith to run; without the env vars above, tracing is a
 no-op and normal logs still work.
 
-pi-apply uses two tracing layers when LangSmith is enabled:
+callback uses two tracing layers when LangSmith is enabled:
 
 - LangGraph `RunnableConfig` metadata for graph runs.
 - Sanitized LangSmith decorator spans for MCP tool calls and graph nodes.
 
 The MCP server suppresses native LangChain/LangGraph auto-tracing around graph
-invocation because pi-apply intentionally pauses graphs at host handoff points.
+invocation because callback intentionally pauses graphs at host handoff points.
 Without this, the LangSmith UI can show a native graph run as pending while it is
-waiting for the next MCP tool call. The sanitized `pi-apply.*` tool and node
+waiting for the next MCP tool call. The sanitized `callback.*` tool and node
 spans are the supported observability surface for MCP demos.
 
 The decorator spans are intentionally redacted. They include safe fields such as
@@ -97,22 +97,22 @@ The decorator spans are intentionally redacted. They include safe fields such as
 key names. They do not include resume text, JD body text, wiki page content,
 host-submitted edits, file paths, or API keys.
 
-After any `pi-apply config ...` change, restart Claude/Codex so the MCP host
+After any `callback config ...` change, restart Claude/Codex so the MCP host
 reloads the subprocess environment.
 
-Use `pi-apply config status` before or after `setup-mcp` to compare the
-Claude/Codex `pi-apply` env maps. It is read-only and reports `same`,
+Use `callback config status` before or after `setup-mcp` to compare the
+Claude/Codex `callback` env maps. It is read-only and reports `same`,
 `different`, `missing`, or `unset` so you can confirm existing env vars were not
 overwritten.
 
 ## Logs
 
 ```bash
-pi-apply logs --follow
+callback logs --follow
 ```
 
-`pi-apply logs` reads the default `~/.local/state/pi-apply/server.log`. Use
-`--project-logs` to read `./.pi-apply/server.log`, or `--log-path <path>` to
+`callback logs` reads the default `~/.local/state/callback/server.log`. Use
+`--project-logs` to read `./.callback/server.log`, or `--log-path <path>` to
 override both.
 
 ---
@@ -120,7 +120,7 @@ override both.
 ## Update
 
 ```bash
-pi-apply update
+callback update
 ```
 
 Upgrades to the latest release via `uv tool upgrade`.
@@ -131,20 +131,20 @@ Upgrades to the latest release via `uv tool upgrade`.
 
 ```bash
 # Step 1: remove MCP server entries from Claude and Codex configs
-pi-apply uninstall
+callback uninstall
 
 # Step 2: remove the tool itself
-uv tool uninstall pi-apply
+uv tool uninstall callback
 ```
 
 Add `--purge` to step 1 to also delete application data and state directories:
 
 ```bash
-pi-apply uninstall --purge
+callback uninstall --purge
 ```
 
-`--purge` deletes `~/.local/share/pi-apply/` (application PDFs and JSON archives) and
-`~/.local/state/pi-apply/` (LangGraph SQLite checkpointer databases and logs).
+`--purge` deletes `~/.local/share/callback/` (application PDFs and JSON archives) and
+`~/.local/state/callback/` (LangGraph SQLite checkpointer databases and logs).
 
 ---
 
@@ -165,7 +165,7 @@ Once the server is running, your MCP host can call these tools:
 
 ### Agent MCP Playbook
 
-When a user asks to use pi-apply for a job, the MCP host should follow the workflow metadata returned by each tool:
+When a user asks to use callback for a job, the MCP host should follow the workflow metadata returned by each tool:
 
 1. Call `load_jd` with `jd_url` or `jd_raw_text`.
 2. Extract compact JDData from `data.jd_text` using `data.extraction_protocol`.
@@ -175,7 +175,7 @@ When a user asks to use pi-apply for a job, the MCP host should follow the workf
 6. If `workflow.next_tool` is `onboard_user` or `create_story`, collect the missing profile evidence, compile the profile, then restart the job flow with `load_jd`.
 7. After `submit_tailor`, return `data.pdf_path`, `data.archive_path`, `data.report`, and `data.outcome` to the user.
 
-The host owns keyword extraction and tailoring judgment. pi-apply owns state, validation, rendering, scoring, and archival.
+The host owns keyword extraction and tailoring judgment. callback owns state, validation, rendering, scoring, and archival.
 
 ### Scoring dimensions
 
@@ -193,8 +193,8 @@ The host owns keyword extraction and tailoring judgment. pi-apply owns state, va
 
 ```bash
 # Clone and install with dev dependencies
-git clone https://github.com/thedandano/pi-apply.git
-cd pi-apply
+git clone https://github.com/thedandano/callback.git
+cd callback
 uv sync
 
 # One-time browser setup
@@ -207,5 +207,5 @@ uv run pytest
 uv run pyright
 
 # Run the MCP server locally
-uv run python -m pi_apply.server
+uv run python -m callback.server
 ```

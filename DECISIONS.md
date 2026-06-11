@@ -1,10 +1,10 @@
-# Architectural Decisions — pi-apply
+# Architectural Decisions — callback
 
-Context: This document captures the key decisions made during the go-apply architectural review session (2026-04-30) that shape the pi-apply design.
+Context: This document captures the key decisions made during the go-apply architectural review session (2026-04-30) that shape the callback design.
 
 ---
 
-## What pi-apply is
+## What callback is
 
 A Python MCP server that replaces the Go MCP server (go-apply). LangGraph owns the workflow state and orchestration. Claude remains the user-facing interface — nothing changes about how it's used day-to-day.
 

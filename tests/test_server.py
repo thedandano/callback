@@ -1,4 +1,4 @@
-"""Tests for pi_apply.server MCP tool registration and routing."""
+"""Tests for callback.server MCP tool registration and routing."""
 
 import json
 import sqlite3
@@ -10,7 +10,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.client.transports import FastMCPTransport
 
-from pi_apply.jd_data import EXTRACTION_PROTOCOL
+from callback.jd_data import EXTRACTION_PROTOCOL
 
 PARTIAL_JD_JSON = """
 {
@@ -68,7 +68,7 @@ def _tool_names(server) -> set[str]:
 
 
 def test_apply_handoff_tools_registered():
-    import pi_apply.server as server
+    import callback.server as server
 
     expected = {
         "load_jd",
@@ -85,7 +85,7 @@ def test_apply_handoff_tools_registered():
 
 
 def test_legacy_apply_tool_absent():
-    import pi_apply.server as server
+    import callback.server as server
 
     legacy = {
         "apply",
@@ -102,7 +102,7 @@ def test_legacy_apply_tool_absent():
 
 
 def test_run_starts_mcp_without_browser_install():
-    import pi_apply.server as server
+    import callback.server as server
 
     with (
         patch.object(server, "_ensure_browsers") as ensure_browsers,
@@ -120,14 +120,14 @@ def test_run_starts_mcp_without_browser_install():
 
 
 def test_run_logs_crash_before_raising_explicit_error():
-    import pi_apply.server as server
+    import callback.server as server
 
     error = RuntimeError("transport failed")
     with (
         patch.object(server, "_log") as log,
         patch.object(server, "_log_exception") as log_exception,
         patch.object(server.mcp, "run", side_effect=error),
-        pytest.raises(RuntimeError, match="pi-apply MCP stdio server crashed") as exc_info,
+        pytest.raises(RuntimeError, match="callback MCP stdio server crashed") as exc_info,
     ):
         server.run()
 
@@ -146,7 +146,7 @@ def test_run_logs_crash_before_raising_explicit_error():
 
 
 def test_run_logs_crash_traceback_before_raising():
-    import pi_apply.server as server
+    import callback.server as server
 
     captured_payloads: list[dict] = []
     original_log_exception = server._log_exception
@@ -161,7 +161,7 @@ def test_run_logs_crash_traceback_before_raising():
         patch.object(server, "_log"),
         patch.object(server, "_log_exception", side_effect=fake_log_exception),
         patch.object(server.mcp, "run", side_effect=RuntimeError("transport failed")),
-        pytest.raises(RuntimeError, match="pi-apply MCP stdio server crashed"),
+        pytest.raises(RuntimeError, match="callback MCP stdio server crashed"),
     ):
         server.run()
 
@@ -169,7 +169,7 @@ def test_run_logs_crash_traceback_before_raising():
 
 
 def test_load_jd_rejects_missing_jd_input():
-    from pi_apply.server import load_jd
+    from callback.server import load_jd
 
     result = json.loads(load_jd())
     session_id = result["session_id"]
@@ -189,11 +189,11 @@ def test_load_jd_rejects_missing_jd_input():
 
 
 def test_load_jd_returns_handoff_envelope():
-    from pi_apply.server import load_jd
+    from callback.server import load_jd
 
     jd_text = "Python engineer needed"
 
-    with patch("pi_apply.server.list_resumes", return_value=["resume"]):
+    with patch("callback.server.list_resumes", return_value=["resume"]):
         result = json.loads(load_jd(jd_raw_text=jd_text))
     session_id = result["session_id"]
     uuid.UUID(session_id)
@@ -212,8 +212,8 @@ def test_load_jd_returns_handoff_envelope():
 
 
 def test_load_jd_trace_payload_carries_jd_text_and_full_output_data(monkeypatch):
-    import pi_apply.server as server
-    from pi_apply.server import load_jd
+    import callback.server as server
+    from callback.server import load_jd
 
     captured: dict = {}
 
@@ -240,14 +240,14 @@ def test_load_jd_trace_payload_carries_jd_text_and_full_output_data(monkeypatch)
 
         return decorator
 
-    monkeypatch.setenv("PI_APPLY_TRACE_BACKEND", "langsmith")
+    monkeypatch.setenv("CALLBACK_TRACE_BACKEND", "langsmith")
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2-secret")
 
     with (
         patch.object(server, "list_resumes", return_value=["resume"]),
         patch.object(server, "build_apply_graph", return_value=FakeGraph()),
-        patch("pi_apply.observability._get_traceable", return_value=fake_traceable),
+        patch("callback.observability._get_traceable", return_value=fake_traceable),
     ):
         result = json.loads(load_jd(jd_raw_text="secret jd body"))
 
@@ -270,15 +270,15 @@ def test_load_jd_trace_payload_carries_jd_text_and_full_output_data(monkeypatch)
 
 
 def test_load_jd_returns_error_when_session_store_is_readonly():
-    from pi_apply.server import load_jd
+    from callback.server import load_jd
 
     class ReadonlyGraph:
         def invoke(self, initial_state, config):
             raise sqlite3.OperationalError("attempt to write a readonly database")
 
     with (
-        patch("pi_apply.server.list_resumes", return_value=["resume"]),
-        patch("pi_apply.server.build_apply_graph", return_value=ReadonlyGraph()),
+        patch("callback.server.list_resumes", return_value=["resume"]),
+        patch("callback.server.build_apply_graph", return_value=ReadonlyGraph()),
     ):
         result = json.loads(load_jd(jd_raw_text="Python engineer needed"))
 
@@ -296,15 +296,15 @@ def test_load_jd_returns_error_when_session_store_is_readonly():
 
 
 def test_load_jd_returns_error_when_unexpected_exception_escapes_graph():
-    from pi_apply.server import load_jd
+    from callback.server import load_jd
 
     class BrokenGraph:
         def invoke(self, initial_state, config):
             raise ValueError("boom")
 
     with (
-        patch("pi_apply.server.list_resumes", return_value=["resume"]),
-        patch("pi_apply.server.build_apply_graph", return_value=BrokenGraph()),
+        patch("callback.server.list_resumes", return_value=["resume"]),
+        patch("callback.server.build_apply_graph", return_value=BrokenGraph()),
     ):
         result = json.loads(load_jd(jd_raw_text="Python engineer needed"))
 
@@ -314,7 +314,7 @@ def test_load_jd_returns_error_when_unexpected_exception_escapes_graph():
         "error": {
             "stage": "load_jd",
             "code": "unexpected_error",
-            "message": "unexpected load_jd failure; inspect pi-apply logs",
+            "message": "unexpected load_jd failure; inspect callback logs",
             "retriable": False,
         },
     }
@@ -324,26 +324,26 @@ def test_load_jd_returns_error_when_unexpected_exception_escapes_graph():
 def test_configure_logging_writes_server_log(tmp_path):
     import logging
 
-    from pi_apply.server import configure_logging
+    from callback.server import configure_logging
 
     log_path = tmp_path / "server.log"
     configure_logging(log_path)
 
-    logging.getLogger("pi_apply.server").info("test log line")
+    logging.getLogger("callback.server").info("test log line")
 
     assert "test log line" in log_path.read_text(encoding="utf-8")
 
 
 def test_load_jd_accepts_url_with_raw_text_fallback():
-    from pi_apply.server import load_jd
+    from callback.server import load_jd
 
     jd_url = "https://example.test/job"
     jd_text = "# Python Engineer\n\nBuild Python services and own APIs."
     fetch_mock = AsyncMock(return_value=jd_text)
 
     with (
-        patch("pi_apply.apply_nodes.fetch_url_to_markdown", fetch_mock),
-        patch("pi_apply.server.list_resumes", return_value=["resume"]),
+        patch("callback.apply_nodes.fetch_url_to_markdown", fetch_mock),
+        patch("callback.server.list_resumes", return_value=["resume"]),
     ):
         result = json.loads(
             load_jd(
@@ -369,9 +369,9 @@ def test_load_jd_accepts_url_with_raw_text_fallback():
 
 
 def test_submit_keywords_stores_jddata_and_routes_missing_wiki_to_onboarding():
-    from pi_apply.server import load_jd, submit_keywords
+    from callback.server import load_jd, submit_keywords
 
-    with patch("pi_apply.server.list_resumes", return_value=["resume"]):
+    with patch("callback.server.list_resumes", return_value=["resume"]):
         loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
     session_id = loaded["session_id"]
 
@@ -406,7 +406,7 @@ def test_submit_keywords_stores_jddata_and_routes_missing_wiki_to_onboarding():
 
 
 def test_submit_keywords_rejects_invalid_jd_json():
-    from pi_apply.server import submit_keywords
+    from callback.server import submit_keywords
 
     session_id = "session-123"
     expected = {
@@ -424,7 +424,7 @@ def test_submit_keywords_rejects_invalid_jd_json():
 
 
 def test_submit_keywords_rejects_empty_jd_json():
-    from pi_apply.server import submit_keywords
+    from callback.server import submit_keywords
 
     session_id = "session-123"
     expected = {
@@ -442,7 +442,7 @@ def test_submit_keywords_rejects_empty_jd_json():
 
 
 def test_submit_keywords_rejects_unknown_session():
-    from pi_apply.server import submit_keywords
+    from callback.server import submit_keywords
 
     session_id = "missing-session"
     result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
@@ -461,7 +461,7 @@ def test_submit_keywords_rejects_unknown_session():
 
 
 def test_submit_keywords_rejects_blank_session_with_session_id():
-    from pi_apply.server import submit_keywords
+    from callback.server import submit_keywords
 
     session_id = ""
     result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
@@ -480,9 +480,9 @@ def test_submit_keywords_rejects_blank_session_with_session_id():
 
 
 def test_submit_keywords_rejects_session_not_waiting_for_keywords():
-    from pi_apply.server import load_jd, submit_keywords
+    from callback.server import load_jd, submit_keywords
 
-    with patch("pi_apply.server.list_resumes", return_value=["resume"]):
+    with patch("callback.server.list_resumes", return_value=["resume"]):
         loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
     session_id = loaded["session_id"]
     submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
@@ -504,9 +504,9 @@ def test_submit_keywords_rejects_session_not_waiting_for_keywords():
 
 def test_submit_keywords_ats_format_gap_has_three_entries():
     """submit_keywords returns one ATS gap entry per required header."""
-    from pi_apply.server import load_jd, submit_keywords
+    from callback.server import load_jd, submit_keywords
 
-    with patch("pi_apply.server.list_resumes", return_value=["resume"]):
+    with patch("callback.server.list_resumes", return_value=["resume"]):
         loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
     session_id = loaded["session_id"]
 
@@ -524,11 +524,11 @@ def test_submit_keywords_ats_format_gap_has_three_entries():
 
 
 def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, monkeypatch):
-    from pi_apply.server import load_jd, submit_keywords
-    from pi_apply.wiki import WikiStore
+    from callback.server import load_jd, submit_keywords
+    from callback.wiki import WikiStore
 
     resume_label = "project_guidance_resume"
-    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -555,7 +555,7 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
     store.write_page(resume_label, "sections.json", json.dumps(sections))
     store.write_index(resume_label, "Python evidence in dated experience")
 
-    with patch("pi_apply.server.list_resumes", return_value=[resume_label]):
+    with patch("callback.server.list_resumes", return_value=[resume_label]):
         loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
     result = json.loads(submit_keywords(session_id=loaded["session_id"], jd_json=PARTIAL_JD_JSON))
 
@@ -593,11 +593,11 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
 
 
 def test_submit_keywords_returns_ranked_project_candidates(tmp_path, monkeypatch):
-    from pi_apply.server import load_jd, submit_keywords
-    from pi_apply.wiki import WikiStore
+    from callback.server import load_jd, submit_keywords
+    from callback.wiki import WikiStore
 
     resume_label = "project_candidate_resume"
-    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -629,7 +629,7 @@ def test_submit_keywords_returns_ranked_project_candidates(tmp_path, monkeypatch
                 "# Profile Index",
                 "- [Personal Voice LLM](experience/story-013.md)",
                 "- [Amazon GenAI Work](experience/story-006.md)",
-                "- [pi-apply](experience/story-012.md)",
+                "- [callback](experience/story-012.md)",
             ]
         ),
     )
@@ -662,7 +662,7 @@ Skills: Python, RAG, LLMs
     store.write_page(
         resume_label,
         "experience/story-012.md",
-        """# pi-apply — LangGraph Resume Tailoring MCP Server — April 2026
+        """# callback — LangGraph Resume Tailoring MCP Server — April 2026
 
 **Job Title:** Project
 
@@ -684,7 +684,7 @@ Skills: Python, MCP, LangGraph, SQL
         }
     )
 
-    with patch("pi_apply.server.list_resumes", return_value=[resume_label]):
+    with patch("callback.server.list_resumes", return_value=[resume_label]):
         loaded = json.loads(load_jd(jd_raw_text="GenAI engineer needed"))
         result = json.loads(submit_keywords(session_id=loaded["session_id"], jd_json=jd_json))
 
@@ -701,7 +701,7 @@ Skills: Python, MCP, LangGraph, SQL
     expected = {
         "candidate_names": [
             "Personal Voice LLM — Gemma Fine-Tuning — May 2026",
-            "pi-apply — LangGraph Resume Tailoring MCP Server — April 2026",
+            "callback — LangGraph Resume Tailoring MCP Server — April 2026",
         ],
         "top_page_id": "experience/story-013.md",
         "top_required_matched": ["Python", "RAG", "LLMs", "ChatML"],
@@ -713,11 +713,11 @@ Skills: Python, MCP, LangGraph, SQL
 
 
 def test_submit_keywords_recommends_project_append_and_trim_candidates(tmp_path, monkeypatch):
-    from pi_apply.server import load_jd, submit_keywords
-    from pi_apply.wiki import WikiStore
+    from callback.server import load_jd, submit_keywords
+    from callback.wiki import WikiStore
 
     resume_label = "project_append_resume"
-    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -775,7 +775,7 @@ Skills: Python, RAG, ChatML, LLMs
         }
     )
 
-    with patch("pi_apply.server.list_resumes", return_value=[resume_label]):
+    with patch("callback.server.list_resumes", return_value=[resume_label]):
         loaded = json.loads(load_jd(jd_raw_text="GenAI engineer needed"))
         result = json.loads(submit_keywords(session_id=loaded["session_id"], jd_json=jd_json))
 
@@ -807,11 +807,11 @@ Skills: Python, RAG, ChatML, LLMs
 def test_submit_keywords_recommends_project_replace_when_two_visible_projects(
     tmp_path, monkeypatch
 ):
-    from pi_apply.server import load_jd, submit_keywords
-    from pi_apply.wiki import WikiStore
+    from callback.server import load_jd, submit_keywords
+    from callback.wiki import WikiStore
 
     resume_label = "project_replace_layout_resume"
-    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -871,7 +871,7 @@ Skills: Python, RAG, ChatML, LLMs
         }
     )
 
-    with patch("pi_apply.server.list_resumes", return_value=[resume_label]):
+    with patch("callback.server.list_resumes", return_value=[resume_label]):
         loaded = json.loads(load_jd(jd_raw_text="GenAI engineer needed"))
         result = json.loads(submit_keywords(session_id=loaded["session_id"], jd_json=jd_json))
 
@@ -892,11 +892,11 @@ Skills: Python, RAG, ChatML, LLMs
 
 
 def test_submit_keywords_orphaned_required_routes_to_create_story(tmp_path, monkeypatch):
-    from pi_apply.server import load_jd, submit_keywords
-    from pi_apply.wiki import WikiStore
+    from callback.server import load_jd, submit_keywords
+    from callback.wiki import WikiStore
 
     resume_label = "orphan_workflow_resume"
-    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
     resume_path = tmp_path / "resume.txt"
     resume_path.write_text(
         "Jane Dev\nExperience\nBuilt backend APIs\nEducation\nBS Computer Science\n",
@@ -918,8 +918,8 @@ def test_submit_keywords_orphaned_required_routes_to_create_story(tmp_path, monk
 
     jd_json = json.dumps({"title": "Backend Engineer", "company": "Co", "required": ["Kafka"]})
     with (
-        patch("pi_apply.server.list_resumes", return_value=[resume_label]),
-        patch("pi_apply.apply_nodes.get_resume", return_value=str(resume_path)),
+        patch("callback.server.list_resumes", return_value=[resume_label]),
+        patch("callback.apply_nodes.get_resume", return_value=str(resume_path)),
     ):
         loaded = json.loads(load_jd(jd_raw_text="Kafka engineer needed"))
         result = json.loads(submit_keywords(session_id=loaded["session_id"], jd_json=jd_json))
@@ -945,11 +945,11 @@ def test_submit_keywords_orphaned_required_routes_to_create_story(tmp_path, monk
 
 
 def test_get_wiki_pages_returns_submit_tailor_workflow(tmp_path, monkeypatch):
-    from pi_apply.server import get_wiki_pages, load_jd, submit_keywords
-    from pi_apply.wiki import WikiStore
+    from callback.server import get_wiki_pages, load_jd, submit_keywords
+    from callback.wiki import WikiStore
 
     resume_label = "wiki_pages_workflow_resume"
-    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -965,7 +965,7 @@ def test_get_wiki_pages_returns_submit_tailor_workflow(tmp_path, monkeypatch):
     store.write_index(resume_label, "- experience/acme.md")
     store.write_page(resume_label, "experience/acme.md", "Built Python services.")
 
-    with patch("pi_apply.server.list_resumes", return_value=[resume_label]):
+    with patch("callback.server.list_resumes", return_value=[resume_label]):
         loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
     json.loads(submit_keywords(session_id=loaded["session_id"], jd_json=PARTIAL_JD_JSON))
 
@@ -996,7 +996,7 @@ class TestOrphanDetection:
     """Tests for _detect_orphaned_required orphan classification logic."""
 
     def test_orphan_detected_when_skill_in_sections_not_in_wiki(self):
-        from pi_apply.server import _detect_orphaned_required
+        from callback.server import _detect_orphaned_required
 
         sections = {
             "skills": {
@@ -1011,7 +1011,7 @@ class TestOrphanDetection:
         assert result == ["Python"]
 
     def test_genuine_gap_not_flagged_as_orphan(self):
-        from pi_apply.server import _detect_orphaned_required
+        from callback.server import _detect_orphaned_required
 
         sections = {
             "skills": {
@@ -1026,7 +1026,7 @@ class TestOrphanDetection:
         assert result == []
 
     def test_skill_covered_in_wiki_not_flagged(self):
-        from pi_apply.server import _detect_orphaned_required
+        from callback.server import _detect_orphaned_required
 
         sections = {
             "skills": {
@@ -1055,11 +1055,11 @@ class TestSubmitTailorNoCoverage:
 
     def test_submit_tailor_no_coverage_sets_outcome(self, tmp_path, monkeypatch):
         """no_coverage=True skips edits, runs graph to finalize, and returns no_coverage outcome."""
-        from pi_apply.server import load_jd, submit_keywords, submit_tailor
+        from callback.server import load_jd, submit_keywords, submit_tailor
 
-        monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path / "applications"))
+        monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
 
-        with patch("pi_apply.server.list_resumes", return_value=["resume"]):
+        with patch("callback.server.list_resumes", return_value=["resume"]):
             session_id = json.loads(load_jd(jd_raw_text="Python engineer needed"))["session_id"]
         json.loads(submit_keywords(session_id=session_id, jd_json=_NO_COVERAGE_JD_JSON))
 
@@ -1100,11 +1100,11 @@ class TestSubmitTailorNoCoverage:
 
     def test_submit_tailor_no_coverage_report_notes_is_list(self, tmp_path, monkeypatch):
         """submit_tailor report.notes is present and is a list."""
-        from pi_apply.server import load_jd, submit_keywords, submit_tailor
+        from callback.server import load_jd, submit_keywords, submit_tailor
 
-        monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path / "applications"))
+        monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
 
-        with patch("pi_apply.server.list_resumes", return_value=["resume"]):
+        with patch("callback.server.list_resumes", return_value=["resume"]):
             session_id = json.loads(load_jd(jd_raw_text="Python engineer needed"))["session_id"]
         json.loads(submit_keywords(session_id=session_id, jd_json=_NO_COVERAGE_JD_JSON))
 
@@ -1134,10 +1134,10 @@ class TestSubmitTailorNoCoverage:
 
 def test_load_jd_auto_selects_single_registered_resume():
     """Single registered resume is auto-selected when resume_label is omitted."""
-    from pi_apply.apply_graph import build_apply_graph, make_config
-    from pi_apply.server import load_jd
+    from callback.apply_graph import build_apply_graph, make_config
+    from callback.server import load_jd
 
-    with patch("pi_apply.server.list_resumes", return_value=["default"]):
+    with patch("callback.server.list_resumes", return_value=["default"]):
         result = json.loads(load_jd(jd_raw_text="Python engineer needed"))
 
     session_id = result["session_id"]
@@ -1156,9 +1156,9 @@ def test_load_jd_auto_selects_single_registered_resume():
 
 def test_load_jd_returns_ambiguous_resume_error_for_multiple_resumes():
     """Multiple resumes registered without label returns ambiguous_resume error."""
-    from pi_apply.server import load_jd
+    from callback.server import load_jd
 
-    with patch("pi_apply.server.list_resumes", return_value=["default", "senior"]):
+    with patch("callback.server.list_resumes", return_value=["default", "senior"]):
         result = json.loads(load_jd(jd_raw_text="Python engineer needed"))
 
     expected = {
@@ -1178,9 +1178,9 @@ def test_load_jd_returns_ambiguous_resume_error_for_multiple_resumes():
 
 def test_load_jd_returns_no_resume_registered_error_when_empty():
     """No registered resumes returns no_resume_registered error."""
-    from pi_apply.server import load_jd
+    from callback.server import load_jd
 
-    with patch("pi_apply.server.list_resumes", return_value=[]):
+    with patch("callback.server.list_resumes", return_value=[]):
         result = json.loads(load_jd(jd_raw_text="Python engineer needed"))
 
     expected = {
@@ -1199,10 +1199,10 @@ def test_load_jd_returns_no_resume_registered_error_when_empty():
 
 def test_load_jd_passes_explicit_label_through_to_state():
     """Explicit resume_label is stored in session state."""
-    from pi_apply.apply_graph import build_apply_graph, make_config
-    from pi_apply.server import load_jd
+    from callback.apply_graph import build_apply_graph, make_config
+    from callback.server import load_jd
 
-    with patch("pi_apply.server.list_resumes", return_value=["default", "senior"]):
+    with patch("callback.server.list_resumes", return_value=["default", "senior"]):
         result = json.loads(load_jd(jd_raw_text="Python engineer needed", resume_label="senior"))
 
     session_id = result["session_id"]
@@ -1221,9 +1221,9 @@ def test_load_jd_passes_explicit_label_through_to_state():
 
 def test_load_jd_returns_error_for_unknown_explicit_label():
     """Explicit resume_label not in registry returns resume_not_found error."""
-    from pi_apply.server import load_jd
+    from callback.server import load_jd
 
-    with patch("pi_apply.server.list_resumes", return_value=["default"]):
+    with patch("callback.server.list_resumes", return_value=["default"]):
         result = json.loads(load_jd(jd_raw_text="Python engineer needed", resume_label="missing"))
 
     expected = {
@@ -1247,14 +1247,14 @@ def test_load_jd_returns_error_for_unknown_explicit_label():
 
 def test_parse_initial_wiki_miss_calls_get_resume_and_extracts_text(tmp_path):
     """Wiki miss: get_resume is called and text is extracted from the returned path."""
-    from pi_apply.apply_nodes import parse_initial
-    from pi_apply.state import ApplyState
+    from callback.apply_nodes import parse_initial
+    from callback.state import ApplyState
 
     resume = tmp_path / "resume.txt"
     resume.write_text("Lead Engineer with Python and Kubernetes experience")
     state = ApplyState(session_id="s1", resume_label="lead")
 
-    with patch("pi_apply.apply_nodes.get_resume", return_value=str(resume)) as mock_get:
+    with patch("callback.apply_nodes.get_resume", return_value=str(resume)) as mock_get:
         result = parse_initial(state)
 
     mock_get.assert_called_once_with("lead")
@@ -1263,13 +1263,13 @@ def test_parse_initial_wiki_miss_calls_get_resume_and_extracts_text(tmp_path):
 
 def test_parse_initial_wiki_miss_resume_not_found_returns_noop_sentinel():
     """Wiki miss with ResumeNotFoundError returns noop sentinel."""
-    from pi_apply.apply_nodes import parse_initial
-    from pi_apply.repository.resumes import ResumeNotFoundError
-    from pi_apply.state import ApplyState
+    from callback.apply_nodes import parse_initial
+    from callback.repository.resumes import ResumeNotFoundError
+    from callback.state import ApplyState
 
     state = ApplyState(session_id="s1", resume_label="ghost")
 
-    with patch("pi_apply.apply_nodes.get_resume", side_effect=ResumeNotFoundError("ghost")):
+    with patch("callback.apply_nodes.get_resume", side_effect=ResumeNotFoundError("ghost")):
         result = parse_initial(state)
 
     assert result == {"parsed_initial": "<noop:parse:no-source>"}
@@ -1291,16 +1291,16 @@ MINIMAL_SECTIONS_JSON = json.dumps(
 
 def test_parse_initial_wiki_hit_uses_pdf_for_parsed_initial(tmp_path):
     """Wiki hit: parsed_initial comes from PDF, sections/wiki_index from wiki."""
-    from pi_apply.apply_nodes import parse_initial
-    from pi_apply.state import ApplyState
+    from callback.apply_nodes import parse_initial
+    from callback.state import ApplyState
 
     resume = tmp_path / "resume.txt"
     resume.write_text("Experience\nBuilt Python services.\n\nSkills\nPython")
     state = ApplyState(session_id="s1", resume_label="eng")
 
     with (
-        patch("pi_apply.apply_nodes._load_wiki_sections") as mock_wiki,
-        patch("pi_apply.apply_nodes.get_resume", return_value=str(resume)),
+        patch("callback.apply_nodes._load_wiki_sections") as mock_wiki,
+        patch("callback.apply_nodes.get_resume", return_value=str(resume)),
     ):
         mock_wiki.return_value = (
             MINIMAL_SECTIONS_JSON,
@@ -1324,16 +1324,16 @@ def test_parse_initial_wiki_hit_uses_pdf_for_parsed_initial(tmp_path):
 
 def test_parse_initial_wiki_hit_pdf_missing_falls_back_to_sections_text():
     """Wiki hit + ResumeNotFoundError: falls back to _sections_to_text, emits warning."""
-    from pi_apply.apply_nodes import parse_initial
-    from pi_apply.repository.resumes import ResumeNotFoundError
-    from pi_apply.state import ApplyState
+    from callback.apply_nodes import parse_initial
+    from callback.repository.resumes import ResumeNotFoundError
+    from callback.state import ApplyState
 
     state = ApplyState(session_id="s1", resume_label="eng")
     sections_text = "Python ACME Engineer built things"
 
     with (
-        patch("pi_apply.apply_nodes._load_wiki_sections") as mock_wiki,
-        patch("pi_apply.apply_nodes.get_resume", side_effect=ResumeNotFoundError("eng")),
+        patch("callback.apply_nodes._load_wiki_sections") as mock_wiki,
+        patch("callback.apply_nodes.get_resume", side_effect=ResumeNotFoundError("eng")),
     ):
         mock_wiki.return_value = (MINIMAL_SECTIONS_JSON, "index", sections_text)
         result = parse_initial(state)
@@ -1358,7 +1358,7 @@ def test_parse_initial_wiki_hit_pdf_missing_falls_back_to_sections_text():
 
 class TestTailorDiagnostics:
     def test_matched_skill_present_in_rendered_text(self):
-        from pi_apply.apply_nodes import _compute_tailor_diagnostics
+        from callback.apply_nodes import _compute_tailor_diagnostics
 
         result = _compute_tailor_diagnostics(
             ["machine learning"],
@@ -1374,7 +1374,7 @@ class TestTailorDiagnostics:
         ]
 
     def test_hyphen_dropped_by_pdf_extraction_not_present(self):
-        from pi_apply.apply_nodes import _compute_tailor_diagnostics
+        from callback.apply_nodes import _compute_tailor_diagnostics
 
         result = _compute_tailor_diagnostics(
             ["agent-based workflows"],
@@ -1390,7 +1390,7 @@ class TestTailorDiagnostics:
         ]
 
     def test_suggested_alternatives_uses_normalization(self):
-        from pi_apply.apply_nodes import _compute_tailor_diagnostics
+        from callback.apply_nodes import _compute_tailor_diagnostics
 
         result = _compute_tailor_diagnostics(
             ["retrieval-augmented generation (RAG)"],
@@ -1406,13 +1406,13 @@ class TestTailorDiagnostics:
         ]
 
     def test_no_applied_skill_values_returns_empty(self):
-        from pi_apply.apply_nodes import _compute_tailor_diagnostics
+        from callback.apply_nodes import _compute_tailor_diagnostics
 
         assert _compute_tailor_diagnostics(None, "some text") == []
         assert _compute_tailor_diagnostics([], "some text") == []
 
     def test_case_insensitive_match(self):
-        from pi_apply.apply_nodes import _compute_tailor_diagnostics
+        from callback.apply_nodes import _compute_tailor_diagnostics
 
         result = _compute_tailor_diagnostics(["Python"], "built with PYTHON and Django")
         actual = {
@@ -1426,7 +1426,7 @@ class TestTailorDiagnostics:
         assert actual == expected
 
     def test_all_matched_returns_empty_alternatives(self):
-        from pi_apply.apply_nodes import _compute_tailor_diagnostics
+        from callback.apply_nodes import _compute_tailor_diagnostics
 
         result = _compute_tailor_diagnostics(["Python", "Go"], "Python and Go are used.")
         actual = {
@@ -1445,8 +1445,8 @@ class TestTailorDiagnostics:
 
 @pytest.mark.anyio
 async def test_check_update_tool_returns_update_available():
-    import pi_apply.server as server
-    import pi_apply.version_check as vc
+    import callback.server as server
+    import callback.version_check as vc
 
     vc._cached = None
     check_result = {
@@ -1466,8 +1466,8 @@ async def test_check_update_tool_returns_update_available():
 
 @pytest.mark.anyio
 async def test_check_update_tool_returns_already_current():
-    import pi_apply.server as server
-    import pi_apply.version_check as vc
+    import callback.server as server
+    import callback.version_check as vc
 
     vc._cached = None
     check_result = {

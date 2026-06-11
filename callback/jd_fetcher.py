@@ -12,7 +12,7 @@ from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
 from crawl4ai.content_filter_strategy import PruningContentFilter
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 
-logger = logging.getLogger("pi_apply.jd_fetcher")
+logger = logging.getLogger("callback.jd_fetcher")
 
 DEFAULT_PAGE_TIMEOUT_MS = 30_000
 DEFAULT_WAIT_UNTIL = "networkidle"
@@ -36,19 +36,19 @@ class JDFetchError(Exception):
 
 
 def _page_timeout_ms() -> int:
-    return int(os.getenv("PI_APPLY_FETCH_PAGE_TIMEOUT_MS", DEFAULT_PAGE_TIMEOUT_MS))
+    return int(os.getenv("CALLBACK_FETCH_PAGE_TIMEOUT_MS", DEFAULT_PAGE_TIMEOUT_MS))
 
 
 def _wait_until() -> str:
-    return os.getenv("PI_APPLY_FETCH_WAIT_UNTIL", DEFAULT_WAIT_UNTIL)
+    return os.getenv("CALLBACK_FETCH_WAIT_UNTIL", DEFAULT_WAIT_UNTIL)
 
 
 def _outer_timeout_s() -> float:
-    return float(os.getenv("PI_APPLY_FETCH_OUTER_TIMEOUT_S", DEFAULT_OUTER_TIMEOUT_S))
+    return float(os.getenv("CALLBACK_FETCH_OUTER_TIMEOUT_S", DEFAULT_OUTER_TIMEOUT_S))
 
 
 def _magic() -> bool:
-    value = os.getenv("PI_APPLY_FETCH_MAGIC", str(DEFAULT_MAGIC))
+    value = os.getenv("CALLBACK_FETCH_MAGIC", str(DEFAULT_MAGIC))
     return value.lower() not in FALSE_ENV_VALUES
 
 

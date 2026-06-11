@@ -1,17 +1,17 @@
-"""Tests for pi_apply.profilecompiler — ProfileCompiler and I/O helpers."""
+"""Tests for callback.profilecompiler — ProfileCompiler and I/O helpers."""
 
 from pathlib import Path
 
 import pytest
 from rapidfuzz import fuzz
 
-from pi_apply.profilecompiler import (
+from callback.profilecompiler import (
     ProfileCompiler,
     ProfileMissingError,
     load_compiled_profile,
     save_compiled_profile,
 )
-from pi_apply.state import CompiledProfile, CreatedStory, OrphanedSkill
+from callback.state import CompiledProfile, CreatedStory, OrphanedSkill
 
 
 def _make_story(

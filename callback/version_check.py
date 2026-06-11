@@ -7,13 +7,13 @@ import importlib.metadata
 import httpx
 from packaging.version import InvalidVersion, Version
 
-_LATEST_URL = "https://api.github.com/repos/thedandano/pi-apply/releases/latest"
+_LATEST_URL = "https://api.github.com/repos/thedandano/callback/releases/latest"
 _cached: dict | None = None
 
 
 def _current_version() -> str:
     try:
-        return importlib.metadata.version("pi-apply")
+        return importlib.metadata.version("callback")
     except importlib.metadata.PackageNotFoundError:
         return "unknown"
 

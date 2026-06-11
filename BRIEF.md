@@ -1,4 +1,4 @@
-# Project Charter — pi-apply v2 (Python LangGraph MCP Server)
+# Project Charter — callback v2 (Python LangGraph MCP Server)
 
 This brief records the original project intent. For day-to-day agent guidance,
 use `AGENTS.md`; it contains the current architecture pattern, commands, module

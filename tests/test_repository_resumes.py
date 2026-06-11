@@ -1,10 +1,10 @@
-"""Unit tests for pi_apply.repository.resumes."""
+"""Unit tests for callback.repository.resumes."""
 
 from pathlib import Path
 
 import pytest
 
-from pi_apply.repository.resumes import (
+from callback.repository.resumes import (
     ResumeNotFoundError,
     clear_resumes,
     data_dir,
@@ -106,7 +106,7 @@ class TestXDGOverride:
 
         result = data_dir()
 
-        assert result == xdg_custom / "pi-apply" / "inputs"
+        assert result == xdg_custom / "callback" / "inputs"
 
 
 class TestMultipleFormats:

@@ -17,7 +17,7 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 0
 fi
 
-base_ref="${PI_APPLY_VERSION_BASE_REF:-origin/main}"
+base_ref="${CALLBACK_VERSION_BASE_REF:-origin/main}"
 short_hash="$(git rev-parse --short HEAD)"
 dirty=""
 

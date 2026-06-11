@@ -27,13 +27,13 @@
 
 | File | Action | Reason |
 |---|---|---|
-| `pi_apply/apply_nodes.py` | Modify lines 1–15 | Replace stale stub docstring |
+| `callback/apply_nodes.py` | Modify lines 1–15 | Replace stale stub docstring |
 | `pyproject.toml` | Modify | Add `httpx` to `[project.dependencies]` |
-| `pi_apply/cli.py` | Modify | Add `sys` import; `_DATA_DIR`/`_STATE_DIR` constants; `_remove_server_from_*` helpers; `install-browsers`, `uninstall`, `update` commands |
+| `callback/cli.py` | Modify | Add `sys` import; `_DATA_DIR`/`_STATE_DIR` constants; `_remove_server_from_*` helpers; `install-browsers`, `uninstall`, `update` commands |
 | `tests/test_cli.py` | Modify | Add 7 tests: 1 install-browsers + 5 uninstall + 1 update |
-| `pi_apply/version_check.py` | Create | `fetch_latest_tag()`, `check_update()` with session-level cache; `packaging.version` comparison |
+| `callback/version_check.py` | Create | `fetch_latest_tag()`, `check_update()` with session-level cache; `packaging.version` comparison |
 | `tests/test_version_check.py` | Create | 4 tests: update available, already current, network error, cached result |
-| `pi_apply/server.py` | Modify | Add `asyncio`/`asynccontextmanager`/`AsyncIterator` imports; `import version_check`; `_ensure_browsers()`; `_lifespan` for version check; update `mcp = FastMCP(..., lifespan=_lifespan)`; update `run()` to call `_ensure_browsers()`; add `check_update` MCP tool |
+| `callback/server.py` | Modify | Add `asyncio`/`asynccontextmanager`/`AsyncIterator` imports; `import version_check`; `_ensure_browsers()`; `_lifespan` for version check; update `mcp = FastMCP(..., lifespan=_lifespan)`; update `run()` to call `_ensure_browsers()`; add `check_update` MCP tool |
 | `tests/test_server.py` | Modify | Add 2 `@pytest.mark.anyio` tests using `FastMCPTransport` in-process client |
 | `README.md` | Create | Title, badges, north-star summary, install, install-browsers, update, uninstall, how-to-use |
 
@@ -42,11 +42,11 @@
 ## Task 1: Fix stale docstring in `apply_nodes.py`
 
 **Files:**
-- Modify: `pi_apply/apply_nodes.py:1-15`
+- Modify: `callback/apply_nodes.py:1-15`
 
 - [ ] **Step 1: Replace the docstring**
 
-Replace lines 1–15 in `pi_apply/apply_nodes.py` with:
+Replace lines 1–15 in `callback/apply_nodes.py` with:
 
 ```python
 """Apply graph node implementations.
@@ -68,7 +68,7 @@ Expected: `0 errors, 0 warnings, 0 informations`
 - [ ] **Step 3: Commit**
 
 ```bash
-git add pi_apply/apply_nodes.py
+git add callback/apply_nodes.py
 git commit -m "docs: replace stale stub docstring in apply_nodes.py"
 ```
 
@@ -78,7 +78,7 @@ git commit -m "docs: replace stale stub docstring in apply_nodes.py"
 
 **Files:**
 - Modify: `pyproject.toml`
-- Modify: `pi_apply/cli.py`
+- Modify: `callback/cli.py`
 - Modify: `tests/test_cli.py`
 
 ### 2a — Add httpx as explicit dependency
@@ -122,7 +122,7 @@ def test_install_browsers_calls_playwright(monkeypatch):
         calls.append(cmd)
         return type("R", (), {"returncode": 0})()
 
-    monkeypatch.setattr("pi_apply.cli.subprocess.run", fake_run)
+    monkeypatch.setattr("callback.cli.subprocess.run", fake_run)
 
     result = runner.invoke(app, ["install-browsers"])
 
@@ -148,7 +148,7 @@ def test_uninstall_skips_missing_configs(tmp_path):
 def test_uninstall_removes_server_entry_from_claude(tmp_path):
     claude_path = tmp_path / ".claude.json"
     configure_claude(claude_path)
-    assert "pi-apply" in json.loads(claude_path.read_text())["mcpServers"]
+    assert "callback" in json.loads(claude_path.read_text())["mcpServers"]
 
     result = runner.invoke(
         app,
@@ -160,13 +160,13 @@ def test_uninstall_removes_server_entry_from_claude(tmp_path):
     )
 
     assert result.exit_code == 0
-    assert "pi-apply" not in json.loads(claude_path.read_text()).get("mcpServers", {})
+    assert "callback" not in json.loads(claude_path.read_text()).get("mcpServers", {})
 
 
 def test_uninstall_removes_server_entry_from_codex(tmp_path):
     codex_path = tmp_path / "config.toml"
     configure_codex(codex_path)
-    assert "pi-apply" in _read_toml(codex_path)["mcp_servers"]
+    assert "callback" in _read_toml(codex_path)["mcp_servers"]
 
     result = runner.invoke(
         app,
@@ -178,18 +178,18 @@ def test_uninstall_removes_server_entry_from_codex(tmp_path):
     )
 
     assert result.exit_code == 0
-    assert "pi-apply" not in _read_toml(codex_path).get("mcp_servers", {})
+    assert "callback" not in _read_toml(codex_path).get("mcp_servers", {})
 
 
 def test_uninstall_purge_deletes_data_dirs(tmp_path, monkeypatch):
-    data_dir  = tmp_path / "share" / "pi-apply"
-    state_dir = tmp_path / "state" / "pi-apply"
+    data_dir  = tmp_path / "share" / "callback"
+    state_dir = tmp_path / "state" / "callback"
     data_dir.mkdir(parents=True)
     state_dir.mkdir(parents=True)
     (data_dir / "accomplishments.json").write_text("{}")
     (state_dir / "server.log").write_text("log")
 
-    import pi_apply.cli as cli_mod
+    import callback.cli as cli_mod
     monkeypatch.setattr(cli_mod, "_DATA_DIR",  data_dir)
     monkeypatch.setattr(cli_mod, "_STATE_DIR", state_dir)
 
@@ -209,12 +209,12 @@ def test_uninstall_purge_deletes_data_dirs(tmp_path, monkeypatch):
 
 
 def test_uninstall_without_purge_preserves_data_dirs(tmp_path, monkeypatch):
-    data_dir  = tmp_path / "share" / "pi-apply"
-    state_dir = tmp_path / "state" / "pi-apply"
+    data_dir  = tmp_path / "share" / "callback"
+    state_dir = tmp_path / "state" / "callback"
     data_dir.mkdir(parents=True)
     state_dir.mkdir(parents=True)
 
-    import pi_apply.cli as cli_mod
+    import callback.cli as cli_mod
     monkeypatch.setattr(cli_mod, "_DATA_DIR",  data_dir)
     monkeypatch.setattr(cli_mod, "_STATE_DIR", state_dir)
 
@@ -241,12 +241,12 @@ def test_update_calls_uv_tool_upgrade(monkeypatch):
         calls.append(cmd)
         return type("R", (), {"returncode": 0})()
 
-    monkeypatch.setattr("pi_apply.cli.subprocess.run", fake_run)
+    monkeypatch.setattr("callback.cli.subprocess.run", fake_run)
 
     result = runner.invoke(app, ["update"])
 
     assert result.exit_code == 0
-    assert calls == [["uv", "tool", "upgrade", "pi-apply"]]
+    assert calls == [["uv", "tool", "upgrade", "callback"]]
 ```
 
 - [ ] **Step 4: Run tests — confirm they fail**
@@ -256,7 +256,7 @@ Expected: FAIL (commands not yet implemented)
 
 ### 2c — Implement the commands
 
-- [ ] **Step 5: Add `import subprocess`, `import sys`, and module-level constants to `pi_apply/cli.py`**
+- [ ] **Step 5: Add `import subprocess`, `import sys`, and module-level constants to `callback/cli.py`**
 
 After the existing imports block, add:
 
@@ -268,11 +268,11 @@ import sys
 After the `DEFAULT_LOG_PATH` line, add:
 
 ```python
-_DATA_DIR  = Path("~/.local/share/pi-apply").expanduser()
-_STATE_DIR = Path("~/.local/state/pi-apply").expanduser()
+_DATA_DIR  = Path("~/.local/share/callback").expanduser()
+_STATE_DIR = Path("~/.local/state/callback").expanduser()
 ```
 
-- [ ] **Step 6: Add `install-browsers` command to `pi_apply/cli.py`**
+- [ ] **Step 6: Add `install-browsers` command to `callback/cli.py`**
 
 Add after the `setup_mcp` command:
 
@@ -287,7 +287,7 @@ def install_browsers() -> None:
     raise typer.Exit(result.returncode)
 ```
 
-- [ ] **Step 7: Add helper functions to `pi_apply/cli.py`**
+- [ ] **Step 7: Add helper functions to `callback/cli.py`**
 
 Add these two functions directly after the `configure_codex` function:
 
@@ -308,7 +308,7 @@ def _remove_server_from_codex(path: Path) -> None:
     _write_text_atomic(path, _dump_toml(config))
 ```
 
-- [ ] **Step 8: Add `uninstall` command to `pi_apply/cli.py`**
+- [ ] **Step 8: Add `uninstall` command to `callback/cli.py`**
 
 Add after the `install-browsers` command:
 
@@ -317,7 +317,7 @@ Add after the `install-browsers` command:
 def uninstall(
     purge: Annotated[
         bool,
-        typer.Option("--purge", help="Also delete all pi-apply data and state from disk."),
+        typer.Option("--purge", help="Also delete all callback data and state from disk."),
     ] = False,
     claude_config: Annotated[
         Path | None,
@@ -328,7 +328,7 @@ def uninstall(
         typer.Option("--codex-config", help="Codex TOML config path."),
     ] = None,
 ) -> None:
-    """Remove pi-apply MCP entries. Pass --purge to also delete all data."""
+    """Remove callback MCP entries. Pass --purge to also delete all data."""
     import shutil
 
     claude_path = claude_config or Path("~/.claude.json").expanduser()
@@ -337,10 +337,10 @@ def uninstall(
     try:
         if claude_path.exists():
             _remove_server_from_claude(claude_path)
-            console.print(f"Removed pi-apply from Claude config: {claude_path}")
+            console.print(f"Removed callback from Claude config: {claude_path}")
         if codex_path.exists():
             _remove_server_from_codex(codex_path)
-            console.print(f"Removed pi-apply from Codex config: {codex_path}")
+            console.print(f"Removed callback from Codex config: {codex_path}")
     except ConfigError as exc:
         error_console.print(f"uninstall failed: {exc}")
         raise typer.Exit(1) from exc
@@ -352,15 +352,15 @@ def uninstall(
                 console.print(f"Deleted {directory}")
 ```
 
-- [ ] **Step 9: Add `update` command to `pi_apply/cli.py`**
+- [ ] **Step 9: Add `update` command to `callback/cli.py`**
 
 Add after the `uninstall` command:
 
 ```python
 @app.command()
 def update() -> None:
-    """Upgrade pi-apply to the latest release from GitHub."""
-    result = subprocess.run(["uv", "tool", "upgrade", "pi-apply"], check=False)
+    """Upgrade callback to the latest release from GitHub."""
+    result = subprocess.run(["uv", "tool", "upgrade", "callback"], check=False)
     raise typer.Exit(result.returncode)
 ```
 
@@ -377,7 +377,7 @@ Expected: `0 errors, 0 warnings, 0 informations`
 - [ ] **Step 12: Commit**
 
 ```bash
-git add pi_apply/cli.py tests/test_cli.py
+git add callback/cli.py tests/test_cli.py
 git commit -m "feat(cli): add install-browsers, uninstall (--purge), and update commands"
 ```
 
@@ -386,9 +386,9 @@ git commit -m "feat(cli): add install-browsers, uninstall (--purge), and update 
 ## Task 3: Version check — startup notification + MCP tool
 
 **Files:**
-- Create: `pi_apply/version_check.py`
+- Create: `callback/version_check.py`
 - Create: `tests/test_version_check.py`
-- Modify: `pi_apply/server.py`
+- Modify: `callback/server.py`
 - Modify: `tests/test_server.py`
 
 ### 3a — Write failing tests first
@@ -399,7 +399,7 @@ git commit -m "feat(cli): add install-browsers, uninstall (--purge), and update 
 """Tests for version_check.py."""
 from __future__ import annotations
 
-import pi_apply.version_check as vc
+import callback.version_check as vc
 
 
 def test_check_update_returns_update_available(monkeypatch):
@@ -470,14 +470,14 @@ Expected: FAIL — module does not exist yet
 # ── check_update tool ─────────────────────────────────────────────────────
 
 import pytest
-import pi_apply.version_check as _vc
+import callback.version_check as _vc
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 
 
 @pytest.mark.anyio
 async def test_check_update_tool_returns_update_available(monkeypatch):
-    import pi_apply.server as srv
+    import callback.server as srv
 
     monkeypatch.setattr(_vc, "_cached", None)
     monkeypatch.setattr(_vc, "fetch_latest_tag", lambda: "v9.9.9")
@@ -498,7 +498,7 @@ async def test_check_update_tool_returns_update_available(monkeypatch):
 
 @pytest.mark.anyio
 async def test_check_update_tool_returns_already_current(monkeypatch):
-    import pi_apply.server as srv
+    import callback.server as srv
 
     monkeypatch.setattr(_vc, "_cached", None)
     monkeypatch.setattr(_vc, "fetch_latest_tag", lambda: "v0.2.0")
@@ -518,10 +518,10 @@ Expected: FAIL — tool not yet registered
 
 ### 3c — Implement
 
-- [ ] **Step 5: Create `pi_apply/version_check.py`**
+- [ ] **Step 5: Create `callback/version_check.py`**
 
 ```python
-"""Check whether a newer pi-apply release is available on GitHub."""
+"""Check whether a newer callback release is available on GitHub."""
 from __future__ import annotations
 
 import importlib.metadata
@@ -532,7 +532,7 @@ from packaging.version import Version
 
 logger = logging.getLogger(__name__)
 
-_LATEST_URL = "https://api.github.com/repos/thedandano/pi-apply/releases/latest"
+_LATEST_URL = "https://api.github.com/repos/thedandano/callback/releases/latest"
 _TIMEOUT = 3.0
 
 _cached: dict | None = None
@@ -540,7 +540,7 @@ _cached: dict | None = None
 
 def _current_version() -> str:
     try:
-        return importlib.metadata.version("pi-apply")
+        return importlib.metadata.version("callback")
     except importlib.metadata.PackageNotFoundError:
         return "unknown"
 
@@ -585,7 +585,7 @@ def check_update() -> dict:
 Run: `uv run pytest tests/test_version_check.py -v`
 Expected: 4 tests pass
 
-- [ ] **Step 7: Add `_ensure_browsers`, lifespan, and `check_update` tool to `pi_apply/server.py`**
+- [ ] **Step 7: Add `_ensure_browsers`, lifespan, and `check_update` tool to `callback/server.py`**
 
 Add three new stdlib imports at the top of `server.py` (with the existing stdlib imports):
 
@@ -596,10 +596,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 ```
 
-Add the `pi_apply` import (with the other `pi_apply` imports):
+Add the `callback` import (with the other `callback` imports):
 
 ```python
-import pi_apply.version_check as version_check
+import callback.version_check as version_check
 ```
 
 Add `_ensure_browsers` and the lifespan before the `mcp = FastMCP(...)` line:
@@ -635,13 +635,13 @@ async def _startup_version_check() -> None:
 Change the `mcp = FastMCP(...)` line to:
 
 ```python
-mcp = FastMCP("pi-apply", lifespan=_lifespan)
+mcp = FastMCP("callback", lifespan=_lifespan)
 ```
 
 Change the `mcp = FastMCP(...)` line to:
 
 ```python
-mcp = FastMCP("pi-apply", lifespan=_lifespan)
+mcp = FastMCP("callback", lifespan=_lifespan)
 ```
 
 Add `subprocess` to the stdlib imports at the top of `server.py` (it is not currently imported):
@@ -667,7 +667,7 @@ Add the MCP tool in a `# Utility tools` section before `def run()`:
 
 @mcp.tool()
 def check_update() -> str:
-    """Check whether a newer version of pi-apply is available.
+    """Check whether a newer version of callback is available.
 
     Returns current version, latest release tag, and whether an update is
     available. Result is cached for the server session — no repeated network
@@ -690,7 +690,7 @@ Expected: `0 errors, 0 warnings, 0 informations`
 - [ ] **Step 10: Commit**
 
 ```bash
-git add pi_apply/version_check.py pi_apply/server.py \
+git add callback/version_check.py callback/server.py \
         tests/test_version_check.py tests/test_server.py
 git commit -m "feat(server): startup update check + check_update MCP tool"
 ```
@@ -707,14 +707,14 @@ No code under test — documentation only. Visual verification.
 - [ ] **Step 1: Create `README.md`** at the repo root:
 
 ````markdown
-# pi-apply
+# callback
 
-[![CI](https://github.com/thedandano/pi-apply/actions/workflows/ci.yml/badge.svg)](https://github.com/thedandano/pi-apply/actions/workflows/ci.yml)
+[![CI](https://github.com/thedandano/callback/actions/workflows/ci.yml/badge.svg)](https://github.com/thedandano/callback/actions/workflows/ci.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/downloads/)
 
 **Get past the ATS gate so you talk to a human recruiter.**
 
-pi-apply is a [LangGraph](https://langchain-ai.github.io/langgraph/) MCP server that tailors
+callback is a [LangGraph](https://langchain-ai.github.io/langgraph/) MCP server that tailors
 your resume to a job description — honestly, without keyword stuffing or fabricated experience.
 It surfaces real gaps between your resume and the JD, scores the result deterministically, and
 renders a tailored PDF.
@@ -729,16 +729,16 @@ Codex, or any compliant LLM host and drive the workflow through natural language
 **Requirements:** [uv](https://docs.astral.sh/uv/) · Python 3.12+
 
 ```bash
-uv tool install "pi-apply @ git+https://github.com/thedandano/pi-apply.git"
-pi-apply install-browsers     # one-time Chromium setup for JD fetching
-pi-apply setup-mcp            # register with Claude and Codex
+uv tool install "callback @ git+https://github.com/thedandano/callback.git"
+callback install-browsers     # one-time Chromium setup for JD fetching
+callback setup-mcp            # register with Claude and Codex
 ```
 
 `setup-mcp` writes the server entry to `~/.claude.json` (Claude) and
 `~/.codex/config.toml` (Codex). To target a different path:
 
 ```bash
-pi-apply setup-mcp --claude-config <path> --codex-config <path>
+callback setup-mcp --claude-config <path> --codex-config <path>
 ```
 
 ---
@@ -746,7 +746,7 @@ pi-apply setup-mcp --claude-config <path> --codex-config <path>
 ## Update
 
 ```bash
-pi-apply update
+callback update
 ```
 
 Pulls the latest release from GitHub and upgrades the installed tool in-place.
@@ -756,31 +756,31 @@ Pulls the latest release from GitHub and upgrades the installed tool in-place.
 ## Uninstall
 
 ```bash
-pi-apply uninstall          # remove MCP entries; keep your data
-pi-apply uninstall --purge  # remove MCP entries AND delete all data
-uv tool uninstall pi-apply  # remove the CLI itself
+callback uninstall          # remove MCP entries; keep your data
+callback uninstall --purge  # remove MCP entries AND delete all data
+uv tool uninstall callback  # remove the CLI itself
 ```
 
-Run `pi-apply uninstall` **before** `uv tool uninstall` — once the CLI is gone you
+Run `callback uninstall` **before** `uv tool uninstall` — once the CLI is gone you
 can no longer invoke it.
 
 `--purge` deletes:
 
 | Directory | Contents |
 |---|---|
-| `~/.local/share/pi-apply/` | Resumes, accomplishments, compiled profile, wiki, application archives |
-| `~/.local/state/pi-apply/` | Server logs |
+| `~/.local/share/callback/` | Resumes, accomplishments, compiled profile, wiki, application archives |
+| `~/.local/state/callback/` | Server logs |
 
 ---
 
 ## How to use
 
-pi-apply exposes seven MCP tools. Your LLM host calls them in sequence — you drive
+callback exposes seven MCP tools. Your LLM host calls them in sequence — you drive
 the conversation, the tools do the I/O.
 
 ### Profile workflow — run once, update as you grow
 
-**`onboard_user`** — Upload your resume. pi-apply extracts sections and saves them to
+**`onboard_user`** — Upload your resume. callback extracts sections and saves them to
 the profile wiki. Pass `resume_path` (required), optional `skills_path` and
 `accomplishments_path` for richer context.
 
@@ -796,18 +796,18 @@ compile time.
 **`load_jd`** — Pass a `jd_url` (or raw `jd_text`). Returns JD markdown plus extraction
 instructions. Your host LLM extracts structured keywords and calls `submit_keywords`.
 
-**`submit_keywords`** — Submit the validated JDData JSON your host extracted. pi-apply
+**`submit_keywords`** — Submit the validated JDData JSON your host extracted. callback
 scores the current resume and waits. Returns `next_action: "submit_tailor"` with the
 scoring breakdown and any skill gaps.
 
 **`submit_tailor`** — Submit a list of edits (add/replace/remove bullets, skills, summary).
-pi-apply applies them, renders a PDF, re-scores, and returns the before/after delta.
+callback applies them, renders a PDF, re-scores, and returns the before/after delta.
 Pass `no_coverage: true` to skip tailoring and finalize with the current resume.
 
 ### Utilities
 
 **`get_wiki_pages`** — Read profile wiki pages by ID (e.g. `index.md`,
-`experience/<story-id>.md`). Use this to inspect what pi-apply knows about you before tailoring.
+`experience/<story-id>.md`). Use this to inspect what callback knows about you before tailoring.
 
 **`check_update`** — Check whether a newer release is available. Returns `current`, `latest`,
 and `update_available`. Result is cached for the server session. The server also logs a

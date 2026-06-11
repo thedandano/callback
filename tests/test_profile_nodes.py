@@ -4,19 +4,19 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-import pi_apply.extractor as ext
-import pi_apply.wiki as wiki_module
-from pi_apply.profile_nodes import (
+import callback.extractor as ext
+import callback.wiki as wiki_module
+from callback.profile_nodes import (
     check_orphans,
     check_profile,
     compile_profile,
     create_story,
     onboard,
 )
-from pi_apply.profilecompiler import save_compiled_profile
-from pi_apply.repository.accomplishments import AccomplishmentsStore
-from pi_apply.repository.resumes import list_resumes, save_resume
-from pi_apply.state import (
+from callback.profilecompiler import save_compiled_profile
+from callback.repository.accomplishments import AccomplishmentsStore
+from callback.repository.resumes import list_resumes, save_resume
+from callback.state import (
     CompiledProfile,
     CreatedStory,
     OrphanedSkill,
@@ -81,7 +81,7 @@ class TestCheckProfile:
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
         resume_file = _make_resume_file(tmp_path)
         save_resume("jane_doe", str(resume_file))
-        _make_compiled_profile(tmp_path / "pi-apply")
+        _make_compiled_profile(tmp_path / "callback")
 
         result = check_profile(_make_state())
 
@@ -89,7 +89,7 @@ class TestCheckProfile:
 
     def test_returns_false_when_profile_exists_but_no_resumes(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        _make_compiled_profile(tmp_path / "pi-apply")
+        _make_compiled_profile(tmp_path / "callback")
 
         result = check_profile(_make_state())
 
@@ -144,7 +144,7 @@ class TestOnboard:
 
         onboard(state)
 
-        data = AccomplishmentsStore(base_dir=tmp_path / "pi-apply")._load()
+        data = AccomplishmentsStore(base_dir=tmp_path / "callback")._load()
         assert data == {
             "schema_version": "1",
             "onboard_text": "I love building distributed systems.",
@@ -157,13 +157,13 @@ class TestCompileProfile:
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
         monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
 
-        store = AccomplishmentsStore(base_dir=tmp_path / "pi-apply")
+        store = AccomplishmentsStore(base_dir=tmp_path / "callback")
         saved_story = store.save_story(CreatedStory(id="", **_STORY_FIELDS))
 
         state = _make_state(resume_label="jane_doe")
         result = compile_profile(state)
 
-        assert (tmp_path / "pi-apply" / "compiled_profile.json").exists()
+        assert (tmp_path / "callback" / "compiled_profile.json").exists()
         assert (tmp_path / "profile-wiki" / "jane_doe" / "index.md").exists()
 
         actual = result["compiled_profile"]
@@ -203,7 +203,7 @@ class TestCheckOrphans:
             ],
             compiled_at=datetime.now(UTC).isoformat(),
         )
-        save_compiled_profile(profile, base_dir=tmp_path / "pi-apply")
+        save_compiled_profile(profile, base_dir=tmp_path / "callback")
 
         result = check_orphans(_make_state())
 
@@ -217,7 +217,7 @@ class TestCreateStory:
         state = _make_state(intake=_STORY_FIELDS)
         result = create_story(state)
 
-        stories = AccomplishmentsStore(base_dir=tmp_path / "pi-apply").list_stories()
+        stories = AccomplishmentsStore(base_dir=tmp_path / "callback").list_stories()
         expected_saved = CreatedStory(id="story-001", **_STORY_FIELDS)
         assert stories == [expected_saved]
 

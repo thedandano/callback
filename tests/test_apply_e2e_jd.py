@@ -2,8 +2,8 @@
 
 from unittest.mock import AsyncMock, patch
 
-from pi_apply.apply_graph import build_apply_graph
-from pi_apply.state import ApplyState
+from callback.apply_graph import build_apply_graph
+from callback.state import ApplyState
 
 FIXTURE_MD = """# Senior Python Engineer
 
@@ -22,7 +22,7 @@ def test_url_fetched_markdown_stops_before_keyword_acceptance(tmp_path, monkeypa
     """Fetched markdown becomes state.jd_text before the host keyword handoff."""
     apps_dir = tmp_path / "applications"
     apps_dir.mkdir()
-    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(apps_dir))
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(apps_dir))
 
     session_id = "e2e-jd-fetch-propagation"
     jd_url = "https://example.test/jobs/senior-python-engineer"
@@ -34,7 +34,7 @@ def test_url_fetched_markdown_stops_before_keyword_acceptance(tmp_path, monkeypa
     )
 
     fetch_mock = AsyncMock(return_value=FIXTURE_MD)
-    with patch("pi_apply.apply_nodes.fetch_url_to_markdown", fetch_mock):
+    with patch("callback.apply_nodes.fetch_url_to_markdown", fetch_mock):
         result = graph.invoke(
             initial_state,
             {"configurable": {"thread_id": session_id}},
