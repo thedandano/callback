@@ -6,6 +6,14 @@
 
 - Existing users must re-run `onboard_user` after upgrading to the HTML renderer + extractor fixes. Older `sections.json` files may contain corrupted contact fields (for example duplicated email or incorrect location).
 
+## [1.0.1](https://github.com/thedandano/callback/compare/v1.0.0...v1.0.1) (2026-06-11)
+
+
+### Documentation
+
+* post-rename coherence sweep ([430424f](https://github.com/thedandano/callback/commit/430424f6d616eb82274e21876e998e69c45428b6))
+* retro for v1.0.0 rename and migration ([fa7b1a3](https://github.com/thedandano/callback/commit/fa7b1a38b1d1be7d6e435d38aa74a0342351e51d))
+
 ## [1.0.0](https://github.com/thedandano/callback/compare/v0.5.0...v1.0.0) (2026-06-11)
 
 
