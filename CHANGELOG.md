@@ -6,6 +6,13 @@
 
 - Existing users must re-run `onboard_user` after upgrading to the HTML renderer + extractor fixes. Older `sections.json` files may contain corrupted contact fields (for example duplicated email or incorrect location).
 
+## [0.5.0](https://github.com/thedandano/pi-apply/compare/v0.4.1...v0.5.0) (2026-06-11)
+
+
+### Features
+
+* add LangSmith observability with thread grouping and redacted I/O ([21e90b4](https://github.com/thedandano/pi-apply/commit/21e90b4f5474228b22428ef48d438c0e755c91cb))
+
 ## [0.4.1](https://github.com/thedandano/pi-apply/compare/v0.4.0...v0.4.1) (2026-05-21)
 
 
