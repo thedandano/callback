@@ -7,9 +7,9 @@ from unittest.mock import ANY
 
 import pytest
 
-import pi_apply.apply_nodes as apply_nodes
-from pi_apply.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError
-from pi_apply.state import ApplyState
+import callback.apply_nodes as apply_nodes
+from callback.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError
+from callback.state import ApplyState
 
 
 @pytest.fixture
@@ -36,13 +36,13 @@ def make_state(**overrides):
 def jd_log_payloads(caplog):
     payloads = []
     for record in caplog.records:
-        if record.name == "pi_apply.jd_fetcher":
+        if record.name == "callback.jd_fetcher":
             payloads.append((record.levelno, json.loads(record.message)))
     return payloads
 
 
 def test_jd_fetch_url_success_returns_markdown_and_logs(caplog, fake_fetch):
-    caplog.set_level(logging.INFO, logger="pi_apply.jd_fetcher")
+    caplog.set_level(logging.INFO, logger="callback.jd_fetcher")
     calls, result_value = fake_fetch
     jd_url = "https://example.com/job"
     state = make_state(jd_url=jd_url)
@@ -70,7 +70,7 @@ def test_jd_fetch_url_success_returns_markdown_and_logs(caplog, fake_fetch):
 
 
 def test_jd_fetch_raw_text_passthrough_unchanged(caplog, fake_fetch):
-    caplog.set_level(logging.INFO, logger="pi_apply.jd_fetcher")
+    caplog.set_level(logging.INFO, logger="callback.jd_fetcher")
     calls, _ = fake_fetch
     raw_text = "Python engineer needed\nRemote role"
     state = make_state(jd_raw_text=raw_text)
@@ -83,7 +83,7 @@ def test_jd_fetch_raw_text_passthrough_unchanged(caplog, fake_fetch):
 
 
 def test_jd_fetch_io_failure_with_raw_text_falls_back_and_logs_warning(caplog, fake_fetch):
-    caplog.set_level(logging.INFO, logger="pi_apply.jd_fetcher")
+    caplog.set_level(logging.INFO, logger="callback.jd_fetcher")
     _, result_value = fake_fetch
     result_value["value"] = TimeoutError("site timed out")
     jd_url = "https://example.com/job"
@@ -112,7 +112,7 @@ def test_jd_fetch_io_failure_with_raw_text_falls_back_and_logs_warning(caplog, f
 
 
 def test_jd_fetch_io_failure_without_raw_text_raises_and_logs_error(caplog, fake_fetch):
-    caplog.set_level(logging.INFO, logger="pi_apply.jd_fetcher")
+    caplog.set_level(logging.INFO, logger="callback.jd_fetcher")
     _, result_value = fake_fetch
     result_value["value"] = RuntimeError("dns failed")
     jd_url = "https://example.com/job"
@@ -144,7 +144,7 @@ def test_jd_fetch_io_failure_without_raw_text_raises_and_logs_error(caplog, fake
 
 
 def test_jd_fetch_empty_result_with_raw_text_still_raises(caplog, fake_fetch):
-    caplog.set_level(logging.INFO, logger="pi_apply.jd_fetcher")
+    caplog.set_level(logging.INFO, logger="callback.jd_fetcher")
     _, result_value = fake_fetch
     result_value["value"] = "x" * MIN_MARKDOWN_CHARS
     jd_url = "https://example.com/job"
@@ -174,7 +174,7 @@ def test_jd_fetch_empty_result_with_raw_text_still_raises(caplog, fake_fetch):
 
 
 def test_jd_fetch_empty_result_without_raw_text_raises(caplog, fake_fetch):
-    caplog.set_level(logging.INFO, logger="pi_apply.jd_fetcher")
+    caplog.set_level(logging.INFO, logger="callback.jd_fetcher")
     _, result_value = fake_fetch
     result_value["value"] = "too short"
     jd_url = "https://example.com/job"
@@ -204,7 +204,7 @@ def test_jd_fetch_empty_result_without_raw_text_raises(caplog, fake_fetch):
 
 
 def test_jd_fetch_no_input_raises_value_error_and_logs(caplog, fake_fetch):
-    caplog.set_level(logging.INFO, logger="pi_apply.jd_fetcher")
+    caplog.set_level(logging.INFO, logger="callback.jd_fetcher")
     state = make_state()
 
     with pytest.raises(ValueError, match="neither jd_url nor jd_raw_text provided"):

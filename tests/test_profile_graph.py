@@ -1,17 +1,17 @@
 """Tests for the profile graph — structure, routing, and interrupt behaviour.
 
 Isolation: XDG_DATA_HOME + wiki_module.BASE_DIR patched per test so nodes
-write to tmp_path rather than ~/.local/share/pi-apply.
+write to tmp_path rather than ~/.local/share/callback.
 """
 
 from datetime import UTC, datetime
 from pathlib import Path
 
-import pi_apply.wiki as wiki_module
-from pi_apply.profile_graph import build_profile_graph, make_config
-from pi_apply.profilecompiler import save_compiled_profile
-from pi_apply.repository.resumes import save_resume
-from pi_apply.state import CompiledProfile, OrphanedSkill, ProfileState
+import callback.wiki as wiki_module
+from callback.profile_graph import build_profile_graph, make_config
+from callback.profilecompiler import save_compiled_profile
+from callback.repository.resumes import save_resume
+from callback.state import CompiledProfile, OrphanedSkill, ProfileState
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -41,7 +41,7 @@ def _save_profile_with_resumes(tmp_path: Path, orphans: list[str] | None = None)
         orphaned_skills=[OrphanedSkill(skill=s) for s in (orphans or [])],
         compiled_at=datetime.now(UTC).isoformat(),
     )
-    save_compiled_profile(profile, base_dir=tmp_path / "pi-apply")
+    save_compiled_profile(profile, base_dir=tmp_path / "callback")
     resume = _resume_txt(tmp_path)
     save_resume("backend", str(resume))
 

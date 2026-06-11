@@ -1,14 +1,14 @@
-"""Tests for pi_apply.render (HTML + Playwright)."""
+"""Tests for callback.render (HTML + Playwright)."""
 
 import tempfile
 from pathlib import Path
 
-import pi_apply.render
-from pi_apply.render import render_resume
+import callback.render
+from callback.render import render_resume
 
 
 def test_render_importable():
-    assert pi_apply.render is not None
+    assert callback.render is not None
 
 
 def test_render_resume_importable():
@@ -16,7 +16,7 @@ def test_render_resume_importable():
 
 
 def test_no_tex_builder():
-    assert getattr(pi_apply.render, "CanonicalTeXBuilder", None) is None
+    assert getattr(callback.render, "CanonicalTeXBuilder", None) is None
 
 
 def test_render_resume_produces_pdf():

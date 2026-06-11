@@ -18,17 +18,17 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, StateGraph
 
-from pi_apply.observability import build_graph_config
-from pi_apply.profile_nodes import (
+from callback.observability import build_graph_config
+from callback.profile_nodes import (
     check_orphans,
     check_profile,
     compile_profile,
     create_story,
     onboard,
 )
-from pi_apply.state import ProfileState
+from callback.state import ProfileState
 
-DB_PATH = Path.home() / ".local" / "share" / "pi-apply" / "profile-sessions.db"
+DB_PATH = Path.home() / ".local" / "share" / "callback" / "profile-sessions.db"
 
 
 def make_config(
@@ -67,7 +67,7 @@ def build_profile_graph(db_path: Path = DB_PATH):
 
     Args:
         db_path: Path to the SQLite checkpointer DB.
-                 Defaults to ~/.local/share/pi-apply/profile-sessions.db
+                 Defaults to ~/.local/share/callback/profile-sessions.db
 
     Returns:
         Compiled LangGraph StateGraph for ProfileState with interrupts

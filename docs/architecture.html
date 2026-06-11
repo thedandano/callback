@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>pi-apply — Architecture</title>
+<title>callback — Architecture</title>
 <style>
 /* ── Dracula Pro palette ── */
 :root {
@@ -211,14 +211,14 @@ h1 {
 <body>
 
 <div class="page-header">
-  <h1>pi-apply — Architecture</h1>
+  <h1>callback — Architecture</h1>
   <p class="subtitle">
     Python LangGraph MCP server exposing the current host handoff surface.
     <code style="font-family:ui-monospace,monospace;font-size:11px;background:#1B1921;padding:1px 5px;border-radius:3px;color:#80FFEA">load_jd</code>
     runs to the JD fetch interrupt, and
     <code style="font-family:ui-monospace,monospace;font-size:11px;background:#1B1921;padding:1px 5px;border-radius:3px;color:#80FFEA">submit_keywords</code>
     injects host-extracted JDData, runs initial parse/score, and returns tailor context.
-    Sessions persist across server restarts via SqliteSaver at <code style="font-family:ui-monospace,monospace;font-size:11px;background:#1B1921;padding:1px 5px;border-radius:3px;color:#80FFEA">~/.local/share/pi-apply/apply-sessions.db</code>.
+    Sessions persist across server restarts via SqliteSaver at <code style="font-family:ui-monospace,monospace;font-size:11px;background:#1B1921;padding:1px 5px;border-radius:3px;color:#80FFEA">~/.local/share/callback/apply-sessions.db</code>.
     Tailoring, rendering, reporting, and finalization are reached through <code>submit_tailor</code>.
   </p>
 </div>
@@ -262,7 +262,7 @@ h1 {
       <div class="layer-label">MCP server</div>
       <div class="node api">
         <div class="node-title">FastMCP Server
-          <span class="node-file">pi_apply/server.py</span>
+          <span class="node-file">callback/server.py</span>
         </div>
         <div class="node-body">
           Current MCP tools registered via <code>@mcp.tool()</code>. Emits structured JSON logs
@@ -294,7 +294,7 @@ h1 {
       <div class="layer-label">Orchestration</div>
       <div class="node sched">
         <div class="node-title">Workflow Tool Handler
-          <span class="node-file">pi_apply/server.py · per-tool guard</span>
+          <span class="node-file">callback/server.py · per-tool guard</span>
         </div>
         <div class="node-body">
           Handoff guard before keyword submission:
@@ -315,7 +315,7 @@ h1 {
 
       <div class="node sched">
         <div class="node-title">LangGraph StateGraph
-          <span class="node-file">pi_apply/apply_graph.py · build_apply_graph()</span>
+          <span class="node-file">callback/apply_graph.py · build_apply_graph()</span>
         </div>
         <div class="node-body">
           <code>StateGraph(ApplyState)</code> with edges
@@ -338,7 +338,7 @@ h1 {
 
       <div class="node logic">
         <div class="node-title">jd_fetch node
-          <span class="node-file">pi_apply/apply_nodes.py</span>
+          <span class="node-file">callback/apply_nodes.py</span>
         </div>
         <div class="node-body">
           Input: <code>state.jd_url</code> and/or <code>state.jd_raw_text</code>.
@@ -356,7 +356,7 @@ h1 {
 
       <div class="node logic">
         <div class="node-title">keywords_accept node
-          <span class="node-file">pi_apply/apply_nodes.py</span>
+          <span class="node-file">callback/apply_nodes.py</span>
         </div>
         <div class="node-body">
           Input: validated host-extracted <code>state.keywords</code>.
@@ -374,7 +374,7 @@ h1 {
 
       <div class="node logic">
         <div class="node-title">Later apply nodes
-          <span class="node-file">pi_apply/apply_nodes.py</span>
+          <span class="node-file">callback/apply_nodes.py</span>
         </div>
         <div class="node-body">
           <code>parse_initial</code>, <code>score_initial</code>, <code>tailor</code>,
@@ -411,7 +411,7 @@ h1 {
       <div class="layer-label">Storage</div>
       <div class="node store">
         <div class="node-title">SqliteSaver — Session Checkpoints
-          <span class="node-file">~/.local/share/pi-apply/apply-sessions.db</span>
+          <span class="node-file">~/.local/share/callback/apply-sessions.db</span>
         </div>
         <div class="node-body">
           <code>SqliteSaver(sqlite3.connect(str(db_path), check_same_thread=False))</code>
@@ -475,7 +475,7 @@ h1 {
 
         <div class="node parse">
           <div class="node-title">bridge.py — subprocess transport
-            <span class="node-file">pi_apply/bridge.py</span>
+            <span class="node-file">callback/bridge.py</span>
           </div>
           <div class="node-body">
             Binary resolved at import time (module top level — fail-fast):
@@ -581,7 +581,7 @@ h1 {
         </tr>
         <tr>
           <td>SqliteSaver — apply-sessions.db</td>
-          <td><code>~/.local/share/pi-apply/apply-sessions.db</code></td>
+          <td><code>~/.local/share/callback/apply-sessions.db</code></td>
           <td>LangGraph checkpoint writes (post-node)</td>
           <td>Persisted <code>ApplyState</code> keyed by <code>thread_id</code></td>
           <td class="isolated">✓ full</td>

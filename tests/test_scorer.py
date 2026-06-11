@@ -1,8 +1,8 @@
-"""Unit tests for pi_apply.scorer — pure function, no I/O."""
+"""Unit tests for callback.scorer — pure function, no I/O."""
 
 import pytest
 
-from pi_apply.scorer import (
+from callback.scorer import (
     ATSHeaderDiagnostic,
     ScoringConfig,
     _normalize_for_match,

@@ -5,8 +5,8 @@ import logging
 
 import pytest
 
-from pi_apply.apply_graph import build_apply_graph, make_config
-from pi_apply.state import ApplyState
+from callback.apply_graph import build_apply_graph, make_config
+from callback.state import ApplyState
 
 VALID_JD_DATA = {
     "title": "Backend Engineer",
@@ -34,14 +34,14 @@ def tmp_apps_dir(tmp_path, monkeypatch):
     """Temporary applications directory for testing."""
     apps_dir = tmp_path / "applications"
     apps_dir.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(apps_dir))
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(apps_dir))
     return apps_dir
 
 
 @pytest.fixture
 def tmp_resume(tmp_path, monkeypatch):
     """Register a temporary resume in the local registry and return its path."""
-    from pi_apply.repository.resumes import save_resume
+    from callback.repository.resumes import save_resume
 
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     resume_file = tmp_path / "resume.txt"
@@ -59,7 +59,7 @@ def apply_graph(tmp_db, tmp_apps_dir):
 def _node_log_payloads(caplog, node: str) -> list[dict]:
     payloads = []
     for record in caplog.records:
-        if record.name != "pi_apply.apply_nodes":
+        if record.name != "callback.apply_nodes":
             continue
         payload = json.loads(record.message)
         if payload.get("node") == node:
@@ -122,7 +122,7 @@ class TestKeywordHandoffInterrupts:
         tmp_resume,
         caplog,
     ):
-        caplog.set_level(logging.INFO, logger="pi_apply.apply_nodes")
+        caplog.set_level(logging.INFO, logger="callback.apply_nodes")
         session_id = "test-submit-keywords-interrupt"
         config = make_config(session_id)
         initial_state = ApplyState(

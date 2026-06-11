@@ -1,8 +1,8 @@
-"""Unit tests for pi_apply.extractor."""
+"""Unit tests for callback.extractor."""
 
 import pytest
 
-from pi_apply.extractor import (
+from callback.extractor import (
     MAX_FILE_BYTES,
     _parse_contact_info,
     _parse_experience,
@@ -13,7 +13,7 @@ from pi_apply.extractor import (
     extract,
     extract_sections,
 )
-from pi_apply.section_map import ContactInfo
+from callback.section_map import ContactInfo
 
 
 class TestTxtExtraction:

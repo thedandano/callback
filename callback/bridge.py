@@ -1,4 +1,4 @@
-"""Go subprocess bridge for pi-apply.
+"""Go subprocess bridge for callback.
 
 Handles binary resolution and subprocess execution for the go-apply CLI.
 Binary resolution runs at module import time.

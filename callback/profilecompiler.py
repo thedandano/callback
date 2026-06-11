@@ -5,7 +5,7 @@ from pathlib import Path
 
 from rapidfuzz import fuzz
 
-from pi_apply.state import CompiledProfile, CreatedStory, OrphanedSkill
+from callback.state import CompiledProfile, CreatedStory, OrphanedSkill
 
 _SCHEMA_VERSION = "1"
 _COMPILED_PROFILE_FILE = "compiled_profile.json"
@@ -18,8 +18,8 @@ class ProfileMissingError(Exception):
 
 def _data_dir() -> Path:
     if xdg_data_home := os.environ.get("XDG_DATA_HOME"):
-        return Path(xdg_data_home) / "pi-apply"
-    return Path.home() / ".local" / "share" / "pi-apply"
+        return Path(xdg_data_home) / "callback"
+    return Path.home() / ".local" / "share" / "callback"
 
 
 def _insert_skills(seen: dict[str, str], skills: list[str]) -> None:

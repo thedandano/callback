@@ -11,11 +11,11 @@ from pathlib import Path
 # Add current directory to path for running via uv
 sys.path.insert(0, os.getcwd())
 
-from pi_apply.jd_data import EXTRACTION_PROTOCOL
-from pi_apply.repository.resumes import save_resume
-from pi_apply.section_map import ContactInfo, ExperienceEntry, SectionMap, SkillsSection
-from pi_apply.server import load_jd, submit_keywords, submit_tailor
-from pi_apply.wiki import WikiStore
+from callback.jd_data import EXTRACTION_PROTOCOL
+from callback.repository.resumes import save_resume
+from callback.section_map import ContactInfo, ExperienceEntry, SectionMap, SkillsSection
+from callback.server import load_jd, submit_keywords, submit_tailor
+from callback.wiki import WikiStore
 
 JD_JSON = json.dumps(
     {
@@ -102,7 +102,7 @@ def main():
         assert "total" in tailored["data"]["score_final"], "score_final missing total"
 
         # Phase 4: read archive JSON for score delta
-        apps_dir = Path.home() / ".local" / "share" / "pi-apply" / "applications"
+        apps_dir = Path.home() / ".local" / "share" / "callback" / "applications"
         archive_path = apps_dir / f"{session_id}.json"
         assert archive_path.exists(), f"archive not written: {archive_path}"
         archive = json.loads(archive_path.read_text())

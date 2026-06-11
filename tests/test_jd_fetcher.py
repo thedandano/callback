@@ -7,7 +7,7 @@ from crawl4ai import CrawlerRunConfig
 from crawl4ai.content_filter_strategy import PruningContentFilter
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 
-import pi_apply.jd_fetcher as jd_fetcher
+import callback.jd_fetcher as jd_fetcher
 
 
 def _mock_crawler(monkeypatch, crawler: Mock) -> Mock:
@@ -29,10 +29,10 @@ def _result(fit_markdown: str) -> SimpleNamespace:
 
 
 def test_fetch_url_to_markdown_returns_fit_markdown_and_config(monkeypatch):
-    monkeypatch.delenv("PI_APPLY_FETCH_PAGE_TIMEOUT_MS", raising=False)
-    monkeypatch.delenv("PI_APPLY_FETCH_WAIT_UNTIL", raising=False)
-    monkeypatch.delenv("PI_APPLY_FETCH_OUTER_TIMEOUT_S", raising=False)
-    monkeypatch.delenv("PI_APPLY_FETCH_MAGIC", raising=False)
+    monkeypatch.delenv("CALLBACK_FETCH_PAGE_TIMEOUT_MS", raising=False)
+    monkeypatch.delenv("CALLBACK_FETCH_WAIT_UNTIL", raising=False)
+    monkeypatch.delenv("CALLBACK_FETCH_OUTER_TIMEOUT_S", raising=False)
+    monkeypatch.delenv("CALLBACK_FETCH_MAGIC", raising=False)
 
     crawler = Mock()
     crawler.arun = AsyncMock(return_value=_result("pruned fit markdown"))
@@ -55,10 +55,10 @@ def test_fetch_url_to_markdown_returns_fit_markdown_and_config(monkeypatch):
 
 
 def test_fetch_url_to_markdown_honors_env_overrides(monkeypatch):
-    monkeypatch.setenv("PI_APPLY_FETCH_PAGE_TIMEOUT_MS", "15000")
-    monkeypatch.setenv("PI_APPLY_FETCH_WAIT_UNTIL", "domcontentloaded")
-    monkeypatch.setenv("PI_APPLY_FETCH_OUTER_TIMEOUT_S", "5")
-    monkeypatch.setenv("PI_APPLY_FETCH_MAGIC", "false")
+    monkeypatch.setenv("CALLBACK_FETCH_PAGE_TIMEOUT_MS", "15000")
+    monkeypatch.setenv("CALLBACK_FETCH_WAIT_UNTIL", "domcontentloaded")
+    monkeypatch.setenv("CALLBACK_FETCH_OUTER_TIMEOUT_S", "5")
+    monkeypatch.setenv("CALLBACK_FETCH_MAGIC", "false")
 
     crawler = Mock()
     crawler.arun = AsyncMock(return_value=_result("env markdown"))

@@ -1,4 +1,4 @@
-"""Setuptools hooks for local pi-apply builds."""
+"""Setuptools hooks for local callback builds."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ def _package_version() -> str:
 
 
 def _build_version() -> str:
-    return os.environ.get("PI_APPLY_BUILD_VERSION") or _package_version()
+    return os.environ.get("CALLBACK_BUILD_VERSION") or _package_version()
 
 
 class BuildPy(_build_py):
@@ -25,7 +25,7 @@ class BuildPy(_build_py):
 
     def run(self) -> None:
         super().run()
-        target = Path(self.build_lib) / "pi_apply" / "_build_info.py"
+        target = Path(self.build_lib) / "callback" / "_build_info.py"
         target.write_text(
             "# Generated during package build. Do not edit.\n"
             f"BUILD_VERSION = {_build_version()!r}\n",

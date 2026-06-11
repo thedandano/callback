@@ -10,7 +10,7 @@ import traceback
 # Add current directory to path for running via uv
 sys.path.insert(0, os.getcwd())
 
-from pi_apply.server import compile_profile, create_story, onboard_user
+from callback.server import compile_profile, create_story, onboard_user
 
 RESUME_TEXT = """\
 Jane Doe

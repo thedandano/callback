@@ -17,7 +17,7 @@ wheels/
 .agents
 .codex
 .serena/
-.pi-apply/
+.callback/
 
 # dev
 openspec/

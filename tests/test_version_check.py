@@ -1,10 +1,10 @@
-"""Tests for pi_apply.version_check."""
+"""Tests for callback.version_check."""
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pi_apply.version_check as vc
+import callback.version_check as vc
 
 
 def _reset_cache():

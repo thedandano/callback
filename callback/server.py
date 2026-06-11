@@ -1,4 +1,4 @@
-"""MCP server for pi-apply: host handoff and profile management.
+"""MCP server for callback: host handoff and profile management.
 
 Exposes eight tools:
 1. load_jd — loads JD markdown and returns host extraction instructions
@@ -29,32 +29,32 @@ from pathlib import Path
 
 from fastmcp import FastMCP
 
-import pi_apply.profile_nodes as profile_nodes
-import pi_apply.scorer as scorer
-import pi_apply.version_check as version_check
-from pi_apply.apply_graph import (
+import callback.profile_nodes as profile_nodes
+import callback.scorer as scorer
+import callback.version_check as version_check
+from callback.apply_graph import (
     KEYWORDS_ACCEPT_NODE,
     TAILOR_NODE,
     build_apply_graph,
 )
-from pi_apply.apply_graph import (
+from callback.apply_graph import (
     make_config as make_apply_config,
 )
-from pi_apply.apply_nodes import _detect_uncovered_skills, _get_apps_dir
-from pi_apply.jd_data import EXTRACTION_PROTOCOL, JDDataError, parse_jd_json
-from pi_apply.jd_fetcher import JDFetchError
-from pi_apply.observability import invoke_graph_without_native_tracing, trace_tool
-from pi_apply.profile_graph import build_profile_graph
-from pi_apply.profile_graph import make_config as make_profile_config
-from pi_apply.repository.resumes import list_resumes
-from pi_apply.section_map import SectionMap, apply_edit
-from pi_apply.state import ApplyState, ProfileState
-from pi_apply.wiki import WikiStore
+from callback.apply_nodes import _detect_uncovered_skills, _get_apps_dir
+from callback.jd_data import EXTRACTION_PROTOCOL, JDDataError, parse_jd_json
+from callback.jd_fetcher import JDFetchError
+from callback.observability import invoke_graph_without_native_tracing, trace_tool
+from callback.profile_graph import build_profile_graph
+from callback.profile_graph import make_config as make_profile_config
+from callback.repository.resumes import list_resumes
+from callback.section_map import SectionMap, apply_edit
+from callback.state import ApplyState, ProfileState
+from callback.wiki import WikiStore
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 _LOG_FORMAT = "%(message)s"  # messages are already JSON strings
 _LOG_PATH: Path | None = None
-DEFAULT_LOG_PATH = Path("~/.local/state/pi-apply/server.log").expanduser()
+DEFAULT_LOG_PATH = Path("~/.local/state/callback/server.log").expanduser()
 
 
 def configure_logging(log_path: str | Path | None = None) -> None:
@@ -72,7 +72,7 @@ def configure_logging(log_path: str | Path | None = None) -> None:
     root = logging.getLogger()
     root.setLevel(LOG_LEVEL)
     for handler in root.handlers:
-        if getattr(handler, "_pi_apply_log_path", None) == str(path):
+        if getattr(handler, "_callback_log_path", None) == str(path):
             _LOG_PATH = path
             return
 
@@ -94,17 +94,17 @@ def configure_logging(log_path: str | Path | None = None) -> None:
 
     handler.setFormatter(logging.Formatter(_LOG_FORMAT))
     handler.setLevel(LOG_LEVEL)
-    handler._pi_apply_log_path = str(path)  # type: ignore[attr-defined]
+    handler._callback_log_path = str(path)  # type: ignore[attr-defined]
     root.addHandler(handler)
     _LOG_PATH = path
 
 
-configure_logging(os.environ.get("PI_APPLY_LOG_PATH"))
+configure_logging(os.environ.get("CALLBACK_LOG_PATH"))
 logger = logging.getLogger(__name__)
 
 
 def _write_log_line(line: str) -> None:
-    """Write directly to the pi-apply log file if configured."""
+    """Write directly to the callback log file if configured."""
     global _LOG_PATH
     if _LOG_PATH is None:
         return
@@ -184,7 +184,7 @@ _TAILOR_INSTRUCTIONS = (
     "or theme."
 )
 
-mcp = FastMCP("pi-apply", lifespan=_lifespan)
+mcp = FastMCP("callback", lifespan=_lifespan)
 
 _NEXT_EXTRACT_KEYWORDS = "extract_keywords"
 _NEXT_ONBOARD_RESUME_FIRST = "onboard_resume_first"
@@ -684,7 +684,7 @@ def _load_jd_impl(  # noqa: C901
         return _err(
             stage="load_jd",
             code="unexpected_error",
-            message="unexpected load_jd failure; inspect pi-apply logs",
+            message="unexpected load_jd failure; inspect callback logs",
             session_id=session_id,
             retriable=False,
         )
@@ -943,7 +943,7 @@ def submit_tailor(
 
     output_dir (optional): an absolute directory to write the final PDF into instead of the
     default applications dir. Recommended for sandboxed hosts (Claude/Codex) whose filesystem
-    cannot reach pi-apply's default output. The PDF is written there directly (a redirect, not
+    cannot reach callback's default output. The PDF is written there directly (a redirect, not
     a copy); data.pdf_path points inside it. An unwritable path returns an invalid_output_dir
     error rather than silently falling back.
 
@@ -1416,7 +1416,7 @@ def check_update() -> str:
 def run() -> None:
     """Run the FastMCP stdio server."""
     if _LOG_PATH is None:
-        configure_logging(os.environ.get("PI_APPLY_LOG_PATH") or DEFAULT_LOG_PATH)
+        configure_logging(os.environ.get("CALLBACK_LOG_PATH") or DEFAULT_LOG_PATH)
     started_at = time.monotonic()
     _log(
         "INFO",
@@ -1439,7 +1439,7 @@ def run() -> None:
                 "uptime_ms": int((time.monotonic() - started_at) * 1000),
             }
         )
-        raise RuntimeError("pi-apply MCP stdio server crashed") from exc
+        raise RuntimeError("callback MCP stdio server crashed") from exc
     finally:
         _log(
             "INFO",

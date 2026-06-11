@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from pi_apply.section_map import (
+from callback.section_map import (
     ContactInfo,
     ExperienceEntry,
     ProjectEntry,
     SectionMap,
     SkillsSection,
 )
-from pi_apply.wiki import WikiStore
+from callback.wiki import WikiStore
 
 
 @pytest.fixture(autouse=True)
@@ -32,12 +32,12 @@ def fake_pdf_renderer(monkeypatch):
     def fake_extract(path):
         return rendered_text.get(str(path), "")
 
-    monkeypatch.setattr("pi_apply.apply_nodes.render_resume", fake_render_resume)
-    monkeypatch.setattr("pi_apply.apply_nodes.resume_extractor.extract", fake_extract)
+    monkeypatch.setattr("callback.apply_nodes.render_resume", fake_render_resume)
+    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", fake_extract)
 
 
 def test_submit_tailor_rejects_unknown_session():
-    from pi_apply.server import submit_tailor
+    from callback.server import submit_tailor
 
     result = json.loads(submit_tailor(session_id="no-such-session", edits=[]))
     expected = {
@@ -57,10 +57,10 @@ def test_submit_tailor_rejects_session_not_at_tailor(tmp_path, monkeypatch):
     """Session that has only completed load_jd (at keywords_accept, not tailor) is rejected."""
     from unittest.mock import patch
 
-    from pi_apply.server import load_jd, submit_tailor
+    from callback.server import load_jd, submit_tailor
 
-    monkeypatch.setenv("PI_APPLY_APPS_DIR", str(tmp_path / "applications"))
-    with patch("pi_apply.server.list_resumes", return_value=["resume"]):
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
+    with patch("callback.server.list_resumes", return_value=["resume"]):
         loaded = json.loads(load_jd(jd_raw_text="Python engineer"))
     session_id = loaded["session_id"]
 
@@ -111,14 +111,14 @@ def _run_to_tailor(
     """Run load_jd + submit_keywords and return the session_id at TAILOR_NODE."""
     from unittest.mock import patch
 
-    from pi_apply.server import load_jd, submit_keywords
+    from callback.server import load_jd, submit_keywords
 
     apps_dir = str(tmp_path / "applications")
     if monkeypatch is not None:
-        monkeypatch.setenv("PI_APPLY_APPS_DIR", apps_dir)
+        monkeypatch.setenv("CALLBACK_APPS_DIR", apps_dir)
     else:
-        os.environ["PI_APPLY_APPS_DIR"] = apps_dir
-    with patch("pi_apply.server.list_resumes", return_value=[resume_label]):
+        os.environ["CALLBACK_APPS_DIR"] = apps_dir
+    with patch("callback.server.list_resumes", return_value=[resume_label]):
         loaded = json.loads(load_jd(jd_raw_text="Sample JD"))
     session_id = loaded["session_id"]
     submit_keywords(session_id=session_id, jd_json=jd_json_str)
@@ -127,10 +127,10 @@ def _run_to_tailor(
 
 def test_submit_tailor_applies_valid_edits_and_rescores(tmp_path, monkeypatch):
     """Happy path: valid edits are applied, score_final and report returned from final state."""
-    from pi_apply.server import submit_tailor
+    from callback.server import submit_tailor
 
     resume_label = "test_resume"
-    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python", "Kubernetes"]})
@@ -180,10 +180,10 @@ def test_submit_tailor_applies_valid_edits_and_rescores(tmp_path, monkeypatch):
 
 
 def test_submit_tailor_replaces_project_entry(tmp_path, monkeypatch):
-    from pi_apply.server import submit_tailor
+    from callback.server import submit_tailor
 
     resume_label = "project_replace_resume"
-    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
     section_map = SectionMap(
         contact=ContactInfo(name="Jane Dev"),
         summary="Python engineer",
@@ -243,10 +243,10 @@ def test_submit_tailor_replaces_project_entry(tmp_path, monkeypatch):
 
 
 def test_submit_tailor_removes_weak_bullet_and_adds_second_project(tmp_path, monkeypatch):
-    from pi_apply.server import submit_tailor
+    from callback.server import submit_tailor
 
     resume_label = "project_add_resume"
-    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
     section_map = SectionMap(
         contact=ContactInfo(name="Jane Dev"),
         summary="Python engineer",
@@ -316,10 +316,10 @@ def test_submit_tailor_removes_weak_bullet_and_adds_second_project(tmp_path, mon
 
 def test_submit_tailor_rejects_out_of_bounds_target(tmp_path, monkeypatch):
     """Out-of-bounds experience target is rejected; in-bounds edits still applied."""
-    from pi_apply.server import submit_tailor
+    from callback.server import submit_tailor
 
     resume_label = "oob_resume"
-    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
     section_map = SectionMap(
         contact=ContactInfo(name="Jane Dev"),
         summary="Engineer",
@@ -369,10 +369,10 @@ def test_submit_tailor_rejects_out_of_bounds_target(tmp_path, monkeypatch):
 
 def test_submit_tailor_flags_uncovered_skill(tmp_path, monkeypatch):
     """Skill added to skills section but absent from all bullets appears in uncovered_skills."""
-    from pi_apply.server import submit_tailor
+    from callback.server import submit_tailor
 
     resume_label = "uncovered_resume"
-    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
     section_map = SectionMap(
         contact=ContactInfo(name="Jane Dev"),
         summary="Engineer",
@@ -405,10 +405,10 @@ def test_submit_tailor_flags_uncovered_skill(tmp_path, monkeypatch):
 
 def test_submit_tailor_does_not_flag_covered_skill(tmp_path, monkeypatch):
     """Skill present in experience bullets is NOT flagged as uncovered."""
-    from pi_apply.server import submit_tailor
+    from callback.server import submit_tailor
 
     resume_label = "covered_resume"
-    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
     section_map = SectionMap(
         contact=ContactInfo(name="Jane Dev"),
         summary="Engineer",
@@ -444,10 +444,10 @@ def test_submit_tailor_does_not_flag_covered_skill(tmp_path, monkeypatch):
 
 
 def test_submit_tailor_project_bullet_replacement_can_match_required_keyword(tmp_path, monkeypatch):
-    from pi_apply.server import submit_tailor
+    from callback.server import submit_tailor
 
     resume_label = "project_keyword_resume"
-    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
     rendered = {}
 
     def fake_render_resume(tailored, output_path):
@@ -462,8 +462,8 @@ def test_submit_tailor_project_bullet_replacement_can_match_required_keyword(tmp
     def fake_extract(_path):
         return rendered["text"]
 
-    monkeypatch.setattr("pi_apply.apply_nodes.render_resume", fake_render_resume)
-    monkeypatch.setattr("pi_apply.apply_nodes.resume_extractor.extract", fake_extract)
+    monkeypatch.setattr("callback.apply_nodes.render_resume", fake_render_resume)
+    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", fake_extract)
 
     section_map = SectionMap(
         contact=ContactInfo(name="Jane Dev"),
@@ -516,10 +516,10 @@ def test_submit_tailor_project_bullet_replacement_can_match_required_keyword(tmp
 
 def test_submit_tailor_redirects_pdf_to_output_dir(tmp_path, monkeypatch):
     """output_dir redirects the final PDF there; archive stays in apps_dir; no PDF in apps_dir."""
-    from pi_apply.server import submit_tailor
+    from callback.server import submit_tailor
 
     resume_label = "redirect_resume"
-    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
@@ -553,10 +553,10 @@ def test_submit_tailor_redirects_pdf_to_output_dir(tmp_path, monkeypatch):
 
 def test_submit_tailor_no_coverage_accepts_output_dir_without_error(tmp_path, monkeypatch):
     """no_coverage skips render (no PDF to produce), so output_dir is accepted but unused."""
-    from pi_apply.server import submit_tailor
+    from callback.server import submit_tailor
 
     resume_label = "no_cov_redirect_resume"
-    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
@@ -584,10 +584,10 @@ def test_submit_tailor_no_coverage_accepts_output_dir_without_error(tmp_path, mo
 
 def test_submit_tailor_rejects_relative_output_dir(tmp_path, monkeypatch):
     """A relative output_dir is rejected up front (contract is an absolute path)."""
-    from pi_apply.server import submit_tailor
+    from callback.server import submit_tailor
 
     resume_label = "rel_dir_resume"
-    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
@@ -616,10 +616,10 @@ def test_submit_tailor_rejects_relative_output_dir(tmp_path, monkeypatch):
 
 def test_submit_tailor_without_output_dir_writes_to_apps_dir(tmp_path, monkeypatch):
     """Default (no output_dir): PDF lands in apps_dir, unchanged from prior behavior."""
-    from pi_apply.server import submit_tailor
+    from callback.server import submit_tailor
 
     resume_label = "default_dir_resume"
-    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
@@ -640,10 +640,10 @@ def test_submit_tailor_without_output_dir_writes_to_apps_dir(tmp_path, monkeypat
 
 def test_submit_tailor_rejects_unwritable_output_dir(tmp_path, monkeypatch):
     """An output_dir that cannot be created returns invalid_output_dir, not a silent fallback."""
-    from pi_apply.server import submit_tailor
+    from callback.server import submit_tailor
 
     resume_label = "bad_dir_resume"
-    monkeypatch.setattr("pi_apply.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
