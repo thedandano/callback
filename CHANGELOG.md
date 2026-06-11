@@ -6,6 +6,17 @@
 
 - Existing users must re-run `onboard_user` after upgrading to the HTML renderer + extractor fixes. Older `sections.json` files may contain corrupted contact fields (for example duplicated email or incorrect location).
 
+## [1.0.0](https://github.com/thedandano/pi-apply/compare/v0.5.0...v1.0.0) (2026-06-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* CLI is now `callback`, env vars use the CALLBACK_ prefix, the import package is `callback`, and state lives under ~/.local/share/callback/.
+
+### Features
+
+* rename pi-apply to callback for v1.0.0 ([5807c84](https://github.com/thedandano/pi-apply/commit/5807c840063fb6bbb88d99487996333cf634a56b))
+
 ## [0.5.0](https://github.com/thedandano/callback/compare/v0.4.1...v0.5.0) (2026-06-11)
 
 
