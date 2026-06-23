@@ -81,6 +81,7 @@ def test_report_delta_all_six_dimensions():
             "uncovered_skills": [],
             "experience_evaluated": None,
             "notes": [],
+            "warnings": [],
         },
         "tailor_diagnostics": [],
     }
@@ -104,6 +105,7 @@ def test_report_format_gap_chars_negative_on_content_loss():
             "uncovered_skills": [],
             "experience_evaluated": None,
             "notes": [],
+            "warnings": [],
         },
         "tailor_diagnostics": [],
     }
@@ -127,6 +129,7 @@ def test_report_format_gap_chars_positive_on_content_gain():
             "uncovered_skills": [],
             "experience_evaluated": None,
             "notes": [],
+            "warnings": [],
         },
         "tailor_diagnostics": [],
     }
@@ -232,6 +235,7 @@ def test_report_no_coverage_path():
             "uncovered_skills": [],
             "experience_evaluated": None,
             "notes": [],
+            "warnings": [],
         },
         "tailor_diagnostics": [],
     }

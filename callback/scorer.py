@@ -196,12 +196,14 @@ def score(
 
 
 _DASH_RE = re.compile(r"[-‐–—­‑​]")
+_SLASH_WS_RE = re.compile(r"\s*/\s*")
 _WS_RE = re.compile(r"\s+")
 
 
 def _normalize_for_match(text: str) -> str:
     text = unicodedata.normalize("NFKC", text)
     text = _DASH_RE.sub(" ", text)
+    text = _SLASH_WS_RE.sub("/", text)
     return _WS_RE.sub(" ", text).strip()
 
 
@@ -209,11 +211,30 @@ def _is_word_char(c: str) -> bool:
     return c.isalnum() or c == "_"
 
 
+_PLURAL_MIN_STEM = 4
+
+
+def _plural_tolerant(token: str) -> str:
+    """Regex fragment matching token with optional trailing s/es.
+
+    Conservative by design: alpha-only tokens with a stem of >= 4 chars.
+    Honest-signal rule — a recruiter's literal search for the JD term must
+    still retrieve the resume; no synonym or abbreviation expansion.
+    """
+    if not token.isalpha() or len(token) < _PLURAL_MIN_STEM:
+        return re.escape(token)
+    stem = token[:-1] if token.endswith("s") and not token.endswith("ss") else token
+    if len(stem) < _PLURAL_MIN_STEM:
+        return re.escape(token)
+    return re.escape(stem) + r"(?:e?s)?"
+
+
 def _compile_keyword_pattern(kw: str) -> re.Pattern:
-    quoted = re.escape(kw)
     prefix = r"\b" if kw and _is_word_char(kw[0]) else ""
     suffix = r"\b" if kw and _is_word_char(kw[-1]) else ""
-    return re.compile(f"(?i){prefix}{quoted}{suffix}")
+    head, sep, last = kw.rpartition(" ")
+    body = re.escape(head + sep) + _plural_tolerant(last)
+    return re.compile(f"(?i){prefix}{body}{suffix}")
 
 
 def _score_keywords(
@@ -240,12 +261,9 @@ def _score_keywords(
         matched, unmatched = [], []
         for kw in keywords:
             norm_kw = _normalize_for_match(kw)
-            bucket = (
-                matched
-                if _compile_keyword_pattern(norm_kw).search(normalized_resume)
-                else unmatched
-            )
-            bucket.append(kw)
+            # An empty normalized keyword would match anything — never credit it.
+            hit = bool(norm_kw) and _compile_keyword_pattern(norm_kw).search(normalized_resume)
+            (matched if hit else unmatched).append(kw)
         return matched, unmatched, len(matched) / len(keywords)
 
     req_matched, req_unmatched, req_pct = classify(required)
@@ -277,9 +295,13 @@ def _score_impact(resume_text: str, cfg: ScoringConfig) -> tuple[float, list[str
     bullets = []
     for line in resume_text.splitlines():
         line = line.strip()
-        if not line or CONTACT_LINE_RE.search(line):
+        if not line:
             continue
-        stripped = VERSION_RE.sub("", line)
+        # Strip contact/version/year noise so a real metric still counts even when
+        # the line also holds a phone- or ZIP-shaped digit run; a pure contact line
+        # has nothing left to match.
+        stripped = CONTACT_LINE_RE.sub("", line)
+        stripped = VERSION_RE.sub("", stripped)
         stripped = YEAR_RE.sub("", stripped)
         if METRIC_RE.search(stripped):
             bullets.append(line)
