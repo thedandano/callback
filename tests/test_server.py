@@ -79,6 +79,8 @@ def test_apply_handoff_tools_registered():
         "compile_profile",
         "create_story",
         "check_update",
+        "set_search_preferences",
+        "get_search_preferences",
     }
 
     assert _tool_names(server) == expected
@@ -1483,3 +1485,52 @@ async def test_check_update_tool_returns_already_current():
 
     envelope = json.loads(str(result.data))
     assert envelope == {"session_id": "", "status": "ok", "data": check_result}
+
+
+# ============================================================================
+
+
+class TestSearchPreferencesTools:
+    @pytest.fixture(autouse=True)
+    def _isolate(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+
+    def _valid_payload(self) -> dict:
+        return {
+            "home_location": "Anytown, USA",
+            "work_types": ["hybrid_local", "remote"],
+            "target_titles": ["Software Engineer", "AI Engineer"],
+        }
+
+    def test_set_then_get_round_trip(self):
+        from callback.server import get_search_preferences, set_search_preferences
+
+        set_env = json.loads(set_search_preferences(self._valid_payload()))
+        assert set_env["status"] == "ok"
+        stored = set_env["data"]["preferences"]
+
+        get_env = json.loads(get_search_preferences())
+        assert get_env["status"] == "ok"
+        assert get_env["data"]["preferences"] == stored
+
+    def test_set_stamps_updated_at(self):
+        from callback.server import set_search_preferences
+
+        set_env = json.loads(set_search_preferences(self._valid_payload()))
+        assert set_env["data"]["preferences"]["updated_at"]  # non-empty ISO string
+
+    def test_get_when_missing_returns_next_action(self):
+        from callback.server import get_search_preferences
+
+        get_env = json.loads(get_search_preferences())
+        assert get_env["status"] == "ok"
+        assert get_env["next_action"] == "set_search_preferences"
+        assert "data" not in get_env
+
+    def test_set_invalid_payload_returns_error(self):
+        from callback.server import set_search_preferences
+
+        env = json.loads(set_search_preferences({"work_types": ["remote"]}))  # no home_location
+        assert env["status"] == "error"
+        assert env["error"]["code"] == "invalid_preferences"
+        assert env["error"]["stage"] == "set_search_preferences"
