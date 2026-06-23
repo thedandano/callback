@@ -14,7 +14,9 @@ Every scoring, tailoring, and feedback decision must serve this goal:
 
 ## Project Context
 
-callback is a LangGraph MCP server (stdio only) that replaces the Go FSM in go-apply.
+callback is a standalone LangGraph MCP server (stdio only). It originated as a
+replacement for go-apply's Go FSM; go-apply is now deprecated and is **not** a
+parity target — callback's own behavior is the source of truth.
 Differentiator: defensible LangGraph stateful-agent design for an AI-engineering portfolio.
 Finite maintenance horizon — build only what the walking skeleton needs (see `BRIEF.md`).
 
@@ -29,8 +31,8 @@ uv sync
 # One-time browser setup for Crawl4AI job-description fetching
 uv run playwright install chromium
 
-# Run the MCP server (stdio). go-apply binary must be on PATH or set GO_APPLY_BIN.
-GO_APPLY_BIN=/path/to/go-apply uv run python -m callback.server
+# Run the MCP server (stdio)
+uv run python -m callback.server
 
 # Register MCP server entries and configure tracing env vars
 uv run callback setup-mcp
@@ -98,7 +100,7 @@ tool/node spans for LangSmith demos.
 | `submit_keywords`| apply    | Accepts validated host-extracted JDData, runs parse/initial score, and returns score gaps plus tailor handoff guidance. |
 | `submit_tailor`  | apply    | Applies host edits, renders the tailored PDF, scores final output, and returns artifact paths/report data. Optional `output_dir` redirects the final PDF into a caller directory (e.g. a sandbox). |
 | `get_wiki_pages` | apply    | Returns selected profile wiki pages for host tailoring evidence. |
-| `onboard_user`   | profile  | Currently calls `profile_nodes.onboard` directly (skeleton).|
+| `onboard_user`   | profile  | Enters the profile graph (interrupts after `onboard`).      |
 | `compile_profile`| profile  | Currently calls `profile_nodes.compile_profile` directly.   |
 | `create_story`   | profile  | Currently calls `profile_nodes.create_story` directly.      |
 | `check_update`   | utility  | Returns current version, latest release tag, and update status. |
@@ -115,7 +117,7 @@ If you run in a sandboxed filesystem, callback's default output (`~/.local/share
 
 ### Apply graph (`apply_graph.py`, `apply_nodes.py`)
 
-Linear graph with host handoff interrupts after `jd_fetch` and `keywords_accept`:
+Linear graph with host handoff interrupts after `jd_fetch` and before `tailor`:
 
 ```
 jd_fetch → keywords_accept → parse_initial → score_initial → tailor → render
@@ -128,7 +130,7 @@ Keyword extraction is host-owned: `callback` returns the JD markdown and extract
 
 ### Profile graph (`profile_graph.py`, `profile_nodes.py`)
 
-Cyclic, with interrupts after `onboard` and `create_story`:
+Cyclic, with interrupts after `onboard`, `compile_profile`, and `create_story`:
 
 ```
 check_profile ──(no profile)──▶ onboard ─▶ compile_profile ─▶ check_orphans
@@ -149,7 +151,7 @@ the graph-state-injection intent when extending those tools.
 
 ### Scoring (`scorer.py`)
 
-Pure deterministic Python — no I/O, no LLM calls. Ported from go-apply's `scorer.go`.
+Pure deterministic Python — no I/O, no LLM calls.
 
 | Dimension       | Max | Signal                                    |
 |-----------------|-----|-------------------------------------------|
@@ -159,11 +161,21 @@ Pure deterministic Python — no I/O, no LLM calls. Ported from go-apply's `scor
 | ATSFormat       | 10  | Standard section headers present          |
 | Readability     | 10  | Absence of filler phrases                 |
 
-**Why Python, not the Go binary:** go-apply has no standalone `score` CLI (only `serve`). Logic is ~250 lines of deterministic math. Python ecosystem covers PDF/DOCX/TXT extraction.
+**Rubric grounding:** each dimension must proxy a real ATS gate mechanism —
+recruiter keyword/boolean search (KeywordMatch), knockout filters on
+years/seniority (ExperienceFit), parse failures (ATSFormat), and the recruiter
+skim (ImpactEvidence, Readability). The score predicts "will a recruiter's
+search find this resume and will the skim survive it" — it does not emulate any
+specific ATS vendor's ranker, and must stay deterministic.
+
+**What this score cannot see:** work-authorization and location knockouts (the
+most common auto-dispositions), title match against the req, skill recency, and
+degree/clearance filters. The score is a predictor of search retrievability and
+skim survival, not a guarantee — do not oversell the number in report copy.
 
 ### go-apply binary dependency (`bridge.py`)
 
-`bridge.py` resolves the go-apply binary at **import time** via `_resolve_binary()`. If the binary is not on `PATH`, set `GO_APPLY_BIN=/path/to/go-apply` before importing. In tests, `conftest.py` re-imports the module against a fake binary after resolution tests evict it from `sys.modules` — preserve this fixture when adding bridge tests.
+go-apply is deprecated and its binary is wired into nothing at runtime — `bridge.py` is a dead legacy adapter kept only for its tests, not a design reference. `bridge.py` resolves the go-apply binary at **import time** via `_resolve_binary()`. If the binary is not on `PATH`, set `GO_APPLY_BIN=/path/to/go-apply` before importing. In tests, `conftest.py` re-imports the module against a fake binary after resolution tests evict it from `sys.modules` — preserve this fixture when adding bridge tests.
 
 The apply graph's `render` node uses HTML + Playwright via `callback.render.html_builder`.
 
@@ -179,14 +191,14 @@ The apply graph's `render` node uses HTML + Playwright via `callback.render.html
 | `state.py`           | `ApplyState`, `ProfileState` — Pydantic schemas for each graph |
 | `scorer.py`          | Deterministic ATS scorer (no I/O, no LLM) |
 | `extractor.py`       | Resume text extraction (PDF via pdfplumber, DOCX via python-docx, TXT) |
-| `bridge.py`          | go-apply subprocess wrapper; resolves binary at import time |
+| `bridge.py`          | dead legacy go-apply adapter (kept for tests only) |
 | `observability.py`   | Trace config port and LangSmith adapter |
 
 ## Change Discipline
 
 - Touch only what the current task requires.
-- Don't add scoring heuristics not present in go-apply unless explicitly requested.
-- Scoring weights live in config — don't hardcode them.
+- New scoring heuristics must map to a real ATS gate mechanism (see Scoring) and stay deterministic — go-apply parity is no longer a constraint.
+- Scoring weights and thresholds live in `ScoringConfig` (`scorer.py`) — change them there; never scatter new hardcoded weights.
 - All fallbacks must be explicit, logged, and approved.
 - Don't add complexity beyond the walking skeleton (see `BRIEF.md`). When tempted toward pgvector / LLM-as-judge / eval harness before the graph runs end-to-end, stop.
 - Active design proposals live in `openspec/changes/`. Check there before redesigning a graph.

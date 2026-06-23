@@ -14,7 +14,7 @@ Every scoring, tailoring, and feedback decision must serve this goal:
 
 ## Project Context
 
-callback is a LangGraph MCP server (stdio only) that replaces the Go FSM in go-apply.
+callback is a standalone LangGraph MCP server (stdio only). It originated as a replacement for go-apply's Go FSM; go-apply is now deprecated and is not a parity target — callback's own behavior is the source of truth.
 Differentiator: defensible LangGraph stateful-agent design for an AI-engineering portfolio.
 Finite maintenance horizon - build only what the walking skeleton needs.
 `BRIEF.md` is the project charter/history; this file is the active working guide.
@@ -66,7 +66,7 @@ uv run python scripts/smoke_profile.py
 
 ## Environment
 
-- `GO_APPLY_BIN`: Path to the go-apply binary used by `bridge.py`.
+- `GO_APPLY_BIN`: Legacy; read only by `bridge.py`, which is wired into nothing at runtime.
 - `LOG_LEVEL`: Server log level.
 - `CALLBACK_LOG_PATH`: Override the server log file path.
 - `CALLBACK_APPS_DIR`: Override where application PDFs and JSON archives are written.
@@ -206,7 +206,7 @@ Do not add a silent fallback path if URL fetch fails.
 
 ### Scoring (`scorer.py`)
 
-Pure deterministic Python - no I/O, no LLM calls. Ported from go-apply's `scorer.go`.
+Pure deterministic Python - no I/O, no LLM calls.
 
 | Dimension | Max | Signal |
 |---|---|---|
@@ -219,8 +219,8 @@ Pure deterministic Python - no I/O, no LLM calls. Ported from go-apply's `scorer
 ### Rendering and bridge (`render/`, `bridge.py`)
 
 PDF rendering uses HTML + Playwright in `callback/render/html_builder.py`.
-`bridge.py` still resolves the go-apply binary at import time and exposes subprocess helpers for the legacy Go CLI.
-If the binary is not on `PATH`, set `GO_APPLY_BIN=/path/to/go-apply` before importing.
+go-apply is deprecated and its binary is wired into nothing at runtime — `bridge.py` is a dead legacy adapter kept only for its tests, not a design reference.
+It resolves the binary at import time; tests point it at a fake binary (see `tests/conftest.py`).
 
 ### Module map
 
@@ -241,7 +241,7 @@ If the binary is not on `PATH`, set `GO_APPLY_BIN=/path/to/go-apply` before impo
 | `repository/` | Resume and accomplishments persistence helpers |
 | `profilecompiler.py` | Compiles skills and stories into a profile summary |
 | `render/` | HTML + Playwright resume rendering |
-| `bridge.py` | go-apply subprocess wrapper |
+| `bridge.py` | dead legacy go-apply adapter (kept for tests only) |
 | `cli.py` | `callback` CLI entry point |
 | `observability.py` | Trace config port and LangSmith adapter |
 | `version_check.py` | Current-vs-latest release comparison |
@@ -249,7 +249,7 @@ If the binary is not on `PATH`, set `GO_APPLY_BIN=/path/to/go-apply` before impo
 ## Change Discipline
 
 - Touch only what the current task requires.
-- Don't add scoring heuristics not present in go-apply unless explicitly requested.
+- New scoring heuristics must map to a real ATS gate mechanism and stay deterministic — go-apply parity is no longer a constraint.
 - Scoring weights live in config - don't hardcode them.
 - All fallbacks must be explicit, logged, and approved.
 - Don't add complexity beyond the walking skeleton. When tempted toward pgvector, LLM-as-judge, provider clients, RAG, or an eval harness, stop unless there is an explicit OpenSpec proposal for it.
