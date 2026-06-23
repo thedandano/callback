@@ -1,5 +1,8 @@
 """Unit tests for callback.scorer — pure function, no I/O."""
 
+from dataclasses import asdict
+from pathlib import Path
+
 import pytest
 
 from callback import scorer
@@ -10,6 +13,76 @@ from callback.scorer import (
     _score_ats,
     score,
 )
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+GOLDEN_REQUIRED = ["Python", "AWS", "Docker", "Kubernetes", "CI/CD"]
+GOLDEN_PREFERRED = ["Terraform", "GraphQL"]
+
+
+def _golden_score() -> dict:
+    resume = (FIXTURES / "sample_resume.txt").read_text()
+    return asdict(
+        scorer.score(
+            resume,
+            GOLDEN_REQUIRED,
+            GOLDEN_PREFERRED,
+            candidate_years=5.5,
+            required_years=4.0,
+        )
+    )
+
+
+GOLDEN_EXPECTED = {
+    "breakdown": {
+        "keyword_match": 15.399999999999999,
+        "experience_fit": 15.0,
+        "impact_evidence": 0.0,
+        "ats_format": 6.666666666666666,
+        "readability": 10.0,
+        "renorm_factor": 1.0,
+        "ats_diagnostics": [
+            {
+                "expected": "Experience",
+                "observed": "Experience",
+                "matched": True,
+                "closeable_by": "source_pdf",
+            },
+            {
+                "expected": "Education",
+                "observed": "Education",
+                "matched": True,
+                "closeable_by": "source_pdf",
+            },
+            {
+                "expected": "Skills",
+                "observed": None,
+                "matched": False,
+                "closeable_by": "source_pdf",
+            },
+        ],
+    },
+    "keywords": {
+        "req_matched": ["Python", "AWS"],
+        "req_unmatched": ["Docker", "Kubernetes", "CI/CD"],
+        "pref_matched": [],
+        "pref_unmatched": ["Terraform", "GraphQL"],
+        "req_pct": 0.4,
+        "pref_pct": 0.0,
+    },
+    "metric_bullets": [],
+    "filler_phrases": [],
+    "pass_threshold": 70.0,
+}
+
+
+class TestGoldenDeterminism:
+    def test_repeated_calls_are_identical(self):
+        assert _golden_score() == _golden_score()
+
+    def test_pinned_golden_values(self):
+        assert _golden_score() == GOLDEN_EXPECTED
+
 
 RESUME_WITH_SECTIONS = """
 Experience
@@ -184,16 +257,12 @@ class TestExperienceFitV2:
         assert result.breakdown.experience_fit is None
 
     def test_partial_years_credit(self):
-        result = scorer.score(
-            self.RESUME, ["Python"], [], candidate_years=5.0, required_years=10.0
-        )
+        result = scorer.score(self.RESUME, ["Python"], [], candidate_years=5.0, required_years=10.0)
         # years-only: 5/10 = 0.5 → 0.5 × 15.0 = 7.5
         assert result.breakdown.experience_fit == 7.5
 
     def test_negative_candidate_years_clamps_to_zero(self):
-        result = scorer.score(
-            self.RESUME, ["Python"], [], candidate_years=-3.0, required_years=5.0
-        )
+        result = scorer.score(self.RESUME, ["Python"], [], candidate_years=-3.0, required_years=5.0)
         assert result.breakdown.experience_fit == 0.0
 
     def test_overqualification_penalty(self):
@@ -298,6 +367,46 @@ class TestImpactContactExclusion:
         )
         result = score(resume, ["Python"], [])
         assert result.metric_bullets == ["- Reduced costs by 40%"]
+
+    def test_metric_line_with_incidental_phone_shaped_digits_still_counts(self):
+        # A real metric must survive an incidental 3-3-4 digit run on the same line.
+        resume = "Experience\n- Reduced cost by 40% across 100 200 3000 records\n"
+        result = score(resume, ["Python"], [])
+        assert result.metric_bullets == ["- Reduced cost by 40% across 100 200 3000 records"]
+
+
+class TestEmptyKeyword:
+    def test_empty_or_blank_keyword_never_matches(self):
+        # Defense-in-depth: an unsanitized empty keyword must not match everything.
+        result = score("Experience\nPython work", ["", "  "], [])
+        assert result.keywords.req_matched == []
+        assert result.keywords.req_unmatched == ["", "  "]
+
+
+class TestMatcherNormalization:
+    def test_slash_spacing_variants_match(self):
+        result = scorer.score("Experience\nBuilt CI / CD pipelines", ["CI/CD"], [])
+        assert result.keywords.req_matched == ["CI/CD"]
+
+    def test_singular_keyword_matches_plural_resume(self):
+        result = scorer.score("Experience\nBuilt containers at scale", ["container"], [])
+        assert result.keywords.req_matched == ["container"]
+
+    def test_plural_keyword_matches_singular_resume(self):
+        result = scorer.score("Experience\nDesigned each microservice", ["microservices"], [])
+        assert result.keywords.req_matched == ["microservices"]
+
+    def test_short_tokens_get_no_plural_tolerance(self):
+        result = scorer.score("Experience\nUsed AWSX tooling", ["AWS"], [])
+        assert result.keywords.req_matched == []
+
+    def test_no_abbreviation_expansion(self):
+        result = scorer.score("Experience\nManaged Kubernetes clusters", ["k8s"], [])
+        assert result.keywords.req_matched == []
+
+    def test_trailing_s_words_still_match_themselves(self):
+        result = scorer.score("Experience\nTuned Redis and Jenkins", ["Redis", "Jenkins"], [])
+        assert result.keywords.req_matched == ["Redis", "Jenkins"]
 
 
 class TestPassThresholdConfig:
