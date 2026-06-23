@@ -320,5 +320,5 @@ class TestM3ScoreDelta:
         }
         assert actual == {
             "scores_delta_equals_report_delta": True,
-            "scoring_engine_version": "v1",
+            "scoring_engine_version": "v2",
         }

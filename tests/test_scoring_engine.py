@@ -44,9 +44,10 @@ class TestRunScore:
             {"required": ["Python"], "preferred": ["AWS"], "required_years": 0.0},
         )
         expected = {
-            "total": 94.0,
-            "keyword_match": 45.0,
-            "experience_fit": 25.0,
+            "total": 79.0 * (100.0 / 85.0),
+            "keyword_match": 55.0,
+            "experience_fit": None,
+            "experience_evaluated": False,
             "impact_evidence": 4.0,
             "ats_format": 10.0,
             "readability": 10.0,
@@ -55,6 +56,7 @@ class TestRunScore:
             "pref_matched": ["AWS"],
             "pref_unmatched": [],
             "ats_diagnostics": _expected_ats_diagnostics(),
+            "scoring_engine_version": "v2",
         }
         assert result == expected
 
@@ -64,7 +66,8 @@ class TestRunScore:
         expected = {
             "total": result["total"],
             "keyword_match": result["keyword_match"],
-            "experience_fit": 25.0,
+            "experience_fit": None,
+            "experience_evaluated": False,
             "impact_evidence": 4.0,
             "ats_format": 10.0,
             "readability": 10.0,
@@ -73,17 +76,18 @@ class TestRunScore:
             "pref_matched": ["AWS"],
             "pref_unmatched": [],
             "ats_diagnostics": _expected_ats_diagnostics(),
+            "scoring_engine_version": "v2",
         }
         assert result == expected
 
-    def test_required_years_reduces_experience_fit(self):
-        kws_base = {"required": ["ZZZNONEXISTENT"], "preferred": []}
-        no_years = _run_score("some resume text", {**kws_base, "required_years": 0})
-        high_years = _run_score("some resume text", {**kws_base, "required_years": 100})
-        expected_no_years = {
-            "total": 35.0,
+    def test_experience_evaluated_with_candidate_years(self):
+        kws = {"required": ["ZZZNONEXISTENT"], "preferred": [], "required_years": 10.0}
+        result = _run_score("some resume text", kws, candidate_years=5.0)
+        expected = {
+            "total": 10.0 + 7.5,  # readability 10.0 + exp 0.5 × 15.0
             "keyword_match": 0.0,
-            "experience_fit": 25.0,
+            "experience_fit": 7.5,
+            "experience_evaluated": True,
             "impact_evidence": 0.0,
             "ats_format": 0.0,
             "readability": 10.0,
@@ -91,11 +95,17 @@ class TestRunScore:
             "req_unmatched": ["ZZZNONEXISTENT"],
             "pref_matched": [],
             "pref_unmatched": [],
+            "scoring_engine_version": "v2",
             "ats_diagnostics": _expected_ats_diagnostics(matched=False),
         }
-        expected_high_years = {**expected_no_years, "total": 25.0, "experience_fit": 15.0}
-        assert no_years == expected_no_years
-        assert high_years == expected_high_years
+        assert result == expected
+
+    def test_experience_not_evaluated_without_candidate_years(self):
+        kws = {"required": ["ZZZNONEXISTENT"], "preferred": [], "required_years": 10.0}
+        result = _run_score("some resume text", kws)
+        assert result["experience_fit"] is None
+        assert result["experience_evaluated"] is False
+        assert result["total"] == 10.0 * (100.0 / 85.0)  # readability only, renormalized
 
     def test_raises_on_empty_text(self):
         with pytest.raises(ValueError, match="must not be empty"):
@@ -123,9 +133,10 @@ class TestScoreInitial:
         )
         expected = {
             "score_initial": {
-                "total": 94.0,
-                "keyword_match": 45.0,
-                "experience_fit": 25.0,
+                "total": 79.0 * (100.0 / 85.0),
+                "keyword_match": 55.0,
+                "experience_fit": None,
+                "experience_evaluated": False,
                 "impact_evidence": 4.0,
                 "ats_format": 10.0,
                 "readability": 10.0,
@@ -134,6 +145,7 @@ class TestScoreInitial:
                 "pref_matched": ["AWS"],
                 "pref_unmatched": [],
                 "ats_diagnostics": _expected_ats_diagnostics(),
+                "scoring_engine_version": "v2",
             }
         }
         assert score_initial(state) == expected
@@ -158,9 +170,10 @@ class TestScoreFinal:
         )
         expected = {
             "score_final": {
-                "total": 94.0,
-                "keyword_match": 45.0,
-                "experience_fit": 25.0,
+                "total": 79.0 * (100.0 / 85.0),
+                "keyword_match": 55.0,
+                "experience_fit": None,
+                "experience_evaluated": False,
                 "impact_evidence": 4.0,
                 "ats_format": 10.0,
                 "readability": 10.0,
@@ -169,6 +182,7 @@ class TestScoreFinal:
                 "pref_matched": ["AWS"],
                 "pref_unmatched": [],
                 "ats_diagnostics": _expected_ats_diagnostics(closeable_by="render"),
+                "scoring_engine_version": "v2",
             }
         }
         assert score_final(state) == expected
@@ -212,16 +226,6 @@ class TestParseFinal:
         assert parse_final(state) == {"parsed_final": "Python developer with AWS experience"}
 
 
-_ZERO_DELTA = {
-    "total": 0.0,
-    "keyword_match": 0.0,
-    "experience_fit": 0.0,
-    "impact_evidence": 0.0,
-    "ats_format": 0.0,
-    "readability": 0.0,
-}
-
-
 class TestReport:
     def test_computes_delta_total(self):
         state = ApplyState(
@@ -240,10 +244,11 @@ class TestReport:
             "report": {
                 "before": {"total": 45.0, **_none_dims},
                 "after": {"total": 72.0, **_none_dims},
-                "delta": {**_ZERO_DELTA, "total": 27.0},
+                "delta": {"total": 27.0, **_none_dims},
                 "format_gap_chars": 0,
                 "no_coverage": False,
                 "uncovered_skills": [],
+                "experience_evaluated": None,
                 "notes": [],
             },
             "tailor_diagnostics": [],
@@ -264,11 +269,45 @@ class TestReport:
             "report": {
                 "before": _all_none,
                 "after": _all_none,
-                "delta": _ZERO_DELTA,
+                "delta": _all_none,
                 "format_gap_chars": 0,
                 "no_coverage": False,
                 "uncovered_skills": [],
+                "experience_evaluated": None,
                 "notes": [],
             },
             "tailor_diagnostics": [],
         }
+
+
+def test_run_score_stamps_engine_version():
+    result = _run_score(
+        RESUME_WITH_KEYWORDS,
+        {"required": ["Python"], "preferred": ["AWS"], "required_years": 0.0},
+    )
+    assert result["scoring_engine_version"] == "v2"
+
+
+def test_report_notes_engine_version_mismatch():
+    state = ApplyState(
+        session_id="s1",
+        score_initial={"total": 50.0},  # no version key — pre-upgrade checkpoint
+        score_final={"total": 60.0, "scoring_engine_version": "v2"},
+    )
+    result = report(state)
+    assert any("engine version" in note for note in result["report"]["notes"])
+
+
+def test_report_delta_skips_unevaluated_experience():
+    score = {
+        "total": 40.0, "keyword_match": 30.0, "experience_fit": None,
+        "experience_evaluated": False, "impact_evidence": 0.0,
+        "ats_format": 0.0, "readability": 10.0,
+        "scoring_engine_version": "v2", "ats_diagnostics": [],
+    }
+    state = ApplyState(session_id="s1", score_initial=score, score_final={**score, "total": 50.0, "keyword_match": 40.0})
+    result = report(state)
+    assert result["report"]["delta"]["experience_fit"] is None
+    assert result["report"]["delta"]["keyword_match"] == 10.0
+    assert result["report"]["experience_evaluated"] is False
+    assert any("not evaluated" in note for note in result["report"]["notes"])

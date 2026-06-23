@@ -2,6 +2,7 @@
 
 import pytest
 
+from callback import scorer
 from callback.scorer import (
     ATSHeaderDiagnostic,
     ScoringConfig,
@@ -151,17 +152,66 @@ class TestExperienceScoring:
     def test_years_unmet_partial_credit(self):
         result_half = score("", required=[], preferred=[], candidate_years=2.5, required_years=5.0)
         result_full = score("", required=[], preferred=[], candidate_years=5.0, required_years=5.0)
-        assert result_half.breakdown.experience_fit < result_full.breakdown.experience_fit
+        exp_half = result_half.breakdown.experience_fit
+        exp_full = result_full.breakdown.experience_fit
+        assert exp_half is not None
+        assert exp_full is not None
+        assert exp_half < exp_full
 
-    def test_zero_required_years_full_credit(self):
+    def test_zero_required_years_not_evaluated(self):
         result = score("", required=[], preferred=[], candidate_years=0.0, required_years=0.0)
-        cfg = ScoringConfig()
-        assert result.breakdown.experience_fit == pytest.approx(cfg.weights.experience_fit)
+        assert result.breakdown.experience_fit is None
 
     def test_overqualification_penalty_applied(self):
         result_over = score("", required=[], preferred=[], candidate_years=12.0, required_years=5.0)
         result_exact = score("", required=[], preferred=[], candidate_years=5.0, required_years=5.0)
-        assert result_over.breakdown.experience_fit < result_exact.breakdown.experience_fit
+        exp_over = result_over.breakdown.experience_fit
+        exp_exact = result_exact.breakdown.experience_fit
+        assert exp_over is not None
+        assert exp_exact is not None
+        assert exp_over < exp_exact
+
+
+class TestExperienceFitV2:
+    RESUME = "Experience\nPython work\nEducation\nB.S.\nSkills\nPython"
+
+    def test_not_evaluated_when_no_required_years(self):
+        result = scorer.score(self.RESUME, ["Python"], [], required_years=0.0)
+        assert result.breakdown.experience_fit is None
+
+    def test_not_evaluated_when_candidate_years_unknown(self):
+        result = scorer.score(self.RESUME, ["Python"], [], required_years=5.0)
+        assert result.breakdown.experience_fit is None
+
+    def test_partial_years_credit(self):
+        result = scorer.score(
+            self.RESUME, ["Python"], [], candidate_years=5.0, required_years=10.0
+        )
+        # years-only: 5/10 = 0.5 → 0.5 × 15.0 = 7.5
+        assert result.breakdown.experience_fit == 7.5
+
+    def test_negative_candidate_years_clamps_to_zero(self):
+        result = scorer.score(
+            self.RESUME, ["Python"], [], candidate_years=-3.0, required_years=5.0
+        )
+        assert result.breakdown.experience_fit == 0.0
+
+    def test_overqualification_penalty(self):
+        result = scorer.score(
+            self.RESUME, ["Python"], [], candidate_years=25.0, required_years=10.0
+        )
+        # capped 1.0 × 0.85 penalty × 15.0 = 12.75
+        assert result.breakdown.experience_fit == 12.75
+
+    def test_total_renormalizes_when_not_evaluated(self):
+        result = scorer.score(self.RESUME, ["Python"], [], required_years=0.0)
+        b = result.breakdown
+        base = b.keyword_match + b.impact_evidence + b.ats_format + b.readability
+        assert b.total() == base * (100.0 / 85.0)  # exp weight is 15.0
+
+    def test_unknown_seniority_kwarg_is_gone(self):
+        with pytest.raises(TypeError):
+            scorer.score(self.RESUME, ["Python"], [], seniority_match="exact")  # type: ignore[call-arg]
 
 
 @pytest.mark.parametrize(
@@ -235,3 +285,31 @@ class TestPassThreshold:
     def test_empty_resume_fails(self):
         result = score("", required=["Python", "Go", "Kubernetes"], preferred=["Rust"])
         assert not result.passes()
+
+
+class TestImpactContactExclusion:
+    def test_contact_lines_do_not_count_as_metrics(self):
+        resume = (
+            "Jane Doe\n"
+            "555-867-5309 | jane@example.com | Austin, TX 78701\n"
+            "linkedin.com/in/janedoe\n"
+            "Experience\n"
+            "- Reduced costs by 40%\n"
+        )
+        result = score(resume, ["Python"], [])
+        assert result.metric_bullets == ["- Reduced costs by 40%"]
+
+
+class TestPassThresholdConfig:
+    def test_custom_pass_threshold_is_honored(self):
+        from callback import scorer as scorer_mod
+
+        cfg = scorer_mod.ScoringConfig(pass_threshold=99.0)
+        result = scorer_mod.score("Experience\nPython work", ["Python"], [], cfg=cfg)
+        assert result.pass_threshold == 99.0
+        assert not result.passes()
+
+    def test_default_config_threshold_is_70(self):
+        from callback import scorer as scorer_mod
+
+        assert scorer_mod.DEFAULT_SCORING_CONFIG.pass_threshold == 70.0

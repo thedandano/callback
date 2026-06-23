@@ -53,6 +53,7 @@ class ApplyState(BaseModel):
     keywords: dict | None = Field(default=None)
     resume_label: str | None = Field(default=None)
     sections: dict | None = Field(default=None)
+    candidate_years: float | None = Field(default=None)
     wiki_index: str | None = Field(default=None)
     parsed_initial: str | None = Field(default=None)
     parsed_final: str | None = Field(default=None)

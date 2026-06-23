@@ -22,7 +22,7 @@ Example:
   -> {"title":"Software Engineer","company":"Acme Corp","required":["Go","Kubernetes","PostgreSQL","REST APIs"],"preferred":["GraphQL","Terraform"]}"""  # noqa: E501
 
 Seniority = Literal["junior", "mid", "senior", "lead", "director"]
-SUPPORTED_SENIORITIES = {"junior", "mid", "senior", "lead", "director"}
+SUPPORTED_SENIORITIES = {"junior", "mid", "senior", "lead", "director", "unspecified"}
 
 
 class JDDataError(Exception):
@@ -42,7 +42,7 @@ class JDData(JSONWizard):
     required: list[str] = field(default_factory=list)
     preferred: list[str] = field(default_factory=list)
     location: str | None = None
-    seniority: Seniority | str = "mid"
+    seniority: Seniority | str = "unspecified"
     required_years: float = 0.0
     team: str | None = None
     key_responsibilities: list[str] = field(default_factory=list)
@@ -51,17 +51,25 @@ class JDData(JSONWizard):
 
     def __post_init__(self) -> None:
         if self.seniority in (None, ""):
-            self.seniority = "mid"
-        if not isinstance(self.required, list):
-            raise JDDataError("invalid_jd", "required must be a list")
-        if not isinstance(self.preferred, list):
-            raise JDDataError("invalid_jd", "preferred must be a list")
-        if not isinstance(self.key_responsibilities, list):
-            raise JDDataError("invalid_jd", "key_responsibilities must be a list")
+            self.seniority = "unspecified"
+        for field_name in ("required", "preferred", "key_responsibilities"):
+            if not isinstance(getattr(self, field_name), list):
+                raise JDDataError("invalid_jd", f"{field_name} must be a list")
+        self.required = self._clean_keywords("required")
+        self.preferred = self._clean_keywords("preferred")
         if not self.required:
             raise JDDataError("invalid_jd", "required skills must not be empty")
         if self.seniority not in SUPPORTED_SENIORITIES:
             raise JDDataError("invalid_jd", f"unsupported seniority: {self.seniority}")
+
+    def _clean_keywords(self, field_name: str) -> list[str]:
+        cleaned: list[str] = []
+        for kw in getattr(self, field_name):
+            if not isinstance(kw, str):
+                raise JDDataError("invalid_jd", f"{field_name} entries must be strings")
+            if kw.strip():
+                cleaned.append(kw.strip())
+        return cleaned
 
     def model_dump(self) -> dict:
         return asdict(self)
