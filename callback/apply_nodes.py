@@ -82,6 +82,7 @@ def _run_score(
     text: str | None,
     keywords: dict | None,
     closeable_by: str = "source_pdf",
+    candidate_years: float | None = None,
 ) -> dict:
     if not text or not text.strip():
         raise ValueError("_run_score: text must not be empty")
@@ -91,13 +92,16 @@ def _run_score(
         text,
         keywords["required"],
         keywords["preferred"],
+        candidate_years=candidate_years,
         required_years=keywords["required_years"],
+        cfg=scorer.DEFAULT_SCORING_CONFIG,
         closeable_by=closeable_by,  # type: ignore[arg-type]
     )
     return {
         "total": r.breakdown.total(),
         "keyword_match": r.breakdown.keyword_match,
         "experience_fit": r.breakdown.experience_fit,
+        "experience_evaluated": r.breakdown.experience_fit is not None,
         "impact_evidence": r.breakdown.impact_evidence,
         "ats_format": r.breakdown.ats_format,
         "readability": r.breakdown.readability,
@@ -114,6 +118,7 @@ def _run_score(
             }
             for d in r.breakdown.ats_diagnostics
         ],
+        "scoring_engine_version": scorer.SCORING_ENGINE_VERSION,
     }
 
 
@@ -243,7 +248,11 @@ def parse_initial(state: ApplyState) -> dict:
     base: dict = {}
     if sections_json:
         section_map = SectionMap.model_validate_json(sections_json)
-        base = {"sections": section_map.model_dump(), "wiki_index": wiki_index}
+        base = {
+            "sections": section_map.model_dump(),
+            "wiki_index": wiki_index,
+            "candidate_years": _candidate_experience_years(section_map.experience),
+        }
 
     try:
         resume_path = get_resume(state.resume_label)
@@ -270,7 +279,12 @@ def score_initial(state: ApplyState) -> dict:
     """Score the parsed resume against JD keywords using scorer.py."""
     _log_enter("score_initial", state)
     return {
-        "score_initial": _run_score(state.parsed_initial, state.keywords, closeable_by="source_pdf")
+        "score_initial": _run_score(
+            state.parsed_initial,
+            state.keywords,
+            closeable_by="source_pdf",
+            candidate_years=state.candidate_years,
+        )
     }
 
 
@@ -349,18 +363,40 @@ def _parse_resume_month(value: str | None) -> tuple[int, int] | None:
 
 
 def _candidate_experience_years(experience) -> float | None:
-    months = 0
+    intervals: list[tuple[int, int]] = []
+    skipped = 0
     for exp in experience:
         start = _parse_resume_month(exp.start_date)
         end = _parse_resume_month(exp.end_date)
         if not start or not end:
+            skipped += 1
             continue
         start_index = start[0] * 12 + start[1]
         end_index = end[0] * 12 + end[1]
         if end_index >= start_index:
-            months += end_index - start_index + 1
-    if months == 0:
+            intervals.append((start_index, end_index))
+    if skipped:
+        logger.warning(
+            json.dumps(
+                {
+                    "event": "experience_years_entries_skipped",
+                    "skipped": skipped,
+                    "parsed": len(intervals),
+                }
+            )
+        )
+    if not intervals:
         return None
+    intervals.sort()
+    months = 0
+    cur_start, cur_end = intervals[0]
+    for start_index, end_index in intervals[1:]:
+        if start_index <= cur_end:
+            cur_end = max(cur_end, end_index)
+        else:
+            months += cur_end - cur_start + 1
+            cur_start, cur_end = start_index, end_index
+    months += cur_end - cur_start + 1
     return round(months / 12, 2)
 
 
@@ -512,7 +548,14 @@ def parse_final(state: ApplyState) -> dict:
 def score_final(state: ApplyState) -> dict:
     """Score the extracted PDF text against JD keywords."""
     _log_enter("score_final", state)
-    return {"score_final": _run_score(state.parsed_final, state.keywords, closeable_by="render")}
+    return {
+        "score_final": _run_score(
+            state.parsed_final,
+            state.keywords,
+            closeable_by="render",
+            candidate_years=state.candidate_years,
+        )
+    }
 
 
 _SCORE_DIMS = (
@@ -546,6 +589,13 @@ def _compute_tailor_diagnostics(
     return result
 
 
+def _dim_delta(si: dict, sf: dict, dim: str) -> float | None:
+    before, after = si.get(dim), sf.get(dim)
+    if before is None or after is None:
+        return None
+    return round(after - before, 2)
+
+
 @trace_node("apply", "report")
 def report(state: ApplyState) -> dict:
     """Compute per-dimension score delta and format gap between initial and final pass.
@@ -555,10 +605,22 @@ def report(state: ApplyState) -> dict:
     _log_enter("report", state)
     si = state.score_initial or {}
     sf = si if state.no_coverage else (state.score_final or {})
-    delta = {dim: round((sf.get(dim) or 0.0) - (si.get(dim) or 0.0), 2) for dim in _SCORE_DIMS}
+    delta = {dim: _dim_delta(si, sf, dim) for dim in _SCORE_DIMS}
     format_gap_chars = len(state.parsed_final or "") - len(state.parsed_initial or "")
     tailor_diagnostics = _compute_tailor_diagnostics(state.applied_skill_values, state.parsed_final)
     notes: list[str] = []
+    si_version = si.get("scoring_engine_version")
+    sf_version = sf.get("scoring_engine_version")
+    if si_version != sf_version:
+        notes.append(
+            f"Scoring engine version changed mid-session ({si_version} -> {sf_version}); "
+            "delta may be unreliable."
+        )
+    if sf.get("experience_evaluated") is False:
+        notes.append(
+            "Experience fit not evaluated (JD states no years requirement or resume "
+            "dates are unavailable); total is renormalized over the remaining dimensions."
+        )
     sf_diag = sf.get("ats_diagnostics") or []
     for d in sf_diag:
         if not d.get("matched") and d.get("closeable_by") != "tailor":
@@ -578,6 +640,7 @@ def report(state: ApplyState) -> dict:
             "format_gap_chars": format_gap_chars,
             "no_coverage": bool(state.no_coverage),
             "uncovered_skills": state.uncovered_skills or [],
+            "experience_evaluated": sf.get("experience_evaluated"),
             "notes": notes,
         },
         "tailor_diagnostics": tailor_diagnostics,
@@ -616,7 +679,7 @@ def finalize(state: ApplyState) -> dict:
             "initial": state.score_initial,
             "final": state.score_initial if state.no_coverage else state.score_final,
             "delta": (state.report or {}).get("delta"),
-            "scoring_engine_version": "v1",
+            "scoring_engine_version": scorer.SCORING_ENGINE_VERSION,
         },
         "uncovered_skills": state.uncovered_skills or [],
         "outcome": {

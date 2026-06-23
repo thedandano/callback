@@ -55,6 +55,7 @@ class TestApplyStateBasic:
             "keywords",
             "resume_label",
             "sections",
+            "candidate_years",
             "wiki_index",
             "parsed_initial",
             "parsed_final",

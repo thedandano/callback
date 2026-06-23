@@ -26,7 +26,7 @@ EXPECTED_PARTIAL_KEYWORDS = {
     "required": ["Python"],
     "preferred": [],
     "location": None,
-    "seniority": "mid",
+    "seniority": "unspecified",
     "required_years": 0.0,
     "team": None,
     "key_responsibilities": [],

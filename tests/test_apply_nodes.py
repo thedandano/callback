@@ -5,7 +5,15 @@ from unittest.mock import patch
 
 import pytest
 
-from callback.apply_nodes import parse_final, parse_initial, render, score_initial, tailor
+from callback.apply_nodes import (
+    _candidate_experience_years,
+    parse_final,
+    parse_initial,
+    render,
+    score_initial,
+    tailor,
+)
+from callback.section_map import ExperienceEntry
 from callback.state import ApplyState, TailoredResume
 
 
@@ -202,3 +210,24 @@ class TestTailorNode:
     def test_tailor_missing_tailored_sections_returns_error(self):
         state = ApplyState(session_id="s")
         assert tailor(state) == {"error": "tailor: no tailored_sections and no_coverage not set"}
+
+
+class TestCandidateExperienceYears:
+    def test_overlapping_roles_do_not_double_count(self):
+        experience = [
+            ExperienceEntry(company="A", role="Eng", start_date="2020-01", end_date="2020-12"),
+            ExperienceEntry(company="B", role="Eng", start_date="2020-06", end_date="2021-12"),
+        ]
+        # merged Jan 2020 – Dec 2021 = 24 months, not 12 + 19 = 31
+        assert _candidate_experience_years(experience) == 2.0
+
+    def test_disjoint_roles_sum(self):
+        experience = [
+            ExperienceEntry(company="A", role="Eng", start_date="2020-01", end_date="2020-06"),
+            ExperienceEntry(company="B", role="Eng", start_date="2022-01", end_date="2022-06"),
+        ]
+        assert _candidate_experience_years(experience) == 1.0
+
+    def test_all_unparseable_returns_none(self):
+        experience = [ExperienceEntry(company="A", role="Eng", start_date="??", end_date=None)]
+        assert _candidate_experience_years(experience) is None

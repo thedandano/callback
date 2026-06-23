@@ -79,6 +79,7 @@ def test_report_delta_all_six_dimensions():
             "format_gap_chars": -150,
             "no_coverage": False,
             "uncovered_skills": [],
+            "experience_evaluated": None,
             "notes": [],
         },
         "tailor_diagnostics": [],
@@ -101,6 +102,7 @@ def test_report_format_gap_chars_negative_on_content_loss():
             "format_gap_chars": -150,
             "no_coverage": False,
             "uncovered_skills": [],
+            "experience_evaluated": None,
             "notes": [],
         },
         "tailor_diagnostics": [],
@@ -123,6 +125,7 @@ def test_report_format_gap_chars_positive_on_content_gain():
             "format_gap_chars": 200,
             "no_coverage": False,
             "uncovered_skills": [],
+            "experience_evaluated": None,
             "notes": [],
         },
         "tailor_diagnostics": [],
@@ -175,7 +178,7 @@ def test_finalize_archive_includes_scores_delta(tmp_path, monkeypatch):
         "initial": _SCORE_INITIAL,
         "final": _SCORE_FINAL,
         "delta": _DELTA,
-        "scoring_engine_version": "v1",
+        "scoring_engine_version": "v2",
     }
     assert archive["outcome"] == {"no_coverage": False, "reason": None}
 
@@ -197,7 +200,7 @@ def test_finalize_archive_scoring_engine_version(tmp_path, monkeypatch):
         "initial": _SCORE_INITIAL,
         "final": _SCORE_FINAL,
         "delta": _DELTA,
-        "scoring_engine_version": "v1",
+        "scoring_engine_version": "v2",
     }
 
 
@@ -227,6 +230,7 @@ def test_report_no_coverage_path():
             "format_gap_chars": -100,
             "no_coverage": True,
             "uncovered_skills": [],
+            "experience_evaluated": None,
             "notes": [],
         },
         "tailor_diagnostics": [],
@@ -254,7 +258,7 @@ def test_finalize_archive_outcome_field(tmp_path, monkeypatch):
             "initial": _SCORE_INITIAL,
             "final": _SCORE_INITIAL,
             "delta": {},
-            "scoring_engine_version": "v1",
+            "scoring_engine_version": "v2",
         },
     }
 
