@@ -250,6 +250,7 @@ class TestReport:
                 "uncovered_skills": [],
                 "experience_evaluated": None,
                 "notes": [],
+                "warnings": [],
             },
             "tailor_diagnostics": [],
         }
@@ -275,6 +276,7 @@ class TestReport:
                 "uncovered_skills": [],
                 "experience_evaluated": None,
                 "notes": [],
+                "warnings": [],
             },
             "tailor_diagnostics": [],
         }
@@ -300,14 +302,66 @@ def test_report_notes_engine_version_mismatch():
 
 def test_report_delta_skips_unevaluated_experience():
     score = {
-        "total": 40.0, "keyword_match": 30.0, "experience_fit": None,
-        "experience_evaluated": False, "impact_evidence": 0.0,
-        "ats_format": 0.0, "readability": 10.0,
-        "scoring_engine_version": "v2", "ats_diagnostics": [],
+        "total": 40.0,
+        "keyword_match": 30.0,
+        "experience_fit": None,
+        "experience_evaluated": False,
+        "impact_evidence": 0.0,
+        "ats_format": 0.0,
+        "readability": 10.0,
+        "scoring_engine_version": "v2",
+        "ats_diagnostics": [],
     }
-    state = ApplyState(session_id="s1", score_initial=score, score_final={**score, "total": 50.0, "keyword_match": 40.0})
+    state = ApplyState(
+        session_id="s1",
+        score_initial=score,
+        score_final={**score, "total": 50.0, "keyword_match": 40.0},
+    )
     result = report(state)
     assert result["report"]["delta"]["experience_fit"] is None
     assert result["report"]["delta"]["keyword_match"] == 10.0
     assert result["report"]["experience_evaluated"] is False
     assert any("not evaluated" in note for note in result["report"]["notes"])
+
+
+def _score_stub(**overrides) -> dict:
+    base = {
+        "total": 50.0,
+        "keyword_match": 40.0,
+        "experience_fit": 7.5,
+        "experience_evaluated": True,
+        "impact_evidence": 0.0,
+        "ats_format": 0.0,
+        "readability": 10.0,
+        "scoring_engine_version": "v2",
+        "ats_diagnostics": [],
+    }
+    return {**base, **overrides}
+
+
+class TestKnockoutWarnings:
+    def _report(self, candidate_years, required_years):
+        state = ApplyState(
+            session_id="s1",
+            candidate_years=candidate_years,
+            keywords={"required": ["Python"], "preferred": [], "required_years": required_years},
+            score_initial=_score_stub(),
+            score_final=_score_stub(),
+        )
+        return report(state)["report"]["warnings"]
+
+    def test_any_shortfall_warns_likely(self):
+        warnings = self._report(candidate_years=7.0, required_years=8.0)
+        assert len(warnings) == 1
+        assert warnings[0].startswith("LIKELY KNOCKOUT")
+
+    def test_double_gap_warns_strong(self):
+        warnings = self._report(candidate_years=4.0, required_years=8.0)
+        assert len(warnings) == 1
+        assert warnings[0].startswith("STRONG KNOCKOUT RISK")
+
+    def test_meeting_years_no_warning(self):
+        assert self._report(candidate_years=9.0, required_years=8.0) == []
+
+    def test_unknown_years_no_warning(self):
+        assert self._report(candidate_years=None, required_years=8.0) == []

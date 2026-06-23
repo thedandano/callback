@@ -210,8 +210,8 @@ Pure deterministic Python - no I/O, no LLM calls.
 
 | Dimension | Max | Signal |
 |---|---|---|
-| KeywordMatch | 45 | Required (0.7) + preferred (0.3) keywords |
-| ExperienceFit | 25 | Years met + seniority match |
+| KeywordMatch | 55 | Required (0.7) + preferred (0.3) keywords |
+| ExperienceFit | 15 | Years met (years-only; `None` + renormalization when not evaluable) |
 | ImpactEvidence | 10 | Quantified metric bullets |
 | ATSFormat | 10 | Standard section headers present |
 | Readability | 10 | Absence of filler phrases |

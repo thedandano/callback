@@ -362,6 +362,21 @@ def _parse_resume_month(value: str | None) -> tuple[int, int] | None:
     return None
 
 
+def _merge_interval_months(intervals: list[tuple[int, int]]) -> int:
+    """Total months spanned by the union of inclusive [start, end] month indices."""
+    intervals.sort()
+    months = 0
+    cur_start, cur_end = intervals[0]
+    for start_index, end_index in intervals[1:]:
+        if start_index <= cur_end:
+            cur_end = max(cur_end, end_index)
+        else:
+            months += cur_end - cur_start + 1
+            cur_start, cur_end = start_index, end_index
+    months += cur_end - cur_start + 1
+    return months
+
+
 def _candidate_experience_years(experience) -> float | None:
     intervals: list[tuple[int, int]] = []
     skipped = 0
@@ -387,17 +402,7 @@ def _candidate_experience_years(experience) -> float | None:
         )
     if not intervals:
         return None
-    intervals.sort()
-    months = 0
-    cur_start, cur_end = intervals[0]
-    for start_index, end_index in intervals[1:]:
-        if start_index <= cur_end:
-            cur_end = max(cur_end, end_index)
-        else:
-            months += cur_end - cur_start + 1
-            cur_start, cur_end = start_index, end_index
-    months += cur_end - cur_start + 1
-    return round(months / 12, 2)
+    return round(_merge_interval_months(intervals) / 12, 2)
 
 
 def _split_title_summary(summary: str | None) -> tuple[str | None, str | None]:
@@ -596,21 +601,10 @@ def _dim_delta(si: dict, sf: dict, dim: str) -> float | None:
     return round(after - before, 2)
 
 
-@trace_node("apply", "report")
-def report(state: ApplyState) -> dict:
-    """Compute per-dimension score delta and format gap between initial and final pass.
-
-    When no_coverage=True, use score_initial as both si and sf so delta is all-zero.
-    """
-    _log_enter("report", state)
-    si = state.score_initial or {}
-    sf = si if state.no_coverage else (state.score_final or {})
-    delta = {dim: _dim_delta(si, sf, dim) for dim in _SCORE_DIMS}
-    format_gap_chars = len(state.parsed_final or "") - len(state.parsed_initial or "")
-    tailor_diagnostics = _compute_tailor_diagnostics(state.applied_skill_values, state.parsed_final)
+def _build_score_notes(si: dict, sf: dict, render_warnings: list[dict] | None) -> list[str]:
+    """Advisory notes about score reliability and unfixable ATS gaps."""
     notes: list[str] = []
-    si_version = si.get("scoring_engine_version")
-    sf_version = sf.get("scoring_engine_version")
+    si_version, sf_version = si.get("scoring_engine_version"), sf.get("scoring_engine_version")
     if si_version != sf_version:
         notes.append(
             f"Scoring engine version changed mid-session ({si_version} -> {sf_version}); "
@@ -621,29 +615,58 @@ def report(state: ApplyState) -> dict:
             "Experience fit not evaluated (JD states no years requirement or resume "
             "dates are unavailable); total is renormalized over the remaining dimensions."
         )
-    sf_diag = sf.get("ats_diagnostics") or []
-    for d in sf_diag:
+    for d in sf.get("ats_diagnostics") or []:
         if not d.get("matched") and d.get("closeable_by") != "tailor":
             notes.append(
                 f"ATS format: '{d['expected']}' header not found in rendered PDF "
                 f"(closeable_by={d['closeable_by']}). Tailoring cannot fix this."
             )
-    for warning in state.render_warnings or []:
-        message = warning.get("message")
-        if message:
+    for warning in render_warnings or []:
+        if message := warning.get("message"):
             notes.append(str(message))
+    return notes
+
+
+def _build_knockout_warnings(keywords: dict | None, candidate_years: float | None) -> list[str]:
+    """Years-shortfall knockout warnings, modeling binary ATS screener questions."""
+    required_years = float((keywords or {}).get("required_years") or 0.0)
+    if required_years <= 0 or candidate_years is None or candidate_years >= required_years:
+        return []
+    strong = required_years >= 2 * candidate_years
+    label = "STRONG KNOCKOUT RISK" if strong else "LIKELY KNOCKOUT"
+    message = (
+        f"{label}: JD requires {required_years:g}+ years; resume shows "
+        f"{candidate_years:g}. Years screener questions are typically binary pass/fail."
+    )
+    if strong:
+        message += " Consider whether to apply."
+    return [message]
+
+
+@trace_node("apply", "report")
+def report(state: ApplyState) -> dict:
+    """Compute per-dimension score delta and format gap between initial and final pass.
+
+    When no_coverage=True, use score_initial as both si and sf so delta is all-zero.
+    """
+    _log_enter("report", state)
+    si = state.score_initial or {}
+    sf = si if state.no_coverage else (state.score_final or {})
     return {
         "report": {
             "before": {dim: si.get(dim) for dim in _SCORE_DIMS},
             "after": {dim: sf.get(dim) for dim in _SCORE_DIMS},
-            "delta": delta,
-            "format_gap_chars": format_gap_chars,
+            "delta": {dim: _dim_delta(si, sf, dim) for dim in _SCORE_DIMS},
+            "format_gap_chars": len(state.parsed_final or "") - len(state.parsed_initial or ""),
             "no_coverage": bool(state.no_coverage),
             "uncovered_skills": state.uncovered_skills or [],
             "experience_evaluated": sf.get("experience_evaluated"),
-            "notes": notes,
+            "notes": _build_score_notes(si, sf, state.render_warnings),
+            "warnings": _build_knockout_warnings(state.keywords, state.candidate_years),
         },
-        "tailor_diagnostics": tailor_diagnostics,
+        "tailor_diagnostics": _compute_tailor_diagnostics(
+            state.applied_skill_values, state.parsed_final
+        ),
     }
 
 
