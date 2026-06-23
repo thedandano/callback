@@ -1,7 +1,11 @@
 """ATS scoring engine — pure function, no I/O, no LLM calls.
 
-Ported from go-apply internal/service/scorer/scorer.go.
-Weights and thresholds match internal/config/defaults.json exactly.
+Each dimension proxies a real ATS gate mechanism: recruiter keyword search
+(KeywordMatch), years knockout filters (ExperienceFit), parse failures
+(ATSFormat), and the recruiter skim (ImpactEvidence, Readability).
+Deterministic: identical inputs always produce identical outputs.
+Weights and thresholds live in ScoringConfig below — callback-owned, not
+inherited from any external system.
 """
 
 from __future__ import annotations

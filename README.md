@@ -143,8 +143,8 @@ Add `--purge` to step 1 to also delete application data and state directories:
 callback uninstall --purge
 ```
 
-`--purge` deletes `~/.local/share/callback/` (application PDFs and JSON archives) and
-`~/.local/state/callback/` (LangGraph SQLite checkpointer databases and logs).
+`--purge` deletes `~/.local/share/callback/` (application PDFs, JSON archives, and
+LangGraph SQLite checkpointer databases) and `~/.local/state/callback/` (logs).
 
 ---
 
