@@ -38,7 +38,7 @@ EXPECTED_PARTIAL_JD = {
     "required": ["Python"],
     "preferred": [],
     "location": None,
-    "seniority": "mid",
+    "seniority": "unspecified",
     "required_years": 0.0,
     "team": None,
     "key_responsibilities": [],
@@ -73,12 +73,12 @@ class TestJDDataModel:
 
         assert data == EXPECTED_PARTIAL_JD
 
-    def test_missing_or_empty_seniority_defaults_to_mid(self):
+    def test_missing_or_empty_seniority_becomes_unspecified(self):
         missing = JDData(**PARTIAL_JD)
         empty = JDData(**PARTIAL_JD, seniority="")
 
-        assert missing.model_dump()["seniority"] == "mid"
-        assert empty.model_dump()["seniority"] == "mid"
+        assert missing.model_dump()["seniority"] == "unspecified"
+        assert empty.model_dump()["seniority"] == "unspecified"
 
 
 class TestParseJDJson:
@@ -124,6 +124,21 @@ class TestParseJDJson:
             parse_jd_json("{}")
 
         assert exc_info.value.code == "invalid_jd"
+
+
+class TestKeywordCleaning:
+    def test_blank_and_padded_keywords_are_cleaned(self):
+        jd = JDData(title="T", company="C", required=[" Python ", "", "  "], preferred=["", "Go "])
+        assert jd.model_dump()["required"] == ["Python"]
+        assert jd.model_dump()["preferred"] == ["Go"]
+
+    def test_all_blank_required_raises(self):
+        with pytest.raises(JDDataError):
+            JDData(title="T", company="C", required=["", "  "])
+
+    def test_non_string_keyword_raises(self):
+        with pytest.raises(JDDataError):
+            JDData(title="T", company="C", required=["Python", 42])  # type: ignore[list-item]
 
 
 class TestExtractionProtocol:

@@ -15,6 +15,8 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Literal
 
+SCORING_ENGINE_VERSION = "v2"
+
 # ── Regex patterns used for scoring ────────────────────────────────────────────
 
 # Compiled once at module load; used for impact scoring
@@ -32,6 +34,18 @@ METRIC_RE = re.compile(
 VERSION_RE = re.compile(r"(?i)\b[A-Za-z][A-Za-z0-9]*\s+\d+(?:\.\d+)+\b")
 YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
 
+# Lines that are contact/header info, not accomplishment bullets — excluded
+# from impact-metric detection so phone numbers and ZIP codes don't score.
+CONTACT_LINE_RE = re.compile(
+    r"(?i)(?:"
+    r"\(?\b\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b"  # phone: 555-867-5309, (415) 555-0100
+    r"|[\w.+-]+@[\w-]+(?:\.[\w-]+)+"  # email
+    r"|\bhttps?://|\bwww\."  # URLs
+    r"|\b(?:linkedin|github)\.com/"  # profile links
+    r"|(?-i:\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b)"  # state + ZIP: TX 78701
+    r")"
+)
+
 # ATS section detection patterns
 ATS_SECTION_PATTERNS = [
     re.compile(r"(?i)^\s*(?:work\s+|professional\s+)?experience\s*:?\s*$"),
@@ -45,8 +59,8 @@ ATS_SECTION_PATTERNS = [
 
 @dataclass
 class ScoringWeights:
-    keyword_match: float = 45.0
-    experience_fit: float = 25.0
+    keyword_match: float = 55.0
+    experience_fit: float = 15.0
     impact_evidence: float = 10.0
     ats_format: float = 10.0
     readability: float = 10.0
@@ -57,15 +71,6 @@ class ScoringConfig:
     weights: ScoringWeights = field(default_factory=ScoringWeights)
     keyword_required_weight: float = 0.7
     keyword_preferred_weight: float = 0.3
-    experience_seniority_weight: float = 0.6
-    experience_years_weight: float = 0.4
-    seniority_multipliers: dict[str, float] = field(
-        default_factory=lambda: {
-            "exact": 1.0,
-            "one_off": 0.8,
-            "two_or_more_off": 0.5,
-        }
-    )
     overqualification_threshold_mult: float = 2.0
     overqualification_penalty: float = 0.85
     impact_bullet_target: int = 5
@@ -84,6 +89,11 @@ class ScoringConfig:
         ]
     )
     readability_penalty_per_filler: float = 2.0
+    pass_threshold: float = 70.0
+
+
+# Shared default config — treat as frozen; construct a new ScoringConfig to customize.
+DEFAULT_SCORING_CONFIG = ScoringConfig()
 
 
 @dataclass
@@ -97,20 +107,18 @@ class ATSHeaderDiagnostic:
 @dataclass
 class ScoreBreakdown:
     keyword_match: float
-    experience_fit: float
+    experience_fit: float | None
     impact_evidence: float
     ats_format: float
     readability: float
+    renorm_factor: float = 1.0  # > 1.0 only when experience_fit is not evaluated
     ats_diagnostics: list[ATSHeaderDiagnostic] = field(default_factory=list)
 
     def total(self) -> float:
-        return (
-            self.keyword_match
-            + self.experience_fit
-            + self.impact_evidence
-            + self.ats_format
-            + self.readability
-        )
+        base = self.keyword_match + self.impact_evidence + self.ats_format + self.readability
+        if self.experience_fit is None:
+            return base * self.renorm_factor
+        return base + self.experience_fit
 
 
 @dataclass
@@ -123,18 +131,16 @@ class KeywordResult:
     pref_pct: float
 
 
-PASS_THRESHOLD = 70.0
-
-
 @dataclass
 class ScoreResult:
     breakdown: ScoreBreakdown
     keywords: KeywordResult
     metric_bullets: list[str]
     filler_phrases: list[str]
+    pass_threshold: float = 70.0
 
     def passes(self) -> bool:
-        return self.breakdown.total() >= PASS_THRESHOLD
+        return self.breakdown.total() >= self.pass_threshold
 
 
 # ── Public entry point ────────────────────────────────────────────────────────
@@ -144,24 +150,27 @@ def score(
     resume_text: str,
     required: list[str],
     preferred: list[str],
-    candidate_years: float = 0.0,
+    candidate_years: float | None = None,
     required_years: float = 0.0,
-    seniority_match: str = "exact",
     cfg: ScoringConfig | None = None,
     closeable_by: Literal["tailor", "render", "source_pdf"] = "source_pdf",
 ) -> ScoreResult:
     """Score resume_text against LLM-extracted JD keywords.
 
     All inputs are caller-supplied; this function has no I/O or side effects.
-    seniority_match must be one of "exact", "one_off", "two_or_more_off".
-    If required_years is 0, the years component defaults to full credit.
+    ExperienceFit is years-only: evaluated when required_years > 0 and
+    candidate_years is known, otherwise None — the total then renormalizes
+    over the remaining dimensions so the scale stays 0–100.
     closeable_by is forwarded to _score_ats() to tag ATS diagnostics.
     """
     if cfg is None:
-        cfg = ScoringConfig()
+        cfg = DEFAULT_SCORING_CONFIG
 
     kw_result, kw_score = _score_keywords(resume_text, required, preferred, cfg)
-    exp_score = _score_experience(candidate_years, required_years, seniority_match, cfg)
+    exp_score = _score_experience(candidate_years, required_years, cfg)
+    w = cfg.weights
+    full_max = w.keyword_match + w.experience_fit + w.impact_evidence + w.ats_format + w.readability
+    renorm = full_max / (full_max - w.experience_fit) if exp_score is None else 1.0
     impact_score, metric_bullets = _score_impact(resume_text, cfg)
     ats_score, ats_diagnostics = _score_ats(resume_text, cfg, closeable_by=closeable_by)
     read_score, detected_fillers = _score_readability(resume_text, cfg)
@@ -173,11 +182,13 @@ def score(
             impact_evidence=impact_score,
             ats_format=ats_score,
             readability=read_score,
+            renorm_factor=renorm,
             ats_diagnostics=ats_diagnostics,
         ),
         keywords=kw_result,
         metric_bullets=metric_bullets,
         filler_phrases=detected_fillers,
+        pass_threshold=cfg.pass_threshold,
     )
 
 
@@ -248,29 +259,25 @@ def _score_keywords(
 
 
 def _score_experience(
-    candidate_years: float,
+    candidate_years: float | None,
     required_years: float,
-    seniority_match: str,
     cfg: ScoringConfig,
-) -> float:
-    years_score = 1.0
-    if required_years > 0:
-        years_score = min(candidate_years / required_years, 1.0)
-        if candidate_years > required_years * cfg.overqualification_threshold_mult:
-            years_score *= cfg.overqualification_penalty
-
-    seniority_score = cfg.seniority_multipliers.get(seniority_match, 1.0)
-    return (
-        years_score * cfg.experience_years_weight
-        + seniority_score * cfg.experience_seniority_weight
-    ) * cfg.weights.experience_fit
+) -> float | None:
+    """Return experience-fit points, or None when the dimension cannot be evaluated."""
+    if required_years <= 0 or candidate_years is None:
+        return None
+    years = max(candidate_years, 0.0)
+    years_score = min(years / required_years, 1.0)
+    if years > required_years * cfg.overqualification_threshold_mult:
+        years_score *= cfg.overqualification_penalty
+    return years_score * cfg.weights.experience_fit
 
 
 def _score_impact(resume_text: str, cfg: ScoringConfig) -> tuple[float, list[str]]:
     bullets = []
     for line in resume_text.splitlines():
         line = line.strip()
-        if not line:
+        if not line or CONTACT_LINE_RE.search(line):
             continue
         stripped = VERSION_RE.sub("", line)
         stripped = YEAR_RE.sub("", stripped)
