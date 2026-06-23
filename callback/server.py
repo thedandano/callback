@@ -28,6 +28,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastmcp import FastMCP
+from pydantic import ValidationError
 
 import callback.profile_nodes as profile_nodes
 import callback.scorer as scorer
@@ -44,8 +45,10 @@ from callback.apply_nodes import _detect_uncovered_skills, _get_apps_dir
 from callback.jd_data import EXTRACTION_PROTOCOL, JDDataError, parse_jd_json
 from callback.jd_fetcher import JDFetchError
 from callback.observability import invoke_graph_without_native_tracing, trace_tool
+from callback.preferences import SearchPreferences
 from callback.profile_graph import build_profile_graph
 from callback.profile_graph import make_config as make_profile_config
+from callback.repository.preferences import PreferencesStore
 from callback.repository.resumes import list_resumes
 from callback.section_map import SectionMap, apply_edit
 from callback.state import ApplyState, ProfileState
@@ -1329,6 +1332,53 @@ def create_story(
         "needs_compile": True,
     }
     return _ok(session_id, "compile_profile", data)
+
+
+@mcp.tool()
+def set_search_preferences(preferences: dict) -> str:
+    """Persist the user's job-search preferences.
+
+    Args:
+        preferences: SearchPreferences fields. home_location and work_types are
+            required; updated_at is stamped server-side.
+
+    Returns:
+        JSON envelope echoing the stored preferences under data.preferences.
+    """
+    session_id = str(uuid.uuid4())
+    _log("INFO", {"tool": "set_search_preferences", "session_id": session_id})
+
+    stamped = {**preferences, "updated_at": datetime.datetime.now(datetime.UTC).isoformat()}
+    try:
+        prefs = SearchPreferences.model_validate(stamped)
+    except ValidationError as exc:
+        return _err(
+            stage="set_search_preferences",
+            code="invalid_preferences",
+            message=str(exc),
+            session_id=session_id,
+            retriable=True,
+        )
+
+    PreferencesStore().save(prefs)
+    return _ok(session_id, None, {"preferences": prefs.model_dump()})
+
+
+@mcp.tool()
+def get_search_preferences() -> str:
+    """Return the user's job-search preferences (slim slice; no profile data).
+
+    Returns:
+        JSON envelope with data.preferences, or next_action=set_search_preferences
+        when none are stored.
+    """
+    session_id = str(uuid.uuid4())
+    _log("INFO", {"tool": "get_search_preferences", "session_id": session_id})
+
+    prefs = PreferencesStore().load()
+    if prefs is None:
+        return _ok(session_id, "set_search_preferences", None)
+    return _ok(session_id, None, {"preferences": prefs.model_dump()})
 
 
 @mcp.tool()
