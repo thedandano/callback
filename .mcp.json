@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "callback": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/thedandano/callback",
+        "callback",
+        "serve"
+      ]
+    }
+  }
+}

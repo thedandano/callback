@@ -13,8 +13,10 @@ wheels/
 .claude/
 .superpowers/
 
-# Codex local 
+# Codex local
 .agents
+!.agents/plugins/
+!.agents/plugins/marketplace.json
 .codex
 .serena/
 .callback/
@@ -23,3 +25,4 @@ wheels/
 openspec/
 .coverage
 scripts/_run_*.py
+.clone_skill_dir/
