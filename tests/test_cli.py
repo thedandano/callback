@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import tomllib
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import ANY, MagicMock, Mock, patch
 
 from typer.testing import CliRunner
 
@@ -1238,3 +1238,163 @@ def test_update_calls_uv_tool_upgrade():
 
     mock_run.assert_called_once_with(["uv", "tool", "upgrade", "callback"])
     assert result.exit_code == 0
+
+
+# ============================================================================
+# setup-plugin
+# ============================================================================
+
+
+def test_setup_plugin_print_only_claude_prints_commands_no_browsers():
+    fake_commands = [
+        "claude plugin marketplace add thedandano/callback",
+        "claude plugin install callback@callback",
+    ]
+
+    with (
+        patch("callback.cli.install", return_value=fake_commands) as mock_install,
+        patch("callback.cli._install_browsers") as mock_browsers,
+    ):
+        result = runner.invoke(
+            app,
+            ["setup-plugin", "--print-only", "--target", "claude"],
+            catch_exceptions=False,
+        )
+
+    assert result.exit_code == 0
+    mock_browsers.assert_not_called()
+    mock_install.assert_called_once_with(ANY, source=None, print_only=True)
+    assert "Would run:" in result.stdout
+    assert fake_commands[0] in result.stdout
+    assert fake_commands[1] in result.stdout
+    assert "reload-plugins" in result.stdout or "restart" in result.stdout
+
+
+def test_setup_plugin_print_only_both_prints_claude_then_codex():
+    fake_commands = [
+        "claude plugin marketplace add thedandano/callback",
+        "claude plugin install callback@callback",
+        "codex marketplace add github:thedandano/callback",
+        "codex plugin add callback@callback",
+    ]
+
+    with (
+        patch("callback.cli.install", return_value=fake_commands) as mock_install,
+        patch("callback.cli._install_browsers"),
+    ):
+        result = runner.invoke(
+            app,
+            ["setup-plugin", "--print-only", "--target", "both"],
+            catch_exceptions=False,
+        )
+
+    assert result.exit_code == 0
+    mock_install.assert_called_once_with(ANY, source=None, print_only=True)
+    output = result.stdout
+    idx_claude_mp = output.index(fake_commands[0])
+    idx_claude_in = output.index(fake_commands[1])
+    idx_codex_mp = output.index(fake_commands[2])
+    idx_codex_in = output.index(fake_commands[3])
+    assert idx_claude_mp < idx_claude_in < idx_codex_mp < idx_codex_in
+    assert "Would run:" in output
+
+
+def test_setup_plugin_invalid_target_exits_nonzero():
+    result = runner.invoke(
+        app,
+        ["setup-plugin", "--target", "zzz"],
+    )
+
+    assert result.exit_code != 0
+
+
+def test_setup_plugin_default_run_calls_install_and_browsers():
+    fake_commands = [
+        "claude plugin marketplace add thedandano/callback",
+        "claude plugin install callback@callback",
+        "codex marketplace add github:thedandano/callback",
+        "codex plugin add callback@callback",
+    ]
+
+    with (
+        patch("callback.cli.install", return_value=fake_commands) as mock_install,
+        patch("callback.cli._install_browsers", return_value=0) as mock_browsers,
+    ):
+        result = runner.invoke(
+            app,
+            ["setup-plugin"],
+            catch_exceptions=False,
+        )
+
+    assert result.exit_code == 0
+    mock_browsers.assert_called_once()
+    mock_install.assert_called_once_with(ANY, source=None, print_only=False)
+    assert "Ran:" in result.stdout
+    for cmd in fake_commands:
+        assert cmd in result.stdout
+
+
+def test_setup_plugin_skip_browsers_does_not_call_install_browsers():
+    fake_commands = [
+        "claude plugin marketplace add thedandano/callback",
+        "claude plugin install callback@callback",
+    ]
+
+    with (
+        patch("callback.cli.install", return_value=fake_commands),
+        patch("callback.cli._install_browsers") as mock_browsers,
+    ):
+        result = runner.invoke(
+            app,
+            ["setup-plugin", "--skip-browsers", "--target", "claude"],
+            catch_exceptions=False,
+        )
+
+    assert result.exit_code == 0
+    mock_browsers.assert_not_called()
+
+
+def test_setup_plugin_plugin_source_override_passes_resolved_path(tmp_path):
+    """--plugin-source resolves the local path and passes it as source."""
+    local_path = tmp_path / "myrepo"
+    local_path.mkdir()
+    fake_commands = [
+        f"claude plugin marketplace add {local_path}",
+        "claude plugin install callback@callback",
+    ]
+
+    with (
+        patch("callback.cli.install", return_value=fake_commands) as mock_install,
+        patch("callback.cli._install_browsers"),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "setup-plugin",
+                "--print-only",
+                "--target",
+                "claude",
+                "--plugin-source",
+                str(local_path),
+            ],
+            catch_exceptions=False,
+        )
+
+    assert result.exit_code == 0
+    mock_install.assert_called_once_with(ANY, source=str(local_path), print_only=True)
+
+
+def test_setup_plugin_plugin_install_error_exits_nonzero():
+    from callback.plugin_install import PluginInstallError
+
+    with (
+        patch("callback.cli.install", side_effect=PluginInstallError("runner failed")),
+        patch("callback.cli._install_browsers", return_value=0),
+    ):
+        result = runner.invoke(
+            app,
+            ["setup-plugin"],
+        )
+
+    assert result.exit_code != 0
+    assert "runner failed" in result.stderr

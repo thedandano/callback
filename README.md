@@ -43,6 +43,76 @@ make install && callback setup-mcp
 `origin/main` print a suffix like `0.3.0-01-abc1234`; uncommitted changes add
 `-dirty`.
 
+## Install as a plugin
+
+This is the recommended path for most users — it is **self-contained**: you do
+**not** need to install the `callback` package separately. The plugin's MCP
+server bootstraps itself with [`uvx`](https://docs.astral.sh/uv/) directly from
+GitHub, so installing the plugin is all you need.
+
+> **Requires** `uv` on your `PATH` ([install uv](https://docs.astral.sh/uv/getting-started/installation/)).
+> First launch is slower: `uvx` fetches dependencies and the server auto-installs
+> Playwright Chromium (used for JD fetching and PDF rendering) on first start.
+
+Two ways in: the polished plugin flow on **Claude Code**, or a paste-in config
+for **any other MCP client**.
+
+### Claude Code
+
+```bash
+/plugin marketplace add thedandano/callback
+/plugin install callback@callback
+```
+
+Or the one-shot CLI wrapper (needs the `claude` CLI on `PATH`):
+
+```bash
+callback setup-plugin --target claude      # add --print-only to preview the commands
+```
+
+For local development, install from a clone instead of GitHub:
+
+```bash
+callback setup-plugin --target claude --plugin-source /path/to/callback
+```
+
+### Any other MCP client (Codex, Cursor, Claude Desktop, …)
+
+Add this to the client's MCP config — `uvx` downloads, builds, and runs the
+server straight from the GitHub URL, with no separate install:
+
+```json
+{
+  "mcpServers": {
+    "callback": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/thedandano/callback",
+        "callback",
+        "serve"
+      ]
+    }
+  }
+}
+```
+
+Restart the client afterward. Codex users can alternatively run
+`codex marketplace add github:thedandano/callback` then
+`codex plugin add callback@callback`.
+
+> A published PyPI release (so this becomes `uvx callback serve`) is planned once
+> the GitHub-URL install is proven out.
+
+### After install
+
+After installing the plugin, restart your Claude Code or Codex session, or run `/reload-plugins` to activate the MCP server. The `setup-plugin` command requires `claude` and/or `codex` to be on your `PATH` for the chosen target.
+
+The MCP server runs via `uvx` (see `.mcp.json`) and needs no separate package
+install. On its first start it auto-installs Playwright Chromium in the
+background; the `--skip-browsers` flag above only affects `setup-plugin`'s
+pre-warm step, not this server-side bootstrap.
+
 ## Config
 
 MCP hosts launch `callback serve` as a subprocess, so tracing environment

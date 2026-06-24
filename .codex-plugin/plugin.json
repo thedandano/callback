@@ -1,0 +1,40 @@
+{
+  "name": "callback",
+  "version": "1.0.1",
+  "description": "Job application MCP workflows for profile onboarding, resume tailoring, lead scanning, and application review.",
+  "author": {
+    "name": "thedandano",
+    "url": "https://github.com/thedandano"
+  },
+  "homepage": "https://github.com/thedandano/callback",
+  "repository": "https://github.com/thedandano/callback",
+  "license": "MIT",
+  "keywords": [
+    "jobs",
+    "resume",
+    "ats",
+    "mcp",
+    "career"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "callback",
+    "shortDescription": "Tailor resumes and manage job-search workflows with callback.",
+    "longDescription": "callback packages an MCP server and Codex workflows for registering a resume profile, tailoring one resume for a job description, scanning job leads, reviewing application candidates, and setting up a scan-first recurring job automation.",
+    "developerName": "thedandano",
+    "category": "Productivity",
+    "capabilities": [
+      "MCP",
+      "Skills",
+      "Commands"
+    ],
+    "websiteURL": "https://github.com/thedandano/callback",
+    "defaultPrompt": [
+      "Onboard my callback profile.",
+      "Tailor my resume for this job.",
+      "Set up job lead scanning."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

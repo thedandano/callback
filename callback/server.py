@@ -158,9 +158,15 @@ async def _startup_version_check() -> None:
         )
 
 
+async def _startup_ensure_browsers() -> None:
+    _log("INFO", {"event": "browser_ensure_start"})
+    await asyncio.to_thread(_ensure_browsers)
+
+
 @asynccontextmanager
 async def _lifespan(server: object) -> AsyncIterator[None]:
     asyncio.create_task(_startup_version_check())
+    asyncio.create_task(_startup_ensure_browsers())
     yield
 
 
