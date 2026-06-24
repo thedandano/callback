@@ -1,6 +1,6 @@
 # Job Application Record Schema
 
-CSV path: `<path_to_project>/Codex_Job_application_record.csv`
+CSV path: read `record_csv` from `.callback/config.json`.
 
 Required columns:
 
@@ -18,8 +18,8 @@ Column rules:
 - `Salary range`: posting/recruiter compensation range, for example `$120K-$160K`, `$75/hr W2`, or `Not listed`. Do not invent salary. If multiple sources disagree, use the current employer/recruiter source and explain the conflict in `Notes`.
 - `Status`: compact state from the vocabulary below.
 - `Notes`: dedupe rationale, salary source if useful, fit rationale, mismatch summary, blockers, source email details, and next action.
-- `Resume score after tailoring`: pi-apply tailored score, blank if not scored.
-- `Resume score before tailoring`: pi-apply initial score, blank if not scored.
+- `Resume score after tailoring`: callback tailored score, blank if not scored.
+- `Resume score before tailoring`: callback initial score, blank if not scored.
 - `Link to resume used`: absolute path to generated PDF, blank if none.
 - `Link to cover letter used`: absolute path if generated, blank if none.
 
@@ -31,7 +31,7 @@ Explicit status vocabulary:
 - `Already applied - confirmation recorded`: Gmail or artifact confirms prior submission.
 - `Rejected`: rejection email or portal status confirms no longer moving forward.
 - `Scored - below threshold`: scored below 70.
-- `Needs pi-apply score - not applied`: role passed the location/plausibility gate but pi-apply scoring was not available in the current session.
+- `Needs callback score - not applied`: role passed the location/plausibility gate but callback scoring was not available in the current session.
 - `Needs source - manual lookup`: role came from an email, alert card, search result, or blocked/partial page, and no full current source JD was available. Do not score from the snippet; the user needs to find/open the full JD manually.
 - `Rescored - not applied`: existing row was rescored only.
 - `Duplicate alert - already scored`: new email/URL matched an existing role.
