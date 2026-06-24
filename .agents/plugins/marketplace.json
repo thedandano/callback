@@ -1,0 +1,12 @@
+{
+  "name": "callback",
+  "description": "Job application MCP workflows: profile onboarding, resume tailoring, lead scanning, application review.",
+  "owner": { "name": "thedandano" },
+  "plugins": [
+    {
+      "name": "callback",
+      "source": "./",
+      "description": "Job application MCP workflows: profile onboarding, resume tailoring, lead scanning, application review."
+    }
+  ]
+}

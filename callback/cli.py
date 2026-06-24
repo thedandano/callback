@@ -27,6 +27,7 @@ from callback.observability import (
     DEFAULT_LANGSMITH_PROJECT,
     emit_trace_check_probe,
 )
+from callback.plugin_install import PluginInstallError, install, resolve_targets
 
 app = typer.Typer(no_args_is_help=True)
 config_app = typer.Typer(no_args_is_help=True)
@@ -1036,6 +1037,66 @@ def version() -> None:
     except importlib.metadata.PackageNotFoundError as exc:
         error_console.print("callback is not installed as a package")
         raise typer.Exit(1) from exc
+
+
+def _maybe_install_browsers(*, skip_browsers: bool, print_only: bool) -> None:
+    """Install Playwright Chromium unless skipped or in print-only mode."""
+    if skip_browsers or print_only:
+        return
+    console.print("Installing Playwright Chromium for callback...")
+    returncode = _install_browsers()
+    if returncode != 0:
+        error_console.print(
+            "setup-plugin failed: browser install failed; "
+            "run `callback install-browsers` for details"
+        )
+        raise typer.Exit(returncode)
+
+
+@app.command("setup-plugin")
+def setup_plugin(
+    target: Annotated[str, typer.Option("--target", help="claude | codex | both")] = "both",
+    print_only: Annotated[
+        bool, typer.Option("--print-only", help="Print commands instead of running them.")
+    ] = False,
+    skip_browsers: Annotated[
+        bool, typer.Option("--skip-browsers", help="Skip Playwright Chromium install.")
+    ] = False,
+    plugin_source: Annotated[
+        Path | None,
+        typer.Option(
+            "--plugin-source",
+            help="Local repo root for development installs. Defaults to GitHub source.",
+        ),
+    ] = None,
+) -> None:
+    """Install callback as a plugin for Claude and/or Codex."""
+    source: str | None = (
+        str(plugin_source.expanduser().resolve()) if plugin_source is not None else None
+    )
+
+    try:
+        targets = resolve_targets(target)
+    except ValueError as exc:
+        error_console.print(f"setup-plugin failed: {exc}")
+        raise typer.Exit(1) from exc
+
+    _maybe_install_browsers(skip_browsers=skip_browsers, print_only=print_only)
+
+    try:
+        commands = install(targets, source=source, print_only=print_only)
+    except PluginInstallError as exc:
+        error_console.print(f"setup-plugin failed: {exc}")
+        raise typer.Exit(1) from exc
+
+    prefix = "Would run:" if print_only else "Ran:"
+    for cmd in commands:
+        console.print(f"{prefix} {cmd}")
+
+    console.print(
+        "Restart the session or run /reload-plugins to load MCP servers. "
+        "Note: claude and codex must be on PATH."
+    )
 
 
 if __name__ == "__main__":

@@ -121,6 +121,19 @@ def test_run_starts_mcp_without_browser_install():
     ]
 
 
+@pytest.mark.anyio
+async def test_startup_ensure_browsers_invokes_ensure_browsers():
+    import callback.server as server
+
+    with (
+        patch.object(server, "_ensure_browsers") as ensure_browsers,
+        patch.object(server, "_log"),
+    ):
+        await server._startup_ensure_browsers()
+
+    ensure_browsers.assert_called_once_with()
+
+
 def test_run_logs_crash_before_raising_explicit_error():
     import callback.server as server
 
