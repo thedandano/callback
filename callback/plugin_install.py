@@ -123,7 +123,7 @@ def install(
                 try:
                     runner(argv)
                     executed.append(cmd_str)
-                except Exception as exc:
+                except (OSError, subprocess.CalledProcessError) as exc:
                     raise PluginInstallError(f"{target.key}: {cmd_str}: {exc}") from exc
 
     return executed

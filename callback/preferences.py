@@ -21,11 +21,16 @@ class CompanyPref(BaseModel):
     level_mapping: str | None = None
 
 
+class ReferralCompany(BaseModel):
+    name: str
+    note: str | None = None
+
+
 class SearchPreferences(BaseModel):
     schema_version: str = "1"
     # Group 1 — hard gate
-    home_location: str
-    work_types: list[WorkType]
+    home_location: str = Field(min_length=1)
+    work_types: list[WorkType] = Field(min_length=1)
     # Group 2 — bias + blockers
     target_titles: list[str] = Field(default_factory=list)
     seniority_bands: list[str] = Field(default_factory=list)
@@ -37,4 +42,9 @@ class SearchPreferences(BaseModel):
     # Group 4 — advisory only
     comp_currency: str = "USD"
     comp_annual_target: float | None = None
+    # Group 5 — discovery + referral (skills read these; nothing hardcoded)
+    referral_companies: list[ReferralCompany] = Field(default_factory=list)
+    scan_sources: list[str] = Field(default_factory=list)
+    lead_recency_days: int = 3
+    input_paths: list[str] = Field(default_factory=list)
     updated_at: str

@@ -1344,6 +1344,9 @@ def create_story(
 def set_search_preferences(preferences: dict) -> str:
     """Persist the user's job-search preferences.
 
+    This call fully replaces any stored preferences — omitted optional fields
+    revert to their defaults.
+
     Args:
         preferences: SearchPreferences fields. home_location and work_types are
             required; updated_at is stamped server-side.
