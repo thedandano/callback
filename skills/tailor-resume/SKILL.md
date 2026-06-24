@@ -1,7 +1,6 @@
 ---
 name: tailor-resume
-description: This skill should be used when the user asks to "tailor my resume", "score this job", "run callback on this JD", "use callback for this job", "make a tailored resume", or provides one job URL or full job description for resume tailoring.
-version: 0.1.0
+description: Tailors one resume for one job description using callback. Use when the user asks to "tailor my resume", "score this job", "run callback on this JD", "use callback for this job", "make a tailored resume", "apply callback to this posting", or provides one job URL or full job description for resume tailoring.
 ---
 
 # Tailor Resume

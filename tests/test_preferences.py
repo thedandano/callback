@@ -30,6 +30,10 @@ def test_minimal_valid_preferences_apply_defaults():
         "skip_domains": [],
         "comp_currency": "USD",
         "comp_annual_target": None,
+        "referral_companies": [],
+        "scan_sources": [],
+        "lead_recency_days": 3,
+        "input_paths": [],
         "updated_at": "2026-06-22T00:00:00+00:00",
     }
 
@@ -64,3 +68,43 @@ def test_invalid_work_type_rejected():
 
 def test_company_pref_defaults_level_mapping_none():
     assert CompanyPref(name="Acme").model_dump() == {"name": "Acme", "level_mapping": None}
+
+
+def test_empty_home_location_rejected():
+    with pytest.raises(ValidationError):
+        SearchPreferences(**_valid_kwargs(home_location=""))
+
+
+def test_empty_work_types_rejected():
+    with pytest.raises(ValidationError):
+        SearchPreferences(**_valid_kwargs(work_types=[]))
+
+
+def test_new_fields_default_empty():
+    prefs = SearchPreferences(**_valid_kwargs())
+    dumped = prefs.model_dump()
+    assert dumped["referral_companies"] == []
+    assert dumped["scan_sources"] == []
+    assert dumped["lead_recency_days"] == 3
+    assert dumped["input_paths"] == []
+
+
+def test_referral_company_nested_serialization():
+    from callback.preferences import ReferralCompany  # noqa: F401
+
+    prefs = SearchPreferences(
+        **_valid_kwargs(
+            referral_companies=[{"name": "Acme", "note": "ask Sam"}, {"name": "Globex"}],
+            scan_sources=["gmail", "company_careers"],
+            lead_recency_days=7,
+            input_paths=["~/resumes", "~/Documents/jobs"],
+        )
+    )
+    dumped = prefs.model_dump()
+    assert dumped["referral_companies"] == [
+        {"name": "Acme", "note": "ask Sam"},
+        {"name": "Globex", "note": None},
+    ]
+    assert dumped["scan_sources"] == ["gmail", "company_careers"]
+    assert dumped["lead_recency_days"] == 7
+    assert dumped["input_paths"] == ["~/resumes", "~/Documents/jobs"]

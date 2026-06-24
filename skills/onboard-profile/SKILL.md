@@ -1,7 +1,6 @@
 ---
 name: onboard-profile
-description: This skill should be used when the user asks to "onboard my callback profile", "set up my resume profile", "register my resume", "compile my callback profile", "add accomplishments", or prepare callback before tailoring resumes.
-version: 0.1.0
+description: Registers a resume and compiles the callback profile wiki. Use when the user asks to "onboard my callback profile", "set up my resume profile", "register my resume", "compile my callback profile", "add accomplishments", "update my profile", "add a story", or prepare callback before tailoring resumes.
 ---
 
 # Onboard Profile
