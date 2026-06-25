@@ -26,3 +26,4 @@ openspec/
 .coverage
 scripts/_run_*.py
 .clone_skill_dir/
+.playwright-mcp/
