@@ -65,4 +65,4 @@ End with:
 - full sources
 - source-limited leads
 - duplicates/skips
-- recommended next action: usually run `review-job-application` on selected full-source leads
+- recommended next action: usually run `apply-to-job` on selected full-source leads

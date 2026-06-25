@@ -1,6 +1,6 @@
 ---
 name: auto-job-apply
-description: Runs the full job-lead discovery, scoring, and staged-application workflow. Use when checking Gmail, Google Jobs, or configured career sources for software or AI engineering job postings, recruiter threads, or application status emails; curating and deduping leads; scoring roles with the callback MCP/profile; staging review-ready or referral-first applications; updating automation memory; or recording application/rejection/status outcomes without duplicate submissions.
+description: Runs the full unattended end-to-end job-search pipeline over many leads in one go — discovery, scoring, tailoring, staging, recording, and submit-on-approval. Use for a scheduled or autonomous run that sweeps configured sources (Gmail, Google Jobs, career pages) and processes the whole batch, updating automation memory and outcomes. Submission still requires explicit current-turn approval. Not for a single job (use tailor-resume), a single selected lead (use apply-to-job), or discovery-only scans (use scan-job-leads).
 ---
 
 # Auto Job Apply

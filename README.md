@@ -287,7 +287,7 @@ Point your scheduler at the `scan-job-leads` skill — no bespoke automation ski
 **Claude `/schedule` example** (runs every weekday morning):
 
 ```
-/schedule "0 8 * * 1-5" Use the scan-job-leads skill. Read search preferences via get_search_preferences, scan configured sources within lead_recency_days, dedupe against the ledger, and return the standard scan-job-leads summary with recommended leads for review-job-application.
+/schedule "0 8 * * 1-5" Use the scan-job-leads skill. Read search preferences via get_search_preferences, scan configured sources within lead_recency_days, dedupe against the ledger, and return the standard scan-job-leads summary with recommended leads for apply-to-job.
 ```
 
 **cron example** (replace `claude` with your Claude Code CLI invocation):
@@ -296,4 +296,4 @@ Point your scheduler at the `scan-job-leads` skill — no bespoke automation ski
 0 8 * * 1-5  claude --print "Use the scan-job-leads skill." >> ~/job-scan.log 2>&1
 ```
 
-After a scan, run `review-job-application` on selected full-source leads to score, tailor, and stage applications — submission always requires explicit current-turn approval.
+After a scan, run `apply-to-job` on selected full-source leads to score, tailor, and stage applications — submission always requires explicit current-turn approval.
