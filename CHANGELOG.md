@@ -6,6 +6,32 @@
 
 - Existing users must re-run `onboard_user` after upgrading to the HTML renderer + extractor fixes. Older `sections.json` files may contain corrupted contact fields (for example duplicated email or incorrect location).
 
+## [2.0.0](https://github.com/thedandano/callback/compare/v1.0.1...v2.0.0) (2026-06-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* composite weights and ExperienceFit semantics changed.
+
+### Features
+
+* cross-harness plugin (manifests, setup-plugin, uvx self-bootstrap) ([530e44a](https://github.com/thedandano/callback/commit/530e44aab9fc0e005907944ba8e9048471ecb410))
+* keyword-match refinements, report decomposition, golden determinism test ([a01d5b3](https://github.com/thedandano/callback/commit/a01d5b385a9af83a83da138e93570a2472436dcb))
+* PreferencesStore persistence for search preferences ([8a26f66](https://github.com/thedandano/callback/commit/8a26f66b76680f6f5e81f88a75620a5e6e1bd3c0))
+* profile preferences wiring + init skill; de-PII job-search skills ([2f303f7](https://github.com/thedandano/callback/commit/2f303f7ba12ef5c6f61934de2e6898c75ddd4a96))
+* scoring redesign v2 — reweight to 55/15/10/10/10, years-only ExperienceFit ([01f9cab](https://github.com/thedandano/callback/commit/01f9cabb83d663a0422d2d5fa837a9bb54f8a622))
+* SearchPreferences domain model ([a3ada15](https://github.com/thedandano/callback/commit/a3ada15859e13903d23c246b1a7cc89f36a1d423))
+* set/get_search_preferences MCP tools ([5a5bdd8](https://github.com/thedandano/callback/commit/5a5bdd804c4a640127ff8ba81b25f6d8a9cdbd8d))
+
+
+### Documentation
+
+* cross-harness plugin packaging design + plan ([f5d4fe9](https://github.com/thedandano/callback/commit/f5d4fe9a9ae4850858a260b13b0232c52c1d4c2f))
+* **onboard-profile:** clarify section grouping is job_title-driven ([18712a2](https://github.com/thedandano/callback/commit/18712a2d5f7df0c28424fd2a3e83adfdd8834ad7))
+* reframe callback as standalone post go-apply deprecation ([4461a2d](https://github.com/thedandano/callback/commit/4461a2dfbb479f4f15bd8010188d55ea1a3c77c3))
+* search-preferences implementation plan ([cf3d5f0](https://github.com/thedandano/callback/commit/cf3d5f0ac7c29e136ea6196cce35a49a8aede0e4))
+* search-preferences subsystem design spec ([8f6087e](https://github.com/thedandano/callback/commit/8f6087e0b97d69ef464ad55ebaa9e26abb8e5dbe))
+
 ## [1.0.1](https://github.com/thedandano/callback/compare/v1.0.0...v1.0.1) (2026-06-11)
 
 
