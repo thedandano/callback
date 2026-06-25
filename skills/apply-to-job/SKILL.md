@@ -1,9 +1,9 @@
 ---
-name: review-job-application
+name: apply-to-job
 description: Scores, tailors, stages, records, and submits job applications. Use when the user asks to "review this job application", "score selected leads", "tailor and stage applications", "apply to this job", "record an application", "score this role", "run callback on a lead", or continue from scan-job-leads into scoring, tailoring, review, ledger, or explicit application submission.
 ---
 
-# Review Job Application
+# Apply To Job
 
 ## North Star
 
