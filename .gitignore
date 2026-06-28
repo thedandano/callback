@@ -6,6 +6,11 @@ dist/
 wheels/
 *.egg-info
 
+# Secrets / local env (never commit real values; use .env.example)
+.env
+.env.*
+!.env.example
+
 # Virtual environments
 .venv
 
