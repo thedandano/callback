@@ -90,7 +90,7 @@ def _run_score(
         raise ValueError("_run_score: keywords must have non-empty 'required' or 'required_any'")
     r = scorer.score(
         text,
-        keywords["required"],
+        keywords.get("required", []),
         keywords["preferred"],
         required_any=keywords.get("required_any", []),
         candidate_years=candidate_years,
