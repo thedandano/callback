@@ -8,6 +8,7 @@ import pytest
 from callback import scorer
 from callback.scorer import (
     ATSHeaderDiagnostic,
+    KeywordResult,
     ScoringConfig,
     _normalize_for_match,
     _score_ats,
@@ -69,6 +70,7 @@ GOLDEN_EXPECTED = {
         "pref_unmatched": ["Terraform", "GraphQL"],
         "req_pct": 0.4,
         "pref_pct": 0.0,
+        "req_group_unmatched": [],
     },
     "metric_bullets": [],
     "filler_phrases": [],
@@ -141,6 +143,83 @@ class TestKeywordScoring:
     def test_no_keywords_returns_zero(self):
         result = score(RESUME_PLAIN, required=[], preferred=[])
         assert result.breakdown.keyword_match == 0.0
+
+
+class TestRequiredAnyGroups:
+    def test_group_matches_on_any_member(self):
+        resume = "Experience\nBuilt backend services in Go with a strong testing culture."
+        result = score(resume, required=[], preferred=[], required_any=[["Java", "C++", "Go"]])
+        assert result.keywords == KeywordResult(
+            req_matched=[],
+            req_unmatched=[],
+            pref_matched=[],
+            pref_unmatched=[],
+            req_pct=1.0,
+            pref_pct=0.0,
+            req_group_unmatched=[],
+        )
+
+    def test_fully_unmatched_group_reported_separately(self):
+        resume = "Experience\nBuilt backend services in Python."
+        result = score(resume, required=[], preferred=[], required_any=[["Java", "C++", "Go"]])
+        assert result.keywords.req_group_unmatched == [["Java", "C++", "Go"]]
+        assert result.keywords.req_unmatched == []
+
+    def test_denominator_includes_groups_at_full_required_weight(self):
+        resume = "Experience\nPython services running on Go infrastructure."
+        result = score(
+            resume,
+            required=["Python", "Rust"],
+            preferred=[],
+            required_any=[["Java", "C++", "Go"]],
+        )
+        assert result.keywords.req_pct == pytest.approx(2 / 3)
+        cfg = ScoringConfig()
+        assert result.breakdown.keyword_match == pytest.approx((2 / 3) * cfg.weights.keyword_match)
+
+    def test_matched_group_member_not_double_counted_in_req_matched(self):
+        resume = "Experience\nPython services running on Go infrastructure."
+        result = score(
+            resume,
+            required=["Python", "Rust"],
+            preferred=[],
+            required_any=[["Java", "C++", "Go"]],
+        )
+        assert result.keywords == KeywordResult(
+            req_matched=["Python"],
+            req_unmatched=["Rust"],
+            pref_matched=[],
+            pref_unmatched=[],
+            req_pct=pytest.approx(2 / 3),
+            pref_pct=0.0,
+            req_group_unmatched=[],
+        )
+
+    def test_groups_only_required_scores_without_scalars(self):
+        resume = "Experience\nWorked with Go daily."
+        result = score(resume, required=[], preferred=[], required_any=[["Go"]])
+        cfg = ScoringConfig()
+        assert result.keywords.req_pct == 1.0
+        assert result.breakdown.keyword_match == pytest.approx(cfg.weights.keyword_match)
+
+    def test_zero_division_guard_with_no_required_and_no_groups(self):
+        result = score("Python developer", required=[], preferred=["Python"], required_any=[])
+        cfg = ScoringConfig()
+        assert result.keywords.req_pct == 0.0
+        assert result.keywords.pref_pct == 1.0
+        assert result.breakdown.keyword_match == pytest.approx(cfg.weights.keyword_match)
+
+    def test_backward_compat_without_required_any_arg(self):
+        result = score(RESUME_PLAIN, required=["Python"], preferred=[])
+        assert result.keywords == KeywordResult(
+            req_matched=["Python"],
+            req_unmatched=[],
+            pref_matched=[],
+            pref_unmatched=[],
+            req_pct=1.0,
+            pref_pct=0.0,
+            req_group_unmatched=[],
+        )
 
 
 class TestImpactScoring:
