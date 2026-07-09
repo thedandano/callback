@@ -229,7 +229,6 @@ h1 {
   <div class="legend-item"><div class="legend-swatch" style="background:#FF80BF"></div>Orchestration / scheduler</div>
   <div class="legend-item"><div class="legend-swatch" style="background:#FFCA80"></div>Pure logic (node fn)</div>
   <div class="legend-item"><div class="legend-swatch" style="background:#8AFF80"></div>Storage</div>
-  <div class="legend-item"><div class="legend-swatch" style="background:#9580FF"></div>Transport / subprocess bridge</div>
   <div class="legend-item"><div class="legend-swatch" style="background:#9281BB"></div>External binary / CLI</div>
 </div>
 
@@ -465,55 +464,6 @@ h1 {
       </div>
     </div>
 
-    <!-- Legacy Go subprocess bridge -->
-    <div class="panel">
-      <div class="panel-title">
-        Legacy Go subprocess bridge ·
-        <span class="badge badge-bg">isolated compatibility path</span>
-      </div>
-      <div class="vflow">
-
-        <div class="node parse">
-          <div class="node-title">bridge.py — subprocess transport
-            <span class="node-file">callback/bridge.py</span>
-          </div>
-          <div class="node-body">
-            Binary resolved at import time (module top level — fail-fast):
-            <code>GO_APPLY_BIN</code> env var → <code>shutil.which("go-apply")</code> → <code>EnvironmentError</code>.
-            <code>_BIN: str = _resolve_binary()</code> — type is <code>str</code>, never <code>None</code>.
-            <br><br>
-            Two legacy transport functions remain available outside the MCP handoff path:<br>
-            <code>run_pdfrender(args: list[str]) → bytes</code> — old Go PDF renderer bridge<br>
-            <code>run_survival(args: list[str]) → str</code> — ATS round-trip diff, returns JSON with <code>survival_rate</code><br>
-            <br>
-            <code>SubprocessError(cmd, returncode, stderr)</code> raised on non-zero exit.
-          </div>
-        </div>
-
-        <div class="arrow-down">
-          <div class="arrow-stem"></div>
-          <div class="arrow-head"></div>
-          <div class="arrow-note">subprocess · stdin/stdout · args list</div>
-        </div>
-
-        <div class="node cli">
-          <div class="node-title">go-apply binary
-            <span class="node-file">~/.local/bin/go-apply</span>
-          </div>
-          <div class="node-body">
-            Go binary. Exposes legacy <code>pdfrender</code> subcommand (reads resume text, writes styled PDF bytes to stdout)
-            and <code>survival-diff</code> subcommand (renders PDF, extracts text, diffs against original JD keywords,
-            returns <code>survival_rate</code> metric surfacing silent ATS data loss).
-          </div>
-        </div>
-
-      </div>
-      <div class="callout callout-amber">
-        Rendering is now wired through the Python HTML + Playwright renderer. The legacy
-        <code>go-apply</code> bridge remains isolated from the MCP handoff path.
-      </div>
-    </div>
-
   </div>
 
   <!-- ── Section C: Component isolation table ── -->
@@ -536,13 +486,6 @@ h1 {
           <td>Constructor kwargs (session_id required, 13 optional)</td>
           <td>Pydantic BaseModel instance</td>
           <td class="pure">✓ pure fn</td>
-        </tr>
-        <tr>
-          <td>bridge.py</td>
-          <td><code>bridge.py</code></td>
-          <td><code>GO_APPLY_BIN</code> env · args list</td>
-          <td><code>bytes</code> / <code>str</code> / <code>EnvironmentError</code></td>
-          <td class="isolated">✓ full</td>
         </tr>
         <tr>
           <td>jd_fetch node</td>
