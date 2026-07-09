@@ -400,6 +400,7 @@ def test_submit_keywords_stores_jddata_and_routes_missing_wiki_to_onboarding():
             "keywords": EXPECTED_PARTIAL_KEYWORDS,
             "score_gap": {
                 "required_missing": result["data"]["score_gap"]["required_missing"],
+                "required_missing_any": result["data"]["score_gap"]["required_missing_any"],
                 "preferred_missing": result["data"]["score_gap"]["preferred_missing"],
             },
             "ats_format_gap": _missing_ats_format_gap(),

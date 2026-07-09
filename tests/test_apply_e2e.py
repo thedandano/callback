@@ -30,6 +30,18 @@ M3_KEYWORDS = {
     "key_responsibilities": [],
 }
 
+# required_any OR-group: "AWS" (in sample_resume.txt) satisfies the first group;
+# no member of the second group appears in sample_resume.txt.
+REQUIRED_ANY_KEYWORDS = {
+    "title": "Software Engineer",
+    "required": ["Python"],
+    "required_any": [["AWS", "Azure", "GCP"], ["Java", "Ruby", "Go"]],
+    "preferred": [],
+    "required_years": 3.0,
+    "seniority": "mid",
+    "key_responsibilities": [],
+}
+
 # Minimal tailored SectionMap derived from sample_resume.txt, used to satisfy the
 # new tailor node which requires host-injected tailored_sections.
 MINIMAL_TAILORED_SECTIONS = {
@@ -322,3 +334,41 @@ class TestM3ScoreDelta:
             "scores_delta_equals_report_delta": True,
             "scoring_engine_version": "v2",
         }
+
+
+class TestRequiredAnyOrGroups:
+    """required_any OR-groups must reach score_gap.required_missing_any end-to-end.
+
+    A scorer-only unit test cannot catch a missing apply_nodes/server plumbing
+    hop; this drives the real load_jd -> submit_keywords path.
+    """
+
+    def test_submit_keywords_reports_required_missing_any_for_unmatched_group(
+        self, tmp_path, monkeypatch
+    ):
+        from callback.repository.resumes import save_resume
+        from callback.server import load_jd, submit_keywords
+
+        monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+
+        resume_file = tmp_path / "resume.txt"
+        resume_file.write_text(SAMPLE_RESUME)
+        save_resume("resume", str(resume_file))
+
+        loaded = json.loads(load_jd(jd_raw_text=SAMPLE_JD))
+        assert loaded["status"] == "ok"
+        session_id = loaded["session_id"]
+
+        result = json.loads(
+            submit_keywords(session_id=session_id, jd_json=json.dumps(REQUIRED_ANY_KEYWORDS))
+        )
+
+        assert result["status"] == "ok"
+        actual = result["data"]["score_gap"]
+        expected = {
+            "required_missing": [],
+            "required_missing_any": [["Java", "Ruby", "Go"]],
+            "preferred_missing": [],
+        }
+        assert actual == expected

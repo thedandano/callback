@@ -895,6 +895,7 @@ def _submit_keywords_impl(session_id: str, jd_json: str) -> str:
     if score:
         data["score_gap"] = {
             "required_missing": score.get("req_unmatched", []),
+            "required_missing_any": score.get("req_group_unmatched", []),
             "preferred_missing": score.get("pref_unmatched", []),
         }
         data["ats_format_gap"] = score.get("ats_diagnostics", [])
