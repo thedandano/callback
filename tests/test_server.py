@@ -25,6 +25,7 @@ EXPECTED_PARTIAL_KEYWORDS = {
     "company": "ExampleCo",
     "required": ["Python"],
     "preferred": [],
+    "required_any": [],
     "location": None,
     "seniority": "unspecified",
     "required_years": 0.0,
@@ -447,7 +448,7 @@ def test_submit_keywords_rejects_empty_jd_json():
         "error": {
             "stage": "submit_keywords",
             "code": "invalid_jd",
-            "message": "required skills must not be empty",
+            "message": "required or required_any must be non-empty",
             "retriable": True,
         },
         "session_id": session_id,

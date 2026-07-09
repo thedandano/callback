@@ -7,19 +7,23 @@ from dataclass_wizard import JSONWizard
 
 EXTRACTION_PROTOCOL = """Extract keywords from jd_text using this exact protocol:
 
-1. Find sections labeled "Required", "Requirements", "Must Have", "Basic Qualifications", or similar. Extract every technical skill, tool, framework, platform, methodology, and credential. Copy the EXACT string from the JD - do NOT paraphrase, generalize, or substitute synonyms (e.g. if JD says "k8s", use "k8s", not "Kubernetes").
-2. Find sections labeled "Preferred", "Nice to Have", "Bonus", "Preferred Qualifications", or similar. Extract the same way.
-3. If no labeled sections exist, extract all technical nouns from responsibilities and description paragraphs.
-4. Include ALL explicitly stated terms - do not filter by perceived importance.
-5. Do NOT deduplicate across required/preferred - keep each term in whichever section it appears.
+1. Find sections labeled "Required", "Requirements", "Must Have", "Basic Qualifications", or similar. Extract every technical skill, tool, framework, platform, methodology, and credential as an ATOMIC term, never a whole sentence or clause - a requirement bullet is often a full sentence, so pull out only the individual skills/tools/tech/methodologies/credentials named inside it. Copy the EXACT string from the JD - do NOT paraphrase, generalize, or substitute synonyms (e.g. if JD says "k8s", use "k8s", not "Kubernetes").
+2. Enumerable disjunctions - "one or more of", "any of", or otherwise interchangeable alternatives where only one is needed (e.g. "Java, C++, or Go") - go into a required_any GROUP: a list of the 2+ named alternatives, appended to the required_any list of groups. Do NOT dump these into preferred. For "X or some other Y" / "X or equivalent" phrasing that names only ONE concrete alternative, extract just X as a normal atomic required term - do NOT create a one-member group for it (a one-member group is scoring-identical to a scalar).
+3. Find sections labeled "Preferred", "Nice to Have", "Bonus", "Preferred Qualifications", or similar. Extract genuine nice-to-haves the same way, as atomic terms.
+4. If no labeled sections exist, extract all technical nouns from responsibilities and description paragraphs as atomic terms.
+5. Include ALL explicitly stated terms - do not filter by perceived importance.
+6. Do NOT deduplicate across required/preferred/required_any - keep each term in whichever section it appears.
 
 Encode as compact JSON (no extra whitespace):
-{"title":"<exact job title>","company":"<exact company name>","required":["<term1>","<term2>",...],"preferred":["<term1>",...],"location":"<city or Remote>","seniority":"junior|mid|senior|lead|director","required_years":<number>,"team":"<team name>","key_responsibilities":["<responsibility1>",...],"pay_range_min":<number>,"pay_range_max":<number>}
+{"title":"<exact job title>","company":"<exact company name>","required":["<term1>","<term2>",...],"required_any":[["<altA>","<altB>",...],...],"preferred":["<term1>",...],"location":"<city or Remote>","seniority":"junior|mid|senior|lead|director","required_years":<number>,"team":"<team name>","key_responsibilities":["<responsibility1>",...],"pay_range_min":<number>,"pay_range_max":<number>}
 Omit optional fields entirely if not present. Do NOT invent values.
 
-Example:
+Examples:
   JD says: "Requirements: Go, Kubernetes, PostgreSQL, REST APIs. Preferred: GraphQL, Terraform."
-  -> {"title":"Software Engineer","company":"Acme Corp","required":["Go","Kubernetes","PostgreSQL","REST APIs"],"preferred":["GraphQL","Terraform"]}"""  # noqa: E501
+  -> {"title":"Software Engineer","company":"Acme Corp","required":["Go","Kubernetes","PostgreSQL","REST APIs"],"preferred":["GraphQL","Terraform"]}
+
+  JD says: "Must have experience building distributed systems in Java, C++, or Go. 5+ years backend."
+  -> {"title":"Software Engineer","company":"Acme Corp","required":["distributed systems","backend"],"required_any":[["Java","C++","Go"]],"required_years":5}"""  # noqa: E501
 
 Seniority = Literal["junior", "mid", "senior", "lead", "director"]
 SUPPORTED_SENIORITIES = {"junior", "mid", "senior", "lead", "director", "unspecified"}
@@ -41,6 +45,7 @@ class JDData(JSONWizard):
     company: str | None = None
     required: list[str] = field(default_factory=list)
     preferred: list[str] = field(default_factory=list)
+    required_any: list[list[str]] = field(default_factory=list)
     location: str | None = None
     seniority: Seniority | str = "unspecified"
     required_years: float = 0.0
@@ -52,23 +57,38 @@ class JDData(JSONWizard):
     def __post_init__(self) -> None:
         if self.seniority in (None, ""):
             self.seniority = "unspecified"
-        for field_name in ("required", "preferred", "key_responsibilities"):
+        for field_name in ("required", "preferred", "key_responsibilities", "required_any"):
             if not isinstance(getattr(self, field_name), list):
                 raise JDDataError("invalid_jd", f"{field_name} must be a list")
         self.required = self._clean_keywords("required")
         self.preferred = self._clean_keywords("preferred")
-        if not self.required:
-            raise JDDataError("invalid_jd", "required skills must not be empty")
+        self.required_any = self._clean_groups()
+        if not self.required and not self.required_any:
+            raise JDDataError("invalid_jd", "required or required_any must be non-empty")
         if self.seniority not in SUPPORTED_SENIORITIES:
             raise JDDataError("invalid_jd", f"unsupported seniority: {self.seniority}")
 
     def _clean_keywords(self, field_name: str) -> list[str]:
+        return self._clean_strings(getattr(self, field_name), field_name)
+
+    def _clean_groups(self) -> list[list[str]]:
+        cleaned_groups: list[list[str]] = []
+        for group in self.required_any:
+            if not isinstance(group, list):
+                raise JDDataError("invalid_jd", "required_any entries must be lists")
+            cleaned_group = self._clean_strings(group, "required_any")
+            if cleaned_group:
+                cleaned_groups.append(cleaned_group)
+        return cleaned_groups
+
+    @staticmethod
+    def _clean_strings(values: list, field_name: str) -> list[str]:
         cleaned: list[str] = []
-        for kw in getattr(self, field_name):
-            if not isinstance(kw, str):
+        for value in values:
+            if not isinstance(value, str):
                 raise JDDataError("invalid_jd", f"{field_name} entries must be strings")
-            if kw.strip():
-                cleaned.append(kw.strip())
+            if value.strip():
+                cleaned.append(value.strip())
         return cleaned
 
     def model_dump(self) -> dict:
