@@ -64,7 +64,7 @@ class TestJDDataModel:
     def test_jddata_uses_json_wizard(self):
         assert issubclass(JDData, JSONWizard)
 
-    def test_full_jddata_preserves_go_apply_fields(self):
+    def test_full_jddata_preserves_all_fields(self):
         model = JDData(**FULL_JD)
 
         assert model.model_dump() == FULL_JD
@@ -144,7 +144,7 @@ class TestKeywordCleaning:
 
 
 class TestExtractionProtocol:
-    def test_contains_go_apply_extraction_rules(self):
+    def test_contains_extraction_rules(self):
         assert "Copy the EXACT string" in EXTRACTION_PROTOCOL
         assert "do NOT paraphrase" in EXTRACTION_PROTOCOL
         assert "compact JSON" in EXTRACTION_PROTOCOL

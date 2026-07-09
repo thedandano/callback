@@ -14,7 +14,7 @@ Every scoring, tailoring, and feedback decision must serve this goal:
 
 ## Project Context
 
-callback is a standalone LangGraph MCP server (stdio only). It originated as a replacement for go-apply's Go FSM; go-apply is now deprecated and is not a parity target — callback's own behavior is the source of truth.
+callback is a standalone LangGraph MCP server (stdio only). It originated as a replacement for go-apply's Go FSM; go-apply is now deprecated — callback's own behavior is the source of truth.
 Differentiator: defensible LangGraph stateful-agent design for an AI-engineering portfolio.
 Finite maintenance horizon - build only what the walking skeleton needs.
 `BRIEF.md` is the project charter/history; this file is the active working guide.
@@ -66,7 +66,6 @@ uv run python scripts/smoke_profile.py
 
 ## Environment
 
-- `GO_APPLY_BIN`: Legacy; read only by `bridge.py`, which is wired into nothing at runtime.
 - `LOG_LEVEL`: Server log level.
 - `CALLBACK_LOG_PATH`: Override the server log file path.
 - `CALLBACK_APPS_DIR`: Override where application PDFs and JSON archives are written.
@@ -120,7 +119,7 @@ Layer rules:
 - `apply_graph.py` and `profile_graph.py` own graph wiring, routing, checkpointers, and interrupt boundaries.
 - `apply_nodes.py` and `profile_nodes.py` own workflow step handlers. Keep them focused on graph state transitions and use existing services/adapters for specialized work.
 - Domain services stay deterministic and easy to test: `scorer.py`, `section_map.py`, `jd_data.py`, and `profilecompiler.py`.
-- Infrastructure adapters own I/O boundaries: `jd_fetcher.py`, `extractor.py`, `render/`, `wiki.py`, `repository/`, `bridge.py`, and `version_check.py`.
+- Infrastructure adapters own I/O boundaries: `jd_fetcher.py`, `extractor.py`, `render/`, `wiki.py`, `repository/`, and `version_check.py`.
 - Observability adapters live behind `observability.py`; graph code may ask for trace config, but workflow nodes should not know vendor details.
 
 The key boundary: the host owns LLM reasoning and judgment. callback owns state,
@@ -216,11 +215,9 @@ Pure deterministic Python - no I/O, no LLM calls.
 | ATSFormat | 10 | Standard section headers present |
 | Readability | 10 | Absence of filler phrases |
 
-### Rendering and bridge (`render/`, `bridge.py`)
+### Rendering (`render/`)
 
 PDF rendering uses HTML + Playwright in `callback/render/html_builder.py`.
-go-apply is deprecated and its binary is wired into nothing at runtime — `bridge.py` is a dead legacy adapter kept only for its tests, not a design reference.
-It resolves the binary at import time; tests point it at a fake binary (see `tests/conftest.py`).
 
 ### Module map
 
@@ -241,7 +238,6 @@ It resolves the binary at import time; tests point it at a fake binary (see `tes
 | `repository/` | Resume and accomplishments persistence helpers |
 | `profilecompiler.py` | Compiles skills and stories into a profile summary |
 | `render/` | HTML + Playwright resume rendering |
-| `bridge.py` | dead legacy go-apply adapter (kept for tests only) |
 | `cli.py` | `callback` CLI entry point |
 | `observability.py` | Trace config port and LangSmith adapter |
 | `version_check.py` | Current-vs-latest release comparison |
@@ -249,7 +245,7 @@ It resolves the binary at import time; tests point it at a fake binary (see `tes
 ## Change Discipline
 
 - Touch only what the current task requires.
-- New scoring heuristics must map to a real ATS gate mechanism and stay deterministic — go-apply parity is no longer a constraint.
+- New scoring heuristics must map to a real ATS gate mechanism and stay deterministic.
 - Scoring weights live in config - don't hardcode them.
 - All fallbacks must be explicit, logged, and approved.
 - Don't add complexity beyond the walking skeleton. When tempted toward pgvector, LLM-as-judge, provider clients, RAG, or an eval harness, stop unless there is an explicit OpenSpec proposal for it.
