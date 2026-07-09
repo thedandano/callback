@@ -10,6 +10,7 @@ FULL_JD = {
     "title": "Senior Platform Engineer",
     "company": "ExampleCo",
     "required": ["Python", "Kubernetes"],
+    "required_any": [["Java", "C++", "Go"]],
     "preferred": ["FastAPI", "PostgreSQL"],
     "location": "Remote",
     "seniority": "senior",
@@ -36,6 +37,7 @@ EXPECTED_PARTIAL_JD = {
     "title": "Backend Engineer",
     "company": "ExampleCo",
     "required": ["Python"],
+    "required_any": [],
     "preferred": [],
     "location": None,
     "seniority": "unspecified",
@@ -150,10 +152,74 @@ class TestExtractionProtocol:
 
     def test_protocol_contract_matches_actual_jd_json(self):
         protocol_example = """{"title":"Senior Platform Engineer","company":"ExampleCo",
-            "required":["Python","Kubernetes"],"preferred":["FastAPI","PostgreSQL"],
+            "required":["Python","Kubernetes"],"required_any":[["Java","C++","Go"]],
+            "preferred":["FastAPI","PostgreSQL"],
             "location":"Remote","seniority":"senior","required_years":5.0,
             "team":"Platform",
             "key_responsibilities":["Own deployment reliability","Improve developer tooling"],
             "pay_range_min":180000.0,"pay_range_max":220000.0}"""
 
         assert parse_jd_json(protocol_example) == FULL_JD
+
+    def test_contains_atomic_extraction_guidance(self):
+        assert "ATOMIC term, never a whole sentence or clause" in EXTRACTION_PROTOCOL
+
+    def test_contains_required_any_disjunction_guidance(self):
+        assert "required_any GROUP" in EXTRACTION_PROTOCOL
+        assert "do NOT create a one-member group" in EXTRACTION_PROTOCOL
+
+
+class TestRequiredAny:
+    def test_required_any_parses_and_round_trips(self):
+        jd_json = json.dumps(
+            {
+                "title": "T",
+                "company": "C",
+                "required": ["Python"],
+                "required_any": [["Java", "C++", "Go"], ["MySQL", "Postgres"]],
+            }
+        )
+
+        validated = parse_jd_json(jd_json)
+
+        assert validated["required_any"] == [["Java", "C++", "Go"], ["MySQL", "Postgres"]]
+
+    def test_required_any_members_are_cleaned_and_empty_groups_dropped(self):
+        jd = JDData(
+            title="T",
+            company="C",
+            required=["Python"],
+            required_any=[[" Java ", "", "  "], ["", "  "], ["Go", "C++ "]],
+        )
+
+        assert jd.model_dump()["required_any"] == [["Java"], ["Go", "C++"]]
+
+    def test_empty_required_with_nonempty_required_any_is_valid(self):
+        jd = JDData(title="T", company="C", required=[], required_any=[["Java", "Go"]])
+
+        assert jd.model_dump()["required_any"] == [["Java", "Go"]]
+        assert jd.model_dump()["required"] == []
+
+    def test_empty_required_and_empty_required_any_raises(self):
+        with pytest.raises(JDDataError) as exc_info:
+            JDData(title="T", company="C", required=[], required_any=[])
+
+        assert exc_info.value.code == "invalid_jd"
+
+    def test_non_list_required_any_raises(self):
+        with pytest.raises(JDDataError) as exc_info:
+            JDData(title="T", company="C", required=["Python"], required_any="Java")  # type: ignore[arg-type]
+
+        assert exc_info.value.code == "invalid_jd"
+
+    def test_group_that_is_not_a_list_raises(self):
+        with pytest.raises(JDDataError) as exc_info:
+            JDData(title="T", company="C", required=["Python"], required_any=["Java"])  # type: ignore[list-item]
+
+        assert exc_info.value.code == "invalid_jd"
+
+    def test_group_with_non_string_member_raises(self):
+        with pytest.raises(JDDataError) as exc_info:
+            JDData(title="T", company="C", required=["Python"], required_any=[["Java", 42]])  # type: ignore[list-item]
+
+        assert exc_info.value.code == "invalid_jd"
