@@ -1,6 +1,6 @@
 """Unit tests for callback.scorer — pure function, no I/O."""
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
@@ -185,12 +185,13 @@ class TestRequiredAnyGroups:
             preferred=[],
             required_any=[["Java", "C++", "Go"]],
         )
-        assert result.keywords == KeywordResult(
+        assert result.keywords.req_pct == pytest.approx(2 / 3)
+        assert replace(result.keywords, req_pct=0.0) == KeywordResult(
             req_matched=["Python"],
             req_unmatched=["Rust"],
             pref_matched=[],
             pref_unmatched=[],
-            req_pct=pytest.approx(2 / 3),
+            req_pct=0.0,
             pref_pct=0.0,
             req_group_unmatched=[],
         )
