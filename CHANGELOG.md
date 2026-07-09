@@ -6,6 +6,10 @@
 
 - `required_any` OR-groups + atomic keyword extraction — disjunctive requirements ("one or more of A, B, C") now score as a single required unit matched if any member matches; unmatched groups surface as `score_gap.required_missing_any`.
 
+### Miscellaneous
+
+- chore: remove deprecated go-apply bridge (`bridge.py`) and its tests — the module was wired into nothing at runtime.
+
 ### Important Upgrade Note
 
 - Existing users must re-run `onboard_user` after upgrading to the HTML renderer + extractor fixes. Older `sections.json` files may contain corrupted contact fields (for example duplicated email or incorrect location).

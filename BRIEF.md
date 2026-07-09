@@ -10,7 +10,7 @@ map, and change discipline.
 
 **Current walking-skeleton proof:** A stdio MCP server backed by LangGraph state graphs that ingests a JD and resume, pauses for host-owned reasoning at explicit handoff points, runs deterministic scoring/rendering/archival steps, and returns concrete application artifacts.
 
-**Legacy note:** Early sketches expected most computation to delegate to the Go `go-apply` binary. The current Python server owns the main walking-skeleton path directly. `bridge.py` remains only as a dead legacy adapter (wired into nothing at runtime; kept for its tests).
+**Legacy note:** Early sketches expected most computation to delegate to the Go `go-apply` binary. The current Python server owns the main walking-skeleton path directly.
 
 **State owner:** Client — LangGraph checkpointer on local disk, persists across restarts, no coordination required.
 

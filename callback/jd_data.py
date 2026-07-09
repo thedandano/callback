@@ -39,7 +39,7 @@ class JDDataError(Exception):
 
 @dataclass
 class JDData(JSONWizard):
-    """JSON-compatible JDData contract matching go-apply."""
+    """JSON-compatible JDData contract."""
 
     title: str | None = None
     company: str | None = None

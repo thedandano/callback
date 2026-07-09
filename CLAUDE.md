@@ -15,8 +15,8 @@ Every scoring, tailoring, and feedback decision must serve this goal:
 ## Project Context
 
 callback is a standalone LangGraph MCP server (stdio only). It originated as a
-replacement for go-apply's Go FSM; go-apply is now deprecated and is **not** a
-parity target — callback's own behavior is the source of truth.
+replacement for go-apply's Go FSM; go-apply is now deprecated — callback's own
+behavior is the source of truth.
 Differentiator: defensible LangGraph stateful-agent design for an AI-engineering portfolio.
 Finite maintenance horizon — build only what the walking skeleton needs (see `BRIEF.md`).
 
@@ -173,10 +173,6 @@ most common auto-dispositions), title match against the req, skill recency, and
 degree/clearance filters. The score is a predictor of search retrievability and
 skim survival, not a guarantee — do not oversell the number in report copy.
 
-### go-apply binary dependency (`bridge.py`)
-
-go-apply is deprecated and its binary is wired into nothing at runtime — `bridge.py` is a dead legacy adapter kept only for its tests, not a design reference. `bridge.py` resolves the go-apply binary at **import time** via `_resolve_binary()`. If the binary is not on `PATH`, set `GO_APPLY_BIN=/path/to/go-apply` before importing. In tests, `conftest.py` re-imports the module against a fake binary after resolution tests evict it from `sys.modules` — preserve this fixture when adding bridge tests.
-
 The apply graph's `render` node uses HTML + Playwright via `callback.render.html_builder`.
 
 ### Module map
@@ -191,13 +187,12 @@ The apply graph's `render` node uses HTML + Playwright via `callback.render.html
 | `state.py`           | `ApplyState`, `ProfileState` — Pydantic schemas for each graph |
 | `scorer.py`          | Deterministic ATS scorer (no I/O, no LLM) |
 | `extractor.py`       | Resume text extraction (PDF via pdfplumber, DOCX via python-docx, TXT) |
-| `bridge.py`          | dead legacy go-apply adapter (kept for tests only) |
 | `observability.py`   | Trace config port and LangSmith adapter |
 
 ## Change Discipline
 
 - Touch only what the current task requires.
-- New scoring heuristics must map to a real ATS gate mechanism (see Scoring) and stay deterministic — go-apply parity is no longer a constraint.
+- New scoring heuristics must map to a real ATS gate mechanism (see Scoring) and stay deterministic.
 - Scoring weights and thresholds live in `ScoringConfig` (`scorer.py`) — change them there; never scatter new hardcoded weights.
 - All fallbacks must be explicit, logged, and approved.
 - Don't add complexity beyond the walking skeleton (see `BRIEF.md`). When tempted toward pgvector / LLM-as-judge / eval harness before the graph runs end-to-end, stop.
