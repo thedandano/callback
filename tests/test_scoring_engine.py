@@ -53,6 +53,7 @@ class TestRunScore:
             "readability": 10.0,
             "req_matched": ["Python"],
             "req_unmatched": [],
+            "req_group_unmatched": [],
             "pref_matched": ["AWS"],
             "pref_unmatched": [],
             "ats_diagnostics": _expected_ats_diagnostics(),
@@ -73,6 +74,7 @@ class TestRunScore:
             "readability": 10.0,
             "req_matched": ["Python"],
             "req_unmatched": ["Go"],
+            "req_group_unmatched": [],
             "pref_matched": ["AWS"],
             "pref_unmatched": [],
             "ats_diagnostics": _expected_ats_diagnostics(),
@@ -93,6 +95,7 @@ class TestRunScore:
             "readability": 10.0,
             "req_matched": [],
             "req_unmatched": ["ZZZNONEXISTENT"],
+            "req_group_unmatched": [],
             "pref_matched": [],
             "pref_unmatched": [],
             "scoring_engine_version": "v2",
@@ -116,11 +119,11 @@ class TestRunScore:
             _run_score("   \n  ", {"required": ["Python"]})
 
     def test_raises_on_empty_keywords(self):
-        with pytest.raises(ValueError, match="must be non-empty"):
+        with pytest.raises(ValueError, match="non-empty 'required' or 'required_any'"):
             _run_score("some text", {})
 
     def test_raises_on_none_required(self):
-        with pytest.raises(ValueError, match="must be non-empty"):
+        with pytest.raises(ValueError, match="non-empty 'required' or 'required_any'"):
             _run_score("some text", {"required": None})
 
 
@@ -142,6 +145,7 @@ class TestScoreInitial:
                 "readability": 10.0,
                 "req_matched": ["Python"],
                 "req_unmatched": [],
+                "req_group_unmatched": [],
                 "pref_matched": ["AWS"],
                 "pref_unmatched": [],
                 "ats_diagnostics": _expected_ats_diagnostics(),
@@ -179,6 +183,7 @@ class TestScoreFinal:
                 "readability": 10.0,
                 "req_matched": ["Python"],
                 "req_unmatched": [],
+                "req_group_unmatched": [],
                 "pref_matched": ["AWS"],
                 "pref_unmatched": [],
                 "ats_diagnostics": _expected_ats_diagnostics(closeable_by="render"),

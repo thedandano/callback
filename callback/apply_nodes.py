@@ -86,12 +86,13 @@ def _run_score(
 ) -> dict:
     if not text or not text.strip():
         raise ValueError("_run_score: text must not be empty")
-    if not keywords or not keywords.get("required"):
-        raise ValueError("_run_score: keywords['required'] must be non-empty")
+    if not keywords or (not keywords.get("required") and not keywords.get("required_any")):
+        raise ValueError("_run_score: keywords must have non-empty 'required' or 'required_any'")
     r = scorer.score(
         text,
         keywords["required"],
         keywords["preferred"],
+        required_any=keywords.get("required_any", []),
         candidate_years=candidate_years,
         required_years=keywords["required_years"],
         cfg=scorer.DEFAULT_SCORING_CONFIG,
@@ -107,6 +108,7 @@ def _run_score(
         "readability": r.breakdown.readability,
         "req_matched": r.keywords.req_matched,
         "req_unmatched": r.keywords.req_unmatched,
+        "req_group_unmatched": r.keywords.req_group_unmatched,
         "pref_matched": r.keywords.pref_matched,
         "pref_unmatched": r.keywords.pref_unmatched,
         "ats_diagnostics": [
