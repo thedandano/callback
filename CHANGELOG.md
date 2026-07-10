@@ -5,6 +5,7 @@
 ### Features
 
 - `required_any` OR-groups + atomic keyword extraction — disjunctive requirements ("one or more of A, B, C") now score as a single required unit matched if any member matches; unmatched groups surface as `score_gap.required_missing_any`.
+- `preferred_any` OR-groups — the same primitive on the preferred side: disjunctions in a nice-to-have section score as a single preferred unit at preferred weight; unmatched groups surface as `score_gap.preferred_missing_any`.
 
 ### Miscellaneous
 
@@ -13,7 +14,7 @@
 ### Important Upgrade Note
 
 - Existing users must re-run `onboard_user` after upgrading to the HTML renderer + extractor fixes. Older `sections.json` files may contain corrupted contact fields (for example duplicated email or incorrect location).
-- A host that emits `required_any` against an OLD callback server is silently degraded: `dataclass_wizard` drops the unknown key, so the group is ignored (not matched, not reported). Upgrade the server before relying on `required_any`.
+- A host that emits `required_any` or `preferred_any` against an OLD callback server is silently degraded: `dataclass_wizard` drops the unknown key, so the group is ignored (not matched, not reported). Upgrade the server before relying on either.
 
 ## [1.0.0](https://github.com/thedandano/callback/compare/v1.0.1...v1.0.0) (2026-06-26)
 

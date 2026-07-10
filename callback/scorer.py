@@ -130,6 +130,7 @@ class KeywordResult:
     req_pct: float
     pref_pct: float
     req_group_unmatched: list[list[str]] = field(default_factory=list)
+    pref_group_unmatched: list[list[str]] = field(default_factory=list)
 
 
 @dataclass
@@ -152,6 +153,7 @@ def score(
     required: list[str],
     preferred: list[str],
     required_any: list[list[str]] | None = None,
+    preferred_any: list[list[str]] | None = None,
     candidate_years: float | None = None,
     required_years: float = 0.0,
     cfg: ScoringConfig | None = None,
@@ -160,8 +162,9 @@ def score(
     """Score resume_text against LLM-extracted JD keywords.
 
     All inputs are caller-supplied; this function has no I/O or side effects.
-    required_any is a list of OR-groups: each group is a list of interchangeable
-    alternatives that scores as one required unit, matched iff any member matches.
+    required_any / preferred_any are lists of OR-groups: each group is a list of
+    interchangeable alternatives that scores as one unit, matched iff any member
+    matches — at required weight for required_any, preferred weight for preferred_any.
     ExperienceFit is years-only: evaluated when required_years > 0 and
     candidate_years is known, otherwise None — the total then renormalizes
     over the remaining dimensions so the scale stays 0–100.
@@ -170,7 +173,9 @@ def score(
     if cfg is None:
         cfg = DEFAULT_SCORING_CONFIG
 
-    kw_result, kw_score = _score_keywords(resume_text, required, preferred, required_any or [], cfg)
+    kw_result, kw_score = _score_keywords(
+        resume_text, required, preferred, required_any or [], preferred_any or [], cfg
+    )
     exp_score = _score_experience(candidate_years, required_years, cfg)
     w = cfg.weights
     full_max = w.keyword_match + w.experience_fit + w.impact_evidence + w.ats_format + w.readability
@@ -252,6 +257,14 @@ def _group_matches(group: list[str], normalized_resume: str) -> bool:
     return any(_keyword_hit(member, normalized_resume) for member in group)
 
 
+def _classify_groups(
+    groups: list[list[str]], normalized_resume: str
+) -> tuple[list[list[str]], int]:
+    """Split OR-groups into unmatched groups and a count of matched groups."""
+    unmatched = [group for group in groups if not _group_matches(group, normalized_resume)]
+    return unmatched, len(groups) - len(unmatched)
+
+
 def _classify_keywords(
     keywords: list[str], normalized_resume: str
 ) -> tuple[list[str], list[str], float]:
@@ -268,30 +281,31 @@ def _score_keywords(
     required: list[str],
     preferred: list[str],
     required_any: list[list[str]],
+    preferred_any: list[list[str]],
     cfg: ScoringConfig,
 ) -> tuple[KeywordResult, float]:
-    if not required and not preferred and not required_any:
-        return KeywordResult([], [], [], [], 0.0, 0.0, req_group_unmatched=[]), 0.0
+    if not required and not preferred and not required_any and not preferred_any:
+        return KeywordResult([], [], [], [], 0.0, 0.0), 0.0
 
     req_w = cfg.keyword_required_weight
     pref_w = cfg.keyword_preferred_weight
     if not required and not required_any:
         req_w, pref_w = 0.0, 1.0
-    elif not preferred:
+    elif not preferred and not preferred_any:
         req_w, pref_w = 1.0, 0.0
 
     normalized_resume = _normalize_for_match(resume_text)
 
     req_matched, req_unmatched, _ = _classify_keywords(required, normalized_resume)
-    pref_matched, pref_unmatched, pref_pct = _classify_keywords(preferred, normalized_resume)
+    pref_matched, pref_unmatched, _ = _classify_keywords(preferred, normalized_resume)
 
-    req_group_unmatched = [
-        group for group in required_any if not _group_matches(group, normalized_resume)
-    ]
-    group_matched_count = len(required_any) - len(req_group_unmatched)
+    req_group_unmatched, req_group_matched = _classify_groups(required_any, normalized_resume)
+    pref_group_unmatched, pref_group_matched = _classify_groups(preferred_any, normalized_resume)
 
     req_total = len(required) + len(required_any)
-    req_pct = (len(req_matched) + group_matched_count) / req_total if req_total else 0.0
+    req_pct = (len(req_matched) + req_group_matched) / req_total if req_total else 0.0
+    pref_total = len(preferred) + len(preferred_any)
+    pref_pct = (len(pref_matched) + pref_group_matched) / pref_total if pref_total else 0.0
 
     kw_score = (req_pct * req_w + pref_pct * pref_w) * cfg.weights.keyword_match
 
@@ -304,6 +318,7 @@ def _score_keywords(
             req_pct,
             pref_pct,
             req_group_unmatched,
+            pref_group_unmatched,
         ),
         kw_score,
     )

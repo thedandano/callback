@@ -12,6 +12,7 @@ FULL_JD = {
     "required": ["Python", "Kubernetes"],
     "required_any": [["Java", "C++", "Go"]],
     "preferred": ["FastAPI", "PostgreSQL"],
+    "preferred_any": [["Datadog", "Grafana"]],
     "location": "Remote",
     "seniority": "senior",
     "required_years": 5.0,
@@ -39,6 +40,7 @@ EXPECTED_PARTIAL_JD = {
     "required": ["Python"],
     "required_any": [],
     "preferred": [],
+    "preferred_any": [],
     "location": None,
     "seniority": "unspecified",
     "required_years": 0.0,
@@ -153,7 +155,7 @@ class TestExtractionProtocol:
     def test_protocol_contract_matches_actual_jd_json(self):
         protocol_example = """{"title":"Senior Platform Engineer","company":"ExampleCo",
             "required":["Python","Kubernetes"],"required_any":[["Java","C++","Go"]],
-            "preferred":["FastAPI","PostgreSQL"],
+            "preferred":["FastAPI","PostgreSQL"],"preferred_any":[["Datadog","Grafana"]],
             "location":"Remote","seniority":"senior","required_years":5.0,
             "team":"Platform",
             "key_responsibilities":["Own deployment reliability","Improve developer tooling"],
@@ -167,6 +169,9 @@ class TestExtractionProtocol:
     def test_contains_required_any_disjunction_guidance(self):
         assert "required_any GROUP" in EXTRACTION_PROTOCOL
         assert "do NOT create a one-member group" in EXTRACTION_PROTOCOL
+
+    def test_contains_preferred_any_disjunction_guidance(self):
+        assert "preferred_any GROUP" in EXTRACTION_PROTOCOL
 
 
 class TestRequiredAny:
@@ -221,5 +226,49 @@ class TestRequiredAny:
     def test_group_with_non_string_member_raises(self):
         with pytest.raises(JDDataError) as exc_info:
             JDData(title="T", company="C", required=["Python"], required_any=[["Java", 42]])  # type: ignore[list-item]
+
+        assert exc_info.value.code == "invalid_jd"
+
+
+class TestPreferredAny:
+    def test_preferred_any_parses_and_round_trips(self):
+        jd_json = json.dumps(
+            {
+                "title": "T",
+                "company": "C",
+                "required": ["Python"],
+                "preferred_any": [["Datadog", "Grafana"], ["Redis", "Memcached"]],
+            }
+        )
+
+        validated = parse_jd_json(jd_json)
+
+        assert validated["preferred_any"] == [["Datadog", "Grafana"], ["Redis", "Memcached"]]
+
+    def test_preferred_any_members_are_cleaned_and_empty_groups_dropped(self):
+        jd = JDData(
+            title="T",
+            company="C",
+            required=["Python"],
+            preferred_any=[[" Datadog ", "", "  "], ["", "  "], ["Grafana", "Prometheus "]],
+        )
+
+        assert jd.model_dump()["preferred_any"] == [["Datadog"], ["Grafana", "Prometheus"]]
+
+    def test_preferred_any_alone_does_not_satisfy_required_guard(self):
+        with pytest.raises(JDDataError) as exc_info:
+            JDData(title="T", company="C", required=[], preferred_any=[["Datadog", "Grafana"]])
+
+        assert exc_info.value.code == "invalid_jd"
+
+    def test_group_that_is_not_a_list_raises(self):
+        with pytest.raises(JDDataError) as exc_info:
+            JDData(title="T", company="C", required=["Python"], preferred_any=["Datadog"])  # type: ignore[list-item]
+
+        assert exc_info.value.code == "invalid_jd"
+
+    def test_group_with_non_string_member_raises(self):
+        with pytest.raises(JDDataError) as exc_info:
+            JDData(title="T", company="C", required=["Python"], preferred_any=[["Datadog", 42]])  # type: ignore[list-item]
 
         assert exc_info.value.code == "invalid_jd"

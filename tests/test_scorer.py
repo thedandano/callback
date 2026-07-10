@@ -71,6 +71,7 @@ GOLDEN_EXPECTED = {
         "req_pct": 0.4,
         "pref_pct": 0.0,
         "req_group_unmatched": [],
+        "pref_group_unmatched": [],
     },
     "metric_bullets": [],
     "filler_phrases": [],
@@ -221,6 +222,71 @@ class TestRequiredAnyGroups:
             pref_pct=0.0,
             req_group_unmatched=[],
         )
+
+
+class TestPreferredAnyGroups:
+    def test_group_matches_on_any_member(self):
+        resume = "Experience\nShipped dashboards backed by Grafana."
+        result = score(
+            resume, required=[], preferred=[], preferred_any=[["Datadog", "Grafana", "Prometheus"]]
+        )
+        assert result.keywords == KeywordResult(
+            req_matched=[],
+            req_unmatched=[],
+            pref_matched=[],
+            pref_unmatched=[],
+            req_pct=0.0,
+            pref_pct=1.0,
+            req_group_unmatched=[],
+            pref_group_unmatched=[],
+        )
+
+    def test_fully_unmatched_group_reported_separately(self):
+        resume = "Experience\nBuilt backend services in Python."
+        result = score(
+            resume, required=["Python"], preferred=[], preferred_any=[["Datadog", "Grafana"]]
+        )
+        assert result.keywords.pref_group_unmatched == [["Datadog", "Grafana"]]
+        assert result.keywords.pref_unmatched == []
+
+    def test_denominator_includes_groups_at_preferred_weight(self):
+        resume = "Experience\nPython services with Grafana dashboards."
+        result = score(
+            resume,
+            required=["Python"],
+            preferred=["Datadog", "Splunk"],
+            preferred_any=[["Grafana", "Prometheus"]],
+        )
+        # preferred denominator = 2 scalars + 1 group; only the group matches.
+        assert result.keywords.pref_pct == pytest.approx(1 / 3)
+        cfg = ScoringConfig()
+        expected = 1.0 * cfg.keyword_required_weight + (1 / 3) * cfg.keyword_preferred_weight
+        assert result.breakdown.keyword_match == pytest.approx(expected * cfg.weights.keyword_match)
+
+    def test_matched_group_member_not_double_counted_in_pref_matched(self):
+        resume = "Experience\nPython services with Grafana dashboards."
+        result = score(
+            resume,
+            required=["Python"],
+            preferred=["Datadog", "Splunk"],
+            preferred_any=[["Grafana", "Prometheus"]],
+        )
+        assert result.keywords.pref_pct == pytest.approx(1 / 3)
+        assert replace(result.keywords, pref_pct=0.0) == KeywordResult(
+            req_matched=["Python"],
+            req_unmatched=[],
+            pref_matched=[],
+            pref_unmatched=["Datadog", "Splunk"],
+            req_pct=1.0,
+            pref_pct=0.0,
+            req_group_unmatched=[],
+            pref_group_unmatched=[],
+        )
+
+    def test_groups_only_preferred_scores_without_scalars(self):
+        resume = "Experience\nUsed Grafana daily."
+        result = score(resume, required=["Python"], preferred=[], preferred_any=[["Grafana"]])
+        assert result.keywords.pref_pct == 1.0
 
 
 class TestImpactScoring:

@@ -93,6 +93,7 @@ def _run_score(
         keywords.get("required", []),
         keywords["preferred"],
         required_any=keywords.get("required_any", []),
+        preferred_any=keywords.get("preferred_any", []),
         candidate_years=candidate_years,
         required_years=keywords["required_years"],
         cfg=scorer.DEFAULT_SCORING_CONFIG,
@@ -111,6 +112,7 @@ def _run_score(
         "req_group_unmatched": r.keywords.req_group_unmatched,
         "pref_matched": r.keywords.pref_matched,
         "pref_unmatched": r.keywords.pref_unmatched,
+        "pref_group_unmatched": r.keywords.pref_group_unmatched,
         "ats_diagnostics": [
             {
                 "expected": d.expected,
