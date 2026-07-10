@@ -21,6 +21,8 @@ Call `get_search_preferences` to read the user's configured values. Apply:
 - **Seniority blockers** (`seniority_blockers`): note seniority risk when a role matches a blocker.
 - **Referral companies** (`referral_companies`): surface referral leads for configured companies with status `Referral lead - ask friend`, even when the score is below the normal threshold.
 
+Also read the compiled profile (via `get_wiki_pages` or the profile summary) for the candidate's total years of experience and core known-skills list. Before running callback, skip a lead and record it as a hard blocker instead — unless it's a referral-company lead, which still gets scored per the referral rule above — if either is true: the JD states a required (not preferred) years floor at or above ~1.75x the candidate's actual years, or the role centers on a specific required tool/domain with zero presence anywhere in the profile. Both are typically unclosable by honest tailoring, so catch them before spending a callback pass, not after.
+
 ## Workflow
 
 1. Dedupe against the job search ledger first, then the CSV record.

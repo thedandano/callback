@@ -18,7 +18,7 @@ Discovery only. This skill may find, validate, dedupe, and stage leads. It must 
 Call `get_search_preferences` at the start of every run. Apply the returned values as the gates:
 
 - **Location / work types** (`home_location`, `work_types`): hard curation gate. Keep only roles workable from the user's configured location or work types. Skip remote roles tied to another metro/state/country.
-- **Core / skip domains** (`core_domains`, `skip_domains`): domain gate. Prefer core-domain roles; skip skip-domain roles unless the user asks to stretch.
+- **Core / skip domains** (`core_domains`, `skip_domains`): domain gate. Prefer core-domain roles; skip skip-domain roles unless the user asks to stretch. Match the JD's actual subject matter, not the employer's brand — a security/detection-engineering or telephony-specialist role at an AI-forward company is still a `skip_domains` match if that domain is on the skip list.
 - **Compensation** (`comp_annual_target`): advisory priority, not a hard gate. Record salary when visible; use `Not listed` when missing; add a compensation-risk note when the range starts below the user's target.
 - **Target titles / seniority bands / seniority blockers** (`target_titles`, `seniority_bands`, `seniority_blockers`): use for ranking and blocking. Skip roles that match a configured blocker.
 - **Target companies** (`target_companies`): always check and surface leads from these companies.
