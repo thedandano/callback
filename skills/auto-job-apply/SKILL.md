@@ -22,6 +22,12 @@ Call `get_search_preferences` at the start of every run. Apply the returned valu
 - **Scan sources** (`scan_sources`): scan the user's configured sources every run.
 - **Lead recency** (`lead_recency_days`): constrain Gmail and web discovery to this window.
 
+Also read the compiled profile once at the start of the run (via `get_wiki_pages` or the profile summary) for two gating facts that live on the candidate, not in preferences: total years of professional experience, and the core known-skills list. Use these for the two hard blockers below.
+
+- **Years-of-experience hard blocker**: skip a lead before scoring if the posting states a required (not preferred) years-of-experience floor at or above ~1.75x the candidate's actual years from the profile. These are typically binary screener knockouts that no truthful resume edit can close. Do not apply this to soft/preferred framing ("5+ years preferred") or ranges that comfortably include the candidate's tenure.
+- **Mandatory-missing-skill hard blocker**: skip a lead before scoring if the posting centers on a specific required tool, language, or domain that has zero presence anywhere in the candidate's profile and is core to the role rather than a minor nice-to-have (e.g. a required systems-language or a named datastore the role is built around). No truthful tailoring can add experience that doesn't exist, so don't spend a callback pass finding that out.
+- **Domain-gate matching must see past employer branding**: a role's actual domain is what the JD is about, not what industry the employer is known for. A security/detection-engineering or contact-center/telephony-specialist role at an AI-forward company is still a `skip_domains` match if security/telephony is in the user's skip list — don't let "AI company" branding override an actual skip-domain hit.
+
 ## Required Files
 
 Read all file paths from `.callback/config.json`:
@@ -101,7 +107,7 @@ Resolver output must include `Source URL`, `Source status`, and `Resolution evid
 2. Parent dispatches one discovery subagent per `scan_sources` entry (plus Gmail if configured) in parallel. Constrain each to `lead_recency_days`.
 3. Discovery agents return the Discovery Agent Return Contract table only — no scoring, no tailoring.
 4. Parent merges discovery tables into a shallow lead list. Deduplicates against the job search ledger first, then the record CSV. Dedupe order: exact URL → exact requisition/job ID → exact Title → Company plus similar Title.
-5. Parent curates before scoring. Apply the location gate, then the domain gate, then rank by configured `target_titles` and domain bias. Skip hard blockers: clearance, closed postings, heavy domain mismatch, obvious seniority mismatch (`seniority_blockers`), already-rejected same role/company. Treat compensation as a priority signal, not a gate.
+5. Parent curates before scoring. Apply the location gate, then the domain gate (matching the JD's actual subject matter, not the employer's brand — see Preferences), then the years-of-experience and mandatory-missing-skill hard blockers from Preferences, then rank by configured `target_titles` and domain bias. Skip hard blockers: clearance, closed postings, heavy domain mismatch, obvious seniority mismatch (`seniority_blockers` or stated years), already-rejected same role/company. Treat compensation as a priority signal, not a gate.
 6. Parent resolves full current sources for every plausible non-duplicate lead.
 7. For leads from companies in `referral_companies`, parent surfaces them as referral leads with status `Referral lead - ask friend` before scoring.
 8. Parent dispatches one callback role agent per validated queued role when more than one role is queued.

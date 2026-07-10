@@ -19,7 +19,7 @@ This is a one-job workflow. Do not scan Gmail, Google Jobs, FAANG careers, CSV l
    - `jd_url` for a current full job page, or
    - `jd_raw_text` for pasted full JD text.
    - Include `resume_label` only when callback reports multiple registered resumes.
-2. Extract compact JDData from `data.jd_text` using `data.extraction_protocol`.
+2. Extract compact JDData from `data.jd_text` using `data.extraction_protocol`. For disjunctive "one or more of" / "any of" requirement groups, put the alternatives in a `required_any` group (or `preferred_any` when the group sits under a preferred section) — only one is needed, so a candidate who has any single one satisfies it and must not be penalized for lacking the others.
 3. Call `submit_keywords(session_id, jd_json)`.
 4. Follow `workflow.next_tool`:
    - `get_wiki_pages`: fetch relevant page IDs from `data.wiki_index`, then tailor with that evidence.
