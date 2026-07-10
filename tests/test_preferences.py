@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from callback.preferences import CompanyPref, SearchPreferences, WorkType
+from callback.preferences import CompanyPref, ScanSource, SearchPreferences, WorkType
 
 
 def _valid_kwargs(**overrides) -> dict:
@@ -95,7 +95,6 @@ def test_referral_company_nested_serialization():
     prefs = SearchPreferences(
         **_valid_kwargs(
             referral_companies=[{"name": "Acme", "note": "ask Sam"}, {"name": "Globex"}],
-            scan_sources=["gmail", "company_careers"],
             lead_recency_days=7,
             input_paths=["~/resumes", "~/Documents/jobs"],
         )
@@ -105,6 +104,28 @@ def test_referral_company_nested_serialization():
         {"name": "Acme", "note": "ask Sam"},
         {"name": "Globex", "note": None},
     ]
-    assert dumped["scan_sources"] == ["gmail", "company_careers"]
     assert dumped["lead_recency_days"] == 7
     assert dumped["input_paths"] == ["~/resumes", "~/Documents/jobs"]
+
+
+def test_scan_source_nested_serialization():
+    prefs = SearchPreferences(
+        **_valid_kwargs(
+            scan_sources=[
+                ScanSource(
+                    name="gmail",
+                    kind="email",
+                    instructions="Search is:unread newer_than:3d job alerts.",
+                ),
+            ]
+        )
+    )
+    assert prefs.model_dump()["scan_sources"] == [
+        {
+            "name": "gmail",
+            "kind": "email",
+            "instructions": "Search is:unread newer_than:3d job alerts.",
+            "enabled": True,
+            "recency_days": None,
+        },
+    ]
