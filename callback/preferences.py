@@ -55,4 +55,10 @@ class SearchPreferences(BaseModel):
     scan_sources: list[ScanSource] = Field(default_factory=list)
     lead_recency_days: int = 3
     input_paths: list[str] = Field(default_factory=list)
+    # Group 6 — candidate PII / gating
+    needs_sponsorship: bool = False
+    work_authorization: str | None = None
+    yoe_actual: float | None = None
+    yoe_gap_multiplier: float = 1.75
+    comp_hard_gate: bool = False
     updated_at: str
