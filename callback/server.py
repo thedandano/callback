@@ -897,6 +897,7 @@ def _submit_keywords_impl(session_id: str, jd_json: str) -> str:
             "required_missing": score.get("req_unmatched", []),
             "required_missing_any": score.get("req_group_unmatched", []),
             "preferred_missing": score.get("pref_unmatched", []),
+            "preferred_missing_any": score.get("pref_group_unmatched", []),
         }
         data["ats_format_gap"] = score.get("ats_diagnostics", [])
         orphaned_required = _detect_orphaned_required(

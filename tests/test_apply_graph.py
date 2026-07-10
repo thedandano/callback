@@ -174,6 +174,7 @@ class TestKeywordHandoffInterrupts:
                 "req_matched": [],
                 "req_unmatched": ["Python"],
                 "req_group_unmatched": [],
+                "pref_group_unmatched": [],
                 "total": 10.0 * (100.0 / 85.0),
                 "scoring_engine_version": "v2",
             },
