@@ -1517,6 +1517,16 @@ class TestSearchPreferencesTools:
             "home_location": "Anytown, USA",
             "work_types": ["hybrid_local", "remote"],
             "target_titles": ["Software Engineer", "AI Engineer"],
+            "scan_sources": [
+                {
+                    "name": "gmail",
+                    "kind": "email",
+                    "instructions": "Search is:unread job alerts.",
+                }
+            ],
+            "needs_sponsorship": True,
+            "work_authorization": "US Citizen",
+            "yoe_actual": 4.3,
         }
 
     def test_set_then_get_round_trip(self):
@@ -1529,6 +1539,27 @@ class TestSearchPreferencesTools:
         get_env = json.loads(get_search_preferences())
         assert get_env["status"] == "ok"
         assert get_env["data"]["preferences"] == stored
+
+    def test_set_persists_scan_source_and_pii(self):
+        from callback.server import set_search_preferences
+
+        prefs = json.loads(set_search_preferences(self._valid_payload()))["data"]["preferences"]
+
+        sent_keys = ("scan_sources", "needs_sponsorship", "work_authorization", "yoe_actual")
+        assert {k: prefs[k] for k in sent_keys} == {
+            "scan_sources": [
+                {
+                    "name": "gmail",
+                    "kind": "email",
+                    "instructions": "Search is:unread job alerts.",
+                    "enabled": True,
+                    "recency_days": None,
+                }
+            ],
+            "needs_sponsorship": True,
+            "work_authorization": "US Citizen",
+            "yoe_actual": 4.3,
+        }
 
     def test_set_stamps_updated_at(self):
         from callback.server import set_search_preferences
