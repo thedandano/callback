@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from callback.preferences import CompanyPref, SearchPreferences, WorkType
+from callback.preferences import CompanyPref, ScanSource, SearchPreferences, WorkType
 
 
 def _valid_kwargs(**overrides) -> dict:
@@ -34,6 +34,11 @@ def test_minimal_valid_preferences_apply_defaults():
         "scan_sources": [],
         "lead_recency_days": 3,
         "input_paths": [],
+        "needs_sponsorship": False,
+        "work_authorization": None,
+        "yoe_actual": None,
+        "yoe_gap_multiplier": 1.75,
+        "comp_hard_gate": False,
         "updated_at": "2026-06-22T00:00:00+00:00",
     }
 
@@ -95,7 +100,6 @@ def test_referral_company_nested_serialization():
     prefs = SearchPreferences(
         **_valid_kwargs(
             referral_companies=[{"name": "Acme", "note": "ask Sam"}, {"name": "Globex"}],
-            scan_sources=["gmail", "company_careers"],
             lead_recency_days=7,
             input_paths=["~/resumes", "~/Documents/jobs"],
         )
@@ -105,6 +109,67 @@ def test_referral_company_nested_serialization():
         {"name": "Acme", "note": "ask Sam"},
         {"name": "Globex", "note": None},
     ]
-    assert dumped["scan_sources"] == ["gmail", "company_careers"]
     assert dumped["lead_recency_days"] == 7
     assert dumped["input_paths"] == ["~/resumes", "~/Documents/jobs"]
+
+
+_PII_KEYS = (
+    "needs_sponsorship",
+    "work_authorization",
+    "yoe_actual",
+    "yoe_gap_multiplier",
+    "comp_hard_gate",
+)
+
+
+def test_pii_and_gating_fields_default():
+    dumped = SearchPreferences(**_valid_kwargs()).model_dump()
+    assert {k: dumped[k] for k in _PII_KEYS} == {
+        "needs_sponsorship": False,
+        "work_authorization": None,
+        "yoe_actual": None,
+        "yoe_gap_multiplier": 1.75,
+        "comp_hard_gate": False,
+    }
+
+
+def test_pii_and_gating_fields_roundtrip():
+    dumped = SearchPreferences(
+        **_valid_kwargs(
+            needs_sponsorship=True,
+            work_authorization="US Citizen",
+            yoe_actual=4.3,
+            yoe_gap_multiplier=2.0,
+            comp_hard_gate=True,
+        )
+    ).model_dump()
+    assert {k: dumped[k] for k in _PII_KEYS} == {
+        "needs_sponsorship": True,
+        "work_authorization": "US Citizen",
+        "yoe_actual": 4.3,
+        "yoe_gap_multiplier": 2.0,
+        "comp_hard_gate": True,
+    }
+
+
+def test_scan_source_nested_serialization():
+    prefs = SearchPreferences(
+        **_valid_kwargs(
+            scan_sources=[
+                ScanSource(
+                    name="gmail",
+                    kind="email",
+                    instructions="Search is:unread newer_than:3d job alerts.",
+                ),
+            ]
+        )
+    )
+    assert prefs.model_dump()["scan_sources"] == [
+        {
+            "name": "gmail",
+            "kind": "email",
+            "instructions": "Search is:unread newer_than:3d job alerts.",
+            "enabled": True,
+            "recency_days": None,
+        },
+    ]

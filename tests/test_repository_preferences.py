@@ -2,7 +2,7 @@
 
 import json
 
-from callback.preferences import SearchPreferences, WorkType
+from callback.preferences import ScanSource, SearchPreferences, WorkType
 from callback.repository.preferences import PreferencesStore
 
 
@@ -51,3 +51,36 @@ def test_file_is_valid_json_after_save(tmp_path):
 
     assert data["schema_version"] == "1"
     assert data["home_location"] == "Anytown, USA"
+
+
+def test_roundtrip_with_scan_source_and_pii(tmp_path):
+    store = PreferencesStore(base_dir=tmp_path)
+    prefs = _make_prefs(
+        scan_sources=[
+            ScanSource(
+                name="gmail",
+                kind="email",
+                instructions="Search is:unread job alerts.",
+            )
+        ],
+        needs_sponsorship=True,
+        work_authorization="US Citizen",
+        yoe_actual=4.3,
+    )
+
+    store.save(prefs)
+
+    assert store.load() == prefs
+    raw = json.loads((tmp_path / "preferences.json").read_text())
+    assert {k: raw[k] for k in ("scan_sources", "needs_sponsorship")} == {
+        "scan_sources": [
+            {
+                "name": "gmail",
+                "kind": "email",
+                "instructions": "Search is:unread job alerts.",
+                "enabled": True,
+                "recency_days": None,
+            }
+        ],
+        "needs_sponsorship": True,
+    }

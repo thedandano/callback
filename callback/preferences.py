@@ -26,6 +26,14 @@ class ReferralCompany(BaseModel):
     note: str | None = None
 
 
+class ScanSource(BaseModel):
+    name: str
+    kind: str  # recognized: email | web_search | careers_page | job_board
+    instructions: str
+    enabled: bool = True
+    recency_days: int | None = None  # overrides lead_recency_days for this source
+
+
 class SearchPreferences(BaseModel):
     schema_version: str = "1"
     # Group 1 — hard gate
@@ -44,7 +52,13 @@ class SearchPreferences(BaseModel):
     comp_annual_target: float | None = None
     # Group 5 — discovery + referral (skills read these; nothing hardcoded)
     referral_companies: list[ReferralCompany] = Field(default_factory=list)
-    scan_sources: list[str] = Field(default_factory=list)
+    scan_sources: list[ScanSource] = Field(default_factory=list)
     lead_recency_days: int = 3
     input_paths: list[str] = Field(default_factory=list)
+    # Group 6 — candidate PII / gating
+    needs_sponsorship: bool = False
+    work_authorization: str | None = None
+    yoe_actual: float | None = None
+    yoe_gap_multiplier: float = 1.75
+    comp_hard_gate: bool = False
     updated_at: str

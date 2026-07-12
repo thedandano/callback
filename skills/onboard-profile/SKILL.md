@@ -15,6 +15,7 @@ Prepare callback with truthful candidate evidence so future resume tailoring can
 - Loading optional skills or accomplishments source files.
 - Compiling the profile wiki after onboarding or after adding stories.
 - Creating missing evidence stories when callback reports uncovered or orphaned skills.
+- Capturing durable search preferences + PII (location, work types, domains, curator sources, comp, sponsorship, work authorization, actual years of experience) via `set_search_preferences`.
 
 ## How compilation actually works (read this first)
 
@@ -70,6 +71,45 @@ Wait for approval. If the user wants changes, revise the table and re-present. D
 - sections detected, and the confirmed story → `job_title` grouping
 - onboarding warnings and `skill_coverage_warnings`
 - next best action
+
+## Preferences & PII Interview
+
+After the story workflow, capture the durable job-search criteria so downstream skills (scan-job-leads, auto-job-apply) read them from the profile instead of hard-coding. These persist in callback's `SearchPreferences` store via `set_search_preferences`.
+
+**Profile boundary:** the durable profile = compiled stories + these preferences. Raw input files under `callback-inputs/` (resume PDF, accomplishments, skills reference) are one-time source material, **not** the profile — never treat them as the live source of truth for criteria.
+
+### 1. Read current values
+
+Call `get_search_preferences`. If it returns `next_action=set_search_preferences`, none are stored yet (first onboard). Otherwise show each stored value as the default the user can keep or change (re-onboard).
+
+### 2. Interview (one topic at a time)
+
+Collect, confirming each; never invent an answer:
+
+- `home_location` (string) and `work_types` (any of `onsite_local`, `hybrid_local`, `remote`) — the hard location gate.
+- `target_titles`, `seniority_bands`, `seniority_blockers` — role bias + knockouts.
+- `target_companies` — each `{name, level_mapping}` (e.g. Amazon `L5/SDE II == mid`); this is where FAANG level bands live.
+- `core_domains` / `skip_domains` — the domain gate.
+- `comp_currency`, `comp_annual_target`, and `comp_hard_gate` — set `comp_hard_gate=true` only if the user wants to skip below-target roles; default `false` (target is a priority signal, not a gate).
+- `referral_companies` — each `{name, note}` (e.g. Netflix, "ask friend for referral").
+- `lead_recency_days` — default 3.
+- **PII (ask directly; do not assume):** `needs_sponsorship` (bool), `work_authorization` (e.g. "US Citizen", "H-1B needs transfer"), `yoe_actual` (real total years — drives the experience gate), `yoe_gap_multiplier` (default 1.75; skip a role when its required years ≥ `yoe_actual × this`).
+
+### 3. Curators (`scan_sources`) — instruction specs
+
+Each source is a portable instruction spec, not a fixed name the skill hard-codes: `{name, kind, instructions, enabled, recency_days}`. `kind` is one of `email`, `web_search`, `careers_page`, `job_board` (free-form; unrecognized kinds run as generic web/browser curators). `instructions` is freeform text telling the curator how to search that source and what to return. `recency_days` overrides `lead_recency_days` for that source.
+
+Seed three defaults, letting the user edit each:
+
+- `{name: "gmail", kind: "email", instructions: "Search is:unread newer_than:{recency}d job alerts, recruiter threads, application confirmations, rejection/status. Return discovery leads only. After the parent reconciles a message, remove the UNREAD label."}`
+- `{name: "google_jobs", kind: "web_search", instructions: "Search Google Jobs / web for postings from the last {recency} days matching target titles/domains, home_location + remote-workable. Cards and snippets are discovery only."}`
+- `{name: "faang_careers", kind: "careers_page", instructions: "Search official careers pages for the target_companies. Prefer official employer source over mirrors. Capture canonical URL, req ID, work type, location, salary, posting date, level."}`
+
+Tell the user: **adding a new job board later is just another `scan_sources` entry here — no skill edit.**
+
+### 4. Persist
+
+Send **one** `set_search_preferences` call with the complete object. It is a full replace — include every field, not just the changed ones, or omitted fields revert to defaults.
 
 ## Creating Evidence Stories
 
