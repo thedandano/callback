@@ -16,6 +16,28 @@
 - Existing users must re-run `onboard_user` after upgrading to the HTML renderer + extractor fixes. Older `sections.json` files may contain corrupted contact fields (for example duplicated email or incorrect location).
 - A host that emits `required_any` or `preferred_any` against an OLD callback server is silently degraded: `dataclass_wizard` drops the unknown key, so the group is ignored (not matched, not reported). Upgrade the server before relying on either.
 
+## [1.1.0](https://github.com/thedandano/callback/compare/v1.0.0...v1.1.0) (2026-07-12)
+
+
+### Features
+
+* **apply:** wire required_any OR-groups into scoring and score_gap ([9d5f170](https://github.com/thedandano/callback/commit/9d5f170279cbed0c1c60fbeae0b6148b90f4145d))
+* **jd_data:** add required_any OR-group schema + atomic extraction guidance ([e893706](https://github.com/thedandano/callback/commit/e8937069cf735f3c1ff2e54fd0d7f7cb9fbb9747))
+* onboarded profile as single source of truth for job-search criteria ([#59](https://github.com/thedandano/callback/issues/59)) ([2771fa8](https://github.com/thedandano/callback/commit/2771fa8099bf0ad5db89026c25abe5e5bcb204ec))
+* **scorer:** add preferred_any OR-groups mirroring required_any ([a8795e7](https://github.com/thedandano/callback/commit/a8795e74b86e2bc481fa7ef55c095114bb8987a2))
+* **scorer:** add required_any OR-group primitive to keyword scoring ([9496a71](https://github.com/thedandano/callback/commit/9496a71926901298aacb66180815660dc5f5f022))
+* **skills:** add hard-blocker gates and align OR-groups guidance ([a646a61](https://github.com/thedandano/callback/commit/a646a618e094732f99bc36948b2455646c9c407b))
+
+
+### Bug Fixes
+
+* **apply:** honor absent required key in _run_score to match guard ([b494ce3](https://github.com/thedandano/callback/commit/b494ce37888aa769f8d111e2a54cdc4ec9a52a50))
+
+
+### Documentation
+
+* remove deleted go-apply bridge from architecture diagram ([e85fbd9](https://github.com/thedandano/callback/commit/e85fbd96b415834f06854051e1881ef0b6df89ed))
+
 ## [1.0.0](https://github.com/thedandano/callback/compare/v1.0.1...v1.0.0) (2026-06-26)
 
 
