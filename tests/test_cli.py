@@ -1274,7 +1274,7 @@ def test_setup_plugin_print_only_both_prints_claude_then_codex():
     fake_commands = [
         "claude plugin marketplace add thedandano/callback",
         "claude plugin install callback@callback",
-        "codex marketplace add github:thedandano/callback",
+        "codex plugin marketplace add thedandano/callback",
         "codex plugin add callback@callback",
     ]
 
@@ -1312,7 +1312,7 @@ def test_setup_plugin_default_run_calls_install_and_browsers():
     fake_commands = [
         "claude plugin marketplace add thedandano/callback",
         "claude plugin install callback@callback",
-        "codex marketplace add github:thedandano/callback",
+        "codex plugin marketplace add thedandano/callback",
         "codex plugin add callback@callback",
     ]
 
