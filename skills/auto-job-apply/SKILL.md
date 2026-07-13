@@ -1,6 +1,6 @@
 ---
 name: auto-job-apply
-version: 1.3
+version: 1.4
 description: Run the user's configured job-lead sources (e.g. Gmail, Google Jobs, FAANG careers) for the auto-job-apply automation. Use when checking configured sources for software or AI engineering job postings, recruiter threads, or application status emails; curating and deduping leads; scoring roles with the callback MCP/profile; staging review-ready or referral-first applications; updating automation memory; or recording application/rejection/status outcomes without duplicate submissions.
 ---
 
@@ -64,6 +64,14 @@ Use subagents by default for independent work:
 - Curator agent (generic, one per enabled source): for each enabled `scan_sources` entry, the parent dispatches one curator agent with that source's `instructions`, its `kind`, and its effective recency (`recency_days` if set, else `lead_recency_days`). The curator follows its instructions to surface leads matching the profile criteria and returns the Discovery Agent Return Contract table only; it must not score, tailor, submit, label, archive, or reply. For `kind: "email"` sources, the curator/parent removes the `UNREAD` label from a message only after the parent has fully reconciled every actionable item in it (recorded/deduped/skipped/scored) — never before. `kind: "careers_page"` sources draw their company list from `target_companies`. All curator output — cards, email summaries, search snippets, job-board rows — is a discovery lead only, even when it looks complete.
 - Source resolver agent: takes one discovery lead at a time after the parent dedupes obvious repeats. It follows the email/card/search/job-board URL chain until it reaches an employer careers page, official ATS page, or directly opened third-party page with the complete current JD. It returns source-validation evidence only; it must not score, tailor, submit, label, archive, or reply.
 - Callback role agents: one role per agent after the parent validates the full current source and dedupes the queue. Each role agent must use callback directly and must run `load_jd -> submit_keywords -> get_wiki_pages` when useful -> `submit_tailor` with truthful edits. Do not use `no_coverage=True` unless no truthful supported edits exist, and label that result as no-coverage, not tailoring.
+
+### Dispatch & Model Tiers
+
+Run the fan-out through the host's multi-agent workflow orchestration when available (Claude Code: the Workflow tool / `/workflows`; Codex: the equivalent parallel runner) — one curator per enabled source in parallel, then resolver/role agents as the queue fills. Pick the cheapest model tier per stage:
+
+- Curator, source resolver, and JD fetching (mechanical discovery/fetch work): Claude Haiku — GPT-5.6 Luna on Codex.
+- Callback role agents (`load_jd` -> `submit_keywords` -> `submit_tailor` pipeline): Claude Sonnet — GPT-5.6 Terra on Codex.
+- Parent/orchestrator stays on the session's default model. Upgrade a stage's model only when the cheaper tier demonstrably fails.
 
 If subagent tooling is unavailable, blocked, or inappropriate for a single-role run, the parent may perform the work directly, but it must state that exception in the final summary. For multi-role runs, not using subagents is an exception that must be justified.
 

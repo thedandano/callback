@@ -30,6 +30,8 @@ Call `get_search_preferences` at the start of every run. Apply the returned valu
 
 Spawn one subagent per configured source in parallel. Each subagent returns **only lead metadata** (company, title, source URL, lead URL, location/work type, salary range, level, source status, notes). Do NOT load full email threads or full JD text into the parent agent. The parent merges and dedupes the returned tables.
 
+Dispatch via the host's multi-agent workflow orchestration when available (Claude Code: the Workflow tool / `/workflows`). Discovery subagents run on the cheap tier — Claude Haiku (GPT-5.6 Luna on Codex); reserve higher tiers for the parent's merge/validation judgment.
+
 Discovery subagent return contract — one row per lead:
 
 | Company | Title | Source URL | Lead URL | Source date | Location/work type | Salary range | Level/seniority | Source status | Notes |
