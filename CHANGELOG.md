@@ -16,6 +16,14 @@
 - Existing users must re-run `onboard_user` after upgrading to the HTML renderer + extractor fixes. Older `sections.json` files may contain corrupted contact fields (for example duplicated email or incorrect location).
 - A host that emits `required_any` or `preferred_any` against an OLD callback server is silently degraded: `dataclass_wizard` drops the unknown key, so the group is ignored (not matched, not reported). Upgrade the server before relying on either.
 
+## [1.2.0](https://github.com/thedandano/callback/compare/v1.1.0...v1.2.0) (2026-07-13)
+
+
+### Features
+
+* **plugin:** Codex marketplace install support ([#63](https://github.com/thedandano/callback/issues/63)) ([e90ba7c](https://github.com/thedandano/callback/commit/e90ba7c398fd7a03e6c16e29a0faace63e65f25f))
+* **plugin:** Codex marketplace install support ([#63](https://github.com/thedandano/callback/issues/63)) ([ef00e74](https://github.com/thedandano/callback/commit/ef00e747d613e00d2e466cbc873134eac031edc3))
+
 ## [1.1.0](https://github.com/thedandano/callback/compare/v1.0.0...v1.1.0) (2026-07-12)
 
 
