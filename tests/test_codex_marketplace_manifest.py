@@ -30,3 +30,4 @@ def test_codex_marketplace_description_matches_claude_marketplace():
     codex = json.loads((REPO_ROOT / ".agents" / "plugins" / "marketplace.json").read_text())
     claude = json.loads((REPO_ROOT / ".claude-plugin" / "marketplace.json").read_text())
     assert codex["plugins"][0]["description"] == claude["plugins"][0]["description"]
+    assert codex["plugins"][0]["name"] == claude["plugins"][0]["name"]
