@@ -97,9 +97,11 @@ server straight from the GitHub URL, with no separate install:
 }
 ```
 
-Restart the client afterward. Codex users can alternatively run
-`codex marketplace add github:thedandano/callback` then
-`codex plugin add callback@callback`.
+Restart the client afterward. Codex users can alternatively install the
+plugin (MCP server + skills) from the repo's built-in marketplace:
+`codex plugin marketplace add thedandano/callback` then
+`codex plugin add callback@callback` — or run
+`callback setup-plugin --target codex`.
 
 > A published PyPI release (so this becomes `uvx callback serve`) is planned once
 > the GitHub-URL install is proven out.

@@ -61,9 +61,9 @@ HARNESS_TARGETS: dict[str, HarnessTarget] = {
     "codex": HarnessTarget(
         key="codex",
         cli="codex",
-        marketplace_add=("marketplace", "add"),
+        marketplace_add=("plugin", "marketplace", "add"),
         install=("plugin", "add", "callback@callback"),
-        default_source="github:thedandano/callback",
+        default_source="thedandano/callback",
     ),
 }
 

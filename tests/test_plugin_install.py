@@ -28,10 +28,10 @@ def test_default_source_claude_uses_git_ref():
     ]
 
 
-def test_default_source_codex_uses_git_ref():
+def test_default_source_codex_uses_owner_repo_source():
     out = install(resolve_targets("codex"), print_only=True)
     assert out == [
-        "codex marketplace add github:thedandano/callback",
+        "codex plugin marketplace add thedandano/callback",
         "codex plugin add callback@callback",
     ]
 
