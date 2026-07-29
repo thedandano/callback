@@ -16,6 +16,14 @@
 - Existing users must re-run `onboard_user` after upgrading to the HTML renderer + extractor fixes. Older `sections.json` files may contain corrupted contact fields (for example duplicated email or incorrect location).
 - A host that emits `required_any` or `preferred_any` against an OLD callback server is silently degraded: `dataclass_wizard` drops the unknown key, so the group is ignored (not matched, not reported). Upgrade the server before relying on either.
 
+## [1.2.1](https://github.com/thedandano/callback/compare/v1.2.0...v1.2.1) (2026-07-29)
+
+
+### Documentation
+
+* rewrite README for new users and relicense under MIT ([21f786c](https://github.com/thedandano/callback/commit/21f786cb8ca0fa4460549298017c554f27edca37))
+* strengthen README opening and lead with the plugin install ([5397aa6](https://github.com/thedandano/callback/commit/5397aa6bbc11e6e6f0bd13da32db2f6cd1b829fd))
+
 ## [1.2.0](https://github.com/thedandano/callback/compare/v1.1.0...v1.2.0) (2026-07-13)
 
 
