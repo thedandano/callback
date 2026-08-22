@@ -404,6 +404,8 @@ def test_submit_keywords_stores_jddata_and_routes_missing_wiki_to_onboarding():
                 "required_missing_any": result["data"]["score_gap"]["required_missing_any"],
                 "preferred_missing": result["data"]["score_gap"]["preferred_missing"],
                 "preferred_missing_any": result["data"]["score_gap"]["preferred_missing_any"],
+                "required_coverage": result["data"]["score_gap"]["required_coverage"],
+                "preferred_coverage": result["data"]["score_gap"]["preferred_coverage"],
             },
             "ats_format_gap": _missing_ats_format_gap(),
             "orphaned_required": result["data"]["orphaned_required"],
