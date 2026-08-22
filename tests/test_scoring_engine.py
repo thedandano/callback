@@ -46,6 +46,8 @@ class TestRunScore:
         expected = {
             "total": 79.0 * (100.0 / 85.0),
             "keyword_match": 55.0,
+            "required_coverage": 100.0,
+            "preferred_coverage": 100.0,
             "experience_fit": None,
             "experience_evaluated": False,
             "impact_evidence": 4.0,
@@ -68,6 +70,8 @@ class TestRunScore:
         expected = {
             "total": result["total"],
             "keyword_match": result["keyword_match"],
+            "required_coverage": 50.0,
+            "preferred_coverage": 100.0,
             "experience_fit": None,
             "experience_evaluated": False,
             "impact_evidence": 4.0,
@@ -90,6 +94,8 @@ class TestRunScore:
         expected = {
             "total": 10.0 + 7.5,  # readability 10.0 + exp 0.5 × 15.0
             "keyword_match": 0.0,
+            "required_coverage": 0.0,
+            "preferred_coverage": None,
             "experience_fit": 7.5,
             "experience_evaluated": True,
             "impact_evidence": 0.0,
@@ -129,6 +135,139 @@ class TestRunScore:
         with pytest.raises(ValueError, match="non-empty 'required' or 'required_any'"):
             _run_score("some text", {"required": None})
 
+    def test_coverage_full_match(self):
+        """Every required and preferred keyword present -> both coverages are 100.0."""
+        kws = {
+            "required": ["Python", "AWS"],
+            "preferred": ["Docker"],
+            "required_years": 0.0,
+        }
+        result = _run_score(RESUME_WITH_KEYWORDS, kws)
+        expected = {
+            "total": result["total"],
+            "keyword_match": 55.0,
+            "required_coverage": 100.0,
+            "preferred_coverage": 100.0,
+            "experience_fit": None,
+            "experience_evaluated": False,
+            "impact_evidence": 4.0,
+            "ats_format": 10.0,
+            "readability": 10.0,
+            "req_matched": ["Python", "AWS"],
+            "req_unmatched": [],
+            "req_group_unmatched": [],
+            "pref_matched": ["Docker"],
+            "pref_unmatched": [],
+            "pref_group_unmatched": [],
+            "ats_diagnostics": _expected_ats_diagnostics(),
+            "scoring_engine_version": "v2",
+        }
+        assert result == expected
+
+    def test_coverage_partial_match(self):
+        """Two of three required keywords present -> required_coverage is 2/3 as a percent."""
+        kws = {
+            "required": ["Python", "AWS", "Kubernetes"],
+            "preferred": [],
+            "required_years": 0.0,
+        }
+        result = _run_score(RESUME_WITH_KEYWORDS, kws)
+        expected = {
+            "total": result["total"],
+            "keyword_match": result["keyword_match"],
+            "required_coverage": 66.7,
+            "preferred_coverage": None,
+            "experience_fit": None,
+            "experience_evaluated": False,
+            "impact_evidence": 4.0,
+            "ats_format": 10.0,
+            "readability": 10.0,
+            "req_matched": ["Python", "AWS"],
+            "req_unmatched": ["Kubernetes"],
+            "req_group_unmatched": [],
+            "pref_matched": [],
+            "pref_unmatched": [],
+            "pref_group_unmatched": [],
+            "ats_diagnostics": _expected_ats_diagnostics(),
+            "scoring_engine_version": "v2",
+        }
+        assert result == expected
+
+    def test_required_any_group_counted_as_one_unit(self):
+        """An OR-group (required_any) counts as ONE required item, not one per alternative.
+
+        required=["Java"] (unmatched) + required_any=[["Python", "Go"]] (matched via
+        Python) gives a denominator of 2 (one plain keyword + one group) and a
+        numerator of 1 (the group counts once, even though it lists two alternatives).
+        If the group were wrongly expanded into its members, the denominator would be
+        3 and the percentage would differ.
+        """
+        kws = {
+            "required": ["Java"],
+            "required_any": [["Python", "Go"]],
+            "preferred": [],
+            "required_years": 0.0,
+        }
+        result = _run_score(RESUME_WITH_KEYWORDS, kws)
+        expected = {
+            "total": result["total"],
+            "keyword_match": result["keyword_match"],
+            "required_coverage": 50.0,
+            "preferred_coverage": None,
+            "experience_fit": None,
+            "experience_evaluated": False,
+            "impact_evidence": 4.0,
+            "ats_format": 10.0,
+            "readability": 10.0,
+            "req_matched": [],
+            "req_unmatched": ["Java"],
+            "req_group_unmatched": [],
+            "pref_matched": [],
+            "pref_unmatched": [],
+            "pref_group_unmatched": [],
+            "ats_diagnostics": _expected_ats_diagnostics(),
+            "scoring_engine_version": "v2",
+        }
+        assert result == expected
+
+    def test_no_required_keywords_raises_rather_than_scoring_zero(self):
+        """A JD with zero required keywords (and no OR-groups) is rejected upstream.
+
+        _run_score's own guard (non-empty 'required' or 'required_any') means
+        req_total == 0 can never reach the coverage calculation, so
+        required_coverage can never silently come back as 0.0 for this case.
+        """
+        with pytest.raises(ValueError, match="non-empty 'required' or 'required_any'"):
+            _run_score(
+                "some text",
+                {"required": [], "required_any": [], "preferred": [], "required_years": 0.0},
+            )
+
+    def test_preferred_coverage_none_when_no_preferred_keywords(self):
+        """No preferred keywords listed -> preferred_coverage is None, not 0.0."""
+        kws = {"required": ["Python"], "preferred": [], "required_years": 0.0}
+        result = _run_score(RESUME_WITH_KEYWORDS, kws)
+        expected = {
+            "total": result["total"],
+            "keyword_match": result["keyword_match"],
+            "required_coverage": 100.0,
+            "preferred_coverage": None,
+            "experience_fit": None,
+            "experience_evaluated": False,
+            "impact_evidence": 4.0,
+            "ats_format": 10.0,
+            "readability": 10.0,
+            "req_matched": ["Python"],
+            "req_unmatched": [],
+            "req_group_unmatched": [],
+            "pref_matched": [],
+            "pref_unmatched": [],
+            "pref_group_unmatched": [],
+            "ats_diagnostics": _expected_ats_diagnostics(),
+            "scoring_engine_version": "v2",
+        }
+        assert result == expected
+
 
 class TestScoreInitial:
     def test_scores_real_text(self):
@@ -141,6 +280,8 @@ class TestScoreInitial:
             "score_initial": {
                 "total": 79.0 * (100.0 / 85.0),
                 "keyword_match": 55.0,
+                "required_coverage": 100.0,
+                "preferred_coverage": 100.0,
                 "experience_fit": None,
                 "experience_evaluated": False,
                 "impact_evidence": 4.0,
@@ -180,6 +321,8 @@ class TestScoreFinal:
             "score_final": {
                 "total": 79.0 * (100.0 / 85.0),
                 "keyword_match": 55.0,
+                "required_coverage": 100.0,
+                "preferred_coverage": 100.0,
                 "experience_fit": None,
                 "experience_evaluated": False,
                 "impact_evidence": 4.0,
@@ -245,6 +388,8 @@ class TestReport:
         )
         _none_dims = {
             "keyword_match": None,
+            "required_coverage": None,
+            "preferred_coverage": None,
             "experience_fit": None,
             "impact_evidence": None,
             "ats_format": None,
@@ -270,6 +415,8 @@ class TestReport:
         _dims = (
             "total",
             "keyword_match",
+            "required_coverage",
+            "preferred_coverage",
             "experience_fit",
             "impact_evidence",
             "ats_format",

@@ -37,6 +37,8 @@ _SCORE_FINAL = {
 _DELTA = {
     "total": 17.5,
     "keyword_match": 17.5,
+    "required_coverage": None,
+    "preferred_coverage": None,
     "experience_fit": 0.0,
     "impact_evidence": 0.0,
     "ats_format": 0.0,
@@ -46,6 +48,8 @@ _DELTA = {
 _BEFORE = {
     "total": 35.0,
     "keyword_match": 0.0,
+    "required_coverage": None,
+    "preferred_coverage": None,
     "experience_fit": 25.0,
     "impact_evidence": 0.0,
     "ats_format": 0.0,
@@ -55,6 +59,8 @@ _BEFORE = {
 _AFTER = {
     "total": 52.5,
     "keyword_match": 17.5,
+    "required_coverage": None,
+    "preferred_coverage": None,
     "experience_fit": 25.0,
     "impact_evidence": 0.0,
     "ats_format": 0.0,
@@ -210,6 +216,8 @@ def test_finalize_archive_scoring_engine_version(tmp_path, monkeypatch):
 _ZERO_DELTA = {
     "total": 0.0,
     "keyword_match": 0.0,
+    "required_coverage": None,
+    "preferred_coverage": None,
     "experience_fit": 0.0,
     "impact_evidence": 0.0,
     "ats_format": 0.0,

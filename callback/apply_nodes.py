@@ -99,9 +99,12 @@ def _run_score(
         cfg=scorer.DEFAULT_SCORING_CONFIG,
         closeable_by=closeable_by,  # type: ignore[arg-type]
     )
+    preferred_present = bool(keywords.get("preferred") or keywords.get("preferred_any"))
     return {
         "total": r.breakdown.total(),
         "keyword_match": r.breakdown.keyword_match,
+        "required_coverage": round(r.keywords.req_pct * 100, 1),
+        "preferred_coverage": round(r.keywords.pref_pct * 100, 1) if preferred_present else None,
         "experience_fit": r.breakdown.experience_fit,
         "experience_evaluated": r.breakdown.experience_fit is not None,
         "impact_evidence": r.breakdown.impact_evidence,
@@ -570,6 +573,8 @@ def score_final(state: ApplyState) -> dict:
 _SCORE_DIMS = (
     "total",
     "keyword_match",
+    "required_coverage",
+    "preferred_coverage",
     "experience_fit",
     "impact_evidence",
     "ats_format",

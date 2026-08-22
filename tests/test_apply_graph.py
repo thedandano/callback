@@ -168,6 +168,8 @@ class TestKeywordHandoffInterrupts:
                 "experience_evaluated": False,
                 "impact_evidence": 0.0,
                 "keyword_match": 0.0,
+                "required_coverage": 0.0,
+                "preferred_coverage": None,
                 "pref_matched": [],
                 "pref_unmatched": [],
                 "readability": 10.0,

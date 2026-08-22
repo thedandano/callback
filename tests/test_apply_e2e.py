@@ -383,6 +383,8 @@ class TestRequiredAnyOrGroups:
             "required_missing_any": [["Java", "Ruby", "Go"]],
             "preferred_missing": [],
             "preferred_missing_any": [],
+            "required_coverage": pytest.approx(66.7),
+            "preferred_coverage": None,
         }
         assert actual == expected
 
@@ -423,5 +425,7 @@ class TestPreferredAnyOrGroups:
             "preferred_missing": [],
             # "AWS" satisfies the first group; no member of the second appears.
             "preferred_missing_any": [["Datadog", "Grafana"]],
+            "required_coverage": 100.0,
+            "preferred_coverage": 50.0,
         }
         assert actual == expected
