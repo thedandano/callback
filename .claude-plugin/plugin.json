@@ -1,9 +1,18 @@
 {
   "name": "callback",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Job application MCP workflows for profile onboarding, resume tailoring, lead scanning, and application review.",
-  "author": { "name": "thedandano", "url": "https://github.com/thedandano" },
+  "author": {
+    "name": "thedandano",
+    "url": "https://github.com/thedandano"
+  },
   "homepage": "https://github.com/thedandano/callback",
   "license": "MIT",
-  "keywords": ["jobs", "resume", "ats", "mcp", "career"]
+  "keywords": [
+    "jobs",
+    "resume",
+    "ats",
+    "mcp",
+    "career"
+  ]
 }
