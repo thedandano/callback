@@ -182,7 +182,7 @@ Emit exactly these blocks, in this order:
 1. `Run title: ...`
 2. `## Stats`
 3. `## Discovery Sources`
-4. `## Roles` — every lead reconciled this run, one row each, sorted by final score highest-first. That includes leads dropped before the queue existed: deduped at Workflow step 5 (`Duplicate`) or cut by the curation gates and hard blockers at step 6 (`Blocked`). A lead that was looked at and rejected still gets a row; only leads never surfaced by a curator are absent. Rows that never reached callback (`No source`, `Blocked`, `Duplicate`, `Recruiter`, `Not scored`) sort last, alphabetically by company. Break ties on equal final score by higher KW /55, then alphabetically by Company.
+4. `## Roles` — every lead reconciled this run, one row each, sorted by final score highest-first. That includes leads dropped before the queue existed: deduped at Workflow step 5 (`Duplicate`) or cut by the curation gates and hard blockers at step 6 (`Blocked`). A lead that was looked at and rejected still gets a row; only leads never surfaced by a curator are absent. Rows with no final score this run — whatever their `Rec` label — sort last, alphabetically by company, then by title. Break ties on equal final score by higher KW /55, then alphabetically by Company, then Title.
 5. `### Details - action needed` — only for rows whose `Rec` is `Review`, `Referral`, `Applied`, `No source`, `Not scored`, or `Recruiter`. Rows whose `Rec` is terminal for the run (`Skip`, `Rejected`, `Blocked`, `Duplicate`, `Rescored`) get no details entry. Skip the heading entirely when no row qualifies.
 6. One closing line. If nothing was applied, say that plainly.
 
@@ -190,7 +190,7 @@ Do not emit separate `Scored Roles`, `Review Queue`, `Referral Leads`, or `Skipp
 
 ### Stats table column rules
 
-- Referral leads counts every row for a referral_companies employer regardless of its Rec label (Review or Referral), not only rows labeled Referral.
+- Referral leads counts every row at a referral_companies employer surfaced for referral outreach this run, whether its `Rec` is `Review` or `Referral`, not only rows labeled `Referral`.
 
 ### Roles table column rules
 
@@ -199,12 +199,12 @@ Every number comes from `submit_tailor`'s `data.report`. Do not compute or estim
 - `KW /55`: `after.keyword_match`, rounded to a whole number.
 - `Req%` / `Pref%`: `after.required_coverage` / `after.preferred_coverage`, whole percent. Write `—` when `preferred_coverage` is null (the JD listed no preferred keywords).
 - `Rest`: `Exp {n} · Imp {n} · ATS {n} · Rd {n}` from `after.experience_fit`, `after.impact_evidence`, `after.ats_format`, `after.readability`, whole numbers. Write `Exp n/a` when `report.experience_evaluated` (a top-level field, sibling to `before`/`after`, not `after.experience_evaluated`) is false.
-- `Score`: `{before} → {after}` from `before.total` and `after.total`, whole numbers. Equal values (e.g. `62 → 62`) mean no-coverage or no lift — say which in `Notes`.
+- `Score`: `{before} → {after}` from `before.total` and `after.total`, whole numbers. For rows scored this run, equal values (e.g. `62 → 62`) mean no-coverage or no lift — say which in `Notes`. For carried-over totals, do not guess which.
 - Rows that never reached callback get `—` in every score cell.
 - `Rec`: the short label from the table below.
 - `Notes`: ONE clause, 12 words maximum — the mismatch summary, blocker, or risk in plain words. The full rationale goes in the CSV `Notes` column, not here.
 - When no leads were reconciled this run, keep the `## Roles` header row and write a single line below it: "No leads reconciled this run." Do not render an empty table body.
-- A role touched only by a status-update email (e.g. a rejection notice) still gets a Roles row this run, with `Rec` updated to the new status (e.g. `Rejected`). Carry over ONLY the two totals the CSV stores, as `{before} → {after}` in `Score`; render `KW /55`, `Req%`, `Pref%`, and `Rest` as `—`. The CSV keeps no per-dimension history, so those numbers are genuinely unknown — do not reconstruct them, and do not rerun callback against a posting that may have changed since. `Status emails` in Stats counts these status-update emails whether or not the role was newly discovered today.
+- A role touched only by a status-update email (e.g. a rejection notice) still gets a Roles row this run, with `Rec` updated to the new status (e.g. `Rejected`). Carry over ONLY the two totals the CSV stores, as `{before} → {after}` in `Score` — if those CSV totals are blank, render `Score` as `—` too; render `KW /55`, `Req%`, `Pref%`, and `Rest` as `—`. The CSV keeps no per-dimension history, so those numbers are genuinely unknown — do not reconstruct them, and do not rerun callback against a posting that may have changed since. `Status emails` in Stats counts these status-update emails whether or not the role was newly discovered today.
 
 ### Recommendation labels
 
@@ -238,6 +238,8 @@ A `Not scored` row already has a validated full source — line 2 carries that s
 
 A `Recruiter` row has a thread, not a posting — line 2 carries the thread descriptor in place of the source URL. On line 3, state the pending decision or reply the user owes.
 
+An `Applied` row recorded from a confirmation rather than submitted this run may have no source URL and no artifacts. Line 2 carries the CSV URL or, failing that, the confirmation email descriptor; line 3 says `no artifacts recorded` and names any follow-up owed.
+
 ### Final Markdown Template
 
 The Stats row below and the Roles rows below it are independent illustrative snippets, not one matched run — do not expect the Stats counts to sum to the example Roles rows.
@@ -270,7 +272,7 @@ Run title: Auto Job Apply - YYYY-MM-DD - HH PT
 
 ### Details - action needed
 **Netflix · Sr SWE, LLM Eval · 84 · Review**
-$220-310k · Remote-from-SD · https://jobs.netflix.com/jobs/1234567
+Not listed · Remote-from-SD · https://jobs.netflix.com/jobs/1234567
 `.../applications/2026-08-22/netflix-llm-eval/resume.pdf`
 
 **Stripe · Backend Eng L3 · 72 · Review**
