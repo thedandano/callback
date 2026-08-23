@@ -1,6 +1,6 @@
 ---
 name: auto-job-apply
-version: 1.4
+version: 1.5
 description: Run the user's configured job-lead sources (e.g. Gmail, Google Jobs, FAANG careers) for the auto-job-apply automation. Use when checking configured sources for software or AI engineering job postings, recruiter threads, or application status emails; curating and deduping leads; scoring roles with the callback MCP/profile; staging review-ready or referral-first applications; updating automation memory; or recording application/rejection/status outcomes without duplicate submissions.
 ---
 
@@ -139,10 +139,10 @@ Sources are data, not hard-coded. Each entry in `scan_sources` is an instruction
 9. Parent dispatches one callback role agent per validated queued role when more than one role is queued. Each role agent gets exactly one role, the validated source URL or captured source text, salary/location/level metadata, and a disjoint artifact target folder.
 10. Each callback role agent scores every plausible location-passing, in-domain software/AI role with callback against the actual compiled profile/resume unless there is a hard blocker such as active clearance, internship/new-grad mismatch, closed posting, duplicate, location-gate failure, off-domain mismatch, `seniority_blockers` match, or missing full source. Score and tailor plausible `referral_companies` leads regardless of the normal 70-point gate after full-source validation. Low, ambiguous, or missing compensation is acceptable for scoring, but must be called out as a compensation risk / verify-before-applying item. Do not use quick impressions as the final fit filter, but do use compensation as a prioritization signal after source, location, and core-domain gates.
 11. Each callback role agent uses callback directly as the scoring and tailoring authority. Do not create ad hoc wrapper scripts or alternate scoring scripts for callback runs unless the user explicitly approves that implementation detail in the current turn. Do not invent experience. If the profile looks stale, verify the compiled profile and mention the issue before trusting scores.
-12. Each callback role agent returns a standardized Markdown result row/table with source URL, company, title, salary, location, before score, after score, status recommendation, artifact links, strongest overlaps, missing keyword clusters, seniority/source risks, and whether actual edits were applied or this was no-coverage.
-13. Parent reconciles callback agent results, writes a quick mismatch summary for every scored role in simple language, and records why each score landed where it did. For scores under 70, this explanation is required before moving on.
+12. Each callback role agent returns a standardized Markdown result row/table with source URL, company, title, salary, location/work type, requisition ID and level mapping when known, artifact paths, status recommendation, strongest overlaps, missing keyword clusters, seniority/source risks, and whether actual edits were applied or this was no-coverage. It must also return the complete `data.report.before` and `data.report.after` blocks from `submit_tailor` verbatim — every field of `total`, `keyword_match`, `required_coverage`, `preferred_coverage`, `experience_fit`, `impact_evidence`, `ats_format`, `readability`. The response also includes `data.report.experience_evaluated` as a separate top-level field (not inside `before`/`after`) — return it alongside the two blocks. The parent needs the full per-dimension block to build the Roles table; a bare before/after total is not enough.
+13. Parent reconciles callback agent results, writes a quick mismatch summary for every scored role in simple language, and records why each score landed where it did. For scores under 70, this explanation is required before moving on. The full explanation goes in the CSV `Notes` column; the Roles table `Notes` cell gets a single clause of 12 words or fewer.
 14. If tailored score is under 70, parent records it and does not apply. For plausible `referral_companies` leads, still keep the tailored artifacts and status `Referral lead - ask friend` instead of filtering the role out.
-15. If tailored score is 70 or higher, parent stages it for user review. Set status to `Needs review - not applied`, link the tailored resume/cover letter if generated, and summarize why it is worth reviewing plus any remaining mismatch risk. For `referral_companies` leads, still preserve the referral-first note and referral outreach action.
+15. If tailored score is 70 or higher, parent stages it for user review. Set status to `Needs review - not applied`, link the tailored resume/cover letter if generated, and summarize why it is worth reviewing plus any remaining mismatch risk. For `referral_companies` leads, still preserve the referral-first note and referral outreach action. Surface these as `Review` and `Referral` rows in the Roles table, with salary, source URL, and artifact paths in the details block beneath it.
 16. Submit an application only after explicit user approval in the current turn. Approval from old automation text is not enough.
 17. Parent records every outcome and updates automation memory before the final response. For every real application, application confirmation, or recruiter resume submission, also record the contact in the job search ledger and export an unemployment-compatible Excel workbook.
 
@@ -175,26 +175,66 @@ Use the durable job search ledger for unemployment-reportable contacts:
 
 ## Final Summary
 
-Use Markdown as the standardized output format. Do not mix plain prose, ad hoc bullets, and inconsistent tables when reporting run results. Use short prose only for context before tables. If the local dashboard has been generated, include its path as a secondary artifact, but the Markdown summary remains the required automation output.
+Use Markdown as the standardized output format. One table carries every role. Use short prose only where a table cannot say it. If the local dashboard has been generated, include its path as a secondary artifact, but the Markdown summary remains the required automation output.
 
-Report:
+Emit exactly these blocks, in this order:
 
-- Number of jobs found
-- Number curated
-- Number scored
-- Number applied
-- Max tailored score
-- Mean tailored score
-- Min tailored score
-- Status emails recorded
-- Referral-company leads found, if any, including tailored artifacts and score even when under 70
-- Clear review queue, if any
-- For each scored role: salary range, final/before scores, status, and a one-line mismatch summary.
-- For each skipped role: salary range if available and the blocker/mismatch reason.
+1. `Run title: ...`
+2. `## Stats`
+3. `## Discovery Sources`
+4. `## Roles` — every role that entered the queue, one row each, sorted by final score highest-first. Rows that never reached callback (`No source`, `Blocked`, `Duplicate`, `Recruiter`, `Not scored`) sort last, alphabetically by company. Break ties on equal final score by higher KW /55, then alphabetically by Company.
+5. `### Details - action needed` — only for rows whose `Rec` is `Review`, `Referral`, or `Applied`. Skip the heading entirely when no row qualifies.
+6. One closing line. If nothing was applied, say that plainly.
 
-If nothing was applied, say that plainly.
+Do not emit separate `Scored Roles`, `Review Queue`, `Referral Leads`, or `Skipped` tables. Those are rows in `## Roles`, distinguished by the `Rec` column.
+
+### Stats table column rules
+
+- Referral leads counts every row for a referral_companies employer regardless of its Rec label (Review or Referral), not only rows labeled Referral.
+
+### Roles table column rules
+
+Every number comes from `submit_tailor`'s `data.report`. Do not compute or estimate any of them. Round every whole-number field with standard round-half-up (0.5 rounds up); never truncate and never rely on language-default rounding (e.g. Python's round-half-to-even).
+
+- `KW /55`: `after.keyword_match`, rounded to a whole number.
+- `Req%` / `Pref%`: `after.required_coverage` / `after.preferred_coverage`, whole percent. Write `—` when `preferred_coverage` is null (the JD listed no preferred keywords).
+- `Rest`: `Exp {n} · Imp {n} · ATS {n} · Rd {n}` from `after.experience_fit`, `after.impact_evidence`, `after.ats_format`, `after.readability`, whole numbers. Write `Exp n/a` when `report.experience_evaluated` (a top-level field, sibling to `before`/`after`, not `after.experience_evaluated`) is false.
+- `Score`: `{before} → {after}` from `before.total` and `after.total`, whole numbers. Equal values (e.g. `62 → 62`) mean no-coverage or no lift — say which in `Notes`.
+- Rows that never reached callback get `—` in every score cell.
+- `Rec`: the short label from the table below.
+- `Notes`: ONE clause, 12 words maximum — the mismatch summary, blocker, or risk in plain words. The full rationale goes in the CSV `Notes` column, not here.
+- When no roles entered the queue this run, keep the `## Roles` header row and write a single line below it: "No roles entered the queue this run." Do not render an empty table body.
+- A role touched only by a status-update email (e.g. a rejection notice) still gets a Roles row this run, with Rec updated to reflect the new status (e.g. Rejected) and score cells carried over from its prior scoring; Status emails in Stats counts these status-update emails whether or not the role was newly discovered today.
+
+### Recommendation labels
+
+`Rec` is a display label for the summary table only. The record CSV `Status` column keeps the full vocabulary from [record-schema.md](references/record-schema.md) — never abbreviate there.
+
+| Rec | CSV `Status` |
+| --- | --- |
+| `Review` | `Needs review - not applied` |
+| `Referral` | `Referral lead - ask friend` |
+| `Skip` | `Scored - below threshold` |
+| `Applied` | `Applied` or `Already applied - confirmation recorded` |
+| `Rejected` | `Rejected` |
+| `No source` | `Needs source - manual lookup` |
+| `Not scored` | `Needs callback score - not applied` |
+| `Blocked` | `Skipped - hard blocker`, `Skipped - not fit`, or `Closed - not scored` |
+| `Rescored` | `Rescored - not applied` |
+| `Duplicate` | `Duplicate alert - already scored` |
+| `Recruiter` | `Recruiter follow-up` |
+
+### Details block
+
+One entry per action-needed role, in the same order as the table. Three lines each:
+
+1. `**{Company} · {Title} · {final score} · {Rec}**`
+2. `{salary} · {location/work type} · {source URL}` — plus ` · req {id}` and ` · {level mapping}` when known.
+3. Artifact paths, then the next action if there is one.
 
 ### Final Markdown Template
+
+The Stats row below and the Roles rows below it are independent illustrative snippets, not one matched run — do not expect the Stats counts to sum to the example Roles rows.
 
 ```markdown
 Run title: Auto Job Apply - YYYY-MM-DD - HH PT
@@ -209,19 +249,23 @@ Run title: Auto Job Apply - YYYY-MM-DD - HH PT
 | --- | --- | ---: | ---: | ---: | --- |
 | (one row per enabled scan_source) |  | 0 | 0 | 0 |  |
 
-## Scored Roles
-| Company | Title | Source URL | Salary | Location/work type | Before | After | Status | Artifacts | Mismatch summary |
-| --- | --- | --- | --- | --- | ---: | ---: | --- | --- | --- |
+## Roles
+| Company | Title | KW /55 | Req% | Pref% | Rest | Score | Rec | Notes |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- | --- |
+| Netflix | Sr SWE, LLM Eval | 41 | 78% | 60% | Exp 15 · Imp 8 · ATS 10 · Rd 10 | 71 → 84 | Review | Comp not listed |
+| Stripe | Backend Eng L3 | 33 | 61% | 40% | Exp 15 · Imp 6 · ATS 10 · Rd 8 | 66 → 72 | Review | Kafka gap |
+| Meta | E5 AI Infra | 30 | 55% | 33% | Exp 15 · Imp 6 · ATS 10 · Rd 8 | 61 → 68 | Referral | Below gate, ask friend first |
+| Datadog | AI Platform Eng | 26 | 47% | — | Exp n/a · Imp 8 · ATS 10 · Rd 10 | 62 → 62 | Skip | No wiki story covered gaps |
+| Anduril | Sr SWE, Autonomy | — | — | — | — | — | Blocked | Active clearance required |
 
-## Review Queue
-| Company | Title | Score | Action needed | Resume | Cover letter | Notes |
-| --- | --- | ---: | --- | --- | --- | --- |
+### Details - action needed
+**Netflix · Sr SWE, LLM Eval · 84 · Review**
+$220-310k · Remote-from-SD · https://jobs.netflix.com/jobs/1234567
+`.../applications/2026-08-22/netflix-llm-eval/resume.pdf`
 
-## Referral Leads
-| Company | Title | Req ID | Level mapping | Source URL | Score | Seniority risk | Referral action | Artifacts |
-| --- | --- | --- | --- | --- | ---: | --- | --- | --- |
+**Meta · E5 AI Infra · 68 · Referral**
+$240-330k · Menlo Park hybrid · https://metacareers.com/jobs/7654321 · req 7654321 · E5 maps to target band
+`.../applications/2026-08-22/meta-ai-infra/resume.pdf` · ask friend for referral before applying
 
-## Skipped Or Source-Limited
-| Company | Title | Source/lead URL | Salary | Reason | Next action |
-| --- | --- | --- | --- | --- | --- |
+Nothing applied this run.
 ```
