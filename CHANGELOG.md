@@ -16,6 +16,20 @@
 - Existing users must re-run `onboard_user` after upgrading to the HTML renderer + extractor fixes. Older `sections.json` files may contain corrupted contact fields (for example duplicated email or incorrect location).
 - A host that emits `required_any` or `preferred_any` against an OLD callback server is silently degraded: `dataclass_wizard` drops the unknown key, so the group is ignored (not matched, not reported). Upgrade the server before relying on either.
 
+## [1.4.0](https://github.com/thedandano/callback/compare/v1.3.1...v1.4.0) (2026-08-23)
+
+
+### Features
+
+* **skill:** merge auto-job-apply role tables into one scored summary table ([d49c7e1](https://github.com/thedandano/callback/commit/d49c7e1f0c74fd3d01fd4fc3e2e5d1f59bd8b5a8))
+
+
+### Bug Fixes
+
+* **skill:** address PR review on the auto-job-apply summary table ([b60fe09](https://github.com/thedandano/callback/commit/b60fe092cc61e664191c76e87a4c1f80dbde3386))
+* **skill:** key remaining summary rules on condition, not label ([945642b](https://github.com/thedandano/callback/commit/945642b4ae61ac7868aa89f189886d45a9545662))
+* **skill:** widen Roles scope and details eligibility ([d99cfb5](https://github.com/thedandano/callback/commit/d99cfb556424a9d44648a750d40c4b6ace603fe0))
+
 ## [1.3.1](https://github.com/thedandano/callback/compare/v1.3.0...v1.3.1) (2026-08-22)
 
 
