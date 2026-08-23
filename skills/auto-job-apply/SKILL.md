@@ -182,8 +182,8 @@ Emit exactly these blocks, in this order:
 1. `Run title: ...`
 2. `## Stats`
 3. `## Discovery Sources`
-4. `## Roles` — every role that entered the queue, one row each, sorted by final score highest-first. Rows that never reached callback (`No source`, `Blocked`, `Duplicate`, `Recruiter`, `Not scored`) sort last, alphabetically by company. Break ties on equal final score by higher KW /55, then alphabetically by Company.
-5. `### Details - action needed` — only for rows whose `Rec` is `Review`, `Referral`, `Applied`, or `No source`. Skip the heading entirely when no row qualifies.
+4. `## Roles` — every lead reconciled this run, one row each, sorted by final score highest-first. That includes leads dropped before the queue existed: deduped at Workflow step 5 (`Duplicate`) or cut by the curation gates and hard blockers at step 6 (`Blocked`). A lead that was looked at and rejected still gets a row; only leads never surfaced by a curator are absent. Rows that never reached callback (`No source`, `Blocked`, `Duplicate`, `Recruiter`, `Not scored`) sort last, alphabetically by company. Break ties on equal final score by higher KW /55, then alphabetically by Company.
+5. `### Details - action needed` — only for rows whose `Rec` is `Review`, `Referral`, `Applied`, `No source`, `Not scored`, or `Recruiter`. Rows whose `Rec` is terminal for the run (`Skip`, `Rejected`, `Blocked`, `Duplicate`, `Rescored`) get no details entry. Skip the heading entirely when no row qualifies.
 6. One closing line. If nothing was applied, say that plainly.
 
 Do not emit separate `Scored Roles`, `Review Queue`, `Referral Leads`, or `Skipped` tables. Those are rows in `## Roles`, distinguished by the `Rec` column.
@@ -203,7 +203,7 @@ Every number comes from `submit_tailor`'s `data.report`. Do not compute or estim
 - Rows that never reached callback get `—` in every score cell.
 - `Rec`: the short label from the table below.
 - `Notes`: ONE clause, 12 words maximum — the mismatch summary, blocker, or risk in plain words. The full rationale goes in the CSV `Notes` column, not here.
-- When no roles entered the queue this run, keep the `## Roles` header row and write a single line below it: "No roles entered the queue this run." Do not render an empty table body.
+- When no leads were reconciled this run, keep the `## Roles` header row and write a single line below it: "No leads reconciled this run." Do not render an empty table body.
 - A role touched only by a status-update email (e.g. a rejection notice) still gets a Roles row this run, with `Rec` updated to the new status (e.g. `Rejected`). Carry over ONLY the two totals the CSV stores, as `{before} → {after}` in `Score`; render `KW /55`, `Req%`, `Pref%`, and `Rest` as `—`. The CSV keeps no per-dimension history, so those numbers are genuinely unknown — do not reconstruct them, and do not rerun callback against a posting that may have changed since. `Status emails` in Stats counts these status-update emails whether or not the role was newly discovered today.
 
 ### Recommendation labels
@@ -228,11 +228,15 @@ Every number comes from `submit_tailor`'s `data.report`. Do not compute or estim
 
 One entry per action-needed role, in the same order as the table. Three lines each:
 
-1. `**{Company} · {Title} · {final score} · {Rec}**` — write `not scored` in place of the score for a `No source` row.
+1. `**{Company} · {Title} · {final score} · {Rec}**` — write `not scored` in place of the score for any row that has no final score, whatever its `Rec` label.
 2. `{salary} · {location/work type} · {source URL}` — plus ` · req {id}` and ` · {level mapping}` when known. Write `Not listed` for a missing salary and `Unknown` for a missing location; never omit a field silently.
 3. Artifact paths, then the next action if there is one.
 
 A `No source` row has no source URL and no artifacts — that is the whole reason it is here. Give it the lead/candidate URL on line 2 instead, and on line 3 the resolver steps already tried, so the user can pick up the manual lookup where the automation stopped rather than starting over.
+
+A `Not scored` row already has a validated full source — line 2 carries that source URL. On line 3, say to rerun callback against it and state why scoring was unavailable this run.
+
+A `Recruiter` row has a thread, not a posting — line 2 carries the thread descriptor in place of the source URL. On line 3, state the pending decision or reply the user owes.
 
 ### Final Markdown Template
 
@@ -260,6 +264,8 @@ Run title: Auto Job Apply - YYYY-MM-DD - HH PT
 | Meta | E5 AI Infra | 30 | 55% | 33% | Exp 15 · Imp 6 · ATS 10 · Rd 8 | 61 → 68 | Referral | Below gate, ask friend first |
 | Datadog | AI Platform Eng | 26 | 47% | — | Exp n/a · Imp 8 · ATS 10 · Rd 10 | 62 → 62 | Skip | No wiki story covered gaps |
 | Anduril | Sr SWE, Autonomy | — | — | — | — | — | Blocked | Active clearance required |
+| Figma | Product Eng, AI Tools | — | — | — | — | — | Not scored | Source validated, callback unavailable this session |
+| Sourcegraph | Staff Backend Eng | — | — | — | — | — | Recruiter | Recruiter thread, reply owed |
 | Vercel | AI Infra Eng | — | — | — | — | — | No source | Login wall, needs manual lookup |
 
 ### Details - action needed
@@ -274,6 +280,14 @@ $190-240k · Remote-from-SD · https://stripe.com/jobs/listing/2345678
 **Meta · E5 AI Infra · 68 · Referral**
 $240-330k · Menlo Park hybrid · https://metacareers.com/jobs/7654321 · req 7654321 · E5 maps to target band
 `.../applications/2026-08-22/meta-ai-infra/resume.pdf` · ask friend for referral before applying
+
+**Figma · Product Eng, AI Tools · not scored · Not scored**
+$180-250k · Remote-from-SD · https://boards.greenhouse.io/figma/jobs/5555555
+Rerun callback against the validated source — MCP scoring was unavailable this session.
+
+**Sourcegraph · Staff Backend Eng · not scored · Recruiter**
+Not listed · Unknown · thread: "Staff Backend Eng at Sourcegraph" from recruiter, 2026-08-20
+Reply owed: confirm interest and availability for an intro call.
 
 **Vercel · AI Infra Eng · not scored · No source**
 Not listed · Unknown · lead: https://mail.google.com/mail/u/0/#inbox/abc123
