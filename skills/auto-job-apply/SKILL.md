@@ -183,7 +183,7 @@ Emit exactly these blocks, in this order:
 2. `## Stats`
 3. `## Discovery Sources`
 4. `## Roles` — every role that entered the queue, one row each, sorted by final score highest-first. Rows that never reached callback (`No source`, `Blocked`, `Duplicate`, `Recruiter`, `Not scored`) sort last, alphabetically by company. Break ties on equal final score by higher KW /55, then alphabetically by Company.
-5. `### Details - action needed` — only for rows whose `Rec` is `Review`, `Referral`, or `Applied`. Skip the heading entirely when no row qualifies.
+5. `### Details - action needed` — only for rows whose `Rec` is `Review`, `Referral`, `Applied`, or `No source`. Skip the heading entirely when no row qualifies.
 6. One closing line. If nothing was applied, say that plainly.
 
 Do not emit separate `Scored Roles`, `Review Queue`, `Referral Leads`, or `Skipped` tables. Those are rows in `## Roles`, distinguished by the `Rec` column.
@@ -204,7 +204,7 @@ Every number comes from `submit_tailor`'s `data.report`. Do not compute or estim
 - `Rec`: the short label from the table below.
 - `Notes`: ONE clause, 12 words maximum — the mismatch summary, blocker, or risk in plain words. The full rationale goes in the CSV `Notes` column, not here.
 - When no roles entered the queue this run, keep the `## Roles` header row and write a single line below it: "No roles entered the queue this run." Do not render an empty table body.
-- A role touched only by a status-update email (e.g. a rejection notice) still gets a Roles row this run, with Rec updated to reflect the new status (e.g. Rejected) and score cells carried over from its prior scoring; Status emails in Stats counts these status-update emails whether or not the role was newly discovered today.
+- A role touched only by a status-update email (e.g. a rejection notice) still gets a Roles row this run, with `Rec` updated to the new status (e.g. `Rejected`). Carry over ONLY the two totals the CSV stores, as `{before} → {after}` in `Score`; render `KW /55`, `Req%`, `Pref%`, and `Rest` as `—`. The CSV keeps no per-dimension history, so those numbers are genuinely unknown — do not reconstruct them, and do not rerun callback against a posting that may have changed since. `Status emails` in Stats counts these status-update emails whether or not the role was newly discovered today.
 
 ### Recommendation labels
 
@@ -228,9 +228,11 @@ Every number comes from `submit_tailor`'s `data.report`. Do not compute or estim
 
 One entry per action-needed role, in the same order as the table. Three lines each:
 
-1. `**{Company} · {Title} · {final score} · {Rec}**`
-2. `{salary} · {location/work type} · {source URL}` — plus ` · req {id}` and ` · {level mapping}` when known.
+1. `**{Company} · {Title} · {final score} · {Rec}**` — write `not scored` in place of the score for a `No source` row.
+2. `{salary} · {location/work type} · {source URL}` — plus ` · req {id}` and ` · {level mapping}` when known. Write `Not listed` for a missing salary and `Unknown` for a missing location; never omit a field silently.
 3. Artifact paths, then the next action if there is one.
+
+A `No source` row has no source URL and no artifacts — that is the whole reason it is here. Give it the lead/candidate URL on line 2 instead, and on line 3 the resolver steps already tried, so the user can pick up the manual lookup where the automation stopped rather than starting over.
 
 ### Final Markdown Template
 
@@ -253,19 +255,29 @@ Run title: Auto Job Apply - YYYY-MM-DD - HH PT
 | Company | Title | KW /55 | Req% | Pref% | Rest | Score | Rec | Notes |
 | --- | --- | ---: | ---: | ---: | --- | ---: | --- | --- |
 | Netflix | Sr SWE, LLM Eval | 41 | 78% | 60% | Exp 15 · Imp 8 · ATS 10 · Rd 10 | 71 → 84 | Review | Comp not listed |
+| Ramp | Sr Backend Eng | — | — | — | — | 74 → 74 | Rejected | Rejection email, no rescore |
 | Stripe | Backend Eng L3 | 33 | 61% | 40% | Exp 15 · Imp 6 · ATS 10 · Rd 8 | 66 → 72 | Review | Kafka gap |
 | Meta | E5 AI Infra | 30 | 55% | 33% | Exp 15 · Imp 6 · ATS 10 · Rd 8 | 61 → 68 | Referral | Below gate, ask friend first |
 | Datadog | AI Platform Eng | 26 | 47% | — | Exp n/a · Imp 8 · ATS 10 · Rd 10 | 62 → 62 | Skip | No wiki story covered gaps |
 | Anduril | Sr SWE, Autonomy | — | — | — | — | — | Blocked | Active clearance required |
+| Vercel | AI Infra Eng | — | — | — | — | — | No source | Login wall, needs manual lookup |
 
 ### Details - action needed
 **Netflix · Sr SWE, LLM Eval · 84 · Review**
 $220-310k · Remote-from-SD · https://jobs.netflix.com/jobs/1234567
 `.../applications/2026-08-22/netflix-llm-eval/resume.pdf`
 
+**Stripe · Backend Eng L3 · 72 · Review**
+$190-240k · Remote-from-SD · https://stripe.com/jobs/listing/2345678
+`.../applications/2026-08-22/stripe-backend-l3/resume.pdf`
+
 **Meta · E5 AI Infra · 68 · Referral**
 $240-330k · Menlo Park hybrid · https://metacareers.com/jobs/7654321 · req 7654321 · E5 maps to target band
 `.../applications/2026-08-22/meta-ai-infra/resume.pdf` · ask friend for referral before applying
+
+**Vercel · AI Infra Eng · not scored · No source**
+Not listed · Unknown · lead: https://mail.google.com/mail/u/0/#inbox/abc123
+Tried lead URL, Apply-on-employer link, and site search for "Vercel AI Infra Eng" — all hit a login wall. Open the posting manually and rerun.
 
 Nothing applied this run.
 ```
