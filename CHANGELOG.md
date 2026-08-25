@@ -16,6 +16,13 @@
 - Existing users must re-run `onboard_user` after upgrading to the HTML renderer + extractor fixes. Older `sections.json` files may contain corrupted contact fields (for example duplicated email or incorrect location).
 - A host that emits `required_any` or `preferred_any` against an OLD callback server is silently degraded: `dataclass_wizard` drops the unknown key, so the group is ignored (not matched, not reported). Upgrade the server before relying on either.
 
+## [1.4.1](https://github.com/thedandano/callback/compare/v1.4.0...v1.4.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* **plugin:** drop command wrappers that duplicate skill registrations ([80e2c92](https://github.com/thedandano/callback/commit/80e2c920400596fb6cb19188991426ae0b2ab0ff))
+
 ## [1.4.0](https://github.com/thedandano/callback/compare/v1.3.1...v1.4.0) (2026-08-23)
 
 
