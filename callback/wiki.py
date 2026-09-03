@@ -8,6 +8,10 @@ from pathlib import Path
 BASE_DIR = Path.home() / ".local" / "share" / "callback" / "profile-wiki"
 
 
+class WikiPageIdError(ValueError):
+    """A page_id resolves outside the wiki root."""
+
+
 def company_slug(company_name: str) -> str:
     """Convert company name to lowercase hyphenated alphanumeric slug.
 
@@ -37,7 +41,7 @@ class WikiStore:
         root = self.wiki_root(resume_label).resolve()
         path = (root / page_id).resolve()
         if not path.is_relative_to(root):
-            raise ValueError(f"page_id escapes wiki root: {page_id!r}")
+            raise WikiPageIdError(f"page_id escapes wiki root: {page_id!r}")
         return path
 
     def write_page(self, resume_label: str, page_id: str, content: str) -> None:
@@ -59,5 +63,5 @@ class WikiStore:
         result = {}
         for page_id in page_ids:
             p = self._page_path(resume_label, page_id)
-            result[page_id] = p.read_text(encoding="utf-8") if p.exists() else ""
+            result[page_id] = p.read_text(encoding="utf-8") if p.is_file() else ""
         return result

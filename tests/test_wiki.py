@@ -82,3 +82,9 @@ def test_read_pages_allows_nested_ids(tmp_path, monkeypatch):
         "experience/acme.md": "acme",
         "./experience/acme.md": "acme",
     }
+
+
+def test_read_pages_returns_empty_for_directory_ids(tmp_path, monkeypatch):
+    s = store(tmp_path, monkeypatch)
+    s.write_page("r", "experience/acme.md", "acme")
+    assert s.read_pages("r", ["", ".", "experience"]) == {"": "", ".": "", "experience": ""}

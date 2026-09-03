@@ -52,7 +52,7 @@ from callback.repository.preferences import PreferencesStore
 from callback.repository.resumes import list_resumes
 from callback.section_map import SectionMap, apply_edit
 from callback.state import ApplyState, ProfileState
-from callback.wiki import WikiStore
+from callback.wiki import WikiPageIdError, WikiStore
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 _LOG_FORMAT = "%(message)s"  # messages are already JSON strings
@@ -1461,7 +1461,7 @@ def _get_wiki_pages_impl(session_id: str, page_ids: list[str]) -> str:
 
     try:
         pages = WikiStore().read_pages(resume_label, page_ids)
-    except ValueError as exc:
+    except WikiPageIdError as exc:
         _log(
             "WARNING",
             {"tool": "get_wiki_pages", "session_id": session_id, "event": "invalid_page_id"},
