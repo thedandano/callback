@@ -72,6 +72,28 @@ class TestContactInfoParsing:
             location="San Francisco, CA",
         )
 
+    def test_year_range_is_not_phone(self):
+        lines = [
+            "Jane Smith",
+            "Senior Engineer, 2019 - 2023",
+            "jane.smith@example.com",
+        ]
+        assert _parse_contact_info(lines) == ContactInfo(
+            name="Jane Smith",
+            email="jane.smith@example.com",
+        )
+
+    def test_dotted_year_range_is_not_phone(self):
+        lines = [
+            "Jane Smith",
+            "2018.2022",
+            "jane.smith@example.com",
+        ]
+        assert _parse_contact_info(lines) == ContactInfo(
+            name="Jane Smith",
+            email="jane.smith@example.com",
+        )
+
     def test_name_extracted(self):
         lines = [
             "Jane Smith",

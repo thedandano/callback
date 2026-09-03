@@ -269,6 +269,7 @@ def _parse_education(raw: list[str]) -> list[EducationEntry]:
 _EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
 _PHONE_RE = re.compile(r"[\+\(]?[\d\s\(\)\-\.]{7,15}\d")
 _URL_RE = re.compile(r"https?://\S+")
+_YEAR_PAIR_RE = re.compile(r"(?:19|20)\d{2}(?:19|20)\d{2}")
 
 
 def _process_url_line(stripped: str) -> tuple[str | None, str | None]:
@@ -290,7 +291,15 @@ def _extract_phone_candidate(stripped: str) -> str | None:
     if not ph:
         return None
     candidate = ph.group(0).strip()
-    return candidate if len(re.sub(r"\D", "", candidate)) >= 7 else None
+    digits = re.sub(r"\D", "", candidate)
+    if len(digits) < 7 or _YEAR_PAIR_RE.fullmatch(digits):
+        return None
+    return candidate
+
+
+def _is_year_pair_line(stripped: str) -> bool:
+    """True when a line's digits are exactly two four-digit years (a date range)."""
+    return bool(_YEAR_PAIR_RE.fullmatch(re.sub(r"\D", "", stripped)))
 
 
 def _extract_location_from_contact_line(stripped: str) -> str | None:
@@ -368,6 +377,7 @@ def _phase3_find_location(
             and ":" not in stripped
             and "@" not in stripped
             and not (stripped == stripped.upper() and any(c.isalpha() for c in stripped))
+            and not _is_year_pair_line(stripped)
             and location is None
         ):
             location = stripped
