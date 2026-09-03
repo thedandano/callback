@@ -491,6 +491,18 @@ def _err(
     return json.dumps(env)
 
 
+def _unexpected_error(stage: str, session_id: str) -> str:
+    """Log the active exception with traceback and return an unexpected_error envelope."""
+    _log_exception({"tool": stage, "session_id": session_id, "event": "unexpected_error"})
+    return _err(
+        stage=stage,
+        code="unexpected_error",
+        message=f"unexpected {stage} failure; inspect callback logs",
+        session_id=session_id,
+        retriable=False,
+    )
+
+
 def _submit_keywords_state_error(graph, config, session_id: str) -> str | None:
     """Return an error envelope if submit_keywords cannot resume safely."""
     snapshot = graph.get_state(config)
@@ -831,6 +843,25 @@ def submit_keywords(session_id: str, jd_json: str) -> str:
     return _submit_keywords_impl(session_id, jd_json)
 
 
+def _submit_keywords_invoke(
+    graph, config, keywords: dict, session_id: str
+) -> tuple[dict, None] | tuple[None, str]:
+    """Update graph state with keywords and invoke the graph, mapping raised errors to envelopes."""
+    try:
+        graph.update_state(config, {"keywords": keywords})
+        return invoke_graph_without_native_tracing(graph, None, config), None
+    except ValueError as exc:
+        return None, _err(
+            stage="submit_keywords",
+            code="invalid_session",
+            message=str(exc),
+            session_id=session_id,
+            retriable=False,
+        )
+    except Exception:
+        return None, _unexpected_error("submit_keywords", session_id)
+
+
 @trace_tool("submit_keywords", graph_name="apply")
 def _submit_keywords_impl(session_id: str, jd_json: str) -> str:
     _log("INFO", {"tool": "submit_keywords", "session_id": session_id})
@@ -852,17 +883,10 @@ def _submit_keywords_impl(session_id: str, jd_json: str) -> str:
     if state_error is not None:
         return state_error
 
-    try:
-        graph.update_state(config, {"keywords": keywords})
-        state = invoke_graph_without_native_tracing(graph, None, config)
-    except ValueError as exc:
-        return _err(
-            stage="submit_keywords",
-            code="invalid_session",
-            message=str(exc),
-            session_id=session_id,
-            retriable=False,
-        )
+    state, invoke_error = _submit_keywords_invoke(graph, config, keywords, session_id)
+    if invoke_error is not None:
+        return invoke_error
+    assert state is not None
 
     data: dict = {"keywords": state.get("keywords")}
 
@@ -960,6 +984,41 @@ def submit_tailor(
     return _submit_tailor_impl(session_id, edits, no_coverage=no_coverage, output_dir=output_dir)
 
 
+def _submit_tailor_no_coverage(session_id: str, graph, config, resolved_output_dir) -> str:
+    """Run the graph for the no_coverage path and build its success/error envelope."""
+    graph.update_state(config, {"no_coverage": True, "output_dir": resolved_output_dir})
+    try:
+        invoke_graph_without_native_tracing(graph, None, config)
+    except Exception:
+        return _unexpected_error("submit_tailor", session_id)
+    final_snapshot = graph.get_state(config)
+    final = final_snapshot.values
+    if final.get("error"):
+        return _err("submit_tailor", "pipeline_error", final["error"], session_id)
+    artifacts = _submit_tailor_artifacts(final, session_id)
+    return _ok(
+        session_id,
+        next_action=None,
+        data={
+            "edits_applied": [],
+            "edits_rejected": [],
+            "uncovered_skills": [],
+            "pdf_path": artifacts["pdf_path"],
+            "archive_path": artifacts["archive_path"],
+            "score_final": final.get("score_final"),
+            "report": final.get("report"),
+            "tailor_diagnostics": [],
+            "outcome": (final.get("report") or {}).get("no_coverage")
+            and {
+                "no_coverage": True,
+                "reason": "no wiki stories cover required keywords",
+            }
+            or {"no_coverage": False, "reason": None},
+        },
+        workflow=_complete_workflow(),
+    )
+
+
 @trace_tool("submit_tailor", graph_name="apply")
 def _submit_tailor_impl(
     session_id: str,
@@ -990,34 +1049,7 @@ def _submit_tailor_impl(
         return output_dir_error
 
     if no_coverage:
-        graph.update_state(config, {"no_coverage": True, "output_dir": resolved_output_dir})
-        invoke_graph_without_native_tracing(graph, None, config)
-        final_snapshot = graph.get_state(config)
-        final = final_snapshot.values
-        if final.get("error"):
-            return _err("submit_tailor", "pipeline_error", final["error"], session_id)
-        artifacts = _submit_tailor_artifacts(final, session_id)
-        return _ok(
-            session_id,
-            next_action=None,
-            data={
-                "edits_applied": [],
-                "edits_rejected": [],
-                "uncovered_skills": [],
-                "pdf_path": artifacts["pdf_path"],
-                "archive_path": artifacts["archive_path"],
-                "score_final": final.get("score_final"),
-                "report": final.get("report"),
-                "tailor_diagnostics": [],
-                "outcome": (final.get("report") or {}).get("no_coverage")
-                and {
-                    "no_coverage": True,
-                    "reason": "no wiki stories cover required keywords",
-                }
-                or {"no_coverage": False, "reason": None},
-            },
-            workflow=_complete_workflow(),
-        )
+        return _submit_tailor_no_coverage(session_id, graph, config, resolved_output_dir)
 
     state_values = snapshot.values
     sections_dict = state_values.get("sections")
@@ -1070,7 +1102,10 @@ def _apply_tailor_edits(
             "output_dir": output_dir,
         },
     )
-    invoke_graph_without_native_tracing(graph, None, config)
+    try:
+        invoke_graph_without_native_tracing(graph, None, config)
+    except Exception:
+        return _unexpected_error("submit_tailor", session_id)
 
     final_snapshot = graph.get_state(config)
     final = final_snapshot.values

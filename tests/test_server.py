@@ -524,6 +524,33 @@ def test_submit_keywords_rejects_blank_session_with_session_id():
     assert result == expected
 
 
+def test_submit_keywords_returns_envelope_when_extractor_raises(tmp_path, monkeypatch):
+    from callback.server import load_jd, submit_keywords
+
+    with patch("callback.server.list_resumes", return_value=["resume"]):
+        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+    session_id = loaded["session_id"]
+
+    def broken_extract(path):
+        raise RuntimeError("extractor: PDF yielded no text")
+
+    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", broken_extract)
+    with patch("callback.apply_nodes.get_resume", return_value=str(tmp_path / "resume.pdf")):
+        result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+
+    expected = {
+        "status": "error",
+        "error": {
+            "stage": "submit_keywords",
+            "code": "unexpected_error",
+            "message": "unexpected submit_keywords failure; inspect callback logs",
+            "retriable": False,
+        },
+        "session_id": session_id,
+    }
+    assert result == expected
+
+
 def test_submit_keywords_rejects_session_not_waiting_for_keywords():
     from callback.server import load_jd, submit_keywords
 
