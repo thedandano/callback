@@ -74,13 +74,13 @@ Known defects, verified by running code:
 
 | # | Severity | Defect | Where |
 |---|----------|--------|-------|
-| D1 | High | `get_wiki_pages` page ids are not confined to the wiki root; `../../x` reads any readable file and returns it to the host | `callback/wiki.py:430` |
-| D2 | High | Re-onboarding with an existing profile skips the `onboard` node; crashes if orphans exist, silently no-ops otherwise | `callback/profile_graph.py:51` |
-| D3 | Med | Every log line is written to `server.log` twice | `callback/server.py:109` |
+| D1 | Fixed (M1) | `get_wiki_pages` page ids are not confined to the wiki root; `../../x` reads any readable file and returns it to the host | `callback/wiki.py:430` |
+| D2 | Fixed (M1) | Re-onboarding with an existing profile skips the `onboard` node; crashes if orphans exist, silently no-ops otherwise | `callback/profile_graph.py:51` |
+| D3 | Fixed (M1) | Every log line is written to `server.log` twice | `callback/server.py:109` |
 | D4 | Med | A render failure ends the graph; retrying `submit_tailor` returns `invalid_state`; only recovery is restarting from `load_jd` | `callback/apply_graph.py:768` |
 | D5 | Med | `XDG_DATA_HOME` honored by four stores, ignored by wiki, both checkpoint DBs, and applications dir | `callback/wiki.py`, `apply_graph.py`, `profile_graph.py`, `apply_nodes.py` |
-| D6 | Low | A bare year range in the resume header is captured as the phone number | `callback/extractor.py:735` |
-| D7 | Low | Extractor errors escape `submit_keywords` / `submit_tailor` as raw MCP failures instead of the envelope | `callback/server.py` |
+| D6 | Fixed (M1) | A bare year range in the resume header is captured as the phone number | `callback/extractor.py:735` |
+| D7 | Fixed (M1) | Extractor errors escape `submit_keywords` / `submit_tailor` as raw MCP failures instead of the envelope | `callback/server.py` |
 | D8 | Low | `_dump_toml` rewrites all of `~/.codex/config.toml`, drops comments, raises on arrays of tables | `callback/cli.py:215` |
 
 Known weight (works, but costs more than it earns):
@@ -110,7 +110,7 @@ the token diet so both are measured against something.
 
 ### M1 — Close the trust boundary (half a day)
 
-Ships: D1, D2, D3, D6, D7.
+Shipped 2026-09-03: D1, D2, D3, D6, D7.
 Done when: a test proves `../` page ids are rejected, a test proves re-onboarding with
 an existing profile replaces the resume, `server.log` has one line per event.
 
