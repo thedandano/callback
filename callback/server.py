@@ -849,7 +849,6 @@ def _submit_keywords_invoke(
     """Update graph state with keywords and invoke the graph, mapping raised errors to envelopes."""
     try:
         graph.update_state(config, {"keywords": keywords})
-        return invoke_graph_without_native_tracing(graph, None, config), None
     except ValueError as exc:
         return None, _err(
             stage="submit_keywords",
@@ -858,6 +857,8 @@ def _submit_keywords_invoke(
             session_id=session_id,
             retriable=False,
         )
+    try:
+        return invoke_graph_without_native_tracing(graph, None, config), None
     except Exception:
         return None, _unexpected_error("submit_keywords", session_id)
 

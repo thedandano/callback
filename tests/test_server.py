@@ -551,6 +551,67 @@ def test_submit_keywords_returns_envelope_when_extractor_raises(tmp_path, monkey
     assert result == expected
 
 
+def test_submit_keywords_reports_extractor_value_error_as_unexpected_error(tmp_path, monkeypatch):
+    from callback.server import load_jd, submit_keywords
+
+    with patch("callback.server.list_resumes", return_value=["resume"]):
+        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+    session_id = loaded["session_id"]
+
+    def broken_extract(path):
+        raise ValueError("extractor: unsupported format '.rtf' — expected .pdf, .docx, or .txt")
+
+    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", broken_extract)
+    with patch("callback.apply_nodes.get_resume", return_value=str(tmp_path / "resume.pdf")):
+        result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+
+    expected = {
+        "status": "error",
+        "error": {
+            "stage": "submit_keywords",
+            "code": "unexpected_error",
+            "message": "unexpected submit_keywords failure; inspect callback logs",
+            "retriable": False,
+        },
+        "session_id": session_id,
+    }
+    assert result == expected
+
+
+def test_submit_keywords_reports_checkpoint_value_error_as_invalid_session():
+    from callback.server import load_jd, submit_keywords
+
+    with patch("callback.server.list_resumes", return_value=["resume"]):
+        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+    session_id = loaded["session_id"]
+
+    class FakeSnapshot:
+        values = {"resume_label": "resume"}
+        next = ("keywords_accept",)
+
+    class FakeGraph:
+        def get_state(self, config):
+            return FakeSnapshot()
+
+        def update_state(self, config, values):
+            raise ValueError("checkpoint missing")
+
+    with patch("callback.server.build_apply_graph", return_value=FakeGraph()):
+        result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+
+    expected = {
+        "status": "error",
+        "error": {
+            "stage": "submit_keywords",
+            "code": "invalid_session",
+            "message": "checkpoint missing",
+            "retriable": False,
+        },
+        "session_id": session_id,
+    }
+    assert result == expected
+
+
 def test_submit_keywords_rejects_session_not_waiting_for_keywords():
     from callback.server import load_jd, submit_keywords
 
