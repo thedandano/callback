@@ -110,7 +110,7 @@ def _log(level: str, payload: dict) -> None:
     """Log a structured JSON message."""
     payload["timestamp"] = datetime.datetime.now(datetime.UTC).isoformat()
     payload["level"] = level
-    logger.info(json.dumps(payload))
+    logger.log(getattr(logging, level, logging.INFO), json.dumps(payload))
 
 
 def _log_exception(payload: dict) -> None:
