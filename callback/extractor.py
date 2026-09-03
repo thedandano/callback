@@ -314,6 +314,7 @@ def _extract_location_from_contact_line(stripped: str) -> str | None:
             and "@" not in part
             and "linkedin.com" not in part.lower()
             and _extract_phone_candidate(part) is None
+            and not _is_year_pair_line(part)
         ):
             return part
     return None
