@@ -32,9 +32,17 @@ class WikiStore:
         exp_dir.mkdir(parents=True, exist_ok=True)
         (exp_dir / f"{company_slug_}.md").write_text(content, encoding="utf-8")
 
+    def _page_path(self, resume_label: str, page_id: str) -> Path:
+        """Resolve page_id under the wiki root; reject ids that escape it."""
+        root = self.wiki_root(resume_label).resolve()
+        path = (root / page_id).resolve()
+        if not path.is_relative_to(root):
+            raise ValueError(f"page_id escapes wiki root: {page_id!r}")
+        return path
+
     def write_page(self, resume_label: str, page_id: str, content: str) -> None:
         """Write any page by page_id (path relative to wiki_root)."""
-        p = self.wiki_root(resume_label) / page_id
+        p = self._page_path(resume_label, page_id)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
 
@@ -45,11 +53,11 @@ class WikiStore:
     def read_pages(self, resume_label: str, page_ids: list[str]) -> dict[str, str]:
         """Return {page_id: content} for each requested page.
 
-        Missing pages return empty string.
+        Missing pages return empty string. Raises ValueError for a page_id
+        that resolves outside the wiki root.
         """
-        root = self.wiki_root(resume_label)
         result = {}
         for page_id in page_ids:
-            p = root / page_id
+            p = self._page_path(resume_label, page_id)
             result[page_id] = p.read_text(encoding="utf-8") if p.exists() else ""
         return result

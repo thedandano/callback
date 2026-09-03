@@ -1440,8 +1440,20 @@ def _get_wiki_pages_impl(session_id: str, page_ids: list[str]) -> str:
             session_id=session_id,
         )
 
-    store = WikiStore()
-    pages = store.read_pages(resume_label, page_ids)
+    try:
+        pages = WikiStore().read_pages(resume_label, page_ids)
+    except ValueError as exc:
+        _log(
+            "WARNING",
+            {"tool": "get_wiki_pages", "session_id": session_id, "event": "invalid_page_id"},
+        )
+        return _err(
+            stage="get_wiki_pages",
+            code="invalid_page_id",
+            message=str(exc),
+            session_id=session_id,
+            retriable=True,
+        )
     workflow = _workflow(
         phase="tailor_editing",
         next_tool="submit_tailor",

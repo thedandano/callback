@@ -1013,6 +1013,48 @@ def test_get_wiki_pages_returns_submit_tailor_workflow(tmp_path, monkeypatch):
     assert actual == expected
 
 
+def test_get_wiki_pages_rejects_page_id_outside_wiki_root(tmp_path, monkeypatch):
+    from callback.server import get_wiki_pages, load_jd, submit_keywords
+    from callback.wiki import WikiStore
+
+    resume_label = "wiki_pages_traversal_resume"
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    sections = {
+        "summary": "Python engineer",
+        "skills": {"flat": ["Python"], "categorized": {}},
+        "experience": [{"company": "ACME", "role": "Engineer", "bullets": ["Built Python"]}],
+        "projects": [],
+        "education": [],
+        "contact": {"name": "Jane Dev"},
+        "certifications": [],
+        "awards": [],
+    }
+    store = WikiStore()
+    store.write_page(resume_label, "sections.json", json.dumps(sections))
+    store.write_index(resume_label, "- experience/acme.md")
+    secret = tmp_path / "secret.txt"
+    secret.write_text("hunter2", encoding="utf-8")
+
+    with patch("callback.server.list_resumes", return_value=[resume_label]):
+        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+    session_id = loaded["session_id"]
+    json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+
+    result = json.loads(get_wiki_pages(session_id=session_id, page_ids=["../../secret.txt"]))
+
+    expected = {
+        "status": "error",
+        "error": {
+            "stage": "get_wiki_pages",
+            "code": "invalid_page_id",
+            "message": "page_id escapes wiki root: '../../secret.txt'",
+            "retriable": True,
+        },
+        "session_id": session_id,
+    }
+    assert result == expected
+
+
 class TestOrphanDetection:
     """Tests for _detect_orphaned_required orphan classification logic."""
 
