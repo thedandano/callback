@@ -106,34 +106,17 @@ configure_logging(os.environ.get("CALLBACK_LOG_PATH"))
 logger = logging.getLogger(__name__)
 
 
-def _write_log_line(line: str) -> None:
-    """Write directly to the callback log file if configured."""
-    global _LOG_PATH
-    if _LOG_PATH is None:
-        return
-    try:
-        _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with _LOG_PATH.open("a", encoding="utf-8") as handle:
-            handle.write(line + "\n")
-    except OSError:
-        _LOG_PATH = None
-
-
 def _log(level: str, payload: dict) -> None:
     """Log a structured JSON message."""
     payload["timestamp"] = datetime.datetime.now(datetime.UTC).isoformat()
     payload["level"] = level
-    line = json.dumps(payload)
-    _write_log_line(line)
-    logger.info(line)
+    logger.info(json.dumps(payload))
 
 
 def _log_exception(payload: dict) -> None:
     """Log an exception payload plus traceback to stderr and the server log file."""
     payload["traceback"] = traceback.format_exc()
-    line = json.dumps(payload)
-    _write_log_line(line)
-    logger.exception(line)
+    logger.exception(json.dumps(payload))
 
 
 def _ensure_browsers() -> None:

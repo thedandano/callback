@@ -173,7 +173,6 @@ def test_run_logs_crash_traceback_before_raising():
         captured_payloads.append(payload)
 
     with (
-        patch.object(server, "_write_log_line"),
         patch.object(server.logger, "exception"),
         patch.object(server, "_log"),
         patch.object(server, "_log_exception", side_effect=fake_log_exception),
@@ -349,6 +348,31 @@ def test_configure_logging_writes_server_log(tmp_path):
     logging.getLogger("callback.server").info("test log line")
 
     assert "test log line" in log_path.read_text(encoding="utf-8")
+
+
+def test_log_writes_one_line_per_event(tmp_path):
+    import logging
+
+    import callback.server as server
+
+    log_path = tmp_path / "server.log"
+    server.configure_logging(log_path)
+    try:
+        server._log("INFO", {"event": "dedupe_probe"})
+        for handler in logging.getLogger().handlers:
+            handler.flush()
+        lines = [
+            line
+            for line in log_path.read_text(encoding="utf-8").splitlines()
+            if "dedupe_probe" in line
+        ]
+        assert len(lines) == 1
+    finally:
+        root = logging.getLogger()
+        for handler in list(root.handlers):
+            if getattr(handler, "_callback_log_path", None) == str(log_path):
+                root.removeHandler(handler)
+                handler.close()
 
 
 def test_load_jd_accepts_url_with_raw_text_fallback():
