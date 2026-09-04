@@ -124,7 +124,7 @@ jd_fetch → keywords_accept → parse_initial → score_initial → tailor → 
         → parse_final → score_final → report → finalize → END
 ```
 
-Errors in `tailor`, `render`, or `parse_final` route back to the `tailor` interrupt; `submit_tailor` returns `pipeline_error` with `retriable: true` and may be called again with the same session to retry.
+Errors in `tailor`, `render`, `parse_final`, or `finalize` route back to the `tailor` interrupt; `submit_tailor` returns `pipeline_error` with `retriable: true` and may be called again with the same session to retry.
 
 Checkpointer DB: `~/.local/share/callback/apply-sessions.db`.
 State schema: `ApplyState` in `state.py` (single Pydantic model — entire graph state).
