@@ -227,6 +227,47 @@ class TestCheckOrphans:
 
         assert result == {"orphaned_skills": ["Rust"]}
 
+    def test_uses_thread_state_compiled_profile_over_disk(self, tmp_path, monkeypatch):
+        """A concurrent session's disk compile must not swap in different orphans."""
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        disk_profile = CompiledProfile(
+            schema_version="1",
+            skills_index=["Terraform"],
+            stories=[],
+            orphaned_skills=[OrphanedSkill(skill="Terraform", deferred=False)],
+            compiled_at=datetime.now(UTC).isoformat(),
+        )
+        save_compiled_profile(disk_profile, base_dir=tmp_path / "callback")
+
+        state = _make_state(
+            compiled_profile={
+                "orphaned_skills": [
+                    {"skill": "Rust", "deferred": False},
+                    {"skill": "Go", "deferred": True},
+                ]
+            }
+        )
+        result = check_orphans(state)
+
+        assert result == {"orphaned_skills": ["Rust"]}
+
+    def test_falls_back_to_disk_when_thread_state_has_no_compiled_profile(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        disk_profile = CompiledProfile(
+            schema_version="1",
+            skills_index=["Terraform"],
+            stories=[],
+            orphaned_skills=[OrphanedSkill(skill="Terraform", deferred=False)],
+            compiled_at=datetime.now(UTC).isoformat(),
+        )
+        save_compiled_profile(disk_profile, base_dir=tmp_path / "callback")
+
+        result = check_orphans(_make_state(compiled_profile=None))
+
+        assert result == {"orphaned_skills": ["Terraform"]}
+
 
 class TestCreateStory:
     def test_saves_story_and_returns_story_id(self, tmp_path, monkeypatch):
