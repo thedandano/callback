@@ -862,6 +862,9 @@ def test_sanitize_node_inputs_summarizes_state_to_counts_and_keys():
                 "email": "jane@example.com",
                 "phone": "555-867-5309",
                 "score_initial": {"total": 68},
+                "candidate_years": 7.5,
+                "render_page_count": 1,
+                "no_coverage": False,
             }
 
     processor = _sanitize_node_inputs("apply", "score_initial")
@@ -879,6 +882,9 @@ def test_sanitize_node_inputs_summarizes_state_to_counts_and_keys():
             "email": {"len": 16},
             "phone": {"len": 12},
             "score_initial": {"keys": ["total"]},
+            "candidate_years": "<redacted>",
+            "render_page_count": 1,
+            "no_coverage": False,
         },
     }
 

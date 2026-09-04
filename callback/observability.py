@@ -343,12 +343,21 @@ _SPAN_MAPPING_EXEMPT_KEYS: frozenset[str] = frozenset(
     {"session_id", "graph_name", "node_name", "transport", "status"}
 )
 _SPAN_ERROR_EXEMPT_KEYS: frozenset[str] = frozenset({"stage", "code", "retriable"})
+# Numeric state fields that are genuine counts. Every other number (e.g.
+# candidate_years, a measurement about the candidate) is redacted.
+_SPAN_COUNT_KEYS: frozenset[str] = frozenset({"render_page_count", "max_pages"})
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def _summarize_span_value(value: Any) -> Any:
     """Reduce one span value to a count/boolean/key-name shape — never content."""
-    if isinstance(value, (bool, int, float)) or value is None:
+    if isinstance(value, bool) or value is None:
         return value
+    if _is_number(value):
+        return "<redacted>"
     if isinstance(value, str):
         return {"len": len(value)}
     if isinstance(value, (list, tuple)):
@@ -376,7 +385,7 @@ def _summarize_span_mapping(mapping: Mapping[str, Any]) -> dict[str, Any]:
     """Summarize every value in *mapping* except the safe metadata/error keys."""
     summarized: dict[str, Any] = {}
     for key, value in mapping.items():
-        if key in _SPAN_MAPPING_EXEMPT_KEYS:
+        if key in _SPAN_MAPPING_EXEMPT_KEYS or (key in _SPAN_COUNT_KEYS and _is_number(value)):
             summarized[key] = value
         elif key == "error" and isinstance(value, dict):
             summarized[key] = _summarize_span_error(value)
