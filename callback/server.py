@@ -1368,6 +1368,16 @@ def _onboard_user_invoke(
         return None, _unexpected_error("onboard_user", session_id)
 
 
+def _compile_failed_after_save_error(stage: str, session_id: str) -> str:
+    """Build the retriable compile_failed envelope for a story saved before compile raised."""
+    message = (
+        "profile compile failed; call compile_profile again with this session_id"
+        if stage == "compile_profile"
+        else "story saved; call compile_profile with this session_id to finish"
+    )
+    return _err(stage, "compile_failed", message, session_id, retriable=True)
+
+
 def _run_profile_thread(
     graph, config, graph_input, session_id: str, stage: str
 ) -> tuple[dict, None] | tuple[None, str]:
@@ -1383,7 +1393,16 @@ def _run_profile_thread(
             invoke_graph_without_native_tracing(graph, None, config)
             snapshot = graph.get_state(config)
     except Exception:
-        return None, _unexpected_error(stage, session_id)
+        _log_exception({"tool": stage, "session_id": session_id, "event": "unexpected_error"})
+        if graph.get_state(config).next == ("compile_profile",):
+            return None, _compile_failed_after_save_error(stage, session_id)
+        return None, _err(
+            stage=stage,
+            code="unexpected_error",
+            message=f"unexpected {stage} failure; inspect callback logs",
+            session_id=session_id,
+            retriable=False,
+        )
     values = snapshot.values
     if (values.get("intake") or {}).get("status") == "no_resume":
         return None, _err(

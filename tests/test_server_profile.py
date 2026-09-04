@@ -8,6 +8,7 @@ import callback.profile_nodes as pnodes
 import callback.server as server_module
 import callback.wiki as wiki_module
 from callback.profilecompiler import save_compiled_profile
+from callback.repository.accomplishments import AccomplishmentsStore
 from callback.repository.resumes import save_resume
 from callback.server import compile_profile, create_story, onboard_user
 from callback.state import CompiledProfile, OrphanedSkill
@@ -540,3 +541,44 @@ class TestCreateStory:
             "session_id": result["session_id"],
         }
         assert result == expected
+
+    def test_compile_failure_after_save_is_recoverable(self, tmp_path, monkeypatch):
+        _isolate_profile(tmp_path, monkeypatch)
+        _save_profile_with_resumes(tmp_path)
+
+        original_save = pnodes.save_compiled_profile
+        state = {"raised": False}
+
+        def _raise_once(*args, **kwargs):
+            if not state["raised"]:
+                state["raised"] = True
+                raise RuntimeError("disk full")
+            return original_save(*args, **kwargs)
+
+        monkeypatch.setattr(pnodes, "save_compiled_profile", _raise_once)
+
+        result = json.loads(
+            create_story(
+                primary_skill="Python",
+                skills=["Python"],
+                **_STORY_FIELDS,
+            )
+        )
+
+        expected = {
+            "status": "error",
+            "error": {
+                "stage": "create_story",
+                "code": "compile_failed",
+                "message": "story saved; call compile_profile with this session_id to finish",
+                "retriable": True,
+            },
+            "session_id": result["session_id"],
+        }
+        assert result == expected
+
+        compiled = json.loads(compile_profile(session_id=result["session_id"]))
+        assert compiled["status"] == "ok"
+
+        stories_count = len(AccomplishmentsStore().list_stories())
+        assert stories_count == 1
