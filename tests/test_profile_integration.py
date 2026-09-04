@@ -41,7 +41,7 @@ class TestProfileToolsEndToEnd:
         monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
         db_path = tmp_path / "profile-sessions.db"
         monkeypatch.setattr(
-            server_module, "build_profile_graph", lambda: build_profile_graph(db_path=db_path)
+            server_module, "get_profile_graph", lambda: build_profile_graph(db_path=db_path)
         )
 
         resume = _make_resume(tmp_path)

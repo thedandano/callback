@@ -81,7 +81,7 @@ class TestOnboardUser:
             "resume_label": "jane",
             "sections": {"contact": {"name": "Jane Doe"}},
         }
-        monkeypatch.setattr(server_module, "build_profile_graph", lambda: _fake_graph(state_values))
+        monkeypatch.setattr(server_module, "get_profile_graph", lambda: _fake_graph(state_values))
 
         result = json.loads(onboard_user(resume_path=str(resume), skills_path=str(skills)))
 
@@ -101,7 +101,7 @@ class TestOnboardUser:
         resume.write_text("Jane Doe\n", encoding="utf-8")
 
         state_values = {"intake": {}, "resume_label": "jane", "sections": {}}
-        monkeypatch.setattr(server_module, "build_profile_graph", lambda: _fake_graph(state_values))
+        monkeypatch.setattr(server_module, "get_profile_graph", lambda: _fake_graph(state_values))
 
         result = json.loads(onboard_user(resume_path=str(resume)))
 
@@ -142,7 +142,7 @@ class TestOnboardUser:
 
                 return _Snap()
 
-        monkeypatch.setattr(server_module, "build_profile_graph", _CapturingGraph)
+        monkeypatch.setattr(server_module, "get_profile_graph", _CapturingGraph)
 
         onboard_user(resume_path=str(resume), accomplishments_path=str(acc))
 

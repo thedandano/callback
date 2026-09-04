@@ -8,6 +8,13 @@ import pytest
 from callback.apply_graph import build_apply_graph, make_config
 from callback.state import ApplyState
 
+
+def test_get_apply_graph_returns_the_same_instance():
+    from callback.apply_graph import get_apply_graph
+
+    assert get_apply_graph() is get_apply_graph()
+
+
 VALID_JD_DATA = {
     "title": "Backend Engineer",
     "company": "ExampleCo",

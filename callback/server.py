@@ -36,7 +36,7 @@ import callback.version_check as version_check
 from callback.apply_graph import (
     KEYWORDS_ACCEPT_NODE,
     TAILOR_NODE,
-    build_apply_graph,
+    get_apply_graph,
 )
 from callback.apply_graph import (
     make_config as make_apply_config,
@@ -46,7 +46,7 @@ from callback.jd_data import EXTRACTION_PROTOCOL, JDDataError, parse_jd_json
 from callback.jd_fetcher import JDFetchError
 from callback.observability import invoke_graph_without_native_tracing, trace_tool
 from callback.preferences import SearchPreferences
-from callback.profile_graph import build_profile_graph
+from callback.profile_graph import get_profile_graph
 from callback.profile_graph import make_config as make_profile_config
 from callback.repository.preferences import PreferencesStore
 from callback.repository.resumes import list_resumes
@@ -652,7 +652,7 @@ def _load_jd_impl(  # noqa: C901
     )
 
     try:
-        graph = build_apply_graph()
+        graph = get_apply_graph()
         config = make_apply_config(
             session_id,
             tool_name="load_jd",
@@ -897,7 +897,7 @@ def _submit_keywords_impl(session_id: str, jd_json: str) -> str:
             retriable=True,
         )
 
-    graph = build_apply_graph()
+    graph = get_apply_graph()
     config = make_apply_config(session_id, tool_name="submit_keywords")
     state_error = _submit_keywords_state_error(graph, config, session_id)
     if state_error is not None:
@@ -1049,7 +1049,7 @@ def _submit_tailor_impl(
 ) -> str:
     _log("INFO", {"tool": "submit_tailor", "session_id": session_id, "edit_count": len(edits)})
 
-    graph = build_apply_graph()
+    graph = get_apply_graph()
     config = make_apply_config(session_id, tool_name="submit_tailor")
     snapshot = graph.get_state(config)
 
@@ -1270,7 +1270,7 @@ def _onboard_user_impl(
         resume_path=resume_path,
         intake=intake if intake else None,
     )
-    graph = build_profile_graph()
+    graph = get_profile_graph()
     config = make_profile_config(session_id, tool_name="onboard_user")
     state_values, invoke_error = _onboard_user_invoke(graph, initial_state, config, session_id)
     if invoke_error is not None:
@@ -1469,7 +1469,7 @@ def get_wiki_pages(session_id: str, page_ids: list[str]) -> str:
 def _get_wiki_pages_impl(session_id: str, page_ids: list[str]) -> str:
     _log("INFO", {"tool": "get_wiki_pages", "session_id": session_id, "page_count": len(page_ids)})
 
-    graph = build_apply_graph()
+    graph = get_apply_graph()
     config = make_apply_config(session_id, tool_name="get_wiki_pages")
     snapshot = graph.get_state(config)
 

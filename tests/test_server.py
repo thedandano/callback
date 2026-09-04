@@ -262,7 +262,7 @@ def test_load_jd_trace_payload_carries_jd_text_and_full_output_data(monkeypatch)
 
     with (
         patch.object(server, "list_resumes", return_value=["resume"]),
-        patch.object(server, "build_apply_graph", return_value=FakeGraph()),
+        patch.object(server, "get_apply_graph", return_value=FakeGraph()),
         patch("callback.observability._get_traceable", return_value=fake_traceable),
     ):
         result = json.loads(load_jd(jd_raw_text="secret jd body"))
@@ -294,7 +294,7 @@ def test_load_jd_returns_error_when_session_store_is_readonly():
 
     with (
         patch("callback.server.list_resumes", return_value=["resume"]),
-        patch("callback.server.build_apply_graph", return_value=ReadonlyGraph()),
+        patch("callback.server.get_apply_graph", return_value=ReadonlyGraph()),
     ):
         result = json.loads(load_jd(jd_raw_text="Python engineer needed"))
 
@@ -320,7 +320,7 @@ def test_load_jd_returns_error_when_unexpected_exception_escapes_graph():
 
     with (
         patch("callback.server.list_resumes", return_value=["resume"]),
-        patch("callback.server.build_apply_graph", return_value=BrokenGraph()),
+        patch("callback.server.get_apply_graph", return_value=BrokenGraph()),
     ):
         result = json.loads(load_jd(jd_raw_text="Python engineer needed"))
 
@@ -596,7 +596,7 @@ def test_submit_keywords_reports_checkpoint_value_error_as_invalid_session():
         def update_state(self, config, values):
             raise ValueError("checkpoint missing")
 
-    with patch("callback.server.build_apply_graph", return_value=FakeGraph()):
+    with patch("callback.server.get_apply_graph", return_value=FakeGraph()):
         result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
 
     expected = {
@@ -1410,14 +1410,14 @@ class TestSubmitTailorNoCoverage:
 
 def test_load_jd_auto_selects_single_registered_resume():
     """Single registered resume is auto-selected when resume_label is omitted."""
-    from callback.apply_graph import build_apply_graph, make_config
+    from callback.apply_graph import get_apply_graph, make_config
     from callback.server import load_jd
 
     with patch("callback.server.list_resumes", return_value=["default"]):
         result = json.loads(load_jd(jd_raw_text="Python engineer needed"))
 
     session_id = result["session_id"]
-    graph = build_apply_graph()
+    graph = get_apply_graph()
     snapshot = graph.get_state(make_config(session_id))
     expected = {
         "session_id": session_id,
@@ -1475,14 +1475,14 @@ def test_load_jd_returns_no_resume_registered_error_when_empty():
 
 def test_load_jd_passes_explicit_label_through_to_state():
     """Explicit resume_label is stored in session state."""
-    from callback.apply_graph import build_apply_graph, make_config
+    from callback.apply_graph import get_apply_graph, make_config
     from callback.server import load_jd
 
     with patch("callback.server.list_resumes", return_value=["default", "senior"]):
         result = json.loads(load_jd(jd_raw_text="Python engineer needed", resume_label="senior"))
 
     session_id = result["session_id"]
-    graph = build_apply_graph()
+    graph = get_apply_graph()
     snapshot = graph.get_state(make_config(session_id))
     expected = {
         "session_id": session_id,
@@ -1723,7 +1723,7 @@ def test_onboard_user_returns_envelope_when_extractor_raises(tmp_path, monkeypat
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "profile-wiki")
     db_path = tmp_path / "profile-sessions.db"
-    monkeypatch.setattr(server, "build_profile_graph", lambda: build_profile_graph(db_path=db_path))
+    monkeypatch.setattr(server, "get_profile_graph", lambda: build_profile_graph(db_path=db_path))
 
     def broken_extract(path):
         raise ValueError("boom")

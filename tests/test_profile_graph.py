@@ -23,6 +23,12 @@ def _tmp_graph(tmp_path):
     return build_profile_graph(db_path=db_path)
 
 
+def test_get_profile_graph_returns_the_same_instance():
+    from callback.profile_graph import get_profile_graph
+
+    assert get_profile_graph() is get_profile_graph()
+
+
 def _make_state(session_id: str, **kwargs) -> ProfileState:
     return ProfileState(session_id=session_id, **kwargs)
 

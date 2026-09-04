@@ -11,6 +11,7 @@ Cycle: create_story → compile_profile → check_orphans (until no orphans).
 Interrupts after onboard and create_story to allow caller to provide input.
 """
 
+import functools
 import sqlite3
 from pathlib import Path
 
@@ -113,3 +114,9 @@ def build_profile_graph(db_path: Path = DB_PATH):
         checkpointer=checkpointer,
         interrupt_after=["onboard", "compile_profile", "create_story"],
     )
+
+
+@functools.cache
+def get_profile_graph():
+    """Return the process-wide profile graph, built on first use."""
+    return build_profile_graph()

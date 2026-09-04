@@ -12,6 +12,7 @@ submit JDData before later milestones parse and score resumes.
 State is persisted in SQLite checkpointer at ~/.local/share/callback/apply-sessions.db.
 """
 
+import functools
 import sqlite3
 from pathlib import Path
 
@@ -137,3 +138,9 @@ def build_apply_graph(db_path: Path = DB_PATH):
         interrupt_after=[JD_FETCH_NODE],
         interrupt_before=[TAILOR_NODE],
     )
+
+
+@functools.cache
+def get_apply_graph():
+    """Return the process-wide apply graph, built on first use."""
+    return build_apply_graph()
