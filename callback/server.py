@@ -1523,6 +1523,14 @@ def create_story(
             "job_title": job_title,
         },
     )
+    if not primary_skill.strip():
+        return _err(
+            "create_story",
+            "invalid_story",
+            "primary_skill is required",
+            session_id,
+            retriable=False,
+        )
     intake = {
         "primary_skill": primary_skill,
         "skills": skills,
@@ -1553,6 +1561,18 @@ def _create_story_impl(session_id: str, intake: dict, *, resumed: bool) -> str:
     if error:
         return error
     assert values is not None
+    if not (values.get("intake") or {}).get("story_id"):
+        _log(
+            "ERROR",
+            {"tool": "create_story", "session_id": session_id, "event": "story_not_saved"},
+        )
+        return _err(
+            "create_story",
+            "story_not_saved",
+            "graph run completed without saving the story",
+            session_id,
+            retriable=False,
+        )
     next_action, data = _profile_thread_data(graph, config, values)
     data = {
         "story_id": (values.get("intake") or {}).get("story_id"),

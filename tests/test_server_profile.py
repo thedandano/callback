@@ -52,6 +52,15 @@ def _save_profile_with_resumes(tmp_path: Path, orphans: list[str] | None = None)
     save_resume("backend", str(resume))
 
 
+_STORY_FIELDS = {
+    "story_type": "STAR",
+    "job_title": "Backend Engineer",
+    "situation": "Legacy system.",
+    "behavior": "Rewrote it.",
+    "impact": "40% faster.",
+}
+
+
 # ---------------------------------------------------------------------------
 # onboard_user
 # ---------------------------------------------------------------------------
@@ -394,3 +403,53 @@ class TestCreateStory:
         )
 
         assert result["error"]["code"] == "unexpected_error"
+
+    def test_blank_primary_skill_returns_invalid_story(self, tmp_path, monkeypatch):
+        _isolate_profile(tmp_path, monkeypatch)
+        _save_profile_with_resumes(tmp_path)
+
+        result = json.loads(
+            create_story(
+                primary_skill="   ",
+                skills=["Python", "Docker"],
+                **_STORY_FIELDS,
+            )
+        )
+
+        expected = {
+            "status": "error",
+            "error": {
+                "stage": "create_story",
+                "code": "invalid_story",
+                "message": "primary_skill is required",
+                "retriable": False,
+            },
+            "session_id": result["session_id"],
+        }
+        assert result == expected
+
+    def test_run_without_saved_story_returns_story_not_saved(self, tmp_path, monkeypatch):
+        _isolate_profile(tmp_path, monkeypatch)
+        _save_profile_with_resumes(tmp_path)
+
+        monkeypatch.setattr(server_module, "story_pending", lambda intake: False)
+
+        result = json.loads(
+            create_story(
+                primary_skill="Python",
+                skills=["Python", "Docker"],
+                **_STORY_FIELDS,
+            )
+        )
+
+        expected = {
+            "status": "error",
+            "error": {
+                "stage": "create_story",
+                "code": "story_not_saved",
+                "message": "graph run completed without saving the story",
+                "retriable": False,
+            },
+            "session_id": result["session_id"],
+        }
+        assert result == expected
