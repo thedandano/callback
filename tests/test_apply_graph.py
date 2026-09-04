@@ -15,6 +15,15 @@ def test_get_apply_graph_returns_the_same_instance():
     assert get_apply_graph() is get_apply_graph()
 
 
+def test_render_error_routes_back_to_tailor():
+    from callback.apply_graph import TAILOR_NODE, _route_or_retry
+    from callback.state import ApplyState
+
+    router = _route_or_retry("parse_final")
+    assert router(ApplyState(session_id="s", error="render: boom")) == TAILOR_NODE
+    assert router(ApplyState(session_id="s")) == "parse_final"
+
+
 VALID_JD_DATA = {
     "title": "Backend Engineer",
     "company": "ExampleCo",

@@ -35,6 +35,7 @@ import callback.scorer as scorer
 import callback.version_check as version_check
 from callback.apply_graph import (
     KEYWORDS_ACCEPT_NODE,
+    SCORE_INITIAL_NODE,
     TAILOR_NODE,
     get_apply_graph,
 )
@@ -1004,9 +1005,34 @@ def submit_tailor(
     return _submit_tailor_impl(session_id, edits, no_coverage=no_coverage, output_dir=output_dir)
 
 
+def _tailor_retry_update(graph, config, values: dict, session_id: str) -> None:
+    """Log a retry when the session previously errored, then apply the state update.
+
+    Writes as_node=SCORE_INITIAL_NODE explicitly: SCORE_INITIAL_NODE's outgoing
+    edge unconditionally targets TAILOR_NODE, so this always re-queues tailor
+    as the next pending task. Without an explicit as_node, LangGraph infers the
+    last node that wrote state — after an error that is tailor/render/parse_final
+    itself, whose outgoing (conditional) edge would re-evaluate against the
+    now-cleared error and route past tailor/render entirely instead of retrying
+    them.
+    """
+    snapshot = graph.get_state(config)
+    if snapshot.values.get("error"):
+        _log(
+            "INFO",
+            {"tool": "submit_tailor", "session_id": session_id, "event": "retry_after_error"},
+        )
+    graph.update_state(config, values, as_node=SCORE_INITIAL_NODE)
+
+
 def _submit_tailor_no_coverage(session_id: str, graph, config, resolved_output_dir) -> str:
     """Run the graph for the no_coverage path and build its success/error envelope."""
-    graph.update_state(config, {"no_coverage": True, "output_dir": resolved_output_dir})
+    _tailor_retry_update(
+        graph,
+        config,
+        {"no_coverage": True, "output_dir": resolved_output_dir, "error": None},
+        session_id,
+    )
     try:
         invoke_graph_without_native_tracing(graph, None, config)
     except Exception:
@@ -1014,7 +1040,7 @@ def _submit_tailor_no_coverage(session_id: str, graph, config, resolved_output_d
     final_snapshot = graph.get_state(config)
     final = final_snapshot.values
     if final.get("error"):
-        return _err("submit_tailor", "pipeline_error", final["error"], session_id)
+        return _err("submit_tailor", "pipeline_error", final["error"], session_id, retriable=True)
     artifacts = _submit_tailor_artifacts(final, session_id)
     return _ok(
         session_id,
@@ -1113,14 +1139,17 @@ def _apply_tailor_edits(
 
     uncovered_skills = _detect_uncovered_skills(section_map)
 
-    graph.update_state(
+    _tailor_retry_update(
+        graph,
         config,
         {
             "tailored_sections": section_map.model_dump(),
             "uncovered_skills": uncovered_skills,
             "applied_skill_values": applied_skill_values,
             "output_dir": output_dir,
+            "error": None,
         },
+        session_id,
     )
     try:
         invoke_graph_without_native_tracing(graph, None, config)
@@ -1130,7 +1159,7 @@ def _apply_tailor_edits(
     final_snapshot = graph.get_state(config)
     final = final_snapshot.values
     if final.get("error"):
-        return _err("submit_tailor", "pipeline_error", final["error"], session_id)
+        return _err("submit_tailor", "pipeline_error", final["error"], session_id, retriable=True)
     artifacts = _submit_tailor_artifacts(final, session_id)
     return _ok(
         session_id,

@@ -179,6 +179,60 @@ def test_submit_tailor_applies_valid_edits_and_rescores(tmp_path, monkeypatch):
     assert result["workflow"]["required_input"] == {}
 
 
+def test_submit_tailor_can_be_retried_after_render_failure(tmp_path, monkeypatch):
+    """A render failure leaves the session at the tailor interrupt for a retry."""
+    import callback.apply_nodes
+    from callback.server import submit_tailor
+
+    resume_label = "test_resume"
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    _make_section_map_and_write(resume_label)
+
+    jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python", "Kubernetes"]})
+    session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
+
+    edits = [
+        {"section": "summary", "op": "replace", "value": "Python + Kubernetes engineer."},
+        {"section": "skills", "op": "add", "value": "Kubernetes"},
+        {
+            "section": "experience",
+            "op": "replace",
+            "target": "exp-0-b0",
+            "value": "Deployed Kubernetes clusters serving 1M RPS",
+        },
+    ]
+
+    calls = {"n": 0}
+    real_render = callback.apply_nodes.render_resume
+
+    def flaky_render(tailored, output_path):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {"success": False, "error": "chromium crashed"}
+        return real_render(tailored, output_path)
+
+    monkeypatch.setattr("callback.apply_nodes.render_resume", flaky_render)
+
+    first = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    assert first == {
+        "status": "error",
+        "error": {
+            "stage": "submit_tailor",
+            "code": "pipeline_error",
+            "message": "render: chromium crashed",
+            "retriable": True,
+        },
+        "session_id": session_id,
+    }
+
+    second = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    actual = {
+        "status": second["status"],
+        "pdf_exists": Path(second["data"]["pdf_path"]).exists(),
+    }
+    assert actual == {"status": "ok", "pdf_exists": True}
+
+
 def test_submit_tailor_replaces_project_entry(tmp_path, monkeypatch):
     from callback.server import submit_tailor
 
