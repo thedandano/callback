@@ -105,11 +105,7 @@ def onboard(state: ProfileState) -> dict:
 def compile_profile(state: ProfileState) -> dict:
     _log_enter("compile_profile", state)
     stories = AccomplishmentsStore().list_stories()
-    host_tags = (
-        state.compiled_profile.get("host_tags", [])
-        if isinstance(state.compiled_profile, dict)
-        else []
-    )
+    host_tags = list(state.host_tags or [])
     label = state.resume_label or "default"
     resume_skills = _resume_skills(label)
     all_tags = list(dict.fromkeys(host_tags + resume_skills))

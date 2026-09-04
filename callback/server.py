@@ -1458,15 +1458,14 @@ def compile_profile(story_tags: str | None = None, session_id: str | None = None
 def _compile_profile_impl(session_id: str, host_tags: list[str], *, resumed: bool) -> str:
     graph = get_profile_graph()
     config = make_profile_config(session_id, tool_name="compile_profile")
-    tags = {"host_tags": host_tags} if host_tags else None
     if resumed:
         _, error = _profile_snapshot_or_error(
             graph, config, session_id, "compile_profile", "compile_profile"
         )
         if error:
             return error
-        if tags:
-            graph.update_state(config, {"compiled_profile": tags})
+        if host_tags:
+            graph.update_state(config, {"host_tags": host_tags})
         graph_input = None
     else:
         resume_label, label_error = _resolve_resume_label(None, session_id)
@@ -1480,7 +1479,7 @@ def _compile_profile_impl(session_id: str, host_tags: list[str], *, resumed: boo
                 },
             )
         graph_input = ProfileState(
-            session_id=session_id, resume_label=resume_label, compiled_profile=tags
+            session_id=session_id, resume_label=resume_label, host_tags=host_tags or None
         )
     values, error = _run_profile_thread(graph, config, graph_input, session_id, "compile_profile")
     if error:

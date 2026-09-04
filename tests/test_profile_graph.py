@@ -155,18 +155,18 @@ class TestCheckOrphansRouter:
         assert result.get("current_story_target") is None
 
     def test_routes_to_create_story_when_orphans_exist(self, tmp_path, monkeypatch):
-        # compile_profile recomputes orphans from state.compiled_profile["host_tags"]
-        # (not from the profile seeded on disk), so seed the orphan there. With the
-        # graph now pausing before create_story (rather than after), the observable
-        # signal is the pending interrupt, not a current_story_target set by a node
-        # that hasn't run yet.
+        # compile_profile recomputes orphans from state.host_tags (not from the
+        # profile seeded on disk), so seed the orphan there. With the graph now
+        # pausing before create_story (rather than after), the observable signal
+        # is the pending interrupt, not a current_story_target set by a node that
+        # hasn't run yet.
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
         monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
         _save_profile_with_resumes(tmp_path)
         graph = _tmp_graph(tmp_path)
         config = make_config("s-orphan-2")
 
-        graph.invoke(_make_state("s-orphan-2", compiled_profile={"host_tags": ["Rust"]}), config)
+        graph.invoke(_make_state("s-orphan-2", host_tags=["Rust"]), config)
 
         assert graph.get_state(config).next == ("create_story",)
 
@@ -228,7 +228,7 @@ class TestCompileFlowsIntoCheckOrphans:
         graph = _tmp_graph(tmp_path)
         config = make_config("s-cp-2")
 
-        graph.invoke(_make_state("s-cp-2", compiled_profile={"host_tags": ["Rust"]}), config)
+        graph.invoke(_make_state("s-cp-2", host_tags=["Rust"]), config)
 
         assert graph.get_state(config).next == ("create_story",)
 

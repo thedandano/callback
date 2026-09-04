@@ -459,6 +459,34 @@ class TestCreateStory:
         }
         assert result == expected
 
+    def test_resume_keeps_other_orphans(self, tmp_path, monkeypatch):
+        _isolate_profile(tmp_path, monkeypatch)
+        _save_profile_with_resumes(tmp_path)
+
+        compiled = json.loads(compile_profile(story_tags='["Rust", "Go"]'))
+        actual_compiled = {
+            "next_action": compiled.get("next_action"),
+            "orphaned_skills": sorted(compiled["data"]["orphaned_skills"]),
+        }
+        expected_compiled = {"next_action": "create_story", "orphaned_skills": ["Go", "Rust"]}
+        assert actual_compiled == expected_compiled
+
+        result = json.loads(
+            create_story(
+                session_id=compiled["session_id"],
+                primary_skill="Rust",
+                skills=["Rust"],
+                **_STORY_FIELDS,
+            )
+        )
+
+        actual = {
+            "next_action": result.get("next_action"),
+            "orphaned_skills": result["data"]["orphaned_skills"],
+        }
+        expected = {"next_action": "create_story", "orphaned_skills": ["Go"]}
+        assert actual == expected
+
     def test_run_without_saved_story_returns_story_not_saved(self, tmp_path, monkeypatch):
         _isolate_profile(tmp_path, monkeypatch)
         _save_profile_with_resumes(tmp_path)
