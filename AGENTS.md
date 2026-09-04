@@ -137,8 +137,8 @@ handoff metadata.
 | `submit_tailor` | apply | Applies host edits, resumes the graph, and finalizes the PDF/report artifacts. |
 | `get_wiki_pages` | apply | Reads wiki pages for the active resume label. |
 | `onboard_user` | profile | Starts profile intake and registers the resume plus optional source files. |
-| `compile_profile` | profile | Recompiles the profile from stored stories and host tags. |
-| `create_story` | profile | Persists a behavioral story for a skill. |
+| `compile_profile` | profile | Resumes the profile graph thread (or starts a new one) and returns the recompiled profile with orphaned skills. |
+| `create_story` | profile | Persists a behavioral story and returns orphaned skills; recompiles the profile in the same call. |
 | `check_update` | utility | Returns current version, latest release tag, and update status. |
 
 All tools return JSON envelopes via `_ok` / `_err`:
