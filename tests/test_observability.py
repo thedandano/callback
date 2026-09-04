@@ -889,7 +889,10 @@ def test_sanitize_node_inputs_full_state_present_contact_redacted():
 
 
 def test_sanitize_tool_output_summarizes_compiled_profile():
-    """compiled_profile is reduced to counts; story/skill narratives never appear."""
+    """compile_profile envelope: compiled_profile to counts; top-level skill-name
+    fields (skills_index, orphaned_skills, skill_coverage_warnings) to counts too —
+    no skill names leave the span.
+    """
     from callback.observability import _sanitize_tool_output
 
     envelope = {
@@ -911,6 +914,9 @@ def test_sanitize_tool_output_summarizes_compiled_profile():
                 "orphaned_skills": [{"skill": "Rust"}],
                 "compiled_at": "2026-01-01T00:00:00+00:00",
             },
+            "skill_coverage_warnings": [{"skill": "Rust", "reason": "no_story"}],
+            "skills_index": ["Python", "Docker"],
+            "orphaned_skills": [{"skill": "Rust"}],
         },
     }
 
@@ -926,6 +932,42 @@ def test_sanitize_tool_output_summarizes_compiled_profile():
                 "skills_index_count": 2,
                 "orphaned_skills_count": 1,
             },
+            "skill_coverage_warnings": 1,
+            "skills_index": 2,
+            "orphaned_skills": 1,
+        },
+    }
+
+
+def test_sanitize_tool_output_summarizes_primary_skill():
+    """create_story envelope: primary_skill (a skill name) is redacted; story_id,
+    needs_compile, and orphaned_skills count survive unchanged/summarized.
+    """
+    from callback.observability import _sanitize_tool_output
+
+    envelope = {
+        "session_id": "sess-1",
+        "status": "ok",
+        "next_action": "create_story",
+        "data": {
+            "story_id": "story-1",
+            "primary_skill": "Kubernetes",
+            "needs_compile": False,
+            "orphaned_skills": [{"skill": "Rust"}],
+        },
+    }
+
+    result = _sanitize_tool_output(envelope)
+
+    assert result == {
+        "session_id": "sess-1",
+        "status": "ok",
+        "next_action": "create_story",
+        "data": {
+            "story_id": "story-1",
+            "primary_skill": "<redacted>",
+            "needs_compile": False,
+            "orphaned_skills": 1,
         },
     }
 

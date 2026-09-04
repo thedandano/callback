@@ -281,14 +281,36 @@ def _summarize_intake(value: Any) -> Any:
     return {key: _summarize_intake_value(val) for key, val in value.items()}
 
 
+_SKILL_LIST_KEYS: frozenset[str] = frozenset(
+    {"skills_index", "orphaned_skills", "skill_coverage_warnings"}
+)
+
+
+def _summarize_skill_fields(data: dict[str, Any]) -> dict[str, Any]:
+    """Reduce top-level skill-name-bearing fields to counts/placeholders.
+
+    Skill names are business content, same as story narratives — the span
+    contract is counts and key names only.
+    """
+    summarized = dict(data)
+    for key in _SKILL_LIST_KEYS:
+        if key in summarized and isinstance(summarized[key], list):
+            summarized[key] = len(summarized[key])
+    primary_skill = summarized.get("primary_skill")
+    if isinstance(primary_skill, str):
+        summarized["primary_skill"] = "<redacted>"
+    return summarized
+
+
 def _summarize_profile_content(envelope: dict[str, Any]) -> dict[str, Any]:
     """Summarize profile/resume business content within envelope["data"] to counts
-    and key names. Leaves tag-only fields (orphaned_skills, skills_index, ...) as-is.
+    and key names. No skill names (skills_index, orphaned_skills,
+    skill_coverage_warnings, primary_skill) leave the span either.
     """
     data = envelope.get("data")
     if not isinstance(data, dict):
         return envelope
-    summarized = dict(data)
+    summarized = _summarize_skill_fields(data)
     if "compiled_profile" in summarized:
         summarized["compiled_profile"] = _summarize_compiled_profile(summarized["compiled_profile"])
     if "sections" in summarized:
