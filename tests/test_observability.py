@@ -881,3 +881,123 @@ def test_sanitize_node_inputs_full_state_present_contact_redacted():
             "score_initial": {"total": 68},
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# _sanitize_tool_output — profile/resume content summarization
+# ---------------------------------------------------------------------------
+
+
+def test_sanitize_tool_output_summarizes_compiled_profile():
+    """compiled_profile is reduced to counts; story/skill narratives never appear."""
+    from callback.observability import _sanitize_tool_output
+
+    envelope = {
+        "session_id": "sess-1",
+        "status": "ok",
+        "next_action": None,
+        "data": {
+            "compiled_profile": {
+                "schema_version": "1",
+                "skills_index": ["Python", "Docker"],
+                "stories": [
+                    {
+                        "situation": "Legacy system.",
+                        "behavior": "Rewrote it.",
+                        "impact": "40% faster.",
+                        "job_title": "Backend Engineer",
+                    }
+                ],
+                "orphaned_skills": [{"skill": "Rust"}],
+                "compiled_at": "2026-01-01T00:00:00+00:00",
+            },
+        },
+    }
+
+    result = _sanitize_tool_output(envelope)
+
+    assert result == {
+        "session_id": "sess-1",
+        "status": "ok",
+        "next_action": None,
+        "data": {
+            "compiled_profile": {
+                "story_count": 1,
+                "skills_index_count": 2,
+                "orphaned_skills_count": 1,
+            },
+        },
+    }
+
+
+def test_sanitize_tool_output_summarizes_sections():
+    """sections is reduced to its sorted key names; section body content is dropped."""
+    from callback.observability import _sanitize_tool_output
+
+    envelope = {
+        "session_id": "sess-1",
+        "status": "ok",
+        "next_action": "compile_profile",
+        "data": {
+            "sections": {
+                "contact": {"name": "Jane Doe"},
+                "experience": [{"title": "Backend Engineer"}],
+            },
+        },
+    }
+
+    result = _sanitize_tool_output(envelope)
+
+    assert result == {
+        "session_id": "sess-1",
+        "status": "ok",
+        "next_action": "compile_profile",
+        "data": {
+            "sections": {"keys": ["contact", "experience"]},
+        },
+    }
+
+
+def test_sanitize_tool_output_summarizes_intake():
+    """intake narratives (stories, onboard_text) are summarized to counts/placeholders."""
+    from callback.observability import _sanitize_tool_output
+
+    envelope = {
+        "session_id": "sess-1",
+        "status": "ok",
+        "next_action": "compile_profile",
+        "data": {
+            "intake": {
+                "status": "onboarded",
+                "resume_label": "jane",
+                "onboard_text": "I built distributed systems.",
+                "stories": [{"situation": "Legacy system."}],
+                "skill_coverage_warnings": [{"skill": "Rust", "reason": "no_story"}],
+                "skills_index": ["Python"],
+                "needs_compile": True,
+                "story_count": 1,
+                "empty_note": "",
+            },
+        },
+    }
+
+    result = _sanitize_tool_output(envelope)
+
+    assert result == {
+        "session_id": "sess-1",
+        "status": "ok",
+        "next_action": "compile_profile",
+        "data": {
+            "intake": {
+                "status": "<redacted>",
+                "resume_label": "<redacted>",
+                "onboard_text": "<redacted>",
+                "stories": 1,
+                "skill_coverage_warnings": 1,
+                "skills_index": 1,
+                "needs_compile": True,
+                "story_count": 1,
+                "empty_note": "",
+            },
+        },
+    }

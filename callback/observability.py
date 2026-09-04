@@ -245,6 +245,59 @@ def _sanitize_tool_inputs(
     return _processor
 
 
+def _summarize_compiled_profile(value: Any) -> Any:
+    """Reduce a compiled_profile payload to counts — never export story narratives."""
+    if not isinstance(value, dict):
+        return value
+    return {
+        "story_count": len(value.get("stories") or []),
+        "skills_index_count": len(value.get("skills_index") or []),
+        "orphaned_skills_count": len(value.get("orphaned_skills") or []),
+    }
+
+
+def _summarize_sections(value: Any) -> Any:
+    """Reduce a sections payload to its key names — section bodies never leave the span."""
+    if not isinstance(value, dict):
+        return value
+    return {"keys": sorted(value.keys())}
+
+
+def _summarize_intake_value(value: Any) -> Any:
+    """Summarize one intake field: lengths for containers, placeholders for text."""
+    if isinstance(value, list):
+        return len(value)
+    if isinstance(value, dict):
+        return sorted(value.keys())
+    if isinstance(value, str) and value:
+        return "<redacted>"
+    return value
+
+
+def _summarize_intake(value: Any) -> Any:
+    """Reduce an intake payload field-by-field (covers stories, onboard_text, etc.)."""
+    if not isinstance(value, dict):
+        return value
+    return {key: _summarize_intake_value(val) for key, val in value.items()}
+
+
+def _summarize_profile_content(envelope: dict[str, Any]) -> dict[str, Any]:
+    """Summarize profile/resume business content within envelope["data"] to counts
+    and key names. Leaves tag-only fields (orphaned_skills, skills_index, ...) as-is.
+    """
+    data = envelope.get("data")
+    if not isinstance(data, dict):
+        return envelope
+    summarized = dict(data)
+    if "compiled_profile" in summarized:
+        summarized["compiled_profile"] = _summarize_compiled_profile(summarized["compiled_profile"])
+    if "sections" in summarized:
+        summarized["sections"] = _summarize_sections(summarized["sections"])
+    if "intake" in summarized:
+        summarized["intake"] = _summarize_intake(summarized["intake"])
+    return {**envelope, "data": summarized}
+
+
 def _sanitize_tool_output(output: Any) -> dict[str, Any]:
     if isinstance(output, _TraceExceptionOutput):
         return output.sanitized
@@ -253,9 +306,10 @@ def _sanitize_tool_output(output: Any) -> dict[str, Any]:
     if envelope is None:
         return {"output_type": type(output).__name__}
 
-    # Return the full envelope redacted — all business content is preserved,
-    # contact PII is stripped.
-    return _redact_pii(dict(envelope))
+    # Contact PII is stripped from the envelope. Profile/resume business content
+    # (compiled_profile, sections, intake) is summarized to counts and key names —
+    # story narratives, section text, and resume text never leave the span.
+    return _summarize_profile_content(_redact_pii(dict(envelope)))
 
 
 def _sanitize_node_inputs(
