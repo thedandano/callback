@@ -1005,6 +1005,18 @@ def submit_tailor(
     return _submit_tailor_impl(session_id, edits, no_coverage=no_coverage, output_dir=output_dir)
 
 
+_STALE_RETRY_KEYS = (
+    "tailored",
+    "tailored_sections",
+    "pdf_path",
+    "render_page_count",
+    "render_warnings",
+    "parsed_final",
+    "score_final",
+    "report",
+)
+
+
 def _tailor_retry_update(graph, config, values: dict, session_id: str) -> None:
     """Log a retry when the session previously errored, then apply the state update.
 
@@ -1015,14 +1027,25 @@ def _tailor_retry_update(graph, config, values: dict, session_id: str) -> None:
     itself, whose outgoing (conditional) edge would re-evaluate against the
     now-cleared error and route past tailor/render entirely instead of retrying
     them.
+
+    On a retry (the session's prior state carries an error), also clear stale
+    outputs (_STALE_RETRY_KEYS) from an earlier attempt that got further than
+    this one before failing — e.g. an edits attempt that rendered a PDF and
+    then failed at parse_final, followed by a no_coverage retry that skips
+    render entirely. Without this, the stale pdf_path/tailored content would
+    survive into finalize alongside outcome.no_coverage: true. Caller-supplied
+    values always win over the stale-clearing defaults.
     """
     snapshot = graph.get_state(config)
+    update = values
     if snapshot.values.get("error"):
         _log(
             "INFO",
             {"tool": "submit_tailor", "session_id": session_id, "event": "retry_after_error"},
         )
-    graph.update_state(config, values, as_node=SCORE_INITIAL_NODE)
+        stale = dict.fromkeys(_STALE_RETRY_KEYS)
+        update = {**stale, **values}
+    graph.update_state(config, update, as_node=SCORE_INITIAL_NODE)
 
 
 def _submit_tailor_no_coverage(session_id: str, graph, config, resolved_output_dir) -> str:

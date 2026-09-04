@@ -233,6 +233,50 @@ def test_submit_tailor_can_be_retried_after_render_failure(tmp_path, monkeypatch
     assert actual == {"status": "ok", "pdf_exists": True}
 
 
+def test_submit_tailor_no_coverage_retry_clears_stale_render_outputs(tmp_path, monkeypatch):
+    """A no_coverage retry after a rendered-then-failed edits attempt must not leak
+    the abandoned attempt's pdf_path into the no_coverage envelope."""
+    from callback.server import submit_tailor
+
+    resume_label = "stale_leak_resume"
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    _make_section_map_and_write(resume_label)
+
+    jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python", "Kubernetes"]})
+    session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
+
+    edits = [
+        {"section": "summary", "op": "replace", "value": "Python + Kubernetes engineer."},
+    ]
+
+    # render succeeds and sets pdf_path, but parse_final fails (empty extracted text)
+    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", lambda path: "")
+
+    first = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    assert first == {
+        "status": "error",
+        "error": {
+            "stage": "submit_tailor",
+            "code": "pipeline_error",
+            "message": "parse_final: PDF extracted to empty text",
+            "retriable": True,
+        },
+        "session_id": session_id,
+    }
+
+    second = json.loads(submit_tailor(session_id=session_id, edits=[], no_coverage=True))
+    actual = {
+        "status": second["status"],
+        "pdf_path": second["data"]["pdf_path"],
+        "outcome": second["data"]["outcome"],
+    }
+    assert actual == {
+        "status": "ok",
+        "pdf_path": None,
+        "outcome": {"no_coverage": True, "reason": "no wiki stories cover required keywords"},
+    }
+
+
 def test_submit_tailor_replaces_project_entry(tmp_path, monkeypatch):
     from callback.server import submit_tailor
 
