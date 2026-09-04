@@ -1253,10 +1253,23 @@ def _onboard_user_impl(
     )
     graph = build_profile_graph()
     config = make_profile_config(session_id, tool_name="onboard_user")
-    invoke_graph_without_native_tracing(graph, initial_state, config)
-    state_values = graph.get_state(config).values
+    state_values, invoke_error = _onboard_user_invoke(graph, initial_state, config, session_id)
+    if invoke_error is not None:
+        return invoke_error
+    assert state_values is not None
 
     return _ok(session_id, "compile_profile", _build_onboard_data(state_values, warnings))
+
+
+def _onboard_user_invoke(
+    graph, initial_state: ProfileState, config, session_id: str
+) -> tuple[dict, None] | tuple[None, str]:
+    """Invoke the profile graph and fetch its state, mapping raised errors to envelopes."""
+    try:
+        invoke_graph_without_native_tracing(graph, initial_state, config)
+        return graph.get_state(config).values, None
+    except Exception:
+        return None, _unexpected_error("onboard_user", session_id)
 
 
 @mcp.tool()

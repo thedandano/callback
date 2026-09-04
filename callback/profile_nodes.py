@@ -80,10 +80,11 @@ def onboard(state: ProfileState) -> dict:
         return {"intake": {"status": "no_resume"}}
 
     label = "primary"
-    clear_resumes()
-    save_resume(label, state.resume_path)
     text = extractor.extract(state.resume_path)
     section_map = extractor.extract_sections(text)
+
+    clear_resumes()
+    save_resume(label, state.resume_path)
 
     intake = state.intake or {}
     _persist_onboard_text(intake)

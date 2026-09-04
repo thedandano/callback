@@ -4,6 +4,8 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 import callback.extractor as ext
 import callback.wiki as wiki_module
 from callback.profile_nodes import (
@@ -229,6 +231,23 @@ class TestCreateStory:
                 "needs_compile": True,
             },
         }
+
+
+class TestOnboardValidatesBeforeClearing:
+    def test_onboard_keeps_old_resume_when_replacement_is_missing(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+
+        existing_resume = _make_resume_file(tmp_path)
+        save_resume("existing_label", str(existing_resume))
+
+        missing_path = str(tmp_path / "does_not_exist.pdf")
+        state = _make_state(resume_path=missing_path)
+
+        with pytest.raises(FileNotFoundError):
+            onboard(state)
+
+        assert list_resumes() == ["existing_label"]
 
 
 class TestOnboardIdempotency:

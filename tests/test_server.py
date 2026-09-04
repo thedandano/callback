@@ -1615,6 +1615,39 @@ class TestTailorDiagnostics:
         assert actual == expected
 
 
+def test_onboard_user_returns_envelope_when_extractor_raises(tmp_path, monkeypatch):
+    from callback import server
+    from callback.profile_graph import build_profile_graph
+
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "profile-wiki")
+    db_path = tmp_path / "profile-sessions.db"
+    monkeypatch.setattr(server, "build_profile_graph", lambda: build_profile_graph(db_path=db_path))
+
+    def broken_extract(path):
+        raise ValueError("boom")
+
+    monkeypatch.setattr("callback.profile_nodes.extractor.extract", broken_extract)
+
+    resume = tmp_path / "jane.txt"
+    resume.write_text("Jane Doe\n", encoding="utf-8")
+
+    session_id = "onboard-extractor-raises"
+    result = json.loads(server._onboard_user_impl(session_id, str(resume)))
+
+    expected = {
+        "status": "error",
+        "error": {
+            "stage": "onboard_user",
+            "code": "unexpected_error",
+            "message": "unexpected onboard_user failure; inspect callback logs",
+            "retriable": False,
+        },
+        "session_id": session_id,
+    }
+    assert result == expected
+
+
 # ============================================================================
 
 
