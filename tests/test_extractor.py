@@ -116,6 +116,18 @@ class TestContactInfoParsing:
             email="jane.smith@example.com",
         )
 
+    def test_eight_digit_phone_with_year_shaped_groups(self):
+        lines = [
+            "Jane Smith",
+            "20 20 19 99",
+            "jane.smith@example.com",
+        ]
+        assert _parse_contact_info(lines) == ContactInfo(
+            name="Jane Smith",
+            phone="20 20 19 99",
+            email="jane.smith@example.com",
+        )
+
     def test_name_extracted(self):
         lines = [
             "Jane Smith",

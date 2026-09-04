@@ -269,7 +269,7 @@ def _parse_education(raw: list[str]) -> list[EducationEntry]:
 _EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
 _PHONE_RE = re.compile(r"[\+\(]?[\d\s\(\)\-\.]{7,15}\d")
 _URL_RE = re.compile(r"https?://\S+")
-_YEAR_PAIR_RE = re.compile(r"(?:19|20)\d{2}(?:19|20)\d{2}")
+_YEAR_RANGE_RE = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)\D+(?<!\d)(?:19|20)\d{2}(?!\d)")
 
 
 def _process_url_line(stripped: str) -> tuple[str | None, str | None]:
@@ -285,6 +285,20 @@ def _process_url_line(stripped: str) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _is_year_range_text(text: str) -> bool:
+    """True when text is a year-range date, e.g. "2019 - 2023" or "2018.2022".
+
+    Requires two standalone four-digit year tokens separated by non-digits,
+    AND that those years are the only digits present — so an eight-digit
+    phone number like "20 20 19 99" (which coincidentally concatenates to
+    two year-shaped groups) is not mistaken for a date range.
+    """
+    m = _YEAR_RANGE_RE.search(text)
+    if m is None:
+        return False
+    return re.sub(r"\D", "", text) == re.sub(r"\D", "", m.group(0))
+
+
 def _extract_phone_candidate(stripped: str) -> str | None:
     """Return the first valid phone candidate found, else None.
 
@@ -295,15 +309,15 @@ def _extract_phone_candidate(stripped: str) -> str | None:
     for ph in _PHONE_RE.finditer(stripped):
         candidate = ph.group(0).strip()
         digits = re.sub(r"\D", "", candidate)
-        if len(digits) < 7 or _YEAR_PAIR_RE.fullmatch(digits):
+        if len(digits) < 7 or _is_year_range_text(candidate):
             continue
         return candidate
     return None
 
 
-def _is_year_pair_line(stripped: str) -> bool:
+def _is_year_range_line(stripped: str) -> bool:
     """True when a line's digits are exactly two four-digit years (a date range)."""
-    return bool(_YEAR_PAIR_RE.fullmatch(re.sub(r"\D", "", stripped)))
+    return _is_year_range_text(stripped)
 
 
 def _extract_location_from_contact_line(stripped: str) -> str | None:
@@ -318,7 +332,7 @@ def _extract_location_from_contact_line(stripped: str) -> str | None:
             and "@" not in part
             and "linkedin.com" not in part.lower()
             and _extract_phone_candidate(part) is None
-            and not _is_year_pair_line(part)
+            and not _is_year_range_line(part)
         ):
             return part
     return None
@@ -382,7 +396,7 @@ def _phase3_find_location(
             and ":" not in stripped
             and "@" not in stripped
             and not (stripped == stripped.upper() and any(c.isalpha() for c in stripped))
-            and not _is_year_pair_line(stripped)
+            and not _is_year_range_line(stripped)
             and location is None
         ):
             location = stripped
