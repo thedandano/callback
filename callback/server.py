@@ -1454,6 +1454,22 @@ def compile_profile(story_tags: str | None = None, session_id: str | None = None
     return _compile_profile_impl(session_id, host_tags, resumed=resumed)
 
 
+def _resolve_new_thread_resume_label(stage: str, session_id: str) -> str | None:
+    """Resolve resume_label for a new profile thread, logging when unresolved.
+
+    A missing/ambiguous resume registry does not stop the profile graph — it
+    just means the wiki write falls back to _registered_label's own default —
+    but the tool logs the miss so it's visible in callback logs.
+    """
+    resume_label, label_error = _resolve_resume_label(None, session_id)
+    if label_error is not None:
+        _log(
+            "INFO",
+            {"tool": stage, "session_id": session_id, "event": "resume_label_unresolved"},
+        )
+    return resume_label
+
+
 @trace_tool("compile_profile", graph_name="profile")
 def _compile_profile_impl(session_id: str, host_tags: list[str], *, resumed: bool) -> str:
     graph = get_profile_graph()
@@ -1468,16 +1484,7 @@ def _compile_profile_impl(session_id: str, host_tags: list[str], *, resumed: boo
             graph.update_state(config, {"host_tags": host_tags})
         graph_input = None
     else:
-        resume_label, label_error = _resolve_resume_label(None, session_id)
-        if label_error is not None:
-            _log(
-                "INFO",
-                {
-                    "tool": "compile_profile",
-                    "session_id": session_id,
-                    "event": "resume_label_unresolved",
-                },
-            )
+        resume_label = _resolve_new_thread_resume_label("compile_profile", session_id)
         graph_input = ProfileState(
             session_id=session_id, resume_label=resume_label, host_tags=host_tags or None
         )
@@ -1564,7 +1571,8 @@ def _create_story_impl(session_id: str, intake: dict, *, resumed: bool) -> str:
         graph.update_state(config, {"intake": intake})
         graph_input = None
     else:
-        graph_input = ProfileState(session_id=session_id, intake=intake)
+        resume_label = _resolve_new_thread_resume_label("create_story", session_id)
+        graph_input = ProfileState(session_id=session_id, resume_label=resume_label, intake=intake)
     values, error = _run_profile_thread(graph, config, graph_input, session_id, "create_story")
     if error:
         return error

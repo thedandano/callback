@@ -35,12 +35,20 @@ def _persist_onboard_text(intake: dict) -> None:
         AccomplishmentsStore().save_onboard_text(onboard_text)
 
 
+def _registered_label(state_label: str | None) -> str:
+    """Resolve the resume label to use for reading/writing wiki content.
+
+    Uses the state's resume_label when set, else the first registered resume,
+    else falls back to "default" (no resumes registered at all).
+    """
+    if state_label:
+        return state_label
+    registered = list_resumes()
+    return registered[0] if registered else "default"
+
+
 def _resume_skills(label: str) -> list[str]:
     """Return all skills from sections.json for the given resume label."""
-    if label == "default":
-        registered = list_resumes()
-        if registered:
-            label = registered[0]
     pages = WikiStore().read_pages(label, ["sections.json"])
     sections_json = pages.get("sections.json", "")
     if not sections_json:
@@ -106,7 +114,7 @@ def compile_profile(state: ProfileState) -> dict:
     _log_enter("compile_profile", state)
     stories = AccomplishmentsStore().list_stories()
     host_tags = list(state.host_tags or [])
-    label = state.resume_label or "default"
+    label = _registered_label(state.resume_label)
     resume_skills = _resume_skills(label)
     all_tags = list(dict.fromkeys(host_tags + resume_skills))
     profile, warnings = ProfileCompiler().compile(stories, all_tags)

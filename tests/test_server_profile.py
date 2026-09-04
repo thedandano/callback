@@ -487,6 +487,34 @@ class TestCreateStory:
         expected = {"next_action": "create_story", "orphaned_skills": ["Go"]}
         assert actual == expected
 
+    def test_sessionless_renders_wiki_under_registered_label(self, tmp_path, monkeypatch):
+        _isolate_profile(tmp_path, monkeypatch)
+        _save_profile_with_resumes(tmp_path)
+
+        create_story(
+            primary_skill="Python",
+            skills=["Python"],
+            **_STORY_FIELDS,
+        )
+
+        backend_index = wiki_module.WikiStore().read_index("backend") or ""
+        backend_experience_dir = tmp_path / "profile-wiki" / "backend" / "experience"
+        story_pages = (
+            list(backend_experience_dir.glob("*.md")) if backend_experience_dir.exists() else []
+        )
+        story_content = story_pages[0].read_text(encoding="utf-8") if story_pages else ""
+        actual = {
+            "backend_index_links_python": "[Python]" in backend_index,
+            "backend_story_has_job_title": "Backend Engineer" in story_content,
+            "default_wiki_dir_exists": (tmp_path / "profile-wiki" / "default").exists(),
+        }
+        expected = {
+            "backend_index_links_python": True,
+            "backend_story_has_job_title": True,
+            "default_wiki_dir_exists": False,
+        }
+        assert actual == expected
+
     def test_run_without_saved_story_returns_story_not_saved(self, tmp_path, monkeypatch):
         _isolate_profile(tmp_path, monkeypatch)
         _save_profile_with_resumes(tmp_path)
