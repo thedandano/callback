@@ -104,6 +104,15 @@ class TestCheckProfile:
 
         assert result == {"profile_exists": False}
 
+    def test_check_profile_true_with_resume_but_no_compiled_profile(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        resume_file = _make_resume_file(tmp_path)
+        save_resume("jane_doe", str(resume_file))
+
+        result = check_profile(_make_state())
+
+        assert result == {"profile_exists": True}
+
 
 class TestOnboard:
     def test_no_resume_path_returns_no_resume_status(self, tmp_path, monkeypatch):

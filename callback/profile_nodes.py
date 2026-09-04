@@ -64,13 +64,12 @@ def _render_wiki(label: str, profile) -> None:
 
 @trace_node("profile", "check_profile")
 def check_profile(state: ProfileState) -> dict:
+    """A profile exists once a resume is registered — compiling (which creates the
+    compiled profile) happens downstream, and check_orphans already tolerates a
+    missing compiled profile.
+    """
     _log_enter("check_profile", state)
-    try:
-        load_compiled_profile()
-        has_resumes = len(list_resumes()) > 0
-        return {"profile_exists": has_resumes}
-    except ProfileMissingError:
-        return {"profile_exists": False}
+    return {"profile_exists": len(list_resumes()) > 0}
 
 
 @trace_node("profile", "onboard")
