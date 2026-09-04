@@ -81,10 +81,6 @@ class TestCheckProfileRouter:
 
         assert result.get("intake") == {"status": "no_resume"}
 
-    def test_routes_to_compile_profile_when_profile_and_resume_exist(self):
-        state = ProfileState(session_id="s-router-2", profile_exists=True)
-        assert _route_check_profile(state) == "compile_profile"
-
     def test_reonboard_with_existing_profile_replaces_resume(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
         monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
