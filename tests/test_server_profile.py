@@ -266,7 +266,11 @@ class TestCompileProfile:
         }
 
     def test_without_profile_returns_profile_missing(self, tmp_path, monkeypatch):
+        from unittest.mock import Mock, call
+
         _isolate_profile(tmp_path, monkeypatch)
+        mock_log = Mock()
+        monkeypatch.setattr(server_module, "_log", mock_log)
 
         result = json.loads(compile_profile())
 
@@ -276,6 +280,17 @@ class TestCompileProfile:
             "message": "no profile; call onboard_user first",
             "retriable": False,
         }
+
+        session_id = result["session_id"]
+        expected_call = call(
+            "INFO",
+            {
+                "tool": "compile_profile",
+                "session_id": session_id,
+                "event": "resume_label_unresolved",
+            },
+        )
+        assert expected_call in mock_log.call_args_list
 
     def test_invalid_story_tags_still_rejected(self, tmp_path, monkeypatch):
         _isolate_profile(tmp_path, monkeypatch)

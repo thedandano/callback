@@ -1469,7 +1469,16 @@ def _compile_profile_impl(session_id: str, host_tags: list[str], *, resumed: boo
             graph.update_state(config, {"compiled_profile": tags})
         graph_input = None
     else:
-        resume_label, _ = _resolve_resume_label(None, session_id)
+        resume_label, label_error = _resolve_resume_label(None, session_id)
+        if label_error is not None:
+            _log(
+                "INFO",
+                {
+                    "tool": "compile_profile",
+                    "session_id": session_id,
+                    "event": "resume_label_unresolved",
+                },
+            )
         graph_input = ProfileState(
             session_id=session_id, resume_label=resume_label, compiled_profile=tags
         )
