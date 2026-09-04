@@ -72,6 +72,62 @@ class TestContactInfoParsing:
             location="San Francisco, CA",
         )
 
+    def test_year_range_is_not_phone(self):
+        lines = [
+            "Jane Smith",
+            "Senior Engineer, 2019 - 2023",
+            "jane.smith@example.com",
+        ]
+        assert _parse_contact_info(lines) == ContactInfo(
+            name="Jane Smith",
+            email="jane.smith@example.com",
+        )
+
+    def test_dotted_year_range_is_not_phone(self):
+        lines = [
+            "Jane Smith",
+            "2018.2022",
+            "jane.smith@example.com",
+        ]
+        assert _parse_contact_info(lines) == ContactInfo(
+            name="Jane Smith",
+            email="jane.smith@example.com",
+        )
+
+    def test_phone_after_year_range_on_same_line(self):
+        lines = [
+            "Jane Smith",
+            "2019 - 2023 | +1 (415) 555-1234",
+            "jane.smith@example.com",
+        ]
+        assert _parse_contact_info(lines) == ContactInfo(
+            name="Jane Smith",
+            phone="+1 (415) 555-1234",
+            email="jane.smith@example.com",
+        )
+
+    def test_pipe_delimited_year_range_is_not_location(self):
+        lines = [
+            "Jane Smith",
+            "Senior Engineer, 2019 - 2023 | jane.smith@example.com",
+        ]
+        assert _parse_contact_info(lines) == ContactInfo(
+            name="Jane Smith",
+            email="jane.smith@example.com",
+        )
+
+    def test_eight_digit_phone_with_year_shaped_groups(self):
+        lines = [
+            "Jane Smith",
+            "20 20 19 99",
+            "jane.smith@example.com",
+        ]
+        assert _parse_contact_info(lines) == ContactInfo(
+            name="Jane Smith",
+            phone="20 20 19 99",
+            email="jane.smith@example.com",
+        )
+
     def test_name_extracted(self):
         lines = [
             "Jane Smith",

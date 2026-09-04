@@ -49,8 +49,10 @@ def make_config(
 
 
 def _route_check_profile(state: ProfileState) -> str:
-    """Route to onboard if no profile, else check_orphans."""
-    return "onboard" if not state.profile_exists else "check_orphans"
+    """Route to onboard when a resume is supplied or no profile exists."""
+    if state.resume_path or not state.profile_exists:
+        return "onboard"
+    return "check_orphans"
 
 
 def _route_check_orphans(state: ProfileState) -> str:

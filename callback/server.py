@@ -52,7 +52,7 @@ from callback.repository.preferences import PreferencesStore
 from callback.repository.resumes import list_resumes
 from callback.section_map import SectionMap, apply_edit
 from callback.state import ApplyState, ProfileState
-from callback.wiki import WikiStore
+from callback.wiki import WikiPageIdError, WikiStore
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 _LOG_FORMAT = "%(message)s"  # messages are already JSON strings
@@ -106,34 +106,17 @@ configure_logging(os.environ.get("CALLBACK_LOG_PATH"))
 logger = logging.getLogger(__name__)
 
 
-def _write_log_line(line: str) -> None:
-    """Write directly to the callback log file if configured."""
-    global _LOG_PATH
-    if _LOG_PATH is None:
-        return
-    try:
-        _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with _LOG_PATH.open("a", encoding="utf-8") as handle:
-            handle.write(line + "\n")
-    except OSError:
-        _LOG_PATH = None
-
-
 def _log(level: str, payload: dict) -> None:
     """Log a structured JSON message."""
     payload["timestamp"] = datetime.datetime.now(datetime.UTC).isoformat()
     payload["level"] = level
-    line = json.dumps(payload)
-    _write_log_line(line)
-    logger.info(line)
+    logger.log(getattr(logging, level, logging.INFO), json.dumps(payload))
 
 
 def _log_exception(payload: dict) -> None:
     """Log an exception payload plus traceback to stderr and the server log file."""
     payload["traceback"] = traceback.format_exc()
-    line = json.dumps(payload)
-    _write_log_line(line)
-    logger.exception(line)
+    logger.exception(json.dumps(payload))
 
 
 def _ensure_browsers() -> None:
@@ -299,10 +282,29 @@ def _project_page_ids(wiki_index: str) -> list[str]:
     return page_ids
 
 
+def _valid_project_page_ids(resume_label: str, page_ids: list[str]) -> list[str]:
+    """Return page_ids that resolve under the wiki root, logging any that don't."""
+    store = WikiStore()
+    valid_ids: list[str] = []
+    for page_id in page_ids:
+        if store.is_valid_page_id(resume_label, page_id):
+            valid_ids.append(page_id)
+        else:
+            _log(
+                "WARNING",
+                {
+                    "tool": "submit_keywords",
+                    "event": "invalid_wiki_link_skipped",
+                    "page_id": page_id,
+                },
+            )
+    return valid_ids
+
+
 def _rank_project_candidates(resume_label: str, keywords: dict, wiki_index: str) -> list[dict]:
     required = keywords.get("required") or []
     preferred = keywords.get("preferred") or []
-    page_ids = _project_page_ids(wiki_index)
+    page_ids = _valid_project_page_ids(resume_label, _project_page_ids(wiki_index))
     pages = WikiStore().read_pages(resume_label, page_ids)
     candidates: list[dict] = []
     for page_id in page_ids:
@@ -506,6 +508,18 @@ def _err(
     if session_id is not None:
         env["session_id"] = session_id
     return json.dumps(env)
+
+
+def _unexpected_error(stage: str, session_id: str) -> str:
+    """Log the active exception with traceback and return an unexpected_error envelope."""
+    _log_exception({"tool": stage, "session_id": session_id, "event": "unexpected_error"})
+    return _err(
+        stage=stage,
+        code="unexpected_error",
+        message=f"unexpected {stage} failure; inspect callback logs",
+        session_id=session_id,
+        retriable=False,
+    )
 
 
 def _submit_keywords_state_error(graph, config, session_id: str) -> str | None:
@@ -848,6 +862,26 @@ def submit_keywords(session_id: str, jd_json: str) -> str:
     return _submit_keywords_impl(session_id, jd_json)
 
 
+def _submit_keywords_invoke(
+    graph, config, keywords: dict, session_id: str
+) -> tuple[dict, None] | tuple[None, str]:
+    """Update graph state with keywords and invoke the graph, mapping raised errors to envelopes."""
+    try:
+        graph.update_state(config, {"keywords": keywords})
+    except ValueError as exc:
+        return None, _err(
+            stage="submit_keywords",
+            code="invalid_session",
+            message=str(exc),
+            session_id=session_id,
+            retriable=False,
+        )
+    try:
+        return invoke_graph_without_native_tracing(graph, None, config), None
+    except Exception:
+        return None, _unexpected_error("submit_keywords", session_id)
+
+
 @trace_tool("submit_keywords", graph_name="apply")
 def _submit_keywords_impl(session_id: str, jd_json: str) -> str:
     _log("INFO", {"tool": "submit_keywords", "session_id": session_id})
@@ -869,17 +903,10 @@ def _submit_keywords_impl(session_id: str, jd_json: str) -> str:
     if state_error is not None:
         return state_error
 
-    try:
-        graph.update_state(config, {"keywords": keywords})
-        state = invoke_graph_without_native_tracing(graph, None, config)
-    except ValueError as exc:
-        return _err(
-            stage="submit_keywords",
-            code="invalid_session",
-            message=str(exc),
-            session_id=session_id,
-            retriable=False,
-        )
+    state, invoke_error = _submit_keywords_invoke(graph, config, keywords, session_id)
+    if invoke_error is not None:
+        return invoke_error
+    assert state is not None
 
     data: dict = {"keywords": state.get("keywords")}
 
@@ -977,6 +1004,41 @@ def submit_tailor(
     return _submit_tailor_impl(session_id, edits, no_coverage=no_coverage, output_dir=output_dir)
 
 
+def _submit_tailor_no_coverage(session_id: str, graph, config, resolved_output_dir) -> str:
+    """Run the graph for the no_coverage path and build its success/error envelope."""
+    graph.update_state(config, {"no_coverage": True, "output_dir": resolved_output_dir})
+    try:
+        invoke_graph_without_native_tracing(graph, None, config)
+    except Exception:
+        return _unexpected_error("submit_tailor", session_id)
+    final_snapshot = graph.get_state(config)
+    final = final_snapshot.values
+    if final.get("error"):
+        return _err("submit_tailor", "pipeline_error", final["error"], session_id)
+    artifacts = _submit_tailor_artifacts(final, session_id)
+    return _ok(
+        session_id,
+        next_action=None,
+        data={
+            "edits_applied": [],
+            "edits_rejected": [],
+            "uncovered_skills": [],
+            "pdf_path": artifacts["pdf_path"],
+            "archive_path": artifacts["archive_path"],
+            "score_final": final.get("score_final"),
+            "report": final.get("report"),
+            "tailor_diagnostics": [],
+            "outcome": (final.get("report") or {}).get("no_coverage")
+            and {
+                "no_coverage": True,
+                "reason": "no wiki stories cover required keywords",
+            }
+            or {"no_coverage": False, "reason": None},
+        },
+        workflow=_complete_workflow(),
+    )
+
+
 @trace_tool("submit_tailor", graph_name="apply")
 def _submit_tailor_impl(
     session_id: str,
@@ -1007,34 +1069,7 @@ def _submit_tailor_impl(
         return output_dir_error
 
     if no_coverage:
-        graph.update_state(config, {"no_coverage": True, "output_dir": resolved_output_dir})
-        invoke_graph_without_native_tracing(graph, None, config)
-        final_snapshot = graph.get_state(config)
-        final = final_snapshot.values
-        if final.get("error"):
-            return _err("submit_tailor", "pipeline_error", final["error"], session_id)
-        artifacts = _submit_tailor_artifacts(final, session_id)
-        return _ok(
-            session_id,
-            next_action=None,
-            data={
-                "edits_applied": [],
-                "edits_rejected": [],
-                "uncovered_skills": [],
-                "pdf_path": artifacts["pdf_path"],
-                "archive_path": artifacts["archive_path"],
-                "score_final": final.get("score_final"),
-                "report": final.get("report"),
-                "tailor_diagnostics": [],
-                "outcome": (final.get("report") or {}).get("no_coverage")
-                and {
-                    "no_coverage": True,
-                    "reason": "no wiki stories cover required keywords",
-                }
-                or {"no_coverage": False, "reason": None},
-            },
-            workflow=_complete_workflow(),
-        )
+        return _submit_tailor_no_coverage(session_id, graph, config, resolved_output_dir)
 
     state_values = snapshot.values
     sections_dict = state_values.get("sections")
@@ -1087,7 +1122,10 @@ def _apply_tailor_edits(
             "output_dir": output_dir,
         },
     )
-    invoke_graph_without_native_tracing(graph, None, config)
+    try:
+        invoke_graph_without_native_tracing(graph, None, config)
+    except Exception:
+        return _unexpected_error("submit_tailor", session_id)
 
     final_snapshot = graph.get_state(config)
     final = final_snapshot.values
@@ -1234,10 +1272,23 @@ def _onboard_user_impl(
     )
     graph = build_profile_graph()
     config = make_profile_config(session_id, tool_name="onboard_user")
-    invoke_graph_without_native_tracing(graph, initial_state, config)
-    state_values = graph.get_state(config).values
+    state_values, invoke_error = _onboard_user_invoke(graph, initial_state, config, session_id)
+    if invoke_error is not None:
+        return invoke_error
+    assert state_values is not None
 
     return _ok(session_id, "compile_profile", _build_onboard_data(state_values, warnings))
+
+
+def _onboard_user_invoke(
+    graph, initial_state: ProfileState, config, session_id: str
+) -> tuple[dict, None] | tuple[None, str]:
+    """Invoke the profile graph and fetch its state, mapping raised errors to envelopes."""
+    try:
+        invoke_graph_without_native_tracing(graph, initial_state, config)
+        return graph.get_state(config).values, None
+    except Exception:
+        return None, _unexpected_error("onboard_user", session_id)
 
 
 @mcp.tool()
@@ -1440,8 +1491,20 @@ def _get_wiki_pages_impl(session_id: str, page_ids: list[str]) -> str:
             session_id=session_id,
         )
 
-    store = WikiStore()
-    pages = store.read_pages(resume_label, page_ids)
+    try:
+        pages = WikiStore().read_pages(resume_label, page_ids)
+    except WikiPageIdError as exc:
+        _log(
+            "WARNING",
+            {"tool": "get_wiki_pages", "session_id": session_id, "event": "invalid_page_id"},
+        )
+        return _err(
+            stage="get_wiki_pages",
+            code="invalid_page_id",
+            message=str(exc),
+            session_id=session_id,
+            retriable=True,
+        )
     workflow = _workflow(
         phase="tailor_editing",
         next_tool="submit_tailor",

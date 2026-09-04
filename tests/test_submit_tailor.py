@@ -675,3 +675,32 @@ def test_submit_tailor_rejects_unwritable_output_dir(tmp_path, monkeypatch):
         "session_id": session_id,
         "no_pdf_written": True,
     }
+
+
+def test_submit_tailor_returns_envelope_when_extractor_raises(tmp_path, monkeypatch):
+    from callback.server import submit_tailor
+
+    resume_label = "test_resume"
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    _make_section_map_and_write(resume_label)
+    jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
+    session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
+
+    def broken_extract(path):
+        raise RuntimeError("extractor: PDF yielded no text")
+
+    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", broken_extract)
+
+    result = json.loads(submit_tailor(session_id=session_id, edits=[]))
+
+    expected = {
+        "status": "error",
+        "error": {
+            "stage": "submit_tailor",
+            "code": "unexpected_error",
+            "message": "unexpected submit_tailor failure; inspect callback logs",
+            "retriable": False,
+        },
+        "session_id": session_id,
+    }
+    assert result == expected

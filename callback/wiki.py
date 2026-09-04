@@ -8,6 +8,10 @@ from pathlib import Path
 BASE_DIR = Path.home() / ".local" / "share" / "callback" / "profile-wiki"
 
 
+class WikiPageIdError(ValueError):
+    """A page_id resolves outside the wiki root."""
+
+
 def company_slug(company_name: str) -> str:
     """Convert company name to lowercase hyphenated alphanumeric slug.
 
@@ -32,9 +36,20 @@ class WikiStore:
         exp_dir.mkdir(parents=True, exist_ok=True)
         (exp_dir / f"{company_slug_}.md").write_text(content, encoding="utf-8")
 
+    def _page_path(self, resume_label: str, page_id: str) -> Path:
+        """Resolve page_id under the wiki root; reject ids that escape it."""
+        root = self.wiki_root(resume_label).resolve()
+        try:
+            path = (root / page_id).resolve()
+        except (ValueError, OSError) as exc:
+            raise WikiPageIdError(f"invalid page_id: {page_id!r}") from exc
+        if not path.is_relative_to(root):
+            raise WikiPageIdError(f"page_id escapes wiki root: {page_id!r}")
+        return path
+
     def write_page(self, resume_label: str, page_id: str, content: str) -> None:
         """Write any page by page_id (path relative to wiki_root)."""
-        p = self.wiki_root(resume_label) / page_id
+        p = self._page_path(resume_label, page_id)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
 
@@ -42,14 +57,22 @@ class WikiStore:
         p = self.wiki_root(resume_label) / "index.md"
         return p.read_text(encoding="utf-8") if p.exists() else None
 
+    def is_valid_page_id(self, resume_label: str, page_id: str) -> bool:
+        """Return True when page_id resolves under the wiki root, False otherwise."""
+        try:
+            self._page_path(resume_label, page_id)
+        except WikiPageIdError:
+            return False
+        return True
+
     def read_pages(self, resume_label: str, page_ids: list[str]) -> dict[str, str]:
         """Return {page_id: content} for each requested page.
 
-        Missing pages return empty string.
+        Missing pages return empty string. Raises ValueError for a page_id
+        that resolves outside the wiki root.
         """
-        root = self.wiki_root(resume_label)
         result = {}
         for page_id in page_ids:
-            p = root / page_id
-            result[page_id] = p.read_text(encoding="utf-8") if p.exists() else ""
+            p = self._page_path(resume_label, page_id)
+            result[page_id] = p.read_text(encoding="utf-8") if p.is_file() else ""
         return result
