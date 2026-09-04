@@ -18,6 +18,7 @@ def _fake_graph(state_values: dict):
     class _Snap:
         def __init__(self) -> None:
             self.values = state_values
+            self.next = ()
 
     class _Graph:
         def invoke(self, state, config):
@@ -517,7 +518,9 @@ class TestCreateStory:
         }
         assert result == expected
 
-    def test_node_exception_returns_unexpected_error(self, tmp_path, monkeypatch):
+    def test_node_exception_at_create_story_is_retriable(self, tmp_path, monkeypatch):
+        """A failure while the thread is parked at create_story cannot tell whether
+        the story hit disk, so the envelope is retriable and names the safe retry."""
         _isolate_profile(tmp_path, monkeypatch)
         _save_profile_with_resumes(tmp_path)
 
@@ -538,9 +541,12 @@ class TestCreateStory:
             "status": "error",
             "error": {
                 "stage": "create_story",
-                "code": "unexpected_error",
-                "message": "unexpected create_story failure; inspect callback logs",
-                "retriable": False,
+                "code": "story_unconfirmed",
+                "message": (
+                    "story save could not be confirmed; call create_story again with this "
+                    "session_id (an identical story is not saved twice)"
+                ),
+                "retriable": True,
             },
             "session_id": result["session_id"],
         }
@@ -680,6 +686,57 @@ class TestCreateStory:
             "session_id": result["session_id"],
         }
         assert result == expected
+
+    def test_failure_after_story_write_is_retriable_without_duplicate(self, tmp_path, monkeypatch):
+        """The story hits accomplishments.json, then the run fails before the
+        checkpoint advances past create_story. The tool must say so with a
+        retriable envelope, and the retry must reuse the stored story."""
+        _isolate_profile(tmp_path, monkeypatch)
+        _save_profile_with_resumes(tmp_path)
+
+        real_store = pnodes.AccomplishmentsStore
+        state = {"raised": False}
+
+        class _StoreThenFail(real_store):
+            def save_story(self, story):
+                saved = super().save_story(story)
+                if not state["raised"]:
+                    state["raised"] = True
+                    raise RuntimeError("checkpoint write failed")
+                return saved
+
+        monkeypatch.setattr(pnodes, "AccomplishmentsStore", _StoreThenFail)
+
+        first = json.loads(create_story(primary_skill="Python", skills=["Python"], **_STORY_FIELDS))
+        expected = {
+            "status": "error",
+            "error": {
+                "stage": "create_story",
+                "code": "story_unconfirmed",
+                "message": (
+                    "story save could not be confirmed; call create_story again with this "
+                    "session_id (an identical story is not saved twice)"
+                ),
+                "retriable": True,
+            },
+            "session_id": first["session_id"],
+        }
+        assert first == expected
+
+        retry = json.loads(
+            create_story(
+                primary_skill="Python",
+                skills=["Python"],
+                session_id=first["session_id"],
+                **_STORY_FIELDS,
+            )
+        )
+        actual = {
+            "status": retry["status"],
+            "story_id": retry["data"]["story_id"],
+            "stored": len(AccomplishmentsStore().list_stories()),
+        }
+        assert actual == {"status": "ok", "story_id": "story-001", "stored": 1}
 
     def test_compile_failure_after_save_is_recoverable(self, tmp_path, monkeypatch):
         _isolate_profile(tmp_path, monkeypatch)

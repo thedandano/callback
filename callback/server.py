@@ -1378,22 +1378,47 @@ def _compile_failed_after_save_error(stage: str, session_id: str) -> str:
     return _err(stage, "compile_failed", message, session_id, retriable=True)
 
 
-def _profile_next_or_none(graph, config, session_id: str, stage: str) -> tuple | None:
-    """Read the thread's pending node after a failure; None when the checkpoint is unreadable."""
+def _profile_failure_error(graph, config, session_id: str, stage: str) -> str:
+    """Classify a failed profile run by the durable checkpoint's pending node.
+
+    The checkpoint read is guarded: an unreadable checkpoint falls through to the
+    generic unexpected_error envelope instead of escaping as a raw MCP failure.
+    """
     try:
-        return graph.get_state(config).next
+        snapshot = graph.get_state(config)
     except Exception:
         _log_exception({"tool": stage, "session_id": session_id, "event": "checkpoint_error"})
-        return None
+        snapshot = None
+    pending = snapshot.next if snapshot is not None else ()
+    intake = snapshot.values.get("intake") if snapshot is not None else None
+    if pending == ("compile_profile",):
+        return _compile_failed_after_save_error(stage, session_id)
+    if pending == ("create_story",) and story_pending(intake):
+        # The node may have written accomplishments.json before the checkpoint
+        # write failed. save_story ignores an identical story, so retrying is safe.
+        return _err(
+            stage,
+            "story_unconfirmed",
+            "story save could not be confirmed; call create_story again with this "
+            "session_id (an identical story is not saved twice)",
+            session_id,
+            retriable=True,
+        )
+    return _err(
+        stage=stage,
+        code="unexpected_error",
+        message=f"unexpected {stage} failure; inspect callback logs",
+        session_id=session_id,
+        retriable=False,
+    )
 
 
-def _run_profile_thread(
-    graph, config, graph_input, session_id: str, stage: str
-) -> tuple[dict, None] | tuple[None, str]:
+def _run_profile_thread(graph, config, graph_input, session_id: str, stage: str):
     """Invoke the profile graph; if it paused before create_story with a story pending,
     continue once.
 
-    Returns (state_values, error_envelope_or_None).
+    Returns (final_snapshot, error_envelope_or_None). The snapshot carries both the
+    state values and the pending node, so callers never re-read the checkpoint.
     """
     try:
         invoke_graph_without_native_tracing(graph, graph_input, config)
@@ -1403,26 +1428,18 @@ def _run_profile_thread(
             snapshot = graph.get_state(config)
     except Exception:
         _log_exception({"tool": stage, "session_id": session_id, "event": "unexpected_error"})
-        if _profile_next_or_none(graph, config, session_id, stage) == ("compile_profile",):
-            return None, _compile_failed_after_save_error(stage, session_id)
-        return None, _err(
-            stage=stage,
-            code="unexpected_error",
-            message=f"unexpected {stage} failure; inspect callback logs",
-            session_id=session_id,
-            retriable=False,
-        )
-    values = snapshot.values
-    if (values.get("intake") or {}).get("status") == "no_resume":
+        return None, _profile_failure_error(graph, config, session_id, stage)
+    if (snapshot.values.get("intake") or {}).get("status") == "no_resume":
         return None, _err(
             stage, "profile_missing", "no profile; call onboard_user first", session_id
         )
-    return values, None
+    return snapshot, None
 
 
-def _profile_thread_data(graph, config, values: dict) -> tuple[str | None, dict]:
+def _profile_thread_data(snapshot) -> tuple[str | None, dict]:
     """Return (next_action, common data) for a profile thread after a run."""
-    paused = graph.get_state(config).next == ("create_story",)
+    values = snapshot.values
+    paused = snapshot.next == ("create_story",)
     intake = values.get("intake") or {}
     data = {
         "compiled_profile": values.get("compiled_profile") or {},
@@ -1549,11 +1566,11 @@ def _compile_profile_impl(
         graph_input = ProfileState(
             session_id=session_id, resume_label=resume_label, host_tags=host_tags or None
         )
-    values, error = _run_profile_thread(graph, config, graph_input, session_id, "compile_profile")
+    snapshot, error = _run_profile_thread(graph, config, graph_input, session_id, "compile_profile")
     if error:
         return error
-    assert values is not None
-    next_action, data = _profile_thread_data(graph, config, values)
+    assert snapshot is not None
+    next_action, data = _profile_thread_data(snapshot)
     return _ok(session_id, next_action, data)
 
 
@@ -1633,10 +1650,11 @@ def _create_story_impl(session_id: str, intake: dict, *, resumed: bool) -> str:
     else:
         resume_label = _resolve_new_thread_resume_label("create_story", session_id)
         graph_input = ProfileState(session_id=session_id, resume_label=resume_label, intake=intake)
-    values, error = _run_profile_thread(graph, config, graph_input, session_id, "create_story")
+    snapshot, error = _run_profile_thread(graph, config, graph_input, session_id, "create_story")
     if error:
         return error
-    assert values is not None
+    assert snapshot is not None
+    values = snapshot.values
     if not (values.get("intake") or {}).get("story_id"):
         _log(
             "ERROR",
@@ -1649,7 +1667,7 @@ def _create_story_impl(session_id: str, intake: dict, *, resumed: bool) -> str:
             session_id,
             retriable=False,
         )
-    next_action, data = _profile_thread_data(graph, config, values)
+    next_action, data = _profile_thread_data(snapshot)
     data = {
         "story_id": (values.get("intake") or {}).get("story_id"),
         "primary_skill": intake["primary_skill"],
