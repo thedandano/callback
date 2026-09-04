@@ -132,7 +132,7 @@ Keyword extraction is host-owned: `callback` returns the JD markdown and extract
 
 ### Profile graph (`profile_graph.py`, `profile_nodes.py`)
 
-Cyclic, with interrupts after `onboard`, before `create_story`, and optionally after `compile_profile`:
+Cyclic, with interrupts after `onboard` and before `create_story`:
 
 ```
 check_profile ──(resume_path or no profile)──▶ onboard ─▶ compile_profile ─▶ check_orphans
