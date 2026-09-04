@@ -54,6 +54,14 @@ class WikiStore:
         p = self.wiki_root(resume_label) / "index.md"
         return p.read_text(encoding="utf-8") if p.exists() else None
 
+    def is_valid_page_id(self, resume_label: str, page_id: str) -> bool:
+        """Return True when page_id resolves under the wiki root, False otherwise."""
+        try:
+            self._page_path(resume_label, page_id)
+        except WikiPageIdError:
+            return False
+        return True
+
     def read_pages(self, resume_label: str, page_ids: list[str]) -> dict[str, str]:
         """Return {page_id: content} for each requested page.
 

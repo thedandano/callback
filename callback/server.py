@@ -282,10 +282,29 @@ def _project_page_ids(wiki_index: str) -> list[str]:
     return page_ids
 
 
+def _valid_project_page_ids(resume_label: str, page_ids: list[str]) -> list[str]:
+    """Return page_ids that resolve under the wiki root, logging any that don't."""
+    store = WikiStore()
+    valid_ids: list[str] = []
+    for page_id in page_ids:
+        if store.is_valid_page_id(resume_label, page_id):
+            valid_ids.append(page_id)
+        else:
+            _log(
+                "WARNING",
+                {
+                    "tool": "submit_keywords",
+                    "event": "invalid_wiki_link_skipped",
+                    "page_id": page_id,
+                },
+            )
+    return valid_ids
+
+
 def _rank_project_candidates(resume_label: str, keywords: dict, wiki_index: str) -> list[dict]:
     required = keywords.get("required") or []
     preferred = keywords.get("preferred") or []
-    page_ids = _project_page_ids(wiki_index)
+    page_ids = _valid_project_page_ids(resume_label, _project_page_ids(wiki_index))
     pages = WikiStore().read_pages(resume_label, page_ids)
     candidates: list[dict] = []
     for page_id in page_ids:

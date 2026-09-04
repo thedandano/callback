@@ -88,3 +88,10 @@ def test_read_pages_returns_empty_for_directory_ids(tmp_path, monkeypatch):
     s = store(tmp_path, monkeypatch)
     s.write_page("r", "experience/acme.md", "acme")
     assert s.read_pages("r", ["", ".", "experience"]) == {"": "", ".": "", "experience": ""}
+
+
+def test_is_valid_page_id_rejects_traversal_and_accepts_nested(tmp_path, monkeypatch):
+    s = store(tmp_path, monkeypatch)
+    assert s.is_valid_page_id("r", "../x.md") is False
+    assert s.is_valid_page_id("r", "/etc/passwd") is False
+    assert s.is_valid_page_id("r", "experience/a/b.md") is True

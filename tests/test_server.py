@@ -4,7 +4,7 @@ import json
 import sqlite3
 import uuid
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from fastmcp import Client
@@ -1165,6 +1165,67 @@ def test_get_wiki_pages_rejects_page_id_outside_wiki_root(tmp_path, monkeypatch)
         "session_id": session_id,
     }
     assert result == expected
+
+
+def test_rank_project_candidates_skips_invalid_index_links(tmp_path, monkeypatch):
+    from callback.server import _rank_project_candidates
+    from callback.wiki import WikiStore
+
+    resume_label = "invalid_link_resume"
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    store = WikiStore()
+    store.write_page(
+        resume_label,
+        "experience/ok.md",
+        """# Solid Project
+
+**Job Title:** Project
+
+Skills: Python, RAG
+
+**Situation:** Built a thing.
+
+**Behavior:** Built a Python pipeline.
+
+**Impact:** Shipped it.
+""",
+    )
+    wiki_index = "\n".join(
+        [
+            "# Profile Index",
+            "- [Solid Project](experience/ok.md)",
+            "- [Escaped](experience/../../secret.md)",
+        ]
+    )
+    keywords = {"required": ["Python", "RAG"], "preferred": []}
+
+    mock_log = Mock()
+    monkeypatch.setattr("callback.server._log", mock_log)
+
+    candidates = _rank_project_candidates(resume_label, keywords, wiki_index)
+
+    assert candidates == [
+        {
+            "page_id": "experience/ok.md",
+            "name": "Solid Project",
+            "skills": ["Python", "RAG"],
+            "score": 1.0,
+            "required_matched": ["Python", "RAG"],
+            "preferred_matched": [],
+            "evidence_preview": (
+                "Skills: Python, RAG **Situation:** Built a thing. "
+                "**Behavior:** Built a Python pipeline. **Impact:** Shipped it."
+            ),
+        }
+    ]
+    mock_log.assert_called_once_with(
+        "WARNING",
+        {
+            "tool": "submit_keywords",
+            "event": "invalid_wiki_link_skipped",
+            "page_id": "experience/../../secret.md",
+        },
+    )
 
 
 class TestOrphanDetection:
