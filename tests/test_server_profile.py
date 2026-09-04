@@ -221,6 +221,25 @@ class TestCompileProfile:
             "orphaned_skills": ["Python", "Rust"],
         }
 
+    def test_session_waiting_for_story_returns_invalid_state(self, tmp_path, monkeypatch):
+        _isolate_profile(tmp_path, monkeypatch)
+        _save_profile_with_resumes(tmp_path)
+        compiled = json.loads(compile_profile(story_tags='["Rust"]'))  # paused before create_story
+
+        result = json.loads(compile_profile(session_id=compiled["session_id"]))
+
+        expected = {
+            "status": "error",
+            "error": {
+                "stage": "compile_profile",
+                "code": "invalid_state",
+                "message": "session is not waiting for compile_profile",
+                "retriable": False,
+            },
+            "session_id": compiled["session_id"],
+        }
+        assert result == expected
+
     def test_unknown_session_returns_session_not_found(self, tmp_path, monkeypatch):
         _isolate_profile(tmp_path, monkeypatch)
 
