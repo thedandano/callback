@@ -5,10 +5,15 @@ The profile graph manages user profile state across three MCP tools:
 - compile_profile: recompiles the profile (compile_profile node)
 - create_story: creates a behavioral story for a skill (create_story node)
 
-Graph shape: check_profile router → onboard | compile_profile → check_orphans
-Cycle: create_story → compile_profile → check_orphans (until no orphans).
+Graph shape::
 
-Interrupts after onboard and create_story to allow caller to provide input.
+    check_profile ──(resume_path or no profile)──▶ onboard ─▶ compile_profile ─▶ check_orphans
+                  ├─(story pending in intake)────▶ create_story ─▶ compile_profile ─┘   │
+                  └─(otherwise)──────────────────▶ compile_profile ─────────────────┘   │
+                                                                                         ▼
+                                  create_story ◀──(orphans)── check_orphans ──(none)──▶ END
+
+Interrupts: after onboard; before create_story.
 """
 
 import functools
@@ -49,11 +54,18 @@ def make_config(
     )
 
 
+def story_pending(intake: dict | None) -> bool:
+    """True when the host has supplied a story that has not been saved yet."""
+    return bool(intake and intake.get("primary_skill") and not intake.get("story_id"))
+
+
 def _route_check_profile(state: ProfileState) -> str:
-    """Route to onboard when a resume is supplied or no profile exists."""
+    """Onboard when resume/no-profile; else save a pending story, or recompile."""
     if state.resume_path or not state.profile_exists:
         return "onboard"
-    return "check_orphans"
+    if story_pending(state.intake):
+        return "create_story"
+    return "compile_profile"
 
 
 def _route_check_orphans(state: ProfileState) -> str:
@@ -73,8 +85,8 @@ def build_profile_graph(db_path: Path = DB_PATH):
                  Defaults to ~/.local/share/callback/profile-sessions.db
 
     Returns:
-        Compiled LangGraph StateGraph for ProfileState with interrupts
-        configured after onboard and create_story nodes.
+        Compiled LangGraph StateGraph for ProfileState with an interrupt
+        after onboard and an interrupt before create_story.
     """
     # Initialize checkpointer with SQLite backend
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -102,7 +114,11 @@ def build_profile_graph(db_path: Path = DB_PATH):
     builder.add_conditional_edges(
         "check_profile",
         _route_check_profile,
-        {"onboard": "onboard", "check_orphans": "check_orphans"},
+        {
+            "onboard": "onboard",
+            "create_story": "create_story",
+            "compile_profile": "compile_profile",
+        },
     )
     builder.add_conditional_edges(
         "check_orphans",
@@ -112,7 +128,8 @@ def build_profile_graph(db_path: Path = DB_PATH):
 
     return builder.compile(
         checkpointer=checkpointer,
-        interrupt_after=["onboard", "compile_profile", "create_story"],
+        interrupt_after=["onboard"],
+        interrupt_before=["create_story"],
     )
 
 
