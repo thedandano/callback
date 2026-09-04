@@ -543,11 +543,11 @@ def parse_final(state: ApplyState) -> dict:
     if not state.pdf_path:
         return {"error": "parse_final: no pdf_path in state"}
     p = Path(state.pdf_path)
-    if not p.exists():
-        return {"error": f"parse_final: pdf file not found: {state.pdf_path}"}
-    if p.stat().st_size == 0:
-        return {"error": f"parse_final: pdf file is empty: {state.pdf_path}"}
     try:
+        if not p.exists():
+            return {"error": f"parse_final: pdf file not found: {state.pdf_path}"}
+        if p.stat().st_size == 0:
+            return {"error": f"parse_final: pdf file is empty: {state.pdf_path}"}
         text = resume_extractor.extract(state.pdf_path)
     except Exception as exc:
         logger.error(

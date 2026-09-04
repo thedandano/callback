@@ -165,6 +165,23 @@ def test_parse_final_returns_error_when_extract_raises(tmp_path, monkeypatch):
     assert actual == expected
 
 
+def test_parse_final_returns_error_when_stat_raises(tmp_path, monkeypatch):
+    """A PDF that vanishes between exists() and stat() must land in the retriable
+    error path, not escape as an unhandled OSError."""
+    pdf_path = tmp_path / "resume.pdf"
+    pdf_path.write_bytes(b"not empty")
+
+    def raising_stat(self, *args, **kwargs):
+        raise OSError("stale file handle")
+
+    monkeypatch.setattr(Path, "stat", raising_stat)
+
+    state = ApplyState(session_id="s3", pdf_path=str(pdf_path))
+    actual = parse_final(state)
+    expected = {"error": "parse_final: extract failed: stale file handle"}
+    assert actual == expected
+
+
 def test_finalize_returns_error_when_archive_write_raises_oserror(tmp_path, monkeypatch):
     import callback.apply_nodes as apply_nodes_module
 
