@@ -1378,6 +1378,15 @@ def _compile_failed_after_save_error(stage: str, session_id: str) -> str:
     return _err(stage, "compile_failed", message, session_id, retriable=True)
 
 
+def _profile_next_or_none(graph, config, session_id: str, stage: str) -> tuple | None:
+    """Read the thread's pending node after a failure; None when the checkpoint is unreadable."""
+    try:
+        return graph.get_state(config).next
+    except Exception:
+        _log_exception({"tool": stage, "session_id": session_id, "event": "checkpoint_error"})
+        return None
+
+
 def _run_profile_thread(
     graph, config, graph_input, session_id: str, stage: str
 ) -> tuple[dict, None] | tuple[None, str]:
@@ -1394,7 +1403,7 @@ def _run_profile_thread(
             snapshot = graph.get_state(config)
     except Exception:
         _log_exception({"tool": stage, "session_id": session_id, "event": "unexpected_error"})
-        if graph.get_state(config).next == ("compile_profile",):
+        if _profile_next_or_none(graph, config, session_id, stage) == ("compile_profile",):
             return None, _compile_failed_after_save_error(stage, session_id)
         return None, _err(
             stage=stage,

@@ -652,6 +652,35 @@ class TestCreateStory:
         }
         assert result == expected
 
+    def test_unreadable_checkpoint_in_error_path_returns_envelope(self, tmp_path, monkeypatch):
+        """When the graph run fails AND the follow-up checkpoint read fails, the tool
+        still returns the documented envelope instead of a raw MCP failure."""
+        _isolate_profile(tmp_path, monkeypatch)
+        _save_profile_with_resumes(tmp_path)
+
+        class _BrokenGraph:
+            def invoke(self, state, config):
+                raise RuntimeError("compile blew up")
+
+            def get_state(self, config):
+                raise RuntimeError("checkpoint db locked")
+
+        monkeypatch.setattr(server_module, "get_profile_graph", _BrokenGraph)
+
+        result = json.loads(compile_profile())
+
+        expected = {
+            "status": "error",
+            "error": {
+                "stage": "compile_profile",
+                "code": "unexpected_error",
+                "message": "unexpected compile_profile failure; inspect callback logs",
+                "retriable": False,
+            },
+            "session_id": result["session_id"],
+        }
+        assert result == expected
+
     def test_compile_failure_after_save_is_recoverable(self, tmp_path, monkeypatch):
         _isolate_profile(tmp_path, monkeypatch)
         _save_profile_with_resumes(tmp_path)
