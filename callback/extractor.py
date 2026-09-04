@@ -286,15 +286,19 @@ def _process_url_line(stripped: str) -> tuple[str | None, str | None]:
 
 
 def _extract_phone_candidate(stripped: str) -> str | None:
-    """Return phone string if a valid candidate is found, else None."""
-    ph = _PHONE_RE.search(stripped)
-    if not ph:
-        return None
-    candidate = ph.group(0).strip()
-    digits = re.sub(r"\D", "", candidate)
-    if len(digits) < 7 or _YEAR_PAIR_RE.fullmatch(digits):
-        return None
-    return candidate
+    """Return the first valid phone candidate found, else None.
+
+    Scans all matches (not just the first) because a year range earlier on
+    the line, e.g. "2019 - 2023 | +1 (415) 555-1234", would otherwise shadow
+    a real phone number later in the line.
+    """
+    for ph in _PHONE_RE.finditer(stripped):
+        candidate = ph.group(0).strip()
+        digits = re.sub(r"\D", "", candidate)
+        if len(digits) < 7 or _YEAR_PAIR_RE.fullmatch(digits):
+            continue
+        return candidate
+    return None
 
 
 def _is_year_pair_line(stripped: str) -> bool:

@@ -94,6 +94,18 @@ class TestContactInfoParsing:
             email="jane.smith@example.com",
         )
 
+    def test_phone_after_year_range_on_same_line(self):
+        lines = [
+            "Jane Smith",
+            "2019 - 2023 | +1 (415) 555-1234",
+            "jane.smith@example.com",
+        ]
+        assert _parse_contact_info(lines) == ContactInfo(
+            name="Jane Smith",
+            phone="+1 (415) 555-1234",
+            email="jane.smith@example.com",
+        )
+
     def test_pipe_delimited_year_range_is_not_location(self):
         lines = [
             "Jane Smith",
