@@ -265,16 +265,150 @@ def test_submit_tailor_no_coverage_retry_clears_stale_render_outputs(tmp_path, m
     }
 
     second = json.loads(submit_tailor(session_id=session_id, edits=[], no_coverage=True))
+    actual_report = second["data"]["report"]
+    expected_report = {
+        "before": {
+            "total": 59.01960784313725,
+            "keyword_match": 27.5,
+            "required_coverage": 50.0,
+            "preferred_coverage": None,
+            "experience_fit": None,
+            "impact_evidence": 6.0,
+            "ats_format": 6.666666666666666,
+            "readability": 10.0,
+        },
+        "after": {
+            "total": 59.01960784313725,
+            "keyword_match": 27.5,
+            "required_coverage": 50.0,
+            "preferred_coverage": None,
+            "experience_fit": None,
+            "impact_evidence": 6.0,
+            "ats_format": 6.666666666666666,
+            "readability": 10.0,
+        },
+        "delta": {
+            "total": 0.0,
+            "keyword_match": 0.0,
+            "required_coverage": 0.0,
+            "preferred_coverage": None,
+            "experience_fit": None,
+            "impact_evidence": 0.0,
+            "ats_format": 0.0,
+            "readability": 0.0,
+        },
+        "format_gap_chars": -258,
+        "no_coverage": True,
+        "uncovered_skills": [],
+        "experience_evaluated": False,
+        "notes": [
+            "Experience fit not evaluated (JD states no years requirement or resume dates "
+            "are unavailable); total is renormalized over the remaining dimensions.",
+            "ATS format: 'Education' header not found in rendered PDF "
+            "(closeable_by=source_pdf). Tailoring cannot fix this.",
+        ],
+        "warnings": [],
+    }
+    assert actual_report == expected_report
+
     actual = {
         "status": second["status"],
         "pdf_path": second["data"]["pdf_path"],
+        "uncovered_skills": second["data"]["uncovered_skills"],
+        "tailor_diagnostics": second["data"]["tailor_diagnostics"],
         "outcome": second["data"]["outcome"],
     }
     assert actual == {
         "status": "ok",
         "pdf_path": None,
+        "uncovered_skills": [],
+        "tailor_diagnostics": [],
         "outcome": {"no_coverage": True, "reason": "no wiki stories cover required keywords"},
     }
+
+    archive = json.loads(Path(second["data"]["archive_path"]).read_text())
+    timestamp = archive.pop("timestamp")
+    assert isinstance(timestamp, str)
+    expected_scores = {
+        "total": 59.01960784313725,
+        "keyword_match": 27.5,
+        "required_coverage": 50.0,
+        "preferred_coverage": None,
+        "experience_fit": None,
+        "experience_evaluated": False,
+        "impact_evidence": 6.0,
+        "ats_format": 6.666666666666666,
+        "readability": 10.0,
+        "req_matched": ["Python"],
+        "req_unmatched": ["Kubernetes"],
+        "req_group_unmatched": [],
+        "pref_matched": [],
+        "pref_unmatched": [],
+        "pref_group_unmatched": [],
+        "ats_diagnostics": [
+            {
+                "expected": "Experience",
+                "observed": "Experience",
+                "matched": True,
+                "closeable_by": "source_pdf",
+            },
+            {
+                "expected": "Education",
+                "observed": None,
+                "matched": False,
+                "closeable_by": "source_pdf",
+            },
+            {
+                "expected": "Skills",
+                "observed": "Skills",
+                "matched": True,
+                "closeable_by": "source_pdf",
+            },
+        ],
+        "scoring_engine_version": "v2",
+    }
+    expected_archive = {
+        "session_id": session_id,
+        "jd_url": None,
+        "jd_text": "Sample JD",
+        "keywords": {
+            "title": "SWE",
+            "company": "Co",
+            "required": ["Python", "Kubernetes"],
+            "preferred": [],
+            "required_any": [],
+            "preferred_any": [],
+            "location": None,
+            "seniority": "unspecified",
+            "required_years": 0.0,
+            "team": None,
+            "key_responsibilities": [],
+            "pay_range_min": None,
+            "pay_range_max": None,
+        },
+        "tailored_resume_text": "",
+        "pdf_path": None,
+        "render_page_count": None,
+        "render_warnings": [],
+        "scores": {
+            "initial": expected_scores,
+            "final": expected_scores,
+            "delta": {
+                "total": 0.0,
+                "keyword_match": 0.0,
+                "required_coverage": 0.0,
+                "preferred_coverage": None,
+                "experience_fit": None,
+                "impact_evidence": 0.0,
+                "ats_format": 0.0,
+                "readability": 0.0,
+            },
+            "scoring_engine_version": "v2",
+        },
+        "uncovered_skills": [],
+        "outcome": {"no_coverage": True, "reason": "no wiki stories cover required keywords"},
+    }
+    assert archive == expected_archive
 
 
 def test_submit_tailor_replaces_project_entry(tmp_path, monkeypatch):

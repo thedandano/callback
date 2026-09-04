@@ -1013,6 +1013,10 @@ _STALE_RETRY_KEYS = (
     "parsed_final",
     "score_final",
     "report",
+    "tailor_diagnostics",
+    "uncovered_skills",
+    "applied_skill_values",
+    "no_coverage",
 )
 
 
