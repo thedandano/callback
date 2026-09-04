@@ -1,7 +1,7 @@
 import pytest
 
 import callback.wiki as wiki_module
-from callback.wiki import WikiStore, company_slug
+from callback.wiki import WikiPageIdError, WikiStore, company_slug
 
 
 def store(tmp_path, monkeypatch):
@@ -95,3 +95,14 @@ def test_is_valid_page_id_rejects_traversal_and_accepts_nested(tmp_path, monkeyp
     assert s.is_valid_page_id("r", "../x.md") is False
     assert s.is_valid_page_id("r", "/etc/passwd") is False
     assert s.is_valid_page_id("r", "experience/a/b.md") is True
+
+
+def test_read_pages_rejects_embedded_nul(tmp_path, monkeypatch):
+    s = store(tmp_path, monkeypatch)
+    with pytest.raises(WikiPageIdError):
+        s.read_pages("r", ["a\x00b.md"])
+
+
+def test_is_valid_page_id_rejects_embedded_nul(tmp_path, monkeypatch):
+    s = store(tmp_path, monkeypatch)
+    assert s.is_valid_page_id("r", "a\x00b.md") is False

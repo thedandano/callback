@@ -39,7 +39,10 @@ class WikiStore:
     def _page_path(self, resume_label: str, page_id: str) -> Path:
         """Resolve page_id under the wiki root; reject ids that escape it."""
         root = self.wiki_root(resume_label).resolve()
-        path = (root / page_id).resolve()
+        try:
+            path = (root / page_id).resolve()
+        except (ValueError, OSError) as exc:
+            raise WikiPageIdError(f"invalid page_id: {page_id!r}") from exc
         if not path.is_relative_to(root):
             raise WikiPageIdError(f"page_id escapes wiki root: {page_id!r}")
         return path

@@ -1167,6 +1167,46 @@ def test_get_wiki_pages_rejects_page_id_outside_wiki_root(tmp_path, monkeypatch)
     assert result == expected
 
 
+def test_get_wiki_pages_rejects_embedded_nul(tmp_path, monkeypatch):
+    from callback.server import get_wiki_pages, load_jd, submit_keywords
+    from callback.wiki import WikiStore
+
+    resume_label = "wiki_pages_nul_resume"
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    sections = {
+        "summary": "Python engineer",
+        "skills": {"flat": ["Python"], "categorized": {}},
+        "experience": [{"company": "ACME", "role": "Engineer", "bullets": ["Built Python"]}],
+        "projects": [],
+        "education": [],
+        "contact": {"name": "Jane Dev"},
+        "certifications": [],
+        "awards": [],
+    }
+    store = WikiStore()
+    store.write_page(resume_label, "sections.json", json.dumps(sections))
+    store.write_index(resume_label, "- experience/acme.md")
+
+    with patch("callback.server.list_resumes", return_value=[resume_label]):
+        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+    session_id = loaded["session_id"]
+    json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+
+    result = json.loads(get_wiki_pages(session_id=session_id, page_ids=["a\x00b.md"]))
+
+    expected = {
+        "status": "error",
+        "error": {
+            "stage": "get_wiki_pages",
+            "code": "invalid_page_id",
+            "message": "invalid page_id: 'a\\x00b.md'",
+            "retriable": True,
+        },
+        "session_id": session_id,
+    }
+    assert result == expected
+
+
 def test_rank_project_candidates_skips_invalid_index_links(tmp_path, monkeypatch):
     from callback.server import _rank_project_candidates
     from callback.wiki import WikiStore
