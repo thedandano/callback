@@ -30,7 +30,6 @@ from pathlib import Path
 from fastmcp import FastMCP
 from pydantic import ValidationError
 
-import callback.profile_nodes as profile_nodes
 import callback.scorer as scorer
 import callback.version_check as version_check
 from callback.apply_graph import (
@@ -47,7 +46,7 @@ from callback.jd_data import EXTRACTION_PROTOCOL, JDDataError, parse_jd_json
 from callback.jd_fetcher import JDFetchError
 from callback.observability import invoke_graph_without_native_tracing, trace_tool
 from callback.preferences import SearchPreferences
-from callback.profile_graph import get_profile_graph
+from callback.profile_graph import get_profile_graph, story_pending
 from callback.profile_graph import make_config as make_profile_config
 from callback.repository.preferences import PreferencesStore
 from callback.repository.resumes import list_resumes
@@ -1343,27 +1342,80 @@ def _onboard_user_invoke(
         return None, _unexpected_error("onboard_user", session_id)
 
 
+def _run_profile_thread(
+    graph, config, graph_input, session_id: str, stage: str
+) -> tuple[dict, None] | tuple[None, str]:
+    """Invoke the profile graph; if it paused before create_story with a story pending,
+    continue once.
+
+    Returns (state_values, error_envelope_or_None).
+    """
+    try:
+        invoke_graph_without_native_tracing(graph, graph_input, config)
+        snapshot = graph.get_state(config)
+        if snapshot.next == ("create_story",) and story_pending(snapshot.values.get("intake")):
+            invoke_graph_without_native_tracing(graph, None, config)
+            snapshot = graph.get_state(config)
+    except Exception:
+        return None, _unexpected_error(stage, session_id)
+    values = snapshot.values
+    if (values.get("intake") or {}).get("status") == "no_resume":
+        return None, _err(
+            stage, "profile_missing", "no profile; call onboard_user first", session_id
+        )
+    return values, None
+
+
+def _profile_thread_data(graph, config, values: dict) -> tuple[str | None, dict]:
+    """Return (next_action, common data) for a profile thread after a run."""
+    paused = graph.get_state(config).next == ("create_story",)
+    intake = values.get("intake") or {}
+    data = {
+        "compiled_profile": values.get("compiled_profile") or {},
+        "skill_coverage_warnings": intake.get("skill_coverage_warnings", []),
+        "skills_index": intake.get("skills_index", []),
+        "orphaned_skills": values.get("orphaned_skills") or [],
+    }
+    return ("create_story" if paused else None), data
+
+
+def _profile_snapshot_or_error(graph, config, session_id: str, stage: str, waiting_for: str):
+    """Validate a host-supplied session before resuming it. Returns (snapshot, error_or_None)."""
+    snapshot = graph.get_state(config)
+    if not snapshot.values:
+        return None, _err(stage, "session_not_found", "session_id not found", session_id)
+    if snapshot.next != (waiting_for,):
+        return None, _err(
+            stage, "invalid_state", f"session is not waiting for {waiting_for}", session_id
+        )
+    return snapshot, None
+
+
 @mcp.tool()
-def compile_profile(story_tags: str | None = None) -> str:
+def compile_profile(story_tags: str | None = None, session_id: str | None = None) -> str:
     """Recompile the user profile from all stored stories.
 
     Args:
         story_tags: Optional JSON string. Accepts a dict (keys become host_tags)
             or a list of skill strings.
+        session_id: Optional profile session to resume (from onboard_user). Omit to
+            start a new profile session.
 
     Returns:
-        JSON envelope with compiled_profile, skill_coverage_warnings, and skills_index.
+        JSON envelope with compiled_profile, skill_coverage_warnings, skills_index,
+        and orphaned_skills. next_action is "create_story" when orphans remain.
     """
-    session_id = str(uuid.uuid4())
+    resumed = session_id is not None
+    session_id = session_id or str(uuid.uuid4())
     _log(
         "INFO",
         {
             "tool": "compile_profile",
             "session_id": session_id,
+            "resumed": resumed,
             "has_story_tags": story_tags is not None,
         },
     )
-
     host_tags = _parse_story_tags(story_tags)
     if host_tags is None:
         return _err(
@@ -1373,22 +1425,34 @@ def compile_profile(story_tags: str | None = None) -> str:
             session_id=session_id,
             retriable=True,
         )
+    return _compile_profile_impl(session_id, host_tags, resumed=resumed)
 
-    resume_label, _ = _resolve_resume_label(None, session_id)
 
-    state = ProfileState(
-        session_id=session_id,
-        resume_label=resume_label,
-        compiled_profile={"host_tags": host_tags} if host_tags else None,
-    )
-    delta = profile_nodes.compile_profile(state)
-    intake = delta.get("intake") or {}
-    data = {
-        "compiled_profile": delta.get("compiled_profile") or {},
-        "skill_coverage_warnings": intake.get("skill_coverage_warnings", []),
-        "skills_index": intake.get("skills_index", []),
-    }
-    return _ok(session_id, None, data)
+@trace_tool("compile_profile", graph_name="profile")
+def _compile_profile_impl(session_id: str, host_tags: list[str], *, resumed: bool) -> str:
+    graph = get_profile_graph()
+    config = make_profile_config(session_id, tool_name="compile_profile")
+    tags = {"host_tags": host_tags} if host_tags else None
+    if resumed:
+        _, error = _profile_snapshot_or_error(
+            graph, config, session_id, "compile_profile", "compile_profile"
+        )
+        if error:
+            return error
+        if tags:
+            graph.update_state(config, {"compiled_profile": tags})
+        graph_input = None
+    else:
+        resume_label, _ = _resolve_resume_label(None, session_id)
+        graph_input = ProfileState(
+            session_id=session_id, resume_label=resume_label, compiled_profile=tags
+        )
+    values, error = _run_profile_thread(graph, config, graph_input, session_id, "compile_profile")
+    if error:
+        return error
+    assert values is not None
+    next_action, data = _profile_thread_data(graph, config, values)
+    return _ok(session_id, next_action, data)
 
 
 @mcp.tool()
@@ -1400,8 +1464,9 @@ def create_story(
     situation: str,
     behavior: str,
     impact: str,
+    session_id: str | None = None,
 ) -> str:
-    """Create and persist a behavioral story for a skill.
+    """Create and persist a behavioral story for a skill, then recompile the profile.
 
     Args:
         primary_skill: The main skill this story demonstrates.
@@ -1411,22 +1476,27 @@ def create_story(
         situation: Context / problem statement.
         behavior: Actions taken.
         impact: Quantified outcome.
+        session_id: Optional profile session paused before create_story (from
+            compile_profile or a previous create_story). Omit to start a new session.
 
     Returns:
-        JSON envelope with story_id, primary_skill, and needs_compile=true.
+        JSON envelope with story_id, primary_skill, needs_compile (always false: the
+        profile is recompiled in the same call), and orphaned_skills. next_action is
+        "create_story" when orphans remain.
     """
-    session_id = str(uuid.uuid4())
+    resumed = session_id is not None
+    session_id = session_id or str(uuid.uuid4())
     _log(
         "INFO",
         {
             "tool": "create_story",
             "session_id": session_id,
+            "resumed": resumed,
             "primary_skill": primary_skill,
             "story_type": story_type,
             "job_title": job_title,
         },
     )
-
     intake = {
         "primary_skill": primary_skill,
         "skills": skills,
@@ -1436,15 +1506,35 @@ def create_story(
         "behavior": behavior,
         "impact": impact,
     }
-    state = ProfileState(session_id=session_id, intake=intake)
-    delta = profile_nodes.create_story(state)
-    saved_intake = delta.get("intake") or {}
+    return _create_story_impl(session_id, intake, resumed=resumed)
+
+
+@trace_tool("create_story", graph_name="profile")
+def _create_story_impl(session_id: str, intake: dict, *, resumed: bool) -> str:
+    graph = get_profile_graph()
+    config = make_profile_config(session_id, tool_name="create_story")
+    if resumed:
+        _, error = _profile_snapshot_or_error(
+            graph, config, session_id, "create_story", "create_story"
+        )
+        if error:
+            return error
+        graph.update_state(config, {"intake": intake})
+        graph_input = None
+    else:
+        graph_input = ProfileState(session_id=session_id, intake=intake)
+    values, error = _run_profile_thread(graph, config, graph_input, session_id, "create_story")
+    if error:
+        return error
+    assert values is not None
+    next_action, data = _profile_thread_data(graph, config, values)
     data = {
-        "story_id": saved_intake.get("story_id"),
-        "primary_skill": primary_skill,
-        "needs_compile": True,
+        "story_id": (values.get("intake") or {}).get("story_id"),
+        "primary_skill": intake["primary_skill"],
+        "needs_compile": False,
+        **data,
     }
-    return _ok(session_id, "compile_profile", data)
+    return _ok(session_id, next_action, data)
 
 
 @mcp.tool()

@@ -1,10 +1,16 @@
 """Tests for server.py — profile MCP tool wrappers."""
 
 import json
+from datetime import UTC, datetime
+from pathlib import Path
 
 import callback.profile_nodes as pnodes
 import callback.server as server_module
+import callback.wiki as wiki_module
+from callback.profilecompiler import save_compiled_profile
+from callback.repository.resumes import save_resume
 from callback.server import compile_profile, create_story, onboard_user
+from callback.state import CompiledProfile, OrphanedSkill
 
 
 def _fake_graph(state_values: dict):
@@ -22,33 +28,28 @@ def _fake_graph(state_values: dict):
     return _Graph()
 
 
-_STORY_FIELDS = dict(
-    primary_skill="Python",
-    skills=["Python", "Docker"],
-    story_type="STAR",
-    job_title="Backend Engineer",
-    situation="Legacy system.",
-    behavior="Rewrote it.",
-    impact="40% faster.",
-)
+def _isolate_profile(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
 
-_COMPILE_DELTA = {
-    "compiled_profile": {
-        "schema_version": "1",
-        "skills_index": ["Docker", "Python"],
-        "stories": [],
-        "orphaned_skills": [],
-    },
-    "intake": {
-        "skill_coverage_warnings": [],
-        "skills_index": ["Docker", "Python"],
-    },
-}
 
-_CREATE_DELTA = {
-    "current_story_target": "Python",
-    "intake": {"story_id": "story-001", "needs_compile": True, **_STORY_FIELDS},
-}
+def _resume_txt(tmp_path: Path) -> Path:
+    f = tmp_path / "backend.txt"
+    f.write_text("Jane Doe\njane@example.com\n\nSkills\nPython\n", encoding="utf-8")
+    return f
+
+
+def _save_profile_with_resumes(tmp_path: Path, orphans: list[str] | None = None) -> None:
+    profile = CompiledProfile(
+        schema_version="1",
+        skills_index=["Python"],
+        stories=[],
+        orphaned_skills=[OrphanedSkill(skill=s) for s in (orphans or [])],
+        compiled_at=datetime.now(UTC).isoformat(),
+    )
+    save_compiled_profile(profile, base_dir=tmp_path / "callback")
+    resume = _resume_txt(tmp_path)
+    save_resume("backend", str(resume))
 
 
 # ---------------------------------------------------------------------------
@@ -155,68 +156,105 @@ class TestOnboardUser:
 
 
 class TestCompileProfile:
-    def test_happy_path_returns_compiled_data(self, monkeypatch):
-        monkeypatch.setattr(pnodes, "compile_profile", lambda state: _COMPILE_DELTA)
+    def test_new_thread_compiles_and_reports_no_orphans(self, tmp_path, monkeypatch):
+        _isolate_profile(tmp_path, monkeypatch)
+        _save_profile_with_resumes(tmp_path)
 
         result = json.loads(compile_profile())
 
-        assert result == {
-            "session_id": result["session_id"],
+        assert {
+            "status": result["status"],
+            "next_action": result.get("next_action"),
+            "orphaned_skills": result["data"]["orphaned_skills"],
+            "has_compiled_profile": bool(result["data"]["compiled_profile"]),
+            "keys": sorted(result["data"]),
+        } == {
             "status": "ok",
-            "data": {
-                "compiled_profile": {
-                    "schema_version": "1",
-                    "skills_index": ["Docker", "Python"],
-                    "stories": [],
-                    "orphaned_skills": [],
-                },
-                "skill_coverage_warnings": [],
-                "skills_index": ["Docker", "Python"],
-            },
+            "next_action": None,
+            "orphaned_skills": [],
+            "has_compiled_profile": True,
+            "keys": [
+                "compiled_profile",
+                "orphaned_skills",
+                "skill_coverage_warnings",
+                "skills_index",
+            ],
         }
 
-    def test_invalid_story_tags_returns_error(self, monkeypatch):
-        monkeypatch.setattr(pnodes, "compile_profile", lambda state: _COMPILE_DELTA)
+    def test_resumes_onboard_thread(self, tmp_path, monkeypatch):
+        _isolate_profile(tmp_path, monkeypatch)
+        resume = _resume_txt(tmp_path)
+        onboarded = json.loads(onboard_user(resume_path=str(resume)))
 
-        result = json.loads(compile_profile(story_tags="not-valid-json"))
+        result = json.loads(compile_profile(session_id=onboarded["session_id"]))
+
+        assert {"status": result["status"], "session_id": result["session_id"]} == {
+            "status": "ok",
+            "session_id": onboarded["session_id"],
+        }
+
+    def test_resumes_onboard_thread_with_story_tags_reaches_check_orphans(
+        self, tmp_path, monkeypatch
+    ):
+        # Regression guard: update_state(config, {"compiled_profile": ...}) with no
+        # as_node on a thread paused after onboard must not skip the compile_profile
+        # node — onboard has an unconditional edge to it.
+        _isolate_profile(tmp_path, monkeypatch)
+        resume = _resume_txt(tmp_path)
+        onboarded = json.loads(onboard_user(resume_path=str(resume)))
+
+        result = json.loads(
+            compile_profile(session_id=onboarded["session_id"], story_tags='["Rust"]')
+        )
+
+        assert {
+            "status": result["status"],
+            "session_id": result["session_id"],
+            "next_action": result.get("next_action"),
+            "has_compiled_profile": bool(result["data"]["compiled_profile"]),
+            "orphaned_skills": sorted(result["data"]["orphaned_skills"]),
+        } == {
+            "status": "ok",
+            "session_id": onboarded["session_id"],
+            "next_action": "create_story",
+            "has_compiled_profile": True,
+            "orphaned_skills": ["Python", "Rust"],
+        }
+
+    def test_unknown_session_returns_session_not_found(self, tmp_path, monkeypatch):
+        _isolate_profile(tmp_path, monkeypatch)
+
+        result = json.loads(compile_profile(session_id="nope"))
 
         assert result == {
-            "session_id": result["session_id"],
             "status": "error",
             "error": {
                 "stage": "compile_profile",
-                "code": "invalid_story_tags",
-                "message": "story_tags must be a JSON dict or list",
-                "retriable": True,
+                "code": "session_not_found",
+                "message": "session_id not found",
+                "retriable": False,
             },
+            "session_id": "nope",
         }
 
-    def test_dict_story_tags_extracted_as_keys(self, monkeypatch):
-        captured: dict = {}
+    def test_without_profile_returns_profile_missing(self, tmp_path, monkeypatch):
+        _isolate_profile(tmp_path, monkeypatch)
 
-        def fake_compile(state):
-            captured["state"] = state
-            return _COMPILE_DELTA
+        result = json.loads(compile_profile())
 
-        monkeypatch.setattr(pnodes, "compile_profile", fake_compile)
+        assert result["error"] == {
+            "stage": "compile_profile",
+            "code": "profile_missing",
+            "message": "no profile; call onboard_user first",
+            "retriable": False,
+        }
 
-        compile_profile(story_tags='{"Python": true, "Go": true}')
+    def test_invalid_story_tags_still_rejected(self, tmp_path, monkeypatch):
+        _isolate_profile(tmp_path, monkeypatch)
 
-        host_tags = captured["state"].compiled_profile["host_tags"]
-        assert set(host_tags) == {"Python", "Go"}
+        result = json.loads(compile_profile(story_tags="not json"))
 
-    def test_list_story_tags_passed_as_host_tags(self, monkeypatch):
-        captured: dict = {}
-
-        def fake_compile(state):
-            captured["state"] = state
-            return _COMPILE_DELTA
-
-        monkeypatch.setattr(pnodes, "compile_profile", fake_compile)
-
-        compile_profile(story_tags='["Rust", "Go"]')
-
-        assert captured["state"].compiled_profile["host_tags"] == ["Rust", "Go"]
+        assert result["error"]["code"] == "invalid_story_tags"
 
 
 # ---------------------------------------------------------------------------
@@ -225,8 +263,9 @@ class TestCompileProfile:
 
 
 class TestCreateStory:
-    def test_returns_story_id_and_needs_compile(self, monkeypatch):
-        monkeypatch.setattr(pnodes, "create_story", lambda state: _CREATE_DELTA)
+    def test_new_thread_saves_story_and_compiles(self, tmp_path, monkeypatch):
+        _isolate_profile(tmp_path, monkeypatch)
+        _save_profile_with_resumes(tmp_path)
 
         result = json.loads(
             create_story(
@@ -240,34 +279,99 @@ class TestCreateStory:
             )
         )
 
-        assert result == {
-            "session_id": result["session_id"],
+        assert {
+            "status": result["status"],
+            "next_action": result.get("next_action"),
+            "story_saved": bool(result["data"]["story_id"]),
+            "primary_skill": result["data"]["primary_skill"],
+            "needs_compile": result["data"]["needs_compile"],
+            "orphaned_skills": result["data"]["orphaned_skills"],
+        } == {
             "status": "ok",
-            "next_action": "compile_profile",
-            "data": {
-                "story_id": "story-001",
-                "primary_skill": "Python",
-                "needs_compile": True,
-            },
+            "next_action": None,
+            "story_saved": True,
+            "primary_skill": "Python",
+            "needs_compile": False,
+            "orphaned_skills": [],
         }
 
-    def test_intake_forwarded_to_node(self, monkeypatch):
-        captured: dict = {}
+    def test_resumes_thread_paused_before_create_story(self, tmp_path, monkeypatch):
+        _isolate_profile(tmp_path, monkeypatch)
+        _save_profile_with_resumes(tmp_path)
+        compiled = json.loads(compile_profile(story_tags='["Rust"]'))
+        compiled_next_action = compiled["next_action"]
+        assert compiled_next_action == "create_story"
+        compiled_session_id = compiled["session_id"]
 
-        def fake_create(state):
-            captured["state"] = state
-            return _CREATE_DELTA
-
-        monkeypatch.setattr(pnodes, "create_story", fake_create)
-
-        create_story(
-            primary_skill="Python",
-            skills=["Python", "Docker"],
-            story_type="STAR",
-            job_title="Backend Engineer",
-            situation="Legacy system.",
-            behavior="Rewrote it.",
-            impact="40% faster.",
+        result = json.loads(
+            create_story(
+                session_id=compiled_session_id,
+                primary_skill="Rust",
+                skills=["Rust"],
+                story_type="STAR",
+                job_title="Backend Engineer",
+                situation="Legacy system.",
+                behavior="Rewrote it.",
+                impact="40% faster.",
+            )
         )
 
-        assert captured["state"].intake == _STORY_FIELDS
+        actual = {
+            "status": result["status"],
+            "session_id": result["session_id"],
+            "orphaned_skills": result["data"]["orphaned_skills"],
+        }
+        expected = {
+            "status": "ok",
+            "session_id": compiled_session_id,
+            "orphaned_skills": [],
+        }
+        assert actual == expected
+
+    def test_session_not_waiting_for_story_returns_invalid_state(self, tmp_path, monkeypatch):
+        _isolate_profile(tmp_path, monkeypatch)
+        _save_profile_with_resumes(tmp_path)
+        compiled = json.loads(compile_profile())  # ends, next == ()
+
+        result = json.loads(
+            create_story(
+                session_id=compiled["session_id"],
+                primary_skill="Python",
+                skills=["Python", "Docker"],
+                story_type="STAR",
+                job_title="Backend Engineer",
+                situation="Legacy system.",
+                behavior="Rewrote it.",
+                impact="40% faster.",
+            )
+        )
+
+        assert result["error"] == {
+            "stage": "create_story",
+            "code": "invalid_state",
+            "message": "session is not waiting for create_story",
+            "retriable": False,
+        }
+
+    def test_node_exception_returns_unexpected_error(self, tmp_path, monkeypatch):
+        _isolate_profile(tmp_path, monkeypatch)
+        _save_profile_with_resumes(tmp_path)
+
+        def _raise(self, story):
+            raise RuntimeError("disk")
+
+        monkeypatch.setattr(pnodes.AccomplishmentsStore, "save_story", _raise)
+
+        result = json.loads(
+            create_story(
+                primary_skill="Python",
+                skills=["Python", "Docker"],
+                story_type="STAR",
+                job_title="Backend Engineer",
+                situation="Legacy system.",
+                behavior="Rewrote it.",
+                impact="40% faster.",
+            )
+        )
+
+        assert result["error"]["code"] == "unexpected_error"
