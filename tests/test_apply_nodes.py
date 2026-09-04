@@ -181,6 +181,25 @@ def test_finalize_returns_error_when_archive_write_raises_oserror(tmp_path, monk
     assert actual == expected
 
 
+def test_finalize_returns_error_when_apps_dir_unwritable(tmp_path, monkeypatch):
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory", encoding="utf-8")
+    unwritable_apps_dir = blocker / "apps"
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(unwritable_apps_dir))
+
+    try:
+        unwritable_apps_dir.mkdir(parents=True, exist_ok=True)
+        raise AssertionError("expected mkdir under a regular file to raise OSError")
+    except OSError as exc:
+        expected_reason = exc
+
+    state = ApplyState(session_id="s3")
+    actual = finalize(state)
+    expected_message = f"finalize: cannot create apps dir {unwritable_apps_dir}: {expected_reason}"
+    expected = {"error": expected_message}
+    assert actual == expected
+
+
 class TestTailorNode:
     def test_tailor_with_tailored_sections_converts_section_map(self):
         state = ApplyState(

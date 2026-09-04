@@ -695,7 +695,13 @@ def finalize(state: ApplyState) -> dict:
     _log_enter("finalize", state)
 
     apps_dir = _get_apps_dir()
-    apps_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        apps_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        logger.error(
+            json.dumps({"node": "finalize", "session_id": state.session_id, "error": str(exc)})
+        )
+        return {"error": f"finalize: cannot create apps dir {apps_dir}: {exc}"}
 
     # Derive tailored resume text from sections or tailored object
     tailored_text = _resolve_tailored_text(state)
