@@ -1436,6 +1436,37 @@ def _profile_snapshot_or_error(graph, config, session_id: str, stage: str, waiti
     return snapshot, None
 
 
+def _resume_profile_thread(
+    graph,
+    config,
+    session_id: str,
+    stage: str,
+    waiting_for: str,
+    update: dict | None,
+) -> str | None:
+    """Validate and resume a checkpointed profile thread; guard the checkpoint I/O.
+
+    A locked/read-only/full checkpoint DB must surface as a retriable envelope,
+    not a raw MCP failure. Returns an error envelope, or None on success.
+    """
+    try:
+        _, error = _profile_snapshot_or_error(graph, config, session_id, stage, waiting_for)
+        if error:
+            return error
+        if update is not None:
+            graph.update_state(config, update)
+    except Exception:
+        _log_exception({"tool": stage, "session_id": session_id, "event": "checkpoint_error"})
+        return _err(
+            stage,
+            "checkpoint_error",
+            "could not read or update the session checkpoint; inspect callback logs",
+            session_id,
+            retriable=True,
+        )
+    return None
+
+
 @mcp.tool()
 def compile_profile(story_tags: str | None = None, session_id: str | None = None) -> str:
     """Recompile the user profile from all stored stories.
@@ -1497,13 +1528,12 @@ def _compile_profile_impl(
     graph = get_profile_graph()
     config = make_profile_config(session_id, tool_name="compile_profile")
     if resumed:
-        _, error = _profile_snapshot_or_error(
-            graph, config, session_id, "compile_profile", "compile_profile"
+        update = {"host_tags": host_tags} if explicit_tags else None
+        error = _resume_profile_thread(
+            graph, config, session_id, "compile_profile", "compile_profile", update
         )
         if error:
             return error
-        if explicit_tags:
-            graph.update_state(config, {"host_tags": host_tags})
         graph_input = None
     else:
         resume_label = _resolve_new_thread_resume_label("compile_profile", session_id)
@@ -1585,12 +1615,11 @@ def _create_story_impl(session_id: str, intake: dict, *, resumed: bool) -> str:
     graph = get_profile_graph()
     config = make_profile_config(session_id, tool_name="create_story")
     if resumed:
-        _, error = _profile_snapshot_or_error(
-            graph, config, session_id, "create_story", "create_story"
+        error = _resume_profile_thread(
+            graph, config, session_id, "create_story", "create_story", {"intake": intake}
         )
         if error:
             return error
-        graph.update_state(config, {"intake": intake})
         graph_input = None
     else:
         resume_label = _resolve_new_thread_resume_label("create_story", session_id)

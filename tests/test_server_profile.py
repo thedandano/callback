@@ -354,6 +354,35 @@ class TestCompileProfile:
         }
         assert result == expected
 
+    def test_resume_checkpoint_error_returns_envelope(self, tmp_path, monkeypatch):
+        import sqlite3
+
+        _isolate_profile(tmp_path, monkeypatch)
+        resume = _resume_txt(tmp_path)
+        onboarded = json.loads(onboard_user(resume_path=str(resume)))
+        session_id = onboarded["session_id"]
+
+        graph = server_module.get_profile_graph()
+
+        def raiser(self, *args, **kwargs):
+            raise sqlite3.OperationalError("database is locked")
+
+        monkeypatch.setattr(type(graph), "update_state", raiser)
+
+        result = json.loads(compile_profile(session_id=session_id, story_tags='["Rust"]'))
+
+        expected = {
+            "status": "error",
+            "error": {
+                "stage": "compile_profile",
+                "code": "checkpoint_error",
+                "message": "could not read or update the session checkpoint; inspect callback logs",
+                "retriable": True,
+            },
+            "session_id": session_id,
+        }
+        assert result == expected
+
 
 # ---------------------------------------------------------------------------
 # create_story
@@ -450,6 +479,43 @@ class TestCreateStory:
             "message": "session is not waiting for create_story",
             "retriable": False,
         }
+
+    def test_resume_checkpoint_error_returns_envelope(self, tmp_path, monkeypatch):
+        import sqlite3
+
+        _isolate_profile(tmp_path, monkeypatch)
+        _save_profile_with_resumes(tmp_path)
+        compiled = json.loads(compile_profile(story_tags='["Rust"]'))
+        assert compiled["next_action"] == "create_story"
+        session_id = compiled["session_id"]
+
+        graph = server_module.get_profile_graph()
+
+        def raiser(self, *args, **kwargs):
+            raise sqlite3.OperationalError("database is locked")
+
+        monkeypatch.setattr(type(graph), "update_state", raiser)
+
+        result = json.loads(
+            create_story(
+                session_id=session_id,
+                primary_skill="Rust",
+                skills=["Rust"],
+                **_STORY_FIELDS,
+            )
+        )
+
+        expected = {
+            "status": "error",
+            "error": {
+                "stage": "create_story",
+                "code": "checkpoint_error",
+                "message": "could not read or update the session checkpoint; inspect callback logs",
+                "retriable": True,
+            },
+            "session_id": session_id,
+        }
+        assert result == expected
 
     def test_node_exception_returns_unexpected_error(self, tmp_path, monkeypatch):
         _isolate_profile(tmp_path, monkeypatch)
