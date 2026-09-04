@@ -293,6 +293,50 @@ class TestCompileProfile:
         )
         assert expected_call in mock_log.call_args_list
 
+    def test_resume_with_explicit_empty_story_tags_clears_host_tags(self, tmp_path, monkeypatch):
+        _isolate_profile(tmp_path, monkeypatch)
+        resume = tmp_path / "no_skills.txt"
+        resume.write_text("Jane Doe\njane@example.com\n", encoding="utf-8")
+        onboarded = json.loads(onboard_user(resume_path=str(resume)))
+        session_id = onboarded["session_id"]
+        graph = server_module.get_profile_graph()
+        config = server_module.make_profile_config(session_id)
+        graph.update_state(config, {"host_tags": ["Rust"]})
+
+        result = json.loads(
+            server_module._compile_profile_impl(session_id, [], resumed=True, explicit_tags=True)
+        )
+
+        assert {
+            "orphaned_skills": result["data"]["orphaned_skills"],
+            "next_action": result.get("next_action"),
+        } == {
+            "orphaned_skills": [],
+            "next_action": None,
+        }
+
+    def test_resume_with_omitted_story_tags_keeps_host_tags(self, tmp_path, monkeypatch):
+        _isolate_profile(tmp_path, monkeypatch)
+        resume = tmp_path / "no_skills.txt"
+        resume.write_text("Jane Doe\njane@example.com\n", encoding="utf-8")
+        onboarded = json.loads(onboard_user(resume_path=str(resume)))
+        session_id = onboarded["session_id"]
+        graph = server_module.get_profile_graph()
+        config = server_module.make_profile_config(session_id)
+        graph.update_state(config, {"host_tags": ["Rust"]})
+
+        result = json.loads(
+            server_module._compile_profile_impl(session_id, [], resumed=True, explicit_tags=False)
+        )
+
+        assert {
+            "orphaned_skills": result["data"]["orphaned_skills"],
+            "next_action": result.get("next_action"),
+        } == {
+            "orphaned_skills": ["Rust"],
+            "next_action": "create_story",
+        }
+
     def test_invalid_story_tags_still_rejected(self, tmp_path, monkeypatch):
         _isolate_profile(tmp_path, monkeypatch)
 

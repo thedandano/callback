@@ -1470,7 +1470,8 @@ def compile_profile(story_tags: str | None = None, session_id: str | None = None
             session_id=session_id,
             retriable=True,
         )
-    return _compile_profile_impl(session_id, host_tags, resumed=resumed)
+    explicit = story_tags is not None
+    return _compile_profile_impl(session_id, host_tags, resumed=resumed, explicit_tags=explicit)
 
 
 def _resolve_new_thread_resume_label(stage: str, session_id: str) -> str | None:
@@ -1490,7 +1491,9 @@ def _resolve_new_thread_resume_label(stage: str, session_id: str) -> str | None:
 
 
 @trace_tool("compile_profile", graph_name="profile")
-def _compile_profile_impl(session_id: str, host_tags: list[str], *, resumed: bool) -> str:
+def _compile_profile_impl(
+    session_id: str, host_tags: list[str], *, resumed: bool, explicit_tags: bool
+) -> str:
     graph = get_profile_graph()
     config = make_profile_config(session_id, tool_name="compile_profile")
     if resumed:
@@ -1499,7 +1502,7 @@ def _compile_profile_impl(session_id: str, host_tags: list[str], *, resumed: boo
         )
         if error:
             return error
-        if host_tags:
+        if explicit_tags:
             graph.update_state(config, {"host_tags": host_tags})
         graph_input = None
     else:
