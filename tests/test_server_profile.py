@@ -297,7 +297,17 @@ class TestCompileProfile:
 
         result = json.loads(compile_profile(story_tags="not json"))
 
-        assert result["error"]["code"] == "invalid_story_tags"
+        expected = {
+            "status": "error",
+            "error": {
+                "stage": "compile_profile",
+                "code": "invalid_story_tags",
+                "message": "story_tags must be a JSON dict or list",
+                "retriable": True,
+            },
+            "session_id": result["session_id"],
+        }
+        assert result == expected
 
 
 # ---------------------------------------------------------------------------
@@ -409,15 +419,21 @@ class TestCreateStory:
             create_story(
                 primary_skill="Python",
                 skills=["Python", "Docker"],
-                story_type="STAR",
-                job_title="Backend Engineer",
-                situation="Legacy system.",
-                behavior="Rewrote it.",
-                impact="40% faster.",
+                **_STORY_FIELDS,
             )
         )
 
-        assert result["error"]["code"] == "unexpected_error"
+        expected = {
+            "status": "error",
+            "error": {
+                "stage": "create_story",
+                "code": "unexpected_error",
+                "message": "unexpected create_story failure; inspect callback logs",
+                "retriable": False,
+            },
+            "session_id": result["session_id"],
+        }
+        assert result == expected
 
     def test_blank_primary_skill_returns_invalid_story(self, tmp_path, monkeypatch):
         _isolate_profile(tmp_path, monkeypatch)
