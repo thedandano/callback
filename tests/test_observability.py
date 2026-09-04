@@ -993,8 +993,8 @@ def test_sanitize_tool_output_summarizes_compiled_profile():
 
 
 def test_sanitize_tool_output_summarizes_primary_skill():
-    """create_story envelope: primary_skill (a skill name) is redacted; story_id,
-    needs_compile, and orphaned_skills count survive unchanged/summarized.
+    """create_story envelope: primary_skill (a skill name) and story_id are redacted;
+    needs_compile and the orphaned_skills count survive.
     """
     from callback.observability import _sanitize_tool_output
 
@@ -1017,7 +1017,7 @@ def test_sanitize_tool_output_summarizes_primary_skill():
         "status": "ok",
         "next_action": "create_story",
         "data": {
-            "story_id": "story-1",
+            "story_id": "<redacted>",
             "primary_skill": "<redacted>",
             "needs_compile": False,
             "orphaned_skills": 1,

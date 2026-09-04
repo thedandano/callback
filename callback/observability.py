@@ -305,7 +305,7 @@ def _summarize_skill_fields(data: dict[str, Any]) -> dict[str, Any]:
 def _summarize_profile_content(envelope: dict[str, Any]) -> dict[str, Any]:
     """Summarize profile/resume business content within envelope["data"] to counts
     and key names. No skill names (skills_index, orphaned_skills,
-    skill_coverage_warnings, primary_skill) leave the span either.
+    skill_coverage_warnings, primary_skill) or story identifiers leave the span.
     """
     data = envelope.get("data")
     if not isinstance(data, dict):
@@ -317,6 +317,8 @@ def _summarize_profile_content(envelope: dict[str, Any]) -> dict[str, Any]:
         summarized["sections"] = _summarize_sections(summarized["sections"])
     if "intake" in summarized:
         summarized["intake"] = _summarize_intake(summarized["intake"])
+    if isinstance(summarized.get("story_id"), str):
+        summarized["story_id"] = "<redacted>"
     return {**envelope, "data": summarized}
 
 
