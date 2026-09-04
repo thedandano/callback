@@ -7,6 +7,7 @@ import pytest
 
 from callback.apply_nodes import (
     _candidate_experience_years,
+    finalize,
     parse_final,
     parse_initial,
     render,
@@ -147,6 +148,37 @@ def test_parse_final_returns_error_when_no_pdf_path(tmp_path):
     result = parse_final(state)
     assert "error" in result
     assert "parsed_final" not in result
+
+
+def test_parse_final_returns_error_when_extract_raises(tmp_path, monkeypatch):
+    pdf_path = tmp_path / "resume.pdf"
+    pdf_path.write_bytes(b"not empty")
+
+    def raising_extract(path):
+        raise RuntimeError("corrupt pdf")
+
+    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", raising_extract)
+
+    state = ApplyState(session_id="s3", pdf_path=str(pdf_path))
+    actual = parse_final(state)
+    expected = {"error": "parse_final: extract failed: corrupt pdf"}
+    assert actual == expected
+
+
+def test_finalize_returns_error_when_archive_write_raises_oserror(tmp_path, monkeypatch):
+    import callback.apply_nodes as apply_nodes_module
+
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
+
+    def raising_open(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(apply_nodes_module, "open", raising_open, raising=False)
+
+    state = ApplyState(session_id="s3")
+    actual = finalize(state)
+    expected = {"error": "finalize: cannot write archive: disk full"}
+    assert actual == expected
 
 
 class TestTailorNode:

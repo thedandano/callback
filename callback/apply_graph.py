@@ -133,7 +133,7 @@ def build_apply_graph(db_path: Path = DB_PATH):
     builder.add_conditional_edges(PARSE_FINAL_NODE, _route_or_retry(SCORE_FINAL_NODE))
     builder.add_edge(SCORE_FINAL_NODE, REPORT_NODE)
     builder.add_edge(REPORT_NODE, FINALIZE_NODE)
-    builder.add_edge(FINALIZE_NODE, END)
+    builder.add_conditional_edges(FINALIZE_NODE, _route_or_retry(END))
 
     return builder.compile(
         checkpointer=checkpointer,

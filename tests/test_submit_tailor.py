@@ -910,6 +910,9 @@ def test_submit_tailor_rejects_unwritable_output_dir(tmp_path, monkeypatch):
 
 
 def test_submit_tailor_returns_envelope_when_extractor_raises(tmp_path, monkeypatch):
+    """parse_final catches a raising extractor and lands the session back at
+    the tailor interrupt with a retriable pipeline_error, instead of stranding
+    the thread at parse_final behind an unexpected_error."""
     from callback.server import submit_tailor
 
     resume_label = "test_resume"
@@ -929,10 +932,60 @@ def test_submit_tailor_returns_envelope_when_extractor_raises(tmp_path, monkeypa
         "status": "error",
         "error": {
             "stage": "submit_tailor",
-            "code": "unexpected_error",
-            "message": "unexpected submit_tailor failure; inspect callback logs",
-            "retriable": False,
+            "code": "pipeline_error",
+            "message": "parse_final: extract failed: extractor: PDF yielded no text",
+            "retriable": True,
         },
         "session_id": session_id,
     }
     assert result == expected
+
+
+def test_submit_tailor_can_be_retried_after_finalize_archive_write_failure(tmp_path, monkeypatch):
+    """A finalize OSError leaves the session at the tailor interrupt for a retry."""
+    import builtins
+
+    import callback.apply_nodes as apply_nodes_module
+    from callback.server import submit_tailor
+
+    resume_label = "test_resume"
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    _make_section_map_and_write(resume_label)
+
+    jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python", "Kubernetes"]})
+    session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
+
+    edits = [
+        {"section": "summary", "op": "replace", "value": "Python + Kubernetes engineer."},
+    ]
+
+    real_open = builtins.open
+    calls = {"n": 0}
+
+    def flaky_open(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise OSError("disk full")
+        return real_open(*args, **kwargs)
+
+    monkeypatch.setattr(apply_nodes_module, "open", flaky_open, raising=False)
+
+    first = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    assert first == {
+        "status": "error",
+        "error": {
+            "stage": "submit_tailor",
+            "code": "pipeline_error",
+            "message": "finalize: cannot write archive: disk full",
+            "retriable": True,
+        },
+        "session_id": session_id,
+    }
+
+    second = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    actual = {
+        "status": second["status"],
+        "pdf_exists": Path(second["data"]["pdf_path"]).exists(),
+        "archive_exists": Path(second["data"]["archive_path"]).exists(),
+    }
+    assert actual == {"status": "ok", "pdf_exists": True, "archive_exists": True}

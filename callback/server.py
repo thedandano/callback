@@ -33,7 +33,12 @@ from pydantic import ValidationError
 import callback.scorer as scorer
 import callback.version_check as version_check
 from callback.apply_graph import (
+    FINALIZE_NODE,
     KEYWORDS_ACCEPT_NODE,
+    PARSE_FINAL_NODE,
+    RENDER_NODE,
+    REPORT_NODE,
+    SCORE_FINAL_NODE,
     SCORE_INITIAL_NODE,
     TAILOR_NODE,
     get_apply_graph,
@@ -1091,6 +1096,23 @@ def _submit_tailor_no_coverage(session_id: str, graph, config, resolved_output_d
     )
 
 
+_HALTED_APPLY_NODES = (RENDER_NODE, PARSE_FINAL_NODE, SCORE_FINAL_NODE, REPORT_NODE, FINALIZE_NODE)
+
+
+def _tailor_invalid_state_message(next_nodes: tuple[str, ...]) -> str:
+    """Message for a submit_tailor call when the session isn't at the tailor interrupt.
+
+    A session halted mid-pipeline by a raised (uncaught) node exception parks at
+    that node rather than at tailor, and is otherwise unreachable through the MCP
+    surface — name the node and point the host back to load_jd. Every other
+    non-tailor state (never started, or still at keywords_accept) keeps the
+    original message.
+    """
+    if next_nodes and next_nodes[0] in _HALTED_APPLY_NODES:
+        return f"session halted at {next_nodes[0]}; start a new session with load_jd"
+    return "session is not waiting for tailor edits"
+
+
 @trace_tool("submit_tailor", graph_name="apply")
 def _submit_tailor_impl(
     session_id: str,
@@ -1112,7 +1134,7 @@ def _submit_tailor_impl(
         return _err(
             "submit_tailor",
             "invalid_state",
-            "session is not waiting for tailor edits",
+            _tailor_invalid_state_message(snapshot.next),
             session_id,
         )
 

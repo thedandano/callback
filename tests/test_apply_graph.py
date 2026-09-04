@@ -24,6 +24,17 @@ def test_render_error_routes_back_to_tailor():
     assert router(ApplyState(session_id="s")) == "parse_final"
 
 
+def test_finalize_error_routes_back_to_tailor():
+    from langgraph.graph import END
+
+    from callback.apply_graph import TAILOR_NODE, _route_or_retry
+    from callback.state import ApplyState
+
+    router = _route_or_retry(END)
+    assert router(ApplyState(session_id="s", error="finalize: boom")) == TAILOR_NODE
+    assert router(ApplyState(session_id="s")) == END
+
+
 VALID_JD_DATA = {
     "title": "Backend Engineer",
     "company": "ExampleCo",
