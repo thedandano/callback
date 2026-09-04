@@ -312,8 +312,8 @@ def test_trace_tool_forces_enabled_for_explicit_span(monkeypatch):
     assert captured == {"enabled": True}
 
 
-def test_trace_node_emits_full_state_and_update_redacted(monkeypatch):
-    """Node inputs carry full state values; contact fields are redacted."""
+def test_trace_node_summarizes_state_and_update_to_counts_and_keys(monkeypatch):
+    """Node inputs/outputs carry only key names, counts, and booleans — never content."""
     from callback.observability import trace_node
 
     captured: dict[str, Any] = {}
@@ -367,17 +367,17 @@ def test_trace_node_emits_full_state_and_update_redacted(monkeypatch):
             "transport": "stdio",
             "state": {
                 "session_id": "session-1",
-                "resume_label": "primary",
-                "jd_raw_text": "We need Python experience",
-                "keywords": {"required": ["python", "django"]},
-                "name": "[name]",
-                "email": "[email]",
+                "resume_label": {"len": 7},
+                "jd_raw_text": {"len": 25},
+                "keywords": {"keys": ["required"]},
+                "name": {"len": 8},
+                "email": {"len": 16},
                 "empty": None,
             },
         },
         "outputs": {
-            "jd_text": "We need Python experience",
-            "score_initial": {"total": 72},
+            "jd_text": {"len": 25},
+            "score_initial": {"keys": ["total"]},
         },
     }
 
@@ -848,8 +848,8 @@ def test_sanitize_tool_inputs_jd_raw_text_and_edits_survive():
     }
 
 
-def test_sanitize_node_inputs_full_state_present_contact_redacted():
-    """Full state is present in node inputs; contact keys are redacted."""
+def test_sanitize_node_inputs_summarizes_state_to_counts_and_keys():
+    """Node inputs carry key names, counts, and booleans only — no state content."""
     from callback.observability import _sanitize_node_inputs
 
     class FakeState:
@@ -873,14 +873,67 @@ def test_sanitize_node_inputs_full_state_present_contact_redacted():
         "transport": "stdio",
         "state": {
             "session_id": "sess-1",
-            "resume_label": "primary",
-            "jd_raw_text": "Python required",
-            "name": "[name]",
-            "email": "[email]",
-            "phone": "[phone]",
-            "score_initial": {"total": 68},
+            "resume_label": {"len": 7},
+            "jd_raw_text": {"len": 15},
+            "name": {"len": 8},
+            "email": {"len": 16},
+            "phone": {"len": 12},
+            "score_initial": {"keys": ["total"]},
         },
     }
+
+
+def test_sanitize_node_inputs_profile_state_no_story_or_tag_content_leaks():
+    """A ProfileState with story narratives and skill tags summarizes to counts/keys
+    only — the exact-dict result must not contain the secret narrative or skill name.
+    """
+    from callback.observability import _sanitize_node_inputs
+    from callback.state import ProfileState
+
+    state = ProfileState(
+        session_id="session-2",
+        compiled_profile={"stories": [{"situation": "secret"}]},
+        intake={"situation": "secret"},
+        host_tags=["Rust"],
+    )
+
+    processor = _sanitize_node_inputs("profile", "compile_profile")
+    result = processor({"state": state})
+
+    assert result == {
+        "graph_name": "profile",
+        "node_name": "compile_profile",
+        "transport": "stdio",
+        "state": {
+            "session_id": "session-2",
+            "profile_exists": None,
+            "resume_label": None,
+            "resume_path": None,
+            "sections": None,
+            "wiki_path": None,
+            "intake": {"keys": ["situation"]},
+            "compiled_profile": {"keys": ["stories"]},
+            "host_tags": {"len": 1},
+            "orphaned_skills": None,
+            "current_story_target": None,
+            "error": None,
+        },
+    }
+    assert "secret" not in repr(result)
+    assert "Rust" not in repr(result)
+
+
+def test_sanitize_node_output_profile_compiled_profile_no_story_content_leaks():
+    """A compile_profile update carrying compiled_profile summarizes to key names
+    only — the exact-dict result must not contain the secret narrative.
+    """
+    from callback.observability import _sanitize_node_output
+
+    processor = _sanitize_node_output("compile_profile")
+    result = processor({"compiled_profile": {"stories": [{"situation": "secret"}]}})
+
+    assert result == {"compiled_profile": {"keys": ["stories"]}}
+    assert "secret" not in repr(result)
 
 
 # ---------------------------------------------------------------------------

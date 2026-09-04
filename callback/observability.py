@@ -334,6 +334,55 @@ def _sanitize_tool_output(output: Any) -> dict[str, Any]:
     return _summarize_profile_content(_redact_pii(dict(envelope)))
 
 
+# Span-summarization contract for LangGraph node traces (CLAUDE.md: "safe
+# booleans/counts and state/update key names" — never resume text, JD text,
+# wiki content, story narratives, or skill names).
+_SPAN_MAPPING_EXEMPT_KEYS: frozenset[str] = frozenset(
+    {"session_id", "graph_name", "node_name", "transport", "status"}
+)
+_SPAN_ERROR_EXEMPT_KEYS: frozenset[str] = frozenset({"stage", "code", "retriable"})
+
+
+def _summarize_span_value(value: Any) -> Any:
+    """Reduce one span value to a count/boolean/key-name shape — never content."""
+    if isinstance(value, (bool, int, float)) or value is None:
+        return value
+    if isinstance(value, str):
+        return {"len": len(value)}
+    if isinstance(value, (list, tuple)):
+        return {"len": len(value)}
+    if isinstance(value, dict):
+        return {"keys": sorted(value.keys())}
+    if hasattr(value, "model_dump"):
+        return _summarize_span_mapping(value.model_dump())
+    return type(value).__name__
+
+
+def _summarize_span_error(error: dict[str, Any]) -> dict[str, Any]:
+    summarized: dict[str, Any] = {}
+    for key, val in error.items():
+        if key in _SPAN_ERROR_EXEMPT_KEYS:
+            summarized[key] = val
+        elif key == "message" and isinstance(val, str):
+            summarized[key] = {"len": len(val)}
+        else:
+            summarized[key] = _summarize_span_value(val)
+    return summarized
+
+
+def _summarize_span_mapping(mapping: Mapping[str, Any]) -> dict[str, Any]:
+    """Summarize every value in *mapping* except the safe metadata/error keys."""
+    summarized: dict[str, Any] = {}
+    for key, value in mapping.items():
+        if key in _SPAN_MAPPING_EXEMPT_KEYS:
+            summarized[key] = value
+        elif key == "error" and isinstance(value, dict):
+            summarized[key] = _summarize_span_error(value)
+        else:
+            summarized[key] = _summarize_span_value(value)
+    return summarized
+
+
 def _sanitize_node_inputs(
     graph_name: str,
     node_name: str,
@@ -346,7 +395,7 @@ def _sanitize_node_inputs(
             "transport": TRANSPORT,
         }
         if hasattr(state, "model_dump"):
-            raw["state"] = state.model_dump()
+            raw["state"] = _summarize_span_mapping(state.model_dump())
         return _redact_pii(raw)
 
     return _processor
@@ -357,14 +406,14 @@ def _sanitize_node_output(node_name: str) -> Callable[[Any], dict[str, Any]]:
         if isinstance(output, _TraceExceptionOutput):
             return output.sanitized
         if isinstance(output, Mapping):
-            redacted: dict[str, Any] = _redact_pii(dict(output))
+            summarized: dict[str, Any] = _summarize_span_mapping(dict(output))
             if "error" in output:
-                redacted["status"] = "error"
-                redacted["error"] = {
+                summarized["status"] = "error"
+                summarized["error"] = {
                     "stage": node_name,
                     "code": "node_error",
                 }
-            return redacted
+            return summarized
         return {"output_type": type(output).__name__}
 
     return _processor
