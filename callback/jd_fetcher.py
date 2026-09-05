@@ -11,7 +11,9 @@ import asyncio
 import json
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor
+import threading
+from collections.abc import Callable
+from concurrent.futures import Future
 
 from playwright.async_api import ViewportSize, async_playwright
 
@@ -34,11 +36,6 @@ MAX_JD_CHARS = 4_000 * CHARS_PER_TOKEN
 CAP_LINE_SLACK_CHARS = 1_000
 MIN_MARKDOWN_CHARS = 50
 _BODY_TEXT_SCRIPT = "() => document.body ? document.body.innerText : ''"
-# trafilatura is synchronous and cannot be interrupted. It runs on this pool rather
-# than the loop's default executor because asyncio.run() joins the default executor
-# on shutdown, which would keep jd_fetch blocked past the outer timeout. A timed-out
-# extraction finishes in the background and its result is dropped.
-_EXTRACT_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="callback-extract")
 
 
 class JDFetchError(Exception):
@@ -147,10 +144,31 @@ async def _load_page(url: str) -> tuple[str, str, str]:
     return html, body_text, title
 
 
+async def _run_detached(fn: Callable[..., str], *args: object) -> str:
+    """Run a synchronous, uninterruptible call on its own daemon thread.
+
+    trafilatura cannot be cancelled. A pool would let abandoned (timed-out)
+    calls hold its workers and starve later fetches, and the loop's default
+    executor is joined by asyncio.run() on shutdown, which would keep jd_fetch
+    blocked past the outer timeout. A fresh daemon thread per call has neither
+    problem: on timeout the awaiting future is cancelled, the thread finishes
+    in the background, and its result is dropped.
+    """
+    done: Future[str] = Future()
+
+    def work() -> None:
+        try:
+            done.set_result(fn(*args))
+        except BaseException as exc:  # noqa: BLE001 — forwarded to the awaiting future
+            done.set_exception(exc)
+
+    threading.Thread(target=work, name="callback-extract", daemon=True).start()
+    return await asyncio.wrap_future(done)
+
+
 async def _fetch_url_to_markdown_unbounded(url: str) -> str:
     html, body_text, title = await _load_page(url)
-    loop = asyncio.get_running_loop()
-    extracted = await loop.run_in_executor(_EXTRACT_POOL, extract_markdown, html, body_text, url)
+    extracted = await _run_detached(extract_markdown, html, body_text, url)
     return cap_jd_text(_with_title(extracted, title), url)
 
 

@@ -417,6 +417,33 @@ def test_fetch_url_to_markdown_outer_timeout_covers_extraction(monkeypatch):
     assert elapsed < 0.3, f"asyncio.run blocked for {elapsed:.2f}s waiting on extraction"
 
 
+def test_abandoned_extractions_do_not_starve_later_fetches(monkeypatch):
+    """Two timed-out extractions must not block the next fetch (no shared pool)."""
+    import time
+
+    _fake_playwright(monkeypatch)
+
+    def slow_extract(html, body_text, url):
+        time.sleep(0.5)
+        return "late"
+
+    monkeypatch.setattr(jd_fetcher, "_outer_timeout_s", lambda: 0.05)
+    monkeypatch.setattr(jd_fetcher, "extract_markdown", slow_extract)
+    for _ in range(2):
+        with pytest.raises(asyncio.TimeoutError):
+            asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
+
+    monkeypatch.setattr(jd_fetcher, "_outer_timeout_s", lambda: 5.0)
+    monkeypatch.setattr(jd_fetcher, "extract_markdown", lambda *_: "fast " * 20)
+    start = time.perf_counter()
+    markdown = asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
+    elapsed = time.perf_counter() - start
+
+    actual = {"markdown": markdown.strip(), "prompt": elapsed < 0.3}
+    expected = {"markdown": ("fast " * 20).strip(), "prompt": True}
+    assert actual == expected
+
+
 # --- import cost -------------------------------------------------------------
 
 
