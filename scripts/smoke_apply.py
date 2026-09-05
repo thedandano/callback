@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Smoke test for the apply MCP handoff tools."""
+"""Smoke test for the apply MCP handoff tools.
+
+Pass a job URL as the first argument to exercise the fetcher.
+"""
 
 import contextlib
 import json
@@ -12,6 +15,7 @@ from pathlib import Path
 sys.path.insert(0, os.getcwd())
 
 from callback.jd_data import EXTRACTION_PROTOCOL
+from callback.jd_fetcher import MIN_MARKDOWN_CHARS
 from callback.repository.resumes import save_resume
 from callback.section_map import ContactInfo, ExperienceEntry, SectionMap, SkillsSection
 from callback.server import load_jd, submit_keywords, submit_tailor
@@ -27,7 +31,28 @@ JD_JSON = json.dumps(
 )
 
 
+def _load_phase(jd_url: str | None, jd_text: str, resume_label: str) -> dict:
+    """Run the load_jd phase against a live URL or pasted raw text."""
+    if jd_url:
+        load_result = load_jd(jd_url=jd_url, resume_label=resume_label)
+    else:
+        load_result = load_jd(jd_raw_text=jd_text, resume_label=resume_label)
+    loaded = json.loads(load_result)
+    assert loaded["status"] == "ok", f"load_jd failed: {loaded}"
+    assert loaded["next_action"] == "extract_keywords", f"unexpected: {loaded}"
+    assert loaded["data"]["extraction_protocol"] == EXTRACTION_PROTOCOL
+    loaded_text = loaded["data"]["jd_text"]
+    if jd_url:
+        assert len(loaded_text) > MIN_MARKDOWN_CHARS, f"fetched JD too short: {loaded_text!r}"
+        print(f"fetched {len(loaded_text)} chars from {jd_url}")
+    else:
+        assert loaded_text == jd_text, f"jd_text mismatch: {loaded_text!r}"
+    return loaded
+
+
 def main():
+    jd_url = sys.argv[1] if len(sys.argv) > 1 else None
+
     # Create a temp resume file
     with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w") as f:
         f.write("Sample resume text: Python engineer with 5 years experience.")
@@ -56,22 +81,8 @@ def main():
 
     try:
         # Phase 1: load_jd
-        load_result = load_jd(
-            jd_raw_text=jd_text,
-            resume_label=resume_label,
-        )
-        loaded = json.loads(load_result)
+        loaded = _load_phase(jd_url, jd_text, resume_label)
         session_id = loaded["session_id"]
-        expected_loaded = {
-            "session_id": session_id,
-            "status": "ok",
-            "next_action": "extract_keywords",
-            "data": {
-                "jd_text": jd_text,
-                "extraction_protocol": EXTRACTION_PROTOCOL,
-            },
-        }
-        assert loaded == expected_loaded, f"load_jd mismatch: {loaded}"
 
         # Phase 2: submit_keywords
         submit_result = submit_keywords(session_id=session_id, jd_json=JD_JSON)
