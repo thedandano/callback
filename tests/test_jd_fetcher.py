@@ -35,7 +35,9 @@ def _events(caplog) -> list[dict]:
 
 
 def test_extract_markdown_uses_trafilatura_on_rich_page():
-    markdown = jd_fetcher.extract_markdown(_ARTICLE, "body text", "https://example.com/job")
+    extracted = jd_fetcher._trafilatura_markdown(_ARTICLE)
+
+    markdown = jd_fetcher.extract_markdown(extracted, "body text", "https://example.com/job")
 
     actual = {
         "has_title": "Senior Python Engineer" in markdown,
@@ -56,10 +58,10 @@ def test_extract_markdown_uses_trafilatura_on_rich_page():
 
 def test_extract_markdown_falls_back_to_body_text_when_thin(caplog):
     caplog.set_level("INFO", logger="callback.jd_fetcher")
-    thin_html = "<html><body><p>Apply now.</p></body></html>"
+    extracted = jd_fetcher._trafilatura_markdown("<html><body><p>Apply now.</p></body></html>")
     body_text = "Senior Python Engineer\n" + ("Build APIs and ship reliable systems. " * 60)
 
-    markdown = jd_fetcher.extract_markdown(thin_html, body_text, "https://example.com/job")
+    markdown = jd_fetcher.extract_markdown(extracted, body_text, "https://example.com/job")
 
     actual = {"markdown": markdown, "events": _events(caplog)}
     expected = {
@@ -68,7 +70,7 @@ def test_extract_markdown_falls_back_to_body_text_when_thin(caplog):
             {
                 "event": "fetch_thin_extraction",
                 "url": "https://example.com/job",
-                "extracted_chars": len(jd_fetcher._trafilatura_markdown(thin_html)),
+                "extracted_chars": len(extracted),
                 "body_chars": len(body_text),
             }
         ],
@@ -76,15 +78,39 @@ def test_extract_markdown_falls_back_to_body_text_when_thin(caplog):
     assert actual == expected
 
 
-def test_extract_markdown_keeps_thin_extraction_when_body_is_shorter(caplog):
+def test_extract_markdown_rejects_shell_page_with_short_body(caplog):
+    """A login wall or empty SPA shell: thin extraction AND a short body. The body
+    must not be promoted to a JD just because it is longer than the extraction."""
     caplog.set_level("INFO", logger="callback.jd_fetcher")
-    thin_html = "<html><body><article><p>Apply now for this role.</p></article></body></html>"
+    body_text = "Please sign in to view this job posting. Cookies are required."
 
-    markdown = jd_fetcher.extract_markdown(thin_html, "x", "https://example.com/job")
+    with pytest.raises(RuntimeError) as exc_info:
+        jd_fetcher.extract_markdown("", body_text, "https://example.com/job")
 
-    actual = {"markdown": markdown, "events": _events(caplog)}
-    expected = {"markdown": jd_fetcher._trafilatura_markdown(thin_html), "events": []}
+    actual = {"message": str(exc_info.value), "events": _events(caplog)}
+    expected = {
+        "message": f"thin page: 0 chars, under the {jd_fetcher.MIN_EXTRACT_CHARS} minimum",
+        "events": [
+            {
+                "event": "fetch_thin",
+                "url": "https://example.com/job",
+                "extracted_chars": 0,
+                "body_chars": len(body_text),
+                "min_chars": jd_fetcher.MIN_EXTRACT_CHARS,
+            }
+        ],
+    }
     assert actual == expected
+
+
+def test_extract_markdown_rejects_thin_extraction_when_body_is_shorter(caplog):
+    caplog.set_level("INFO", logger="callback.jd_fetcher")
+    extracted = "Apply now for this role."
+
+    with pytest.raises(RuntimeError):
+        jd_fetcher.extract_markdown(extracted, "x", "https://example.com/job")
+
+    assert [e["event"] for e in _events(caplog)] == ["fetch_thin"]
 
 
 # --- cap_jd_text ------------------------------------------------------------
@@ -245,10 +271,22 @@ class _FakePage:
         return self._title
 
 
-def _fake_playwright(monkeypatch, html="<html></html>", body_text="", **page_kwargs) -> dict:
-    """Install a fake async_playwright; return the dict of recorded calls."""
+def _fake_playwright(
+    monkeypatch, html="<html></html>", body_text="", close_delay=0.0, **page_kwargs
+) -> dict:
+    """Install a fake async_playwright; return the dict of recorded calls.
+
+    The extraction subprocess is stubbed too (``run_killable`` returns the page
+    html unchanged) so these wiring tests never spawn a child process; the
+    subprocess itself is covered by the ``run_killable`` tests below.
+    """
     calls: dict = {}
     page = _FakePage(calls, html, body_text, **page_kwargs)
+
+    async def _close():
+        if close_delay:
+            await asyncio.sleep(close_delay)
+        calls["closed"] = True
 
     context = Mock()
     context.new_page = AsyncMock(return_value=page)
@@ -256,15 +294,16 @@ def _fake_playwright(monkeypatch, html="<html></html>", body_text="", **page_kwa
     browser.new_context = AsyncMock(
         side_effect=lambda **kw: calls.__setitem__("new_context", kw) or context
     )
-    browser.close = AsyncMock(side_effect=lambda: calls.__setitem__("closed", True))
+    browser.close = _close
     chromium = Mock()
     chromium.launch = AsyncMock(side_effect=lambda **kw: calls.__setitem__("launch", kw) or browser)
     playwright = Mock(chromium=chromium)
+    playwright.stop = AsyncMock(side_effect=lambda: calls.__setitem__("stopped", True))
 
     manager = Mock()
-    manager.__aenter__ = AsyncMock(return_value=playwright)
-    manager.__aexit__ = AsyncMock(return_value=None)
+    manager.start = AsyncMock(return_value=playwright)
     monkeypatch.setattr(jd_fetcher, "async_playwright", lambda: manager)
+    monkeypatch.setattr(jd_fetcher, "run_killable", lambda worker, arg, timeout: f"raw({arg})")
     return calls
 
 
@@ -277,14 +316,15 @@ def test_fetch_url_to_markdown_wires_playwright_and_extracts(monkeypatch):
     monkeypatch.setattr(
         jd_fetcher,
         "extract_markdown",
-        lambda html, body_text, url: f"md({html},{body_text},{url}) " + "filler " * 10,
+        lambda extracted, body_text, url: f"md({extracted},{body_text},{url}) " + "filler " * 10,
     )
 
     markdown = asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
 
     actual = {"markdown": markdown, **calls}
     expected = {
-        "markdown": "# Job Title | Board\n\nmd(<html>page</html>,body,https://example.com/job) "
+        "markdown": "# Job Title | Board\n\n"
+        + "md(raw(<html>page</html>),body,https://example.com/job) "
         + "filler " * 10,
         "launch": {"headless": True, "args": ["--no-sandbox"]},
         "new_context": {"user_agent": jd_fetcher.USER_AGENT, "viewport": jd_fetcher.VIEWPORT},
@@ -296,6 +336,7 @@ def test_fetch_url_to_markdown_wires_playwright_and_extracts(monkeypatch):
         "settle_ms": jd_fetcher.SETTLE_MS,
         "evaluate": jd_fetcher._BODY_TEXT_SCRIPT,
         "closed": True,
+        "stopped": True,
     }
     assert actual == expected
 
@@ -394,53 +435,104 @@ def test_fetch_url_to_markdown_propagates_outer_timeout(monkeypatch):
         asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
 
 
-def test_fetch_url_to_markdown_outer_timeout_covers_extraction(monkeypatch):
-    """A slow synchronous extraction must not escape the outer timeout, and the
-    sync caller (asyncio.run, as in jd_fetch) must get control back promptly
-    instead of waiting for the abandoned thread."""
+def test_fetch_gives_extraction_only_the_remaining_budget(monkeypatch):
+    """The outer timeout bounds the whole fetch: the killable extraction gets what is
+    left after the page load, not a fresh budget."""
+    monkeypatch.setattr(jd_fetcher, "_outer_timeout_s", lambda: 2.0)
+    _fake_playwright(monkeypatch, goto_delay=0.5)
+    seen: dict = {}
+
+    def capture(worker, arg, timeout):
+        seen["timeout"] = timeout
+        return "x" * 2_000
+
+    monkeypatch.setattr(jd_fetcher, "run_killable", capture)
+
+    asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
+
+    actual = {"budget_reduced": 1.0 < seen["timeout"] < 1.6}
+    expected = {"budget_reduced": True}
+    assert actual == expected
+
+
+def test_fetch_url_to_markdown_bounds_a_hung_browser_close(monkeypatch, caplog):
+    """A browser that ignores close() must not hold the fetch past CLOSE_TIMEOUT_S."""
     import time
 
-    monkeypatch.setattr(jd_fetcher, "_outer_timeout_s", lambda: 0.05)
-    _fake_playwright(monkeypatch)
-
-    def slow_extract(html, body_text, url):
-        time.sleep(0.5)
-        return "late"
-
-    monkeypatch.setattr(jd_fetcher, "extract_markdown", slow_extract)
+    caplog.set_level("INFO", logger="callback.jd_fetcher")
+    monkeypatch.setattr(jd_fetcher, "CLOSE_TIMEOUT_S", 0.05)
+    _fake_playwright(monkeypatch, close_delay=5.0)
+    monkeypatch.setattr(jd_fetcher, "extract_markdown", lambda *_: "y" * 2_000)
 
     start = time.perf_counter()
-    with pytest.raises(asyncio.TimeoutError):
-        asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
+    asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
     elapsed = time.perf_counter() - start
 
-    assert elapsed < 0.3, f"asyncio.run blocked for {elapsed:.2f}s waiting on extraction"
+    cleanup_events = [e for e in _events(caplog) if e["event"] == "browser_cleanup_failed"]
+    actual = {"prompt": elapsed < 1.0, "events": cleanup_events}
+    expected = {
+        "prompt": True,
+        "events": [
+            {
+                "event": "browser_cleanup_failed",
+                "url": "https://example.com/job",
+                "step": "browser.close",
+                "error_class": "TimeoutError",
+            }
+        ],
+    }
+    assert actual == expected
 
 
-def test_abandoned_extractions_do_not_starve_later_fetches(monkeypatch):
-    """Two timed-out extractions must not block the next fetch (no shared pool)."""
+# --- run_killable (real spawned child processes) ------------------------------
+
+
+def _echo_worker(conn, text):
+    conn.send(("ok", text))
+    conn.close()
+
+
+def _sleep_worker(conn, seconds):
     import time
 
-    _fake_playwright(monkeypatch)
+    time.sleep(seconds)
+    conn.send(("ok", "late"))
+    conn.close()
 
-    def slow_extract(html, body_text, url):
-        time.sleep(0.5)
-        return "late"
 
-    monkeypatch.setattr(jd_fetcher, "_outer_timeout_s", lambda: 0.05)
-    monkeypatch.setattr(jd_fetcher, "extract_markdown", slow_extract)
-    for _ in range(2):
-        with pytest.raises(asyncio.TimeoutError):
-            asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
+def _boom_worker(conn, _):
+    raise ValueError("boom")
 
-    monkeypatch.setattr(jd_fetcher, "_outer_timeout_s", lambda: 5.0)
-    monkeypatch.setattr(jd_fetcher, "extract_markdown", lambda *_: "fast " * 20)
+
+def test_run_killable_returns_worker_result():
+    assert jd_fetcher.run_killable(_echo_worker, "hello", 30.0) == "hello"
+
+
+def test_run_killable_kills_slow_worker():
+    import time
+
     start = time.perf_counter()
-    markdown = asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
+    with pytest.raises(TimeoutError) as exc_info:
+        jd_fetcher.run_killable(_sleep_worker, 30.0, 0.3)
     elapsed = time.perf_counter() - start
 
-    actual = {"markdown": markdown.strip(), "prompt": elapsed < 0.3}
-    expected = {"markdown": ("fast " * 20).strip(), "prompt": True}
+    actual = {"message": str(exc_info.value), "bounded": elapsed < 3.0}
+    expected = {"message": "extraction exceeded 0.3s; worker killed", "bounded": True}
+    assert actual == expected
+
+
+def test_run_killable_surfaces_worker_crash():
+    with pytest.raises(RuntimeError) as exc_info:
+        jd_fetcher.run_killable(_boom_worker, None, 30.0)
+
+    assert str(exc_info.value) == "extraction worker exited without a result"
+
+
+def test_extract_worker_runs_trafilatura_in_child():
+    markdown = jd_fetcher.run_killable(jd_fetcher._extract_worker, _ARTICLE, 60.0)
+
+    actual = {"has_title": "Senior Python Engineer" in markdown, "long": len(markdown) > 1_000}
+    expected = {"has_title": True, "long": True}
     assert actual == expected
 
 
