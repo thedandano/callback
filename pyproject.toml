@@ -62,7 +62,7 @@ max-args = 4
 max-complexity = 7
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "evals"]
 markers = [
     "integration: marks tests as integration",
     "local: marks tests that require local-only tools or filesystem paths",
