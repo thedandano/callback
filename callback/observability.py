@@ -245,6 +245,83 @@ def _sanitize_tool_inputs(
     return _processor
 
 
+def _summarize_compiled_profile(value: Any) -> Any:
+    """Reduce a compiled_profile payload to counts — never export story narratives."""
+    if not isinstance(value, dict):
+        return value
+    return {
+        "story_count": len(value.get("stories") or []),
+        "skills_index_count": len(value.get("skills_index") or []),
+        "orphaned_skills_count": len(value.get("orphaned_skills") or []),
+    }
+
+
+def _summarize_sections(value: Any) -> Any:
+    """Reduce a sections payload to its key names — section bodies never leave the span."""
+    if not isinstance(value, dict):
+        return value
+    return {"keys": sorted(value.keys())}
+
+
+def _summarize_intake_value(value: Any) -> Any:
+    """Summarize one intake field: lengths for containers, placeholders for text."""
+    if isinstance(value, list):
+        return len(value)
+    if isinstance(value, dict):
+        return sorted(value.keys())
+    if isinstance(value, str) and value:
+        return "<redacted>"
+    return value
+
+
+def _summarize_intake(value: Any) -> Any:
+    """Reduce an intake payload field-by-field (covers stories, onboard_text, etc.)."""
+    if not isinstance(value, dict):
+        return value
+    return {key: _summarize_intake_value(val) for key, val in value.items()}
+
+
+_SKILL_LIST_KEYS: frozenset[str] = frozenset(
+    {"skills_index", "orphaned_skills", "skill_coverage_warnings"}
+)
+
+
+def _summarize_skill_fields(data: dict[str, Any]) -> dict[str, Any]:
+    """Reduce top-level skill-name-bearing fields to counts/placeholders.
+
+    Skill names are business content, same as story narratives — the span
+    contract is counts and key names only.
+    """
+    summarized = dict(data)
+    for key in _SKILL_LIST_KEYS:
+        if key in summarized and isinstance(summarized[key], list):
+            summarized[key] = len(summarized[key])
+    primary_skill = summarized.get("primary_skill")
+    if isinstance(primary_skill, str):
+        summarized["primary_skill"] = "<redacted>"
+    return summarized
+
+
+def _summarize_profile_content(envelope: dict[str, Any]) -> dict[str, Any]:
+    """Summarize profile/resume business content within envelope["data"] to counts
+    and key names. No skill names (skills_index, orphaned_skills,
+    skill_coverage_warnings, primary_skill) or story identifiers leave the span.
+    """
+    data = envelope.get("data")
+    if not isinstance(data, dict):
+        return envelope
+    summarized = _summarize_skill_fields(data)
+    if "compiled_profile" in summarized:
+        summarized["compiled_profile"] = _summarize_compiled_profile(summarized["compiled_profile"])
+    if "sections" in summarized:
+        summarized["sections"] = _summarize_sections(summarized["sections"])
+    if "intake" in summarized:
+        summarized["intake"] = _summarize_intake(summarized["intake"])
+    if isinstance(summarized.get("story_id"), str):
+        summarized["story_id"] = "<redacted>"
+    return {**envelope, "data": summarized}
+
+
 def _sanitize_tool_output(output: Any) -> dict[str, Any]:
     if isinstance(output, _TraceExceptionOutput):
         return output.sanitized
@@ -253,9 +330,68 @@ def _sanitize_tool_output(output: Any) -> dict[str, Any]:
     if envelope is None:
         return {"output_type": type(output).__name__}
 
-    # Return the full envelope redacted — all business content is preserved,
-    # contact PII is stripped.
-    return _redact_pii(dict(envelope))
+    # Contact PII is stripped from the envelope. Profile/resume business content
+    # (compiled_profile, sections, intake) is summarized to counts and key names —
+    # story narratives, section text, and resume text never leave the span.
+    return _summarize_profile_content(_redact_pii(dict(envelope)))
+
+
+# Span-summarization contract for LangGraph node traces (CLAUDE.md: "safe
+# booleans/counts and state/update key names" — never resume text, JD text,
+# wiki content, story narratives, or skill names).
+_SPAN_MAPPING_EXEMPT_KEYS: frozenset[str] = frozenset(
+    {"session_id", "graph_name", "node_name", "transport", "status"}
+)
+_SPAN_ERROR_EXEMPT_KEYS: frozenset[str] = frozenset({"stage", "code", "retriable"})
+# Numeric state fields that are genuine counts. Every other number (e.g.
+# candidate_years, a measurement about the candidate) is redacted.
+_SPAN_COUNT_KEYS: frozenset[str] = frozenset({"render_page_count", "max_pages"})
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _summarize_span_value(value: Any) -> Any:
+    """Reduce one span value to a count/boolean/key-name shape — never content."""
+    if isinstance(value, bool) or value is None:
+        return value
+    if _is_number(value):
+        return "<redacted>"
+    if isinstance(value, str):
+        return {"len": len(value)}
+    if isinstance(value, (list, tuple)):
+        return {"len": len(value)}
+    if isinstance(value, dict):
+        return {"keys": sorted(value.keys())}
+    if hasattr(value, "model_dump"):
+        return _summarize_span_mapping(value.model_dump())
+    return type(value).__name__
+
+
+def _summarize_span_error(error: dict[str, Any]) -> dict[str, Any]:
+    summarized: dict[str, Any] = {}
+    for key, val in error.items():
+        if key in _SPAN_ERROR_EXEMPT_KEYS:
+            summarized[key] = val
+        elif key == "message" and isinstance(val, str):
+            summarized[key] = {"len": len(val)}
+        else:
+            summarized[key] = _summarize_span_value(val)
+    return summarized
+
+
+def _summarize_span_mapping(mapping: Mapping[str, Any]) -> dict[str, Any]:
+    """Summarize every value in *mapping* except the safe metadata/error keys."""
+    summarized: dict[str, Any] = {}
+    for key, value in mapping.items():
+        if key in _SPAN_MAPPING_EXEMPT_KEYS or (key in _SPAN_COUNT_KEYS and _is_number(value)):
+            summarized[key] = value
+        elif key == "error" and isinstance(value, dict):
+            summarized[key] = _summarize_span_error(value)
+        else:
+            summarized[key] = _summarize_span_value(value)
+    return summarized
 
 
 def _sanitize_node_inputs(
@@ -270,7 +406,7 @@ def _sanitize_node_inputs(
             "transport": TRANSPORT,
         }
         if hasattr(state, "model_dump"):
-            raw["state"] = state.model_dump()
+            raw["state"] = _summarize_span_mapping(state.model_dump())
         return _redact_pii(raw)
 
     return _processor
@@ -281,14 +417,14 @@ def _sanitize_node_output(node_name: str) -> Callable[[Any], dict[str, Any]]:
         if isinstance(output, _TraceExceptionOutput):
             return output.sanitized
         if isinstance(output, Mapping):
-            redacted: dict[str, Any] = _redact_pii(dict(output))
+            summarized: dict[str, Any] = _summarize_span_mapping(dict(output))
             if "error" in output:
-                redacted["status"] = "error"
-                redacted["error"] = {
+                summarized["status"] = "error"
+                summarized["error"] = {
                     "stage": node_name,
                     "code": "node_error",
                 }
-            return redacted
+            return summarized
         return {"output_type": type(output).__name__}
 
     return _processor

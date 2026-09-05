@@ -30,13 +30,18 @@ from pathlib import Path
 from fastmcp import FastMCP
 from pydantic import ValidationError
 
-import callback.profile_nodes as profile_nodes
 import callback.scorer as scorer
 import callback.version_check as version_check
 from callback.apply_graph import (
+    FINALIZE_NODE,
     KEYWORDS_ACCEPT_NODE,
+    PARSE_FINAL_NODE,
+    RENDER_NODE,
+    REPORT_NODE,
+    SCORE_FINAL_NODE,
+    SCORE_INITIAL_NODE,
     TAILOR_NODE,
-    build_apply_graph,
+    get_apply_graph,
 )
 from callback.apply_graph import (
     make_config as make_apply_config,
@@ -46,7 +51,7 @@ from callback.jd_data import EXTRACTION_PROTOCOL, JDDataError, parse_jd_json
 from callback.jd_fetcher import JDFetchError
 from callback.observability import invoke_graph_without_native_tracing, trace_tool
 from callback.preferences import SearchPreferences
-from callback.profile_graph import build_profile_graph
+from callback.profile_graph import get_profile_graph, story_pending
 from callback.profile_graph import make_config as make_profile_config
 from callback.repository.preferences import PreferencesStore
 from callback.repository.resumes import list_resumes
@@ -652,7 +657,7 @@ def _load_jd_impl(  # noqa: C901
     )
 
     try:
-        graph = build_apply_graph()
+        graph = get_apply_graph()
         config = make_apply_config(
             session_id,
             tool_name="load_jd",
@@ -897,7 +902,7 @@ def _submit_keywords_impl(session_id: str, jd_json: str) -> str:
             retriable=True,
         )
 
-    graph = build_apply_graph()
+    graph = get_apply_graph()
     config = make_apply_config(session_id, tool_name="submit_keywords")
     state_error = _submit_keywords_state_error(graph, config, session_id)
     if state_error is not None:
@@ -1004,9 +1009,61 @@ def submit_tailor(
     return _submit_tailor_impl(session_id, edits, no_coverage=no_coverage, output_dir=output_dir)
 
 
+_STALE_RETRY_KEYS = (
+    "tailored",
+    "tailored_sections",
+    "pdf_path",
+    "render_page_count",
+    "render_warnings",
+    "parsed_final",
+    "score_final",
+    "report",
+    "tailor_diagnostics",
+    "uncovered_skills",
+    "applied_skill_values",
+    "no_coverage",
+)
+
+
+def _tailor_retry_update(graph, config, values: dict, session_id: str) -> None:
+    """Log a retry when the session previously errored, then apply the state update.
+
+    Writes as_node=SCORE_INITIAL_NODE explicitly: SCORE_INITIAL_NODE's outgoing
+    edge unconditionally targets TAILOR_NODE, so this always re-queues tailor
+    as the next pending task. Without an explicit as_node, LangGraph infers the
+    last node that wrote state — after an error that is tailor/render/parse_final
+    itself, whose outgoing (conditional) edge would re-evaluate against the
+    now-cleared error and route past tailor/render entirely instead of retrying
+    them.
+
+    On a retry (the session's prior state carries an error), also clear stale
+    outputs (_STALE_RETRY_KEYS) from an earlier attempt that got further than
+    this one before failing — e.g. an edits attempt that rendered a PDF and
+    then failed at parse_final, followed by a no_coverage retry that skips
+    render entirely. Without this, the stale pdf_path/tailored content would
+    survive into finalize alongside outcome.no_coverage: true. Caller-supplied
+    values always win over the stale-clearing defaults.
+    """
+    snapshot = graph.get_state(config)
+    update = values
+    if snapshot.values.get("error"):
+        _log(
+            "INFO",
+            {"tool": "submit_tailor", "session_id": session_id, "event": "retry_after_error"},
+        )
+        stale = dict.fromkeys(_STALE_RETRY_KEYS)
+        update = {**stale, **values}
+    graph.update_state(config, update, as_node=SCORE_INITIAL_NODE)
+
+
 def _submit_tailor_no_coverage(session_id: str, graph, config, resolved_output_dir) -> str:
     """Run the graph for the no_coverage path and build its success/error envelope."""
-    graph.update_state(config, {"no_coverage": True, "output_dir": resolved_output_dir})
+    _tailor_retry_update(
+        graph,
+        config,
+        {"no_coverage": True, "output_dir": resolved_output_dir, "error": None},
+        session_id,
+    )
     try:
         invoke_graph_without_native_tracing(graph, None, config)
     except Exception:
@@ -1014,7 +1071,7 @@ def _submit_tailor_no_coverage(session_id: str, graph, config, resolved_output_d
     final_snapshot = graph.get_state(config)
     final = final_snapshot.values
     if final.get("error"):
-        return _err("submit_tailor", "pipeline_error", final["error"], session_id)
+        return _err("submit_tailor", "pipeline_error", final["error"], session_id, retriable=True)
     artifacts = _submit_tailor_artifacts(final, session_id)
     return _ok(
         session_id,
@@ -1039,6 +1096,23 @@ def _submit_tailor_no_coverage(session_id: str, graph, config, resolved_output_d
     )
 
 
+_HALTED_APPLY_NODES = (RENDER_NODE, PARSE_FINAL_NODE, SCORE_FINAL_NODE, REPORT_NODE, FINALIZE_NODE)
+
+
+def _tailor_invalid_state_message(next_nodes: tuple[str, ...]) -> str:
+    """Message for a submit_tailor call when the session isn't at the tailor interrupt.
+
+    A session halted mid-pipeline by a raised (uncaught) node exception parks at
+    that node rather than at tailor, and is otherwise unreachable through the MCP
+    surface — name the node and point the host back to load_jd. Every other
+    non-tailor state (never started, or still at keywords_accept) keeps the
+    original message.
+    """
+    if next_nodes and next_nodes[0] in _HALTED_APPLY_NODES:
+        return f"session halted at {next_nodes[0]}; start a new session with load_jd"
+    return "session is not waiting for tailor edits"
+
+
 @trace_tool("submit_tailor", graph_name="apply")
 def _submit_tailor_impl(
     session_id: str,
@@ -1049,7 +1123,7 @@ def _submit_tailor_impl(
 ) -> str:
     _log("INFO", {"tool": "submit_tailor", "session_id": session_id, "edit_count": len(edits)})
 
-    graph = build_apply_graph()
+    graph = get_apply_graph()
     config = make_apply_config(session_id, tool_name="submit_tailor")
     snapshot = graph.get_state(config)
 
@@ -1060,7 +1134,7 @@ def _submit_tailor_impl(
         return _err(
             "submit_tailor",
             "invalid_state",
-            "session is not waiting for tailor edits",
+            _tailor_invalid_state_message(snapshot.next),
             session_id,
         )
 
@@ -1113,14 +1187,17 @@ def _apply_tailor_edits(
 
     uncovered_skills = _detect_uncovered_skills(section_map)
 
-    graph.update_state(
+    _tailor_retry_update(
+        graph,
         config,
         {
             "tailored_sections": section_map.model_dump(),
             "uncovered_skills": uncovered_skills,
             "applied_skill_values": applied_skill_values,
             "output_dir": output_dir,
+            "error": None,
         },
+        session_id,
     )
     try:
         invoke_graph_without_native_tracing(graph, None, config)
@@ -1130,7 +1207,7 @@ def _apply_tailor_edits(
     final_snapshot = graph.get_state(config)
     final = final_snapshot.values
     if final.get("error"):
-        return _err("submit_tailor", "pipeline_error", final["error"], session_id)
+        return _err("submit_tailor", "pipeline_error", final["error"], session_id, retriable=True)
     artifacts = _submit_tailor_artifacts(final, session_id)
     return _ok(
         session_id,
@@ -1270,7 +1347,7 @@ def _onboard_user_impl(
         resume_path=resume_path,
         intake=intake if intake else None,
     )
-    graph = build_profile_graph()
+    graph = get_profile_graph()
     config = make_profile_config(session_id, tool_name="onboard_user")
     state_values, invoke_error = _onboard_user_invoke(graph, initial_state, config, session_id)
     if invoke_error is not None:
@@ -1291,27 +1368,156 @@ def _onboard_user_invoke(
         return None, _unexpected_error("onboard_user", session_id)
 
 
+def _compile_failed_after_save_error(stage: str, session_id: str) -> str:
+    """Build the retriable compile_failed envelope for a story saved before compile raised."""
+    message = (
+        "profile compile failed; call compile_profile again with this session_id"
+        if stage == "compile_profile"
+        else "story saved; call compile_profile with this session_id to finish"
+    )
+    return _err(stage, "compile_failed", message, session_id, retriable=True)
+
+
+def _profile_failure_error(graph, config, session_id: str, stage: str) -> str:
+    """Classify a failed profile run by the durable checkpoint's pending node.
+
+    The checkpoint read is guarded: an unreadable checkpoint falls through to the
+    generic unexpected_error envelope instead of escaping as a raw MCP failure.
+    """
+    try:
+        snapshot = graph.get_state(config)
+    except Exception:
+        _log_exception({"tool": stage, "session_id": session_id, "event": "checkpoint_error"})
+        snapshot = None
+    pending = snapshot.next if snapshot is not None else ()
+    intake = snapshot.values.get("intake") if snapshot is not None else None
+    if pending == ("compile_profile",):
+        return _compile_failed_after_save_error(stage, session_id)
+    if pending == ("create_story",) and story_pending(intake):
+        # The node may have written accomplishments.json before the checkpoint
+        # write failed. save_story ignores an identical story, so retrying is safe.
+        return _err(
+            stage,
+            "story_unconfirmed",
+            "story save could not be confirmed; call create_story again with this "
+            "session_id (an identical story is not saved twice)",
+            session_id,
+            retriable=True,
+        )
+    return _err(
+        stage=stage,
+        code="unexpected_error",
+        message=f"unexpected {stage} failure; inspect callback logs",
+        session_id=session_id,
+        retriable=False,
+    )
+
+
+def _run_profile_thread(graph, config, graph_input, session_id: str, stage: str):
+    """Invoke the profile graph; if it paused before create_story with a story pending,
+    continue once.
+
+    Returns (final_snapshot, error_envelope_or_None). The snapshot carries both the
+    state values and the pending node, so callers never re-read the checkpoint.
+    """
+    try:
+        invoke_graph_without_native_tracing(graph, graph_input, config)
+        snapshot = graph.get_state(config)
+        if snapshot.next == ("create_story",) and story_pending(snapshot.values.get("intake")):
+            invoke_graph_without_native_tracing(graph, None, config)
+            snapshot = graph.get_state(config)
+    except Exception:
+        _log_exception({"tool": stage, "session_id": session_id, "event": "unexpected_error"})
+        return None, _profile_failure_error(graph, config, session_id, stage)
+    if (snapshot.values.get("intake") or {}).get("status") == "no_resume":
+        return None, _err(
+            stage, "profile_missing", "no profile; call onboard_user first", session_id
+        )
+    return snapshot, None
+
+
+def _profile_thread_data(snapshot) -> tuple[str | None, dict]:
+    """Return (next_action, common data) for a profile thread after a run."""
+    values = snapshot.values
+    paused = snapshot.next == ("create_story",)
+    intake = values.get("intake") or {}
+    data = {
+        "compiled_profile": values.get("compiled_profile") or {},
+        "skill_coverage_warnings": intake.get("skill_coverage_warnings", []),
+        "skills_index": intake.get("skills_index", []),
+        "orphaned_skills": values.get("orphaned_skills") or [],
+    }
+    return ("create_story" if paused else None), data
+
+
+def _profile_snapshot_or_error(graph, config, session_id: str, stage: str, waiting_for: str):
+    """Validate a host-supplied session before resuming it. Returns (snapshot, error_or_None)."""
+    snapshot = graph.get_state(config)
+    if not snapshot.values:
+        return None, _err(stage, "session_not_found", "session_id not found", session_id)
+    if snapshot.next != (waiting_for,):
+        return None, _err(
+            stage, "invalid_state", f"session is not waiting for {waiting_for}", session_id
+        )
+    return snapshot, None
+
+
+def _resume_profile_thread(
+    graph,
+    config,
+    session_id: str,
+    stage: str,
+    waiting_for: str,
+    update: dict | None,
+) -> str | None:
+    """Validate and resume a checkpointed profile thread; guard the checkpoint I/O.
+
+    A locked/read-only/full checkpoint DB must surface as a retriable envelope,
+    not a raw MCP failure. Returns an error envelope, or None on success.
+    """
+    try:
+        _, error = _profile_snapshot_or_error(graph, config, session_id, stage, waiting_for)
+        if error:
+            return error
+        if update is not None:
+            graph.update_state(config, update)
+    except Exception:
+        _log_exception({"tool": stage, "session_id": session_id, "event": "checkpoint_error"})
+        return _err(
+            stage,
+            "checkpoint_error",
+            "could not read or update the session checkpoint; inspect callback logs",
+            session_id,
+            retriable=True,
+        )
+    return None
+
+
 @mcp.tool()
-def compile_profile(story_tags: str | None = None) -> str:
+def compile_profile(story_tags: str | None = None, session_id: str | None = None) -> str:
     """Recompile the user profile from all stored stories.
 
     Args:
         story_tags: Optional JSON string. Accepts a dict (keys become host_tags)
             or a list of skill strings.
+        session_id: Optional profile session to resume (from onboard_user). Omit to
+            start a new profile session.
 
     Returns:
-        JSON envelope with compiled_profile, skill_coverage_warnings, and skills_index.
+        JSON envelope with compiled_profile, skill_coverage_warnings, skills_index,
+        and orphaned_skills. next_action is "create_story" when orphans remain.
     """
-    session_id = str(uuid.uuid4())
+    resumed = session_id is not None
+    session_id = session_id or str(uuid.uuid4())
     _log(
         "INFO",
         {
             "tool": "compile_profile",
             "session_id": session_id,
+            "resumed": resumed,
             "has_story_tags": story_tags is not None,
         },
     )
-
     host_tags = _parse_story_tags(story_tags)
     if host_tags is None:
         return _err(
@@ -1321,22 +1527,51 @@ def compile_profile(story_tags: str | None = None) -> str:
             session_id=session_id,
             retriable=True,
         )
+    explicit = story_tags is not None
+    return _compile_profile_impl(session_id, host_tags, resumed=resumed, explicit_tags=explicit)
 
-    resume_label, _ = _resolve_resume_label(None, session_id)
 
-    state = ProfileState(
-        session_id=session_id,
-        resume_label=resume_label,
-        compiled_profile={"host_tags": host_tags} if host_tags else None,
-    )
-    delta = profile_nodes.compile_profile(state)
-    intake = delta.get("intake") or {}
-    data = {
-        "compiled_profile": delta.get("compiled_profile") or {},
-        "skill_coverage_warnings": intake.get("skill_coverage_warnings", []),
-        "skills_index": intake.get("skills_index", []),
-    }
-    return _ok(session_id, None, data)
+def _resolve_new_thread_resume_label(stage: str, session_id: str) -> str | None:
+    """Resolve resume_label for a new profile thread, logging when unresolved.
+
+    A missing/ambiguous resume registry does not stop the profile graph — it
+    just means the wiki write falls back to _registered_label's own default —
+    but the tool logs the miss so it's visible in callback logs.
+    """
+    resume_label, label_error = _resolve_resume_label(None, session_id)
+    if label_error is not None:
+        _log(
+            "INFO",
+            {"tool": stage, "session_id": session_id, "event": "resume_label_unresolved"},
+        )
+    return resume_label
+
+
+@trace_tool("compile_profile", graph_name="profile")
+def _compile_profile_impl(
+    session_id: str, host_tags: list[str], *, resumed: bool, explicit_tags: bool
+) -> str:
+    graph = get_profile_graph()
+    config = make_profile_config(session_id, tool_name="compile_profile")
+    if resumed:
+        update = {"host_tags": host_tags} if explicit_tags else None
+        error = _resume_profile_thread(
+            graph, config, session_id, "compile_profile", "compile_profile", update
+        )
+        if error:
+            return error
+        graph_input = None
+    else:
+        resume_label = _resolve_new_thread_resume_label("compile_profile", session_id)
+        graph_input = ProfileState(
+            session_id=session_id, resume_label=resume_label, host_tags=host_tags or None
+        )
+    snapshot, error = _run_profile_thread(graph, config, graph_input, session_id, "compile_profile")
+    if error:
+        return error
+    assert snapshot is not None
+    next_action, data = _profile_thread_data(snapshot)
+    return _ok(session_id, next_action, data)
 
 
 @mcp.tool()
@@ -1348,8 +1583,9 @@ def create_story(
     situation: str,
     behavior: str,
     impact: str,
+    session_id: str | None = None,
 ) -> str:
-    """Create and persist a behavioral story for a skill.
+    """Create and persist a behavioral story for a skill, then recompile the profile.
 
     Args:
         primary_skill: The main skill this story demonstrates.
@@ -1359,22 +1595,35 @@ def create_story(
         situation: Context / problem statement.
         behavior: Actions taken.
         impact: Quantified outcome.
+        session_id: Optional profile session paused before create_story (from
+            compile_profile or a previous create_story). Omit to start a new session.
 
     Returns:
-        JSON envelope with story_id, primary_skill, and needs_compile=true.
+        JSON envelope with story_id, primary_skill, needs_compile (always false: the
+        profile is recompiled in the same call), and orphaned_skills. next_action is
+        "create_story" when orphans remain.
     """
-    session_id = str(uuid.uuid4())
+    resumed = session_id is not None
+    session_id = session_id or str(uuid.uuid4())
     _log(
         "INFO",
         {
             "tool": "create_story",
             "session_id": session_id,
+            "resumed": resumed,
             "primary_skill": primary_skill,
             "story_type": story_type,
             "job_title": job_title,
         },
     )
-
+    if not primary_skill.strip():
+        return _err(
+            "create_story",
+            "invalid_story",
+            "primary_skill is required",
+            session_id,
+            retriable=False,
+        )
     intake = {
         "primary_skill": primary_skill,
         "skills": skills,
@@ -1384,15 +1633,48 @@ def create_story(
         "behavior": behavior,
         "impact": impact,
     }
-    state = ProfileState(session_id=session_id, intake=intake)
-    delta = profile_nodes.create_story(state)
-    saved_intake = delta.get("intake") or {}
+    return _create_story_impl(session_id, intake, resumed=resumed)
+
+
+@trace_tool("create_story", graph_name="profile")
+def _create_story_impl(session_id: str, intake: dict, *, resumed: bool) -> str:
+    graph = get_profile_graph()
+    config = make_profile_config(session_id, tool_name="create_story")
+    if resumed:
+        error = _resume_profile_thread(
+            graph, config, session_id, "create_story", "create_story", {"intake": intake}
+        )
+        if error:
+            return error
+        graph_input = None
+    else:
+        resume_label = _resolve_new_thread_resume_label("create_story", session_id)
+        graph_input = ProfileState(session_id=session_id, resume_label=resume_label, intake=intake)
+    snapshot, error = _run_profile_thread(graph, config, graph_input, session_id, "create_story")
+    if error:
+        return error
+    assert snapshot is not None
+    values = snapshot.values
+    if not (values.get("intake") or {}).get("story_id"):
+        _log(
+            "ERROR",
+            {"tool": "create_story", "session_id": session_id, "event": "story_not_saved"},
+        )
+        return _err(
+            "create_story",
+            "story_not_saved",
+            "graph run completed without saving the story",
+            session_id,
+            retriable=False,
+        )
+    next_action, data = _profile_thread_data(snapshot)
     data = {
-        "story_id": saved_intake.get("story_id"),
-        "primary_skill": primary_skill,
-        "needs_compile": True,
+        "story_id": (values.get("intake") or {}).get("story_id"),
+        "primary_skill": intake["primary_skill"],
+        "needs_compile": False,
+        **data,
     }
-    return _ok(session_id, "compile_profile", data)
+    return _ok(session_id, next_action, data)
 
 
 @mcp.tool()
@@ -1469,7 +1751,7 @@ def get_wiki_pages(session_id: str, page_ids: list[str]) -> str:
 def _get_wiki_pages_impl(session_id: str, page_ids: list[str]) -> str:
     _log("INFO", {"tool": "get_wiki_pages", "session_id": session_id, "page_count": len(page_ids)})
 
-    graph = build_apply_graph()
+    graph = get_apply_graph()
     config = make_apply_config(session_id, tool_name="get_wiki_pages")
     snapshot = graph.get_state(config)
 

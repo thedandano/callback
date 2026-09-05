@@ -77,7 +77,7 @@ Known defects, verified by running code:
 | D1 | Fixed (M1) | `get_wiki_pages` page ids are not confined to the wiki root; `../../x` reads any readable file and returns it to the host | `callback/wiki.py` |
 | D2 | Fixed (M1) | Re-onboarding with an existing profile skips the `onboard` node; crashes if orphans exist, silently no-ops otherwise | `callback/profile_graph.py:51` |
 | D3 | Fixed (M1) | Every log line is written to `server.log` twice | `callback/server.py:109` |
-| D4 | Med | A render failure ends the graph; retrying `submit_tailor` returns `invalid_state`; only recovery is restarting from `load_jd` | `callback/apply_graph.py` |
+| D4 | Fixed (M2) | A render failure ends the graph; retrying `submit_tailor` returns `invalid_state`; only recovery is restarting from `load_jd` | `callback/apply_graph.py` |
 | D5 | Med | `XDG_DATA_HOME` honored by four stores, ignored by wiki, both checkpoint DBs, and applications dir | `callback/wiki.py`, `apply_graph.py`, `profile_graph.py`, `apply_nodes.py` |
 | D6 | Fixed (M1) | A bare year range in the resume header is captured as the phone number | `callback/extractor.py` |
 | D7 | Fixed (M1) | Extractor errors escape `submit_keywords` / `submit_tailor` as raw MCP failures instead of the envelope | `callback/server.py` |
@@ -88,7 +88,7 @@ Known weight (works, but costs more than it earns):
 | # | Kind | What | Est. cut |
 |---|------|------|----------|
 | W1 | dep | crawl4ai: 93 of 147 runtime packages and 2.0 s of import time to fetch one page; Playwright is already installed. Its pruning also produced the 48,000-token JD outlier | 1 dep, ~87 packages (trafilatura adds 6) |
-| W2 | arch | Profile graph is decorative; `compile_profile` and `create_story` bypass it. Wiki markdown is a render of `accomplishments.json`, so hand edits are overwritten; story metadata is regex-scraped from prose (`server.py:255`) | make the graph real (see M2, M2.5) |
+| W2 | arch | Profile graph is decorative; `compile_profile` and `create_story` bypass it. Wiki markdown is a render of `accomplishments.json`, so hand edits are overwritten; story metadata is regex-scraped from prose (`server.py:255`) | graph half fixed (M2); data half is M2.5 |
 | W3 | dep | dataclass-wizard for JDData; pydantic already present | 1 dep, ~40 lines |
 | W4 | dup | 8 near-identical Claude/Codex env functions in `cli.py` | ~80 lines |
 | W5 | dead | Multi-resume plumbing (`ambiguous_resume`, `resume_label` param) unreachable | ~30 lines |
@@ -98,7 +98,7 @@ Known weight (works, but costs more than it earns):
 | W9 | dead | `ProfileState.wiki_path/error`, `TailoredResume.volunteer_raw`, `ApplyState.finalized`, `WikiStore.read_index`, `main.py`, dormant `[tool.ruff.lint.pylint]` block | ~30 lines |
 | W10 | dup | 3 copies of flatten-skills; `apply_nodes._normalize_for_match` duplicates scorer's; `outcome` computed twice | ~30 lines |
 | W11 | size | `observability.py` (465 lines) exceeds both graphs combined; `cli.py` (1,103 lines) is 17% of the codebase | judgment call |
-| W12 | perf | `build_apply_graph()` per tool call opens a new SQLite connection and never closes it | singleton |
+| W12 | perf | `build_apply_graph()` per tool call opens a new SQLite connection and never closes it | Fixed (M2) |
 
 ## Intended direction (roadmap inputs)
 
@@ -116,7 +116,7 @@ an existing profile replaces the resume, `server.log` has one line per event.
 
 ### M2 — Make the graphs honest (one to two days)
 
-Ships: W12, D4, and the graph half of W2.
+Shipped 2026-09-04: W12, D4, graph half of W2.
 Done when: `compile_profile` and `create_story` resume the checkpointed profile graph
 thread instead of calling nodes directly, so the `check_orphans → create_story →
 compile_profile` cycle actually runs; the apply graph is built once per process; a

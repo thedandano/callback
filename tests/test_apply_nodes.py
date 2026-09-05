@@ -7,6 +7,7 @@ import pytest
 
 from callback.apply_nodes import (
     _candidate_experience_years,
+    finalize,
     parse_final,
     parse_initial,
     render,
@@ -147,6 +148,73 @@ def test_parse_final_returns_error_when_no_pdf_path(tmp_path):
     result = parse_final(state)
     assert "error" in result
     assert "parsed_final" not in result
+
+
+def test_parse_final_returns_error_when_extract_raises(tmp_path, monkeypatch):
+    pdf_path = tmp_path / "resume.pdf"
+    pdf_path.write_bytes(b"not empty")
+
+    def raising_extract(path):
+        raise RuntimeError("corrupt pdf")
+
+    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", raising_extract)
+
+    state = ApplyState(session_id="s3", pdf_path=str(pdf_path))
+    actual = parse_final(state)
+    expected = {"error": "parse_final: extract failed: corrupt pdf"}
+    assert actual == expected
+
+
+def test_parse_final_returns_error_when_stat_raises(tmp_path, monkeypatch):
+    """A PDF that vanishes between exists() and stat() must land in the retriable
+    error path, not escape as an unhandled OSError."""
+    pdf_path = tmp_path / "resume.pdf"
+    pdf_path.write_bytes(b"not empty")
+
+    def raising_stat(self, *args, **kwargs):
+        raise OSError("stale file handle")
+
+    monkeypatch.setattr(Path, "stat", raising_stat)
+
+    state = ApplyState(session_id="s3", pdf_path=str(pdf_path))
+    actual = parse_final(state)
+    expected = {"error": "parse_final: extract failed: stale file handle"}
+    assert actual == expected
+
+
+def test_finalize_returns_error_when_archive_write_raises_oserror(tmp_path, monkeypatch):
+    import callback.apply_nodes as apply_nodes_module
+
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
+
+    def raising_open(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(apply_nodes_module, "open", raising_open, raising=False)
+
+    state = ApplyState(session_id="s3")
+    actual = finalize(state)
+    expected = {"error": "finalize: cannot write archive: disk full"}
+    assert actual == expected
+
+
+def test_finalize_returns_error_when_apps_dir_unwritable(tmp_path, monkeypatch):
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory", encoding="utf-8")
+    unwritable_apps_dir = blocker / "apps"
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(unwritable_apps_dir))
+
+    try:
+        unwritable_apps_dir.mkdir(parents=True, exist_ok=True)
+        raise AssertionError("expected mkdir under a regular file to raise OSError")
+    except OSError as exc:
+        expected_reason = exc
+
+    state = ApplyState(session_id="s3")
+    actual = finalize(state)
+    expected_message = f"finalize: cannot create apps dir {unwritable_apps_dir}: {expected_reason}"
+    expected = {"error": expected_message}
+    assert actual == expected
 
 
 class TestTailorNode:

@@ -63,7 +63,7 @@ Wait for approval. If the user wants changes, revise the table and re-present. D
 - For each approved entry that isn't already a faithful stored story, call `create_story(primary_skill, skills, story_type, job_title, situation, behavior, impact)` with the agreed `job_title`.
 - On a re-onboard, correct any drifted stories to match the approved plan before compiling.
 - Then call `compile_profile()` (pass `story_tags` only if the user supplies a JSON list/dict).
-- After every `create_story`, call `compile_profile()` again.
+- `create_story` recompiles the profile in the same call and returns `orphaned_skills`; calling `compile_profile()` afterwards is optional.
 
 ### 5. Report
 
@@ -119,7 +119,7 @@ When callback reports a missing/orphaned skill, collect only truthful details an
 - `behavior`: what the candidate personally did.
 - `impact`: measured or observable result.
 
-Set `job_title` per the confirmed plan (step 3), not by guesswork. After every `create_story`, call `compile_profile()` again.
+Set `job_title` per the confirmed plan (step 3), not by guesswork. `create_story` recompiles the profile in the same call and returns `orphaned_skills`; calling `compile_profile()` afterwards is optional.
 
 ## Rules
 

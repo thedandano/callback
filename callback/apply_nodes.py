@@ -543,11 +543,17 @@ def parse_final(state: ApplyState) -> dict:
     if not state.pdf_path:
         return {"error": "parse_final: no pdf_path in state"}
     p = Path(state.pdf_path)
-    if not p.exists():
-        return {"error": f"parse_final: pdf file not found: {state.pdf_path}"}
-    if p.stat().st_size == 0:
-        return {"error": f"parse_final: pdf file is empty: {state.pdf_path}"}
-    text = resume_extractor.extract(state.pdf_path)
+    try:
+        if not p.exists():
+            return {"error": f"parse_final: pdf file not found: {state.pdf_path}"}
+        if p.stat().st_size == 0:
+            return {"error": f"parse_final: pdf file is empty: {state.pdf_path}"}
+        text = resume_extractor.extract(state.pdf_path)
+    except Exception as exc:
+        logger.error(
+            json.dumps({"node": "parse_final", "session_id": state.session_id, "error": str(exc)})
+        )
+        return {"error": f"parse_final: extract failed: {exc}"}
     if not text.strip():
         return {"error": "parse_final: PDF extracted to empty text"}
     logger.info(
@@ -689,7 +695,13 @@ def finalize(state: ApplyState) -> dict:
     _log_enter("finalize", state)
 
     apps_dir = _get_apps_dir()
-    apps_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        apps_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        logger.error(
+            json.dumps({"node": "finalize", "session_id": state.session_id, "error": str(exc)})
+        )
+        return {"error": f"finalize: cannot create apps dir {apps_dir}: {exc}"}
 
     # Derive tailored resume text from sections or tailored object
     tailored_text = _resolve_tailored_text(state)
@@ -722,7 +734,13 @@ def finalize(state: ApplyState) -> dict:
 
     # Write archive JSON
     archive_path = apps_dir / f"{state.session_id}.json"
-    with open(archive_path, "w") as f:
-        json.dump(archive, f, indent=2)
+    try:
+        with open(archive_path, "w") as f:
+            json.dump(archive, f, indent=2)
+    except OSError as exc:
+        logger.error(
+            json.dumps({"node": "finalize", "session_id": state.session_id, "error": str(exc)})
+        )
+        return {"error": f"finalize: cannot write archive: {exc}"}
 
     return {"finalized": True, "finalized_at": finalized_at}

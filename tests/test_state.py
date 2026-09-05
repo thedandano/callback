@@ -232,6 +232,7 @@ class TestProfileStateBasic:
             "wiki_path",
             "intake",
             "compiled_profile",
+            "host_tags",
             "orphaned_skills",
             "current_story_target",
             "error",

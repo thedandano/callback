@@ -12,6 +12,7 @@ submit JDData before later milestones parse and score resumes.
 State is persisted in SQLite checkpointer at ~/.local/share/callback/apply-sessions.db.
 """
 
+import functools
 import sqlite3
 from pathlib import Path
 
@@ -37,21 +38,6 @@ from callback.state import ApplyState
 DB_PATH = Path.home() / ".local" / "share" / "callback" / "apply-sessions.db"
 
 
-def _route_or_halt(next_node: str):
-    def _router(state: ApplyState) -> str:
-        return END if state.error else next_node
-
-    return _router
-
-
-def _tailor_route(state: ApplyState) -> str:
-    if state.error:
-        return END
-    if state.no_coverage:
-        return REPORT_NODE
-    return RENDER_NODE
-
-
 JD_FETCH_NODE = "jd_fetch"
 KEYWORDS_ACCEPT_NODE = "keywords_accept"
 PARSE_INITIAL_NODE = "parse_initial"
@@ -62,6 +48,23 @@ PARSE_FINAL_NODE = "parse_final"
 SCORE_FINAL_NODE = "score_final"
 REPORT_NODE = "report"
 FINALIZE_NODE = "finalize"
+
+
+def _route_or_retry(next_node: str):
+    """Route to next_node, or back to the tailor interrupt when the state carries an error."""
+
+    def _router(state: ApplyState) -> str:
+        return TAILOR_NODE if state.error else next_node
+
+    return _router
+
+
+def _tailor_route(state: ApplyState) -> str:
+    if state.error:
+        return TAILOR_NODE
+    if state.no_coverage:
+        return REPORT_NODE
+    return RENDER_NODE
 
 
 def make_config(
@@ -126,14 +129,20 @@ def build_apply_graph(db_path: Path = DB_PATH):
     builder.add_edge(PARSE_INITIAL_NODE, SCORE_INITIAL_NODE)
     builder.add_edge(SCORE_INITIAL_NODE, TAILOR_NODE)
     builder.add_conditional_edges(TAILOR_NODE, _tailor_route)
-    builder.add_conditional_edges(RENDER_NODE, _route_or_halt(PARSE_FINAL_NODE))
-    builder.add_conditional_edges(PARSE_FINAL_NODE, _route_or_halt(SCORE_FINAL_NODE))
+    builder.add_conditional_edges(RENDER_NODE, _route_or_retry(PARSE_FINAL_NODE))
+    builder.add_conditional_edges(PARSE_FINAL_NODE, _route_or_retry(SCORE_FINAL_NODE))
     builder.add_edge(SCORE_FINAL_NODE, REPORT_NODE)
     builder.add_edge(REPORT_NODE, FINALIZE_NODE)
-    builder.add_edge(FINALIZE_NODE, END)
+    builder.add_conditional_edges(FINALIZE_NODE, _route_or_retry(END))
 
     return builder.compile(
         checkpointer=checkpointer,
         interrupt_after=[JD_FETCH_NODE],
         interrupt_before=[TAILOR_NODE],
     )
+
+
+@functools.cache
+def get_apply_graph():
+    """Return the process-wide apply graph, built on first use."""
+    return build_apply_graph()
