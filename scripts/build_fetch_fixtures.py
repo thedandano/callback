@@ -19,15 +19,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from callback.apply_nodes import _get_apps_dir  # noqa: E402
 from callback.jd_fetcher import CHARS_PER_TOKEN, fetch_url_to_markdown  # noqa: E402
 from evals.test_fetch_recall import recall  # noqa: E402
 
 EXTRACT_DIR = Path(__file__).resolve().parent.parent / "evals" / "extract"
-APPS_DIR = Path.home() / ".local" / "share" / "callback" / "applications"
 
 
 def _archived_keywords(session_id: str) -> dict:
-    return json.loads((APPS_DIR / f"{session_id}.json").read_text())["keywords"]
+    return json.loads((_get_apps_dir() / f"{session_id}.json").read_text())["keywords"]
 
 
 def build(board: str, source: dict) -> dict:

@@ -28,7 +28,7 @@ State persists via LangGraph SQLite checkpointers under `~/.local/share/callback
 # Install deps
 uv sync
 
-# One-time browser setup for Crawl4AI job-description fetching
+# One-time browser setup (job-description fetching and PDF rendering)
 uv run playwright install chromium
 
 # Run the MCP server (stdio)
@@ -63,10 +63,8 @@ uv run python scripts/smoke_profile.py
 ## Env Vars
 
 - `CALLBACK_APPS_DIR`: Override where application PDFs and JSON archives are written.
-- `CALLBACK_FETCH_PAGE_TIMEOUT_MS`: Override Crawl4AI per-page timeout in milliseconds. Default: `30000`.
-- `CALLBACK_FETCH_WAIT_UNTIL`: Override Crawl4AI wait strategy. Default: `networkidle`.
+- `CALLBACK_FETCH_PAGE_TIMEOUT_MS`: Override the Playwright page-load timeout in milliseconds. Default: `30000`.
 - `CALLBACK_FETCH_OUTER_TIMEOUT_S`: Override the outer fetch timeout in seconds. Default: `35`.
-- `CALLBACK_FETCH_MAGIC`: Toggle Crawl4AI stealth mode. Default: `1`; set `0`, `false`, or empty string to disable.
 - `CALLBACK_TRACE_BACKEND`: Optional tracing backend. Set to `langsmith` to enable LangSmith tracing.
 - `LANGSMITH_TRACING`: Must be `true` when `CALLBACK_TRACE_BACKEND=langsmith`.
 - `LANGSMITH_ENDPOINT`: LangSmith API endpoint. Defaults to `https://api.smith.langchain.com`.
@@ -125,6 +123,7 @@ jd_fetch → keywords_accept → parse_initial → score_initial → tailor → 
 ```
 
 Errors in `tailor`, `render`, `parse_final`, or `finalize` route back to the `tailor` interrupt; `submit_tailor` returns `pipeline_error` with `retriable: true` and may be called again with the same session to retry.
+`jd_fetch` loads the page with Playwright (Chrome user agent, `domcontentloaded` plus a 2.5 s settle), extracts markdown with trafilatura, falls back to body text when the extraction is thin, and caps `jd_text` at 16,000 characters (about 4,000 tokens), logging `fetch_oversized`.
 
 Checkpointer DB: `~/.local/share/callback/apply-sessions.db`.
 State schema: `ApplyState` in `state.py` (single Pydantic model — entire graph state).

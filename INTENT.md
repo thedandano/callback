@@ -87,7 +87,7 @@ Known weight (works, but costs more than it earns):
 
 | # | Kind | What | Est. cut |
 |---|------|------|----------|
-| W1 | dep | crawl4ai: 93 of 147 runtime packages and 2.0 s of import time to fetch one page; Playwright is already installed. Its pruning also produced the 48,000-token JD outlier | 1 dep, ~87 packages (trafilatura adds 6) |
+| W1 | dep | crawl4ai: 93 of 147 runtime packages and 2.0 s of import time to fetch one page; Playwright is already installed. Its pruning also produced the 48,000-token JD outlier | Fixed (M3) |
 | W2 | arch | Profile graph is decorative; `compile_profile` and `create_story` bypass it. Wiki markdown is a render of `accomplishments.json`, so hand edits are overwritten; story metadata is regex-scraped from prose (`server.py:255`) | graph half fixed (M2); data half is M2.5 |
 | W3 | dep | dataclass-wizard for JDData; pydantic already present | 1 dep, ~40 lines |
 | W4 | dup | 8 near-identical Claude/Codex env functions in `cli.py` | ~80 lines |
@@ -149,7 +149,9 @@ identical to today's; no regex reads story metadata anywhere in `callback/`.
 
 ### M3 — Replace the fetcher (half a day plus smoke runs)
 
-Ships: W1.
+Shipped 2026-09-04: W1.
+Measured after the swap: server import ≈ 879 ms warm (was ≈ 1,420 ms); 139 installed packages (was 176). Fixtures: evals/extract/.
+
 Measured 2026-09-03 on five archived JD URLs: Playwright plus trafilatura matched
 crawl4ai's keyword recall on every live page (within one term), returned 1.5x to 37x
 fewer tokens (the 48,000-token outlier was crawl4ai failing to prune Qualcomm's page),

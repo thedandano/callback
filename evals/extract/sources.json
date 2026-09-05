@@ -34,7 +34,8 @@
         "messaging systems (Kafka/RabbitMQ)",
         "stream processing and data processing tools and best-practices"
       ]
-    }
+    },
+    "note": "Golden keywords are from the 2026-07-07 application; Apple reworded the posting before the 2026-09-04 fetch (Kubernetes, Docker, Spring no longer on the page), so recall is 4/14 by content drift, not extraction loss."
   },
   "ashby": {
     "jd_url": "https://jobs.ashbyhq.com/Deepgram/94ae2781-a85f-493a-86c1-ff85a9289355",
