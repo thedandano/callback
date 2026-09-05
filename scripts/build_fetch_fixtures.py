@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from callback.apply_nodes import _get_apps_dir  # noqa: E402
 from callback.jd_fetcher import CHARS_PER_TOKEN, fetch_url_to_markdown  # noqa: E402
-from evals.test_fetch_recall import recall  # noqa: E402
+from evals.recall import recall  # noqa: E402
 
 EXTRACT_DIR = Path(__file__).resolve().parent.parent / "evals" / "extract"
 

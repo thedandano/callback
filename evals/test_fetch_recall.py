@@ -14,24 +14,11 @@ from pathlib import Path
 
 import pytest
 
+from evals.recall import recall
+
 EXTRACT_DIR = Path(__file__).resolve().parent / "extract"
 SOURCES = json.loads((EXTRACT_DIR / "sources.json").read_text())
 LIVE_RECALL_TOLERANCE = 1
-
-
-def golden_terms(golden: dict) -> list[str]:
-    """Every keyword the host extracted: required, preferred, and each OR-group member."""
-    terms: list[str] = list(golden.get("required", [])) + list(golden.get("preferred", []))
-    for group in golden.get("required_any", []) + golden.get("preferred_any", []):
-        terms.extend(group)
-    return sorted(set(terms))
-
-
-def recall(text: str, golden: dict) -> dict:
-    haystack = text.lower()
-    terms = golden_terms(golden)
-    missing = [t for t in terms if t.lower() not in haystack]
-    return {"found": len(terms) - len(missing), "total": len(terms), "missing": missing}
 
 
 @pytest.mark.parametrize("board", sorted(SOURCES))
