@@ -1,4 +1,4 @@
-# #Software Engineer - Edge AI/Gen AI | Qualcomm
+# Software Engineer - Edge AI/Gen AI | Qualcomm
 
 # Single Position
 

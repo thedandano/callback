@@ -161,6 +161,13 @@ def test_with_title_skips_when_present():
     assert markdown == "# SENIOR ENGINEER | ACME\n\nBody text."
 
 
+def test_with_title_strips_leading_hashes():
+    """Qualcomm's <title> is literally '#Software Engineer ...'."""
+    markdown = jd_fetcher._with_title("Body text.", "#Software Engineer - Edge AI | Qualcomm")
+
+    assert markdown == "# Software Engineer - Edge AI | Qualcomm\n\nBody text."
+
+
 def test_with_title_skips_blank():
     markdown = jd_fetcher._with_title("Body text about the role.", "   ")
 

@@ -151,7 +151,7 @@ identical to today's; no regex reads story metadata anywhere in `callback/`.
 
 Shipped 2026-09-04: W1.
 Measured after the swap: server import ≈ 879 ms warm (was ≈ 1,420 ms); 126 runtime packages (was 147). Fixtures: evals/extract/.
-The Ashby fixture is the Deepgram posting (the measured one now 404s); Apple's golden is 4/14 by content drift (posting reworded after the July application), recorded in evals/extract/sources.json.
+The Ashby fixture is the Deepgram posting (the other archived Ashby URL now 404s); Apple's golden is 4/14 by content drift (posting reworded after the July application), recorded in evals/extract/sources.json.
 
 Measured 2026-09-03 on five archived JD URLs: Playwright plus trafilatura matched
 crawl4ai's keyword recall on every live page (within one term), returned 1.5x to 37x

@@ -2,8 +2,8 @@
   "qualcomm": {
     "jd_url": "https://careers.qualcomm.com/careers/job/446720282038?hl=en-US&utm_source=linkedin&domain=qualcomm.com&source=APPLICANT_SOURCE-6-2",
     "archived_session": "934b4d18-a3cf-4c4a-b385-98f2658dcba5",
-    "fetched_at": "2026-09-05T02:55:24+00:00",
-    "fetched_chars": 5262,
+    "fetched_at": "2026-09-05T03:03:59+00:00",
+    "fetched_chars": 5261,
     "fetched_tokens_est": 1315,
     "recall": {
       "found": 9,
@@ -11,7 +11,7 @@
       "missing": [
         "Bachelor's degree in Engineering, Information Systems, Computer Science, or related field"
       ],
-      "title_found": false
+      "title_found": true
     }
   },
   "apple": {

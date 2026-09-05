@@ -102,8 +102,12 @@ def cap_jd_text(text: str, url: str) -> str:
 
 
 def _with_title(markdown: str, title: str) -> str:
-    """Prepend the page title as a heading when the extraction lost it."""
-    title = title.strip()
+    """Prepend the page title as a heading when the extraction lost it.
+
+    Leading '#' characters are dropped (some boards put one in the <title>), so
+    the heading marker is never doubled.
+    """
+    title = title.strip().lstrip("#").strip()
     if not title or title.lower() in markdown.lower():
         return markdown
     return f"# {title}\n\n{markdown}"
