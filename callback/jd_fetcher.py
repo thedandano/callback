@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 
 from playwright.async_api import ViewportSize, async_playwright
 
@@ -33,6 +34,11 @@ MAX_JD_CHARS = 4_000 * CHARS_PER_TOKEN
 CAP_LINE_SLACK_CHARS = 1_000
 MIN_MARKDOWN_CHARS = 50
 _BODY_TEXT_SCRIPT = "() => document.body ? document.body.innerText : ''"
+# trafilatura is synchronous and cannot be interrupted. It runs on this pool rather
+# than the loop's default executor because asyncio.run() joins the default executor
+# on shutdown, which would keep jd_fetch blocked past the outer timeout. A timed-out
+# extraction finishes in the background and its result is dropped.
+_EXTRACT_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="callback-extract")
 
 
 class JDFetchError(Exception):
@@ -143,8 +149,8 @@ async def _load_page(url: str) -> tuple[str, str, str]:
 
 async def _fetch_url_to_markdown_unbounded(url: str) -> str:
     html, body_text, title = await _load_page(url)
-    # trafilatura is synchronous; run it off the loop so the outer timeout still applies.
-    extracted = await asyncio.to_thread(extract_markdown, html, body_text, url)
+    loop = asyncio.get_running_loop()
+    extracted = await loop.run_in_executor(_EXTRACT_POOL, extract_markdown, html, body_text, url)
     return cap_jd_text(_with_title(extracted, title), url)
 
 
