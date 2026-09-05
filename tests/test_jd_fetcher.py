@@ -134,6 +134,18 @@ def test_cap_jd_text_cuts_at_last_newline(caplog):
     assert actual == expected
 
 
+def test_cap_jd_text_ignores_a_newline_far_from_the_cap(caplog):
+    """A title line followed by one long paragraph must not collapse to the title."""
+    caplog.set_level("INFO", logger="callback.jd_fetcher")
+    text = "# Title\n" + "x" * (jd_fetcher.MAX_JD_CHARS + 500)
+
+    capped = jd_fetcher.cap_jd_text(text, "https://example.com/job")
+
+    actual = {"chars": len(capped), "kept": _events(caplog)[0]["kept_chars"]}
+    expected = {"chars": jd_fetcher.MAX_JD_CHARS, "kept": jd_fetcher.MAX_JD_CHARS}
+    assert actual == expected
+
+
 def test_cap_jd_text_passes_short_text_unchanged(caplog):
     caplog.set_level("INFO", logger="callback.jd_fetcher")
 
@@ -147,10 +159,13 @@ def test_cap_jd_text_passes_short_text_unchanged(caplog):
 # --- _with_title -------------------------------------------------------------
 
 
-def test_with_title_prepends_when_missing():
-    markdown = jd_fetcher._with_title("Body text about the role.", "Senior Engineer | Acme")
+_BODY = "Body text about the role: build APIs, ship reliable systems, mentor the team."
 
-    assert markdown == "# Senior Engineer | Acme\n\nBody text about the role."
+
+def test_with_title_prepends_when_missing():
+    markdown = jd_fetcher._with_title(_BODY, "Senior Engineer | Acme")
+
+    assert markdown == f"# Senior Engineer | Acme\n\n{_BODY}"
 
 
 def test_with_title_skips_when_present():
@@ -163,9 +178,16 @@ def test_with_title_skips_when_present():
 
 def test_with_title_strips_leading_hashes():
     """Qualcomm's <title> is literally '#Software Engineer ...'."""
-    markdown = jd_fetcher._with_title("Body text.", "#Software Engineer - Edge AI | Qualcomm")
+    markdown = jd_fetcher._with_title(_BODY, "#Software Engineer - Edge AI | Qualcomm")
 
-    assert markdown == "# Software Engineer - Edge AI | Qualcomm\n\nBody text."
+    assert markdown == f"# Software Engineer - Edge AI | Qualcomm\n\n{_BODY}"
+
+
+def test_with_title_leaves_thin_content_alone():
+    """An empty SPA shell with a long <title> must still fail jd_fetch's empty check."""
+    markdown = jd_fetcher._with_title("", "Careers at ExampleCo | Software Engineer, Platform")
+
+    assert markdown == ""
 
 
 def test_with_title_skips_blank():
@@ -255,14 +277,15 @@ def test_fetch_url_to_markdown_wires_playwright_and_extracts(monkeypatch):
     monkeypatch.setattr(
         jd_fetcher,
         "extract_markdown",
-        lambda html, body_text, url: f"md({html},{body_text},{url})",
+        lambda html, body_text, url: f"md({html},{body_text},{url}) " + "filler " * 10,
     )
 
     markdown = asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
 
     actual = {"markdown": markdown, **calls}
     expected = {
-        "markdown": "# Job Title | Board\n\nmd(<html>page</html>,body,https://example.com/job)",
+        "markdown": "# Job Title | Board\n\nmd(<html>page</html>,body,https://example.com/job) "
+        + "filler " * 10,
         "launch": {"headless": True, "args": ["--no-sandbox"]},
         "new_context": {"user_agent": jd_fetcher.USER_AGENT, "viewport": jd_fetcher.VIEWPORT},
         "goto": {
@@ -328,6 +351,18 @@ def test_fetch_url_to_markdown_raises_on_http_error(monkeypatch, caplog):
         "closed": True,
         "events": [{"event": "fetch_status", "url": "https://example.com/job", "status": 404}],
     }
+    assert actual == expected
+
+
+def test_fetch_url_to_markdown_raises_on_unfollowed_redirect(monkeypatch, caplog):
+    caplog.set_level("INFO", logger="callback.jd_fetcher")
+    calls = _fake_playwright(monkeypatch, status=302)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
+
+    actual = {"message": str(exc_info.value), "closed": calls.get("closed")}
+    expected = {"message": "http status 302", "closed": True}
     assert actual == expected
 
 

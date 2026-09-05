@@ -28,6 +28,9 @@ VIEWPORT: ViewportSize = {"width": 1280, "height": 900}
 CHARS_PER_TOKEN = 4
 MIN_EXTRACT_CHARS = 300 * CHARS_PER_TOKEN
 MAX_JD_CHARS = 4_000 * CHARS_PER_TOKEN
+# When capping, prefer a line break at most this far before the cap; further back
+# would drop real content (e.g. a title line followed by one long paragraph).
+CAP_LINE_SLACK_CHARS = 1_000
 MIN_MARKDOWN_CHARS = 50
 _BODY_TEXT_SCRIPT = "() => document.body ? document.body.innerText : ''"
 
@@ -89,7 +92,7 @@ def cap_jd_text(text: str, url: str) -> str:
     """Hard-cap the JD at MAX_JD_CHARS, cutting at the last newline when one exists."""
     if len(text) <= MAX_JD_CHARS:
         return text
-    cut = text.rfind("\n", 0, MAX_JD_CHARS)
+    cut = text.rfind("\n", MAX_JD_CHARS - CAP_LINE_SLACK_CHARS, MAX_JD_CHARS)
     capped = text[: cut if cut > 0 else MAX_JD_CHARS]
     _log(
         "fetch_oversized",
@@ -108,6 +111,8 @@ def _with_title(markdown: str, title: str) -> str:
     the heading marker is never doubled.
     """
     title = title.strip().lstrip("#").strip()
+    if len(markdown.strip()) <= MIN_MARKDOWN_CHARS:
+        return markdown  # thin content stays thin so jd_fetch rejects it as empty
     if not title or title.lower() in markdown.lower():
         return markdown
     return f"# {title}\n\n{markdown}"
@@ -125,7 +130,7 @@ async def _load_page(url: str) -> tuple[str, str, str]:
             )
             status = response.status if response else None
             _log("fetch_status", url=url, status=status)
-            if response is None or response.status >= 400:
+            if status is None or not 200 <= status < 300:
                 raise RuntimeError(f"http status {status}")
             await page.wait_for_timeout(SETTLE_MS)
             html = await page.content()
