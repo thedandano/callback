@@ -86,32 +86,56 @@ def extract_markdown(html: str, body_text: str, url: str) -> str:
 
 
 def cap_jd_text(text: str, url: str) -> str:
-    """Hard-cap the JD at MAX_JD_CHARS; log the original size when truncating."""
+    """Hard-cap the JD at MAX_JD_CHARS, cutting at the last newline when one exists."""
     if len(text) <= MAX_JD_CHARS:
         return text
-    _log("fetch_oversized", url=url, original_chars=len(text), cap_chars=MAX_JD_CHARS)
-    return text[:MAX_JD_CHARS]
+    cut = text.rfind("\n", 0, MAX_JD_CHARS)
+    capped = text[: cut if cut > 0 else MAX_JD_CHARS]
+    _log(
+        "fetch_oversized",
+        url=url,
+        original_chars=len(text),
+        cap_chars=MAX_JD_CHARS,
+        kept_chars=len(capped),
+    )
+    return capped
 
 
-async def _load_page(url: str) -> tuple[str, str]:
-    """Return (html, body_text) for url using a normal Chrome user agent."""
+def _with_title(markdown: str, title: str) -> str:
+    """Prepend the page title as a heading when the extraction lost it."""
+    title = title.strip()
+    if not title or title.lower() in markdown.lower():
+        return markdown
+    return f"# {title}\n\n{markdown}"
+
+
+async def _load_page(url: str) -> tuple[str, str, str]:
+    """Return (html, body_text, title) for url using a normal Chrome user agent."""
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
         try:
             context = await browser.new_context(user_agent=USER_AGENT, viewport=VIEWPORT)
             page = await context.new_page()
-            await page.goto(url, wait_until="domcontentloaded", timeout=_page_timeout_ms())
+            response = await page.goto(
+                url, wait_until="domcontentloaded", timeout=_page_timeout_ms()
+            )
+            status = response.status if response else None
+            _log("fetch_status", url=url, status=status)
+            if response is None or response.status >= 400:
+                raise RuntimeError(f"http status {status}")
             await page.wait_for_timeout(SETTLE_MS)
             html = await page.content()
             body_text = await page.evaluate(_BODY_TEXT_SCRIPT)
+            title = await page.title()
         finally:
             await browser.close()
-    return html, body_text
+    return html, body_text, title
 
 
 async def _fetch_url_to_markdown_unbounded(url: str) -> str:
-    html, body_text = await _load_page(url)
-    return cap_jd_text(extract_markdown(html, body_text, url), url)
+    html, body_text, title = await _load_page(url)
+    markdown = _with_title(extract_markdown(html, body_text, url), title)
+    return cap_jd_text(markdown, url)
 
 
 async def fetch_url_to_markdown(url: str) -> str:

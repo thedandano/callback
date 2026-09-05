@@ -105,6 +105,29 @@ def test_cap_jd_text_truncates_and_logs(caplog):
                 "url": "https://example.com/job",
                 "original_chars": jd_fetcher.MAX_JD_CHARS + 5,
                 "cap_chars": jd_fetcher.MAX_JD_CHARS,
+                "kept_chars": jd_fetcher.MAX_JD_CHARS,
+            }
+        ],
+    }
+    assert actual == expected
+
+
+def test_cap_jd_text_cuts_at_last_newline(caplog):
+    caplog.set_level("INFO", logger="callback.jd_fetcher")
+    text = "a" * 15_990 + "\n" + "b" * 100
+
+    capped = jd_fetcher.cap_jd_text(text, "https://example.com/job")
+
+    actual = {"chars": len(capped), "events": _events(caplog)}
+    expected = {
+        "chars": 15_990,
+        "events": [
+            {
+                "event": "fetch_oversized",
+                "url": "https://example.com/job",
+                "original_chars": len(text),
+                "cap_chars": jd_fetcher.MAX_JD_CHARS,
+                "kept_chars": 15_990,
             }
         ],
     }
@@ -121,16 +144,55 @@ def test_cap_jd_text_passes_short_text_unchanged(caplog):
     assert actual == expected
 
 
+# --- _with_title -------------------------------------------------------------
+
+
+def test_with_title_prepends_when_missing():
+    markdown = jd_fetcher._with_title("Body text about the role.", "Senior Engineer | Acme")
+
+    assert markdown == "# Senior Engineer | Acme\n\nBody text about the role."
+
+
+def test_with_title_skips_when_present():
+    markdown = jd_fetcher._with_title(
+        "# SENIOR ENGINEER | ACME\n\nBody text.", "Senior Engineer | Acme"
+    )
+
+    assert markdown == "# SENIOR ENGINEER | ACME\n\nBody text."
+
+
+def test_with_title_skips_blank():
+    markdown = jd_fetcher._with_title("Body text about the role.", "   ")
+
+    assert markdown == "Body text about the role."
+
+
 # --- fetch_url_to_markdown (Playwright wiring, browser faked) ----------------
 
 
+class _FakeResponse:
+    def __init__(self, status: int):
+        self.status = status
+
+
 class _FakePage:
-    def __init__(self, calls: dict, html: str, body_text: str, goto_error=None, goto_delay=0.0):
+    def __init__(
+        self,
+        calls: dict,
+        html: str,
+        body_text: str,
+        goto_error=None,
+        goto_delay=0.0,
+        status: int | None = 200,
+        title: str = "",
+    ):
         self._calls = calls
         self._html = html
         self._body_text = body_text
         self._goto_error = goto_error
         self._goto_delay = goto_delay
+        self._status = status
+        self._title = title
 
     async def goto(self, url, **kwargs):
         self._calls["goto"] = {"url": url, **kwargs}
@@ -138,6 +200,7 @@ class _FakePage:
             await asyncio.sleep(self._goto_delay)
         if self._goto_error:
             raise self._goto_error
+        return _FakeResponse(self._status) if self._status is not None else None
 
     async def wait_for_timeout(self, ms):
         self._calls["settle_ms"] = ms
@@ -148,6 +211,9 @@ class _FakePage:
     async def evaluate(self, script):
         self._calls["evaluate"] = script
         return self._body_text
+
+    async def title(self):
+        return self._title
 
 
 def _fake_playwright(monkeypatch, html="<html></html>", body_text="", **page_kwargs) -> dict:
@@ -176,7 +242,9 @@ def _fake_playwright(monkeypatch, html="<html></html>", body_text="", **page_kwa
 def test_fetch_url_to_markdown_wires_playwright_and_extracts(monkeypatch):
     monkeypatch.delenv("CALLBACK_FETCH_PAGE_TIMEOUT_MS", raising=False)
     monkeypatch.delenv("CALLBACK_FETCH_OUTER_TIMEOUT_S", raising=False)
-    calls = _fake_playwright(monkeypatch, html="<html>page</html>", body_text="body")
+    calls = _fake_playwright(
+        monkeypatch, html="<html>page</html>", body_text="body", title="Job Title | Board"
+    )
     monkeypatch.setattr(
         jd_fetcher,
         "extract_markdown",
@@ -187,7 +255,7 @@ def test_fetch_url_to_markdown_wires_playwright_and_extracts(monkeypatch):
 
     actual = {"markdown": markdown, **calls}
     expected = {
-        "markdown": "md(<html>page</html>,body,https://example.com/job)",
+        "markdown": "# Job Title | Board\n\nmd(<html>page</html>,body,https://example.com/job)",
         "launch": {"headless": True, "args": ["--no-sandbox"]},
         "new_context": {"user_agent": jd_fetcher.USER_AGENT, "viewport": jd_fetcher.VIEWPORT},
         "goto": {
@@ -233,6 +301,46 @@ def test_fetch_url_to_markdown_closes_browser_and_propagates_goto_error(monkeypa
 
     actual = {"error": exc_info.value, "closed": calls.get("closed")}
     expected = {"error": expected_error, "closed": True}
+    assert actual == expected
+
+
+def test_fetch_url_to_markdown_raises_on_http_error(monkeypatch, caplog):
+    caplog.set_level("INFO", logger="callback.jd_fetcher")
+    calls = _fake_playwright(monkeypatch, status=404)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
+
+    actual = {
+        "message": str(exc_info.value),
+        "closed": calls.get("closed"),
+        "events": _events(caplog),
+    }
+    expected = {
+        "message": "http status 404",
+        "closed": True,
+        "events": [{"event": "fetch_status", "url": "https://example.com/job", "status": 404}],
+    }
+    assert actual == expected
+
+
+def test_fetch_url_to_markdown_raises_when_goto_returns_none(monkeypatch, caplog):
+    caplog.set_level("INFO", logger="callback.jd_fetcher")
+    calls = _fake_playwright(monkeypatch, status=None)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
+
+    actual = {
+        "message": str(exc_info.value),
+        "closed": calls.get("closed"),
+        "events": _events(caplog),
+    }
+    expected = {
+        "message": "http status None",
+        "closed": True,
+        "events": [{"event": "fetch_status", "url": "https://example.com/job", "status": None}],
+    }
     assert actual == expected
 
 
