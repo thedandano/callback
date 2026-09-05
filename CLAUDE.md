@@ -123,7 +123,7 @@ jd_fetch → keywords_accept → parse_initial → score_initial → tailor → 
 ```
 
 Errors in `tailor`, `render`, `parse_final`, or `finalize` route back to the `tailor` interrupt; `submit_tailor` returns `pipeline_error` with `retriable: true` and may be called again with the same session to retry.
-`jd_fetch` loads the page with Playwright (Chrome user agent, `domcontentloaded` plus a 2.5 s settle), extracts markdown with trafilatura, falls back to body text when the extraction is thin, and caps `jd_text` at 16,000 characters (about 4,000 tokens), logging `fetch_oversized`.
+`jd_fetch` loads the page with Playwright (Chrome user agent, `domcontentloaded` plus a 2.5 s settle), extracts markdown with trafilatura, falls back to body text when the extraction is thin (and rejects a page that is still under 1,200 characters as `fetch_thin`), and caps `jd_text` at 16,000 characters (about 4,000 tokens), logging `fetch_oversized`.
 
 Checkpointer DB: `~/.local/share/callback/apply-sessions.db`.
 State schema: `ApplyState` in `state.py` (single Pydantic model — entire graph state).
