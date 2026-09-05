@@ -484,6 +484,36 @@ def test_fetch_url_to_markdown_bounds_a_hung_browser_close(monkeypatch, caplog):
     assert actual == expected
 
 
+def test_outer_timeout_during_browser_close_still_stops_the_driver(monkeypatch, caplog):
+    """The outer deadline landing mid-close must not skip playwright.stop()."""
+    import time
+
+    caplog.set_level("INFO", logger="callback.jd_fetcher")
+    monkeypatch.setattr(jd_fetcher, "_outer_timeout_s", lambda: 0.2)
+    monkeypatch.setattr(jd_fetcher, "CLOSE_TIMEOUT_S", 10.0)
+    calls = _fake_playwright(monkeypatch, close_delay=5.0)
+
+    start = time.perf_counter()
+    with pytest.raises(asyncio.TimeoutError):
+        asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
+    elapsed = time.perf_counter() - start
+
+    events = [e for e in _events(caplog) if e["event"].startswith("browser_cleanup")]
+    actual = {"stopped": calls.get("stopped"), "prompt": elapsed < 1.0, "events": events}
+    expected = {
+        "stopped": True,
+        "prompt": True,
+        "events": [
+            {
+                "event": "browser_cleanup_cancelled",
+                "url": "https://example.com/job",
+                "step": "browser.close",
+            }
+        ],
+    }
+    assert actual == expected
+
+
 # --- run_killable (real spawned child processes) ------------------------------
 
 

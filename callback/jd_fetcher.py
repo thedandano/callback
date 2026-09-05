@@ -208,10 +208,29 @@ async def _load_page(url: str) -> tuple[str, str, str]:
         body_text = await page.evaluate(_BODY_TEXT_SCRIPT)
         title = await page.title()
     finally:
-        if browser is not None:
-            await _cleanup("browser.close", browser.close(), url)
-        await _cleanup("playwright.stop", playwright.stop(), url)
+        await _cleanup_all(browser, playwright, url)
     return html, body_text, title
+
+
+async def _cleanup_all(browser: Any, playwright: Any, url: str) -> None:
+    """Run every cleanup step even if the outer deadline cancels us mid-way.
+
+    A CancelledError that lands during one step is held, the remaining steps
+    still run (each under its own bound), and it is re-raised at the end so
+    the outer wait_for still reports the timeout.
+    """
+    steps = [("playwright.stop", playwright.stop)]
+    if browser is not None:
+        steps.insert(0, ("browser.close", browser.close))
+    cancelled: asyncio.CancelledError | None = None
+    for step, start in steps:
+        try:
+            await _cleanup(step, start(), url)
+        except asyncio.CancelledError as exc:
+            cancelled = exc
+            _log("browser_cleanup_cancelled", url=url, step=step)
+    if cancelled is not None:
+        raise cancelled
 
 
 async def _fetch_url_to_markdown_unbounded(url: str, deadline: float) -> str:
