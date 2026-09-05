@@ -26,6 +26,9 @@ DEFAULT_OUTER_TIMEOUT_S = 35
 SETTLE_MS = 2_500
 # Bound on each browser/driver cleanup step after a fetch or a timeout.
 CLOSE_TIMEOUT_S = 5.0
+# Once the outer deadline has already fired, remaining cleanup steps get only this
+# much, so the overrun past CALLBACK_FETCH_OUTER_TIMEOUT_S stays under a second.
+CANCELLED_CLEANUP_GRACE_S = 0.5
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
@@ -180,10 +183,10 @@ def _with_title(markdown: str, title: str) -> str:
 # --- browser ----------------------------------------------------------------
 
 
-async def _cleanup(step: str, coro: Any, url: str) -> None:
+async def _cleanup(step: str, coro: Any, url: str, bound: float) -> None:
     """Await a cleanup step with its own bound; a hung step is logged, not waited on."""
     try:
-        await asyncio.wait_for(coro, timeout=CLOSE_TIMEOUT_S)
+        await asyncio.wait_for(coro, timeout=bound)
     except Exception as exc:
         # ponytail: a driver that ignores stop() leaks a process; kill it via the
         # driver transport if that is ever observed.
@@ -216,16 +219,18 @@ async def _cleanup_all(browser: Any, playwright: Any, url: str) -> None:
     """Run every cleanup step even if the outer deadline cancels us mid-way.
 
     A CancelledError that lands during one step is held, the remaining steps
-    still run (each under its own bound), and it is re-raised at the end so
-    the outer wait_for still reports the timeout.
+    still run under the short CANCELLED_CLEANUP_GRACE_S bound (the outer budget
+    is already spent), and it is re-raised at the end so the outer wait_for
+    still reports the timeout.
     """
     steps = [("playwright.stop", playwright.stop)]
     if browser is not None:
         steps.insert(0, ("browser.close", browser.close))
     cancelled: asyncio.CancelledError | None = None
     for step, start in steps:
+        bound = CLOSE_TIMEOUT_S if cancelled is None else CANCELLED_CLEANUP_GRACE_S
         try:
-            await _cleanup(step, start(), url)
+            await _cleanup(step, start(), url, bound)
         except asyncio.CancelledError as exc:
             cancelled = exc
             _log("browser_cleanup_cancelled", url=url, step=step)
