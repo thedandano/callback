@@ -77,6 +77,7 @@ def main():
         ],
     )
     WikiStore().write_page(resume_label, "sections.json", section_map.model_dump_json())
+    WikiStore().write_index(resume_label, "# Profile\n\n## Skills\n- Python\n- Go\n")
     registered_resume_path = save_resume(resume_label, resume_path)
 
     try:
@@ -88,7 +89,7 @@ def main():
         submit_result = submit_keywords(session_id=session_id, jd_json=JD_JSON)
         submitted = json.loads(submit_result)
         assert submitted["status"] == "ok", f"submit_keywords failed: {submitted}"
-        assert submitted["next_action"] == "parse_initial", (
+        assert submitted["next_action"] == "fetch_wiki_then_tailor", (
             f"unexpected next_action: {submitted['next_action']}"
         )
         assert submitted["data"]["keywords"]["required"] == ["Python", "Kubernetes", "Go"]
@@ -140,10 +141,13 @@ def main():
         # Cleanup registered resume from registry (best-effort)
         with contextlib.suppress(Exception):
             Path(registered_resume_path).unlink(missing_ok=True)
-        # Cleanup sections.json from WikiStore (best-effort)
+        # Cleanup sections.json and index.md from WikiStore (best-effort)
         try:
-            wiki_page = WikiStore().wiki_root(resume_label) / "sections.json"
-            wiki_page.unlink(missing_ok=True)
+            wiki_root = WikiStore().wiki_root(resume_label)
+            (wiki_root / "sections.json").unlink(missing_ok=True)
+            (wiki_root / "index.md").unlink(missing_ok=True)
+            with contextlib.suppress(OSError):
+                wiki_root.rmdir()
         except Exception:
             pass
 
