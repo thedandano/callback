@@ -7,6 +7,7 @@ Pass a job URL as the first argument to exercise the fetcher.
 import contextlib
 import json
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -14,6 +15,7 @@ from pathlib import Path
 # Add current directory to path for running via uv
 sys.path.insert(0, os.getcwd())
 
+from callback.apply_nodes import _get_apps_dir
 from callback.jd_data import EXTRACTION_PROTOCOL
 from callback.jd_fetcher import MIN_MARKDOWN_CHARS
 from callback.repository.resumes import save_resume
@@ -52,6 +54,11 @@ def _load_phase(jd_url: str | None, jd_text: str, resume_label: str) -> dict:
 
 def main():
     jd_url = sys.argv[1] if len(sys.argv) > 1 else None
+
+    # Redirect archive writes into a scratch dir so this script never touches
+    # the real ~/.local/share/callback/applications/.
+    apps_tmp = tempfile.mkdtemp(prefix="callback-smoke-")
+    os.environ["CALLBACK_APPS_DIR"] = apps_tmp
 
     # Create a temp resume file
     with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w") as f:
@@ -114,8 +121,7 @@ def main():
         assert "total" in tailored["data"]["score_final"], "score_final missing total"
 
         # Phase 4: read archive JSON for score delta
-        apps_dir = Path.home() / ".local" / "share" / "callback" / "applications"
-        archive_path = apps_dir / f"{session_id}.json"
+        archive_path = _get_apps_dir() / f"{session_id}.json"
         assert archive_path.exists(), f"archive not written: {archive_path}"
         archive = json.loads(archive_path.read_text())
         delta = archive["scores"]["delta"]
@@ -150,6 +156,7 @@ def main():
                 wiki_root.rmdir()
         except Exception:
             pass
+        shutil.rmtree(apps_tmp, ignore_errors=True)
 
 
 if __name__ == "__main__":
