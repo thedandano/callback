@@ -41,6 +41,9 @@ def test_live_fetch_recall_within_tolerance(board):
 
     live = recall(text, golden)
     recorded = SOURCES[board]["recall"]
-    actual = {"within_tolerance": live["found"] >= recorded["found"] - LIVE_RECALL_TOLERANCE}
-    expected = {"within_tolerance": True}
+    actual = {
+        "within_tolerance": live["found"] >= recorded["found"] - LIVE_RECALL_TOLERANCE,
+        "title_kept": bool(live["title_found"]) or not recorded["title_found"],
+    }
+    expected = {"within_tolerance": True, "title_kept": True}
     assert actual == expected, f"live={live} recorded={recorded}"
