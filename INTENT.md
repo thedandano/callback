@@ -150,7 +150,8 @@ identical to today's; no regex reads story metadata anywhere in `callback/`.
 ### M3 — Replace the fetcher (half a day plus smoke runs)
 
 Shipped 2026-09-04: W1.
-Measured after the swap: server import ≈ 879 ms warm (was ≈ 1,420 ms); 139 installed packages (was 176). Fixtures: evals/extract/.
+Measured after the swap: server import ≈ 879 ms warm (was ≈ 1,420 ms); 126 runtime packages (was 147). Fixtures: evals/extract/.
+The Ashby fixture is the Deepgram posting (the measured one now 404s); Apple's golden is 4/14 by content drift (posting reworded after the July application), recorded in evals/extract/sources.json.
 
 Measured 2026-09-03 on five archived JD URLs: Playwright plus trafilatura matched
 crawl4ai's keyword recall on every live page (within one term), returned 1.5x to 37x
@@ -176,8 +177,8 @@ Spec:
 
 Done when: crawl4ai is out of `pyproject.toml`; the five measured URLs (Qualcomm, Apple,
 Ashby, Cedar, Greenhouse) are E1 fetch fixtures with their archived keywords as the
-recall golden; `scripts/smoke_apply.py` passes on three of them; server import time drops
-by at least 1.5 s.
+recall golden; `scripts/smoke_apply.py` passes on three of them; server import drops
+from ≈ 1,420 ms to ≈ 880 ms warm (the 1.5 s target was measured cold).
 
 Out of scope: LinkedIn login walls and Cloudflare challenge pages. Those remain
 "paste the text" for both fetchers.

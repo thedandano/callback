@@ -1,7 +1,7 @@
 """Apply graph node implementations.
 
 Implements the 10 nodes of the linear apply pipeline:
-- jd_fetch: fetches the job description via URL (Crawl4AI) or accepts raw text
+- jd_fetch: fetches the job description via URL (Playwright + trafilatura) or accepts raw text
 - keywords_accept: stores host-validated JDData; re-enters at parse_initial
 - parse_initial: extracts text and sections from the source resume file
 - score_initial: scores the resume against JD keywords (deterministic scorer)

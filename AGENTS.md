@@ -197,6 +197,8 @@ URL fetching uses Playwright plus trafilatura. The fetch surface is controlled b
 - `CALLBACK_FETCH_PAGE_TIMEOUT_MS`
 - `CALLBACK_FETCH_OUTER_TIMEOUT_S`
 
+`jd_fetch` loads the page with Playwright (Chrome user agent, `domcontentloaded` plus a 2.5 s settle), extracts markdown with trafilatura, falls back to body text when the extraction is thin, and caps `jd_text` at 16,000 characters (about 4,000 tokens), logging `fetch_oversized`. A non-2xx status raises and is logged as `fetch_status`.
+
 Do not add a silent fallback path if URL fetch fails.
 
 ### Scoring (`scorer.py`)
