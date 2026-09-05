@@ -2,9 +2,10 @@
 """Build (or refresh) the E1 fetch fixtures under evals/extract/.
 
 For each entry in evals/extract/sources.json: fetch the URL with the production
-fetcher, write <board>.md, copy the archived keywords to <board>.golden.json,
-and record the recall of the golden terms against the fetched text back into
-sources.json so the CI test can assert it byte-for-byte.
+fetcher, write <board>.md, and record the recall of the committed golden terms
+against the fetched text back into sources.json so the CI test can assert it
+byte-for-byte. A board with no <board>.golden.json yet is seeded from the
+archived application named by archived_session (a private local file).
 
 Usage: uv run python scripts/build_fetch_fixtures.py [board ...]
 """
@@ -26,17 +27,24 @@ from evals.recall import recall  # noqa: E402
 EXTRACT_DIR = Path(__file__).resolve().parent.parent / "evals" / "extract"
 
 
-def _archived_keywords(session_id: str) -> dict:
-    return json.loads((_get_apps_dir() / f"{session_id}.json").read_text())["keywords"]
+def _golden_keywords(board: str, source: dict) -> dict:
+    """The committed golden is the source of truth; the private archive only seeds a new board."""
+    golden_path = EXTRACT_DIR / f"{board}.golden.json"
+    if golden_path.exists():
+        return json.loads(golden_path.read_text(encoding="utf-8"))
+    archive = _get_apps_dir() / f"{source['archived_session']}.json"
+    golden = json.loads(archive.read_text())["keywords"]
+    golden_path.write_text(
+        json.dumps(golden, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    print(f"{board:11s} seeded golden from {archive}")
+    return golden
 
 
 def build(board: str, source: dict) -> dict:
+    golden = _golden_keywords(board, source)
     markdown = asyncio.run(fetch_url_to_markdown(source["jd_url"]))
-    golden = _archived_keywords(source["archived_session"])
     (EXTRACT_DIR / f"{board}.md").write_text(markdown, encoding="utf-8")
-    (EXTRACT_DIR / f"{board}.golden.json").write_text(
-        json.dumps(golden, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
     return {
         **source,
         "fetched_at": datetime.now(UTC).isoformat(timespec="seconds"),
