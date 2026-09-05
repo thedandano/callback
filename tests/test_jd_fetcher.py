@@ -394,6 +394,23 @@ def test_fetch_url_to_markdown_propagates_outer_timeout(monkeypatch):
         asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
 
 
+def test_fetch_url_to_markdown_outer_timeout_covers_extraction(monkeypatch):
+    """A slow synchronous extraction must not escape the outer timeout."""
+    import time
+
+    monkeypatch.setattr(jd_fetcher, "_outer_timeout_s", lambda: 0.05)
+    _fake_playwright(monkeypatch)
+
+    def slow_extract(html, body_text, url):
+        time.sleep(0.5)
+        return "late"
+
+    monkeypatch.setattr(jd_fetcher, "extract_markdown", slow_extract)
+
+    with pytest.raises(asyncio.TimeoutError):
+        asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
+
+
 # --- import cost -------------------------------------------------------------
 
 

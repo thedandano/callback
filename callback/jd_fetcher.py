@@ -143,8 +143,9 @@ async def _load_page(url: str) -> tuple[str, str, str]:
 
 async def _fetch_url_to_markdown_unbounded(url: str) -> str:
     html, body_text, title = await _load_page(url)
-    markdown = _with_title(extract_markdown(html, body_text, url), title)
-    return cap_jd_text(markdown, url)
+    # trafilatura is synchronous; run it off the loop so the outer timeout still applies.
+    extracted = await asyncio.to_thread(extract_markdown, html, body_text, url)
+    return cap_jd_text(_with_title(extracted, title), url)
 
 
 async def fetch_url_to_markdown(url: str) -> str:
