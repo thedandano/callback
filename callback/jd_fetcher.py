@@ -157,9 +157,13 @@ async def _run_detached(fn: Callable[..., str], *args: object) -> str:
     done: Future[str] = Future()
 
     def work() -> None:
+        # Marks the future RUNNING so a later cancel() from the timed-out awaiter is
+        # a no-op on it; the awaiter's own future is what gets cancelled.
+        if not done.set_running_or_notify_cancel():
+            return
         try:
             done.set_result(fn(*args))
-        except BaseException as exc:  # noqa: BLE001 — forwarded to the awaiting future
+        except Exception as exc:  # forwarded to the awaiting future
             done.set_exception(exc)
 
     threading.Thread(target=work, name="callback-extract", daemon=True).start()
