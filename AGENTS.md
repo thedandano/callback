@@ -68,7 +68,7 @@ uv run python scripts/smoke_profile.py
 
 - `LOG_LEVEL`: Server log level.
 - `CALLBACK_LOG_PATH`: Override the server log file path.
-- `CALLBACK_APPS_DIR`: Override where application PDFs and JSON archives are written.
+- `CALLBACK_APPS_DIR`: Override where application PDFs and JSON archives are written; overrides only the applications archive directory, not the other data roots.
 - `CALLBACK_FETCH_PAGE_TIMEOUT_MS`: Override the Playwright page-load timeout in milliseconds. Default: `30000`.
 - `CALLBACK_FETCH_OUTER_TIMEOUT_S`: Override the outer fetch timeout in seconds. Default: `35`.
 - `CALLBACK_TRACE_BACKEND`: Optional tracing backend. Set to `langsmith` to enable the LangSmith adapter.
@@ -225,7 +225,7 @@ PDF rendering uses HTML + Playwright in `callback/render/html_builder.py`.
 | `apply_graph.py` | `get_apply_graph()` cached accessor; linear apply pipeline with host handoff interrupts and error routing |
 | `apply_nodes.py` | Apply nodes (`jd_fetch`, `keywords_accept`, `parse_initial`, `score_initial`, `tailor`, `render`, `parse_final`, `score_final`, `report`, `finalize`) |
 | `profile_graph.py` | `get_profile_graph()` cached accessor; cyclic profile graph with router edges and interrupts |
-| `profile_nodes.py` | Profile nodes (`check_profile`, `onboard`, `build_profile`, `check_orphans`, `create_story`) |
+| `profile_nodes.py` | Profile nodes (`check_profile`, `onboard`, `compile_profile`, `check_orphans`, `create_story`) |
 | `state.py` | `ApplyState`, `ProfileState`, and related profile data models |
 | `scorer.py` | Deterministic ATS scorer |
 | `jd_data.py` | JD JSON schema, extraction protocol, and validators |

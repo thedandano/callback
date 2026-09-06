@@ -97,7 +97,7 @@ Known weight (works, but costs more than it earns):
 | W8 | yagni | `HarnessTarget` dataclass + injectable runner for 2 targets; `ProfileCompiler` and `WikiRenderer` classes with no state | Fixed (M4) |
 | W9 | dead | `ProfileState.wiki_path/error`, `TailoredResume.volunteer_raw`, `ApplyState.finalized`, `WikiStore.read_index`, `main.py`, dormant `[tool.ruff.lint.pylint]` block | Fixed (M4) |
 | W10 | dup | 3 copies of flatten-skills; `apply_nodes._normalize_for_match` duplicates scorer's; `outcome` computed twice | Fixed (M4) |
-| W11 | size | `observability.py` (465 lines) exceeds both graphs combined; `cli.py` (1,103 lines) is 17% of the codebase; PLR09 was never enabled; M4 deleted the block. Enabling it: 26 violations under the block's thresholds (args 4, branches 8, statements 20), 9 under ruff defaults — input for M5. | judgment call |
+| W11 | size | `observability.py` (465 lines) exceeds both graphs combined; `cli.py` (1,103 lines) is 17% of the codebase; PLR09 was never enabled; M4 deleted the dormant block. Enabling it: 26 violations under the block's thresholds (args 4, branches 8, statements 20), 9 under ruff defaults — input for M5. | judgment call |
 | W12 | perf | `build_apply_graph()` per tool call opens a new SQLite connection and never closes it | Fixed (M2) |
 
 ## Intended direction (roadmap inputs)

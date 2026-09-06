@@ -181,7 +181,7 @@ The apply graph's `render` node uses HTML + Playwright via `callback.render.html
 | `apply_graph.py`     | `get_apply_graph()` cached accessor; linear apply pipeline with host handoff interrupts and error routing |
 | `apply_nodes.py`     | 10 apply nodes (`jd_fetch`, `keywords_accept`, `parse_initial`, `score_initial`, `tailor`, `render`, `parse_final`, `score_final`, `report`, `finalize`) |
 | `profile_graph.py`   | `get_profile_graph()` cached accessor; cyclic profile graph with router edges and interrupts |
-| `profile_nodes.py`   | Profile nodes (`check_profile`, `onboard`, `build_profile`, `check_orphans`, `create_story`) |
+| `profile_nodes.py`   | Profile nodes (`check_profile`, `onboard`, `compile_profile`, `check_orphans`, `create_story`) |
 | `state.py`           | `ApplyState`, `ProfileState` — Pydantic schemas for each graph |
 | `scorer.py`          | Deterministic ATS scorer (no I/O, no LLM) |
 | `extractor.py`       | Resume text extraction (PDF via pdfplumber, DOCX via python-docx, TXT) |
