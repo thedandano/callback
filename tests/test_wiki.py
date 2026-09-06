@@ -1,6 +1,13 @@
 import pytest
 
-from callback.wiki import WikiPageIdError, WikiStore, company_slug
+from callback.wiki import (
+    WikiPageError,
+    WikiPageIdError,
+    WikiStore,
+    company_slug,
+    join_frontmatter,
+    split_frontmatter,
+)
 
 
 def store(tmp_path, monkeypatch):
@@ -105,3 +112,39 @@ def test_read_pages_rejects_embedded_nul(tmp_path, monkeypatch):
 def test_is_valid_page_id_rejects_embedded_nul(tmp_path, monkeypatch):
     s = store(tmp_path, monkeypatch)
     assert s.is_valid_page_id("r", "a\x00b.md") is False
+
+
+def test_split_frontmatter_returns_meta_and_body():
+    page = "---\ntype: project\ntags:\n- Python\n- AWS\n---\n# Title\n\n**Situation:** x\n"
+    actual = split_frontmatter(page)
+    expected = ({"type": "project", "tags": ["Python", "AWS"]}, "# Title\n\n**Situation:** x\n")
+    assert actual == expected
+
+
+def test_split_frontmatter_without_fence_returns_empty_meta_and_whole_content():
+    actual = split_frontmatter("# Just markdown\n")
+    expected = ({}, "# Just markdown\n")
+    assert actual == expected
+
+
+def test_split_frontmatter_rejects_unterminated_fence():
+    with pytest.raises(WikiPageError) as exc_info:
+        split_frontmatter("---\ntype: story\n# no closing fence\n")
+    assert "closing" in str(exc_info.value)
+
+
+def test_split_frontmatter_rejects_non_mapping_yaml():
+    with pytest.raises(WikiPageError) as exc_info:
+        split_frontmatter("---\n- just\n- a list\n---\nbody\n")
+    assert "mapping" in str(exc_info.value)
+
+
+def test_join_then_split_round_trips_and_keeps_key_order():
+    meta = {"type": "story", "title": "REST APIs", "tags": ["Node.js", "C++"], "n": 3}
+    page = join_frontmatter(meta, "# REST APIs\n\nbody\n")
+    actual = {
+        "page_starts": page.startswith("---\ntype: story\ntitle: REST APIs\n"),
+        "round": split_frontmatter(page),
+    }
+    expected = {"page_starts": True, "round": (meta, "# REST APIs\n\nbody\n")}
+    assert actual == expected
