@@ -338,6 +338,19 @@ def test_configure_codex_warns_when_comments_will_be_dropped(tmp_path, capsys):
     assert actual == expected
 
 
+def test_config_status_does_not_warn_about_comments(tmp_path):
+    codex_path = tmp_path / "config.toml"
+    codex_path.write_text(
+        '# my notes\n[mcp_servers.callback]\ncommand = "callback"\n', encoding="utf-8"
+    )
+    result = runner.invoke(
+        app, ["config", "status", "--target", "codex", "--codex-config", str(codex_path)]
+    )
+    actual = {"exit_code": result.exit_code, "warned": "comments" in result.stderr}
+    expected = {"exit_code": 0, "warned": False}
+    assert actual == expected
+
+
 def test_setup_mcp_writes_both_configs(tmp_path):
     claude_path = tmp_path / ".claude.json"
     codex_path = tmp_path / ".codex" / "config.toml"
@@ -431,6 +444,36 @@ def test_setup_mcp_preserves_existing_env(tmp_path):
         "args": ["serve"],
         "env": {"LANGSMITH_PROJECT": "demo"},
     }
+
+
+def test_setup_mcp_warns_about_comments_exactly_once(tmp_path):
+    claude_path = tmp_path / ".claude.json"
+    codex_path = tmp_path / "config.toml"
+    codex_path.write_text('# my notes\n[mcp_servers.callback]\ncommand = "old"\n', encoding="utf-8")
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+
+    with (
+        patch("callback.cli._resolve_command", return_value="/usr/local/bin/callback"),
+        patch("callback.cli.subprocess.run", return_value=mock_result),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "setup-mcp",
+                "--claude-config",
+                str(claude_path),
+                "--codex-config",
+                str(codex_path),
+            ],
+        )
+
+    actual = {
+        "exit_code": result.exit_code,
+        "comment_warning_count": result.stderr.count("contains comments"),
+    }
+    expected = {"exit_code": 0, "comment_warning_count": 1}
+    assert actual == expected
 
 
 def test_config_env_set_list_unset_claude(tmp_path):

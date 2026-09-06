@@ -151,19 +151,25 @@ def _read_toml_config(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
     text = path.read_text(encoding="utf-8")
-    # ponytail: only full-line comments are detected; an inline `# ...` after a
-    # value is valid TOML but slips past this check undetected.
+    try:
+        loaded = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"{path} is not valid TOML: {exc}") from exc
+    return dict(loaded)
+
+
+def _warn_if_comments(path: Path) -> None:
+    """Say so on stderr before a rewrite drops full-line comments; tomllib cannot keep them."""
+    # ponytail: full-line comments only; an inline `# …` after a value is not detected.
+    if not path.exists():
+        return
+    text = path.read_text(encoding="utf-8")
     if any(line.lstrip().startswith("#") for line in text.splitlines()):
         typer.echo(
             f"warning: {path} contains comments; callback rewrites this file "
             "and comments are not preserved",
             err=True,
         )
-    try:
-        loaded = tomllib.loads(text)
-    except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"{path} is not valid TOML: {exc}") from exc
-    return dict(loaded)
 
 
 _BARE_TOML_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -234,6 +240,7 @@ def _dump_toml(config: Mapping[str, Any]) -> str:
 
 def configure_codex(path: Path, command: str | None = None) -> None:
     """Write the Codex MCP server entry, preserving parseable config keys."""
+    _warn_if_comments(path)
     config = _read_toml_config(path)
     servers = config.setdefault("mcp_servers", {})
     if not isinstance(servers, dict):
@@ -330,6 +337,7 @@ def _set_claude_env(path: Path, env_updates: Mapping[str, str]) -> None:
 
 
 def _set_codex_env(path: Path, env_updates: Mapping[str, str]) -> None:
+    _warn_if_comments(path)
     config = _read_toml_config(path)
     env = _ensure_codex_server(config, path)
     env.update(env_updates)
@@ -344,6 +352,7 @@ def _unset_claude_env(path: Path, key: str) -> None:
 
 
 def _unset_codex_env(path: Path, key: str) -> None:
+    _warn_if_comments(path)
     config = _read_toml_config(path)
     env = _ensure_codex_server(config, path)
     env.pop(key, None)
@@ -592,6 +601,7 @@ def _remove_server_from_claude(path: Path) -> None:
 def _remove_server_from_codex(path: Path) -> None:
     if not path.exists():
         return
+    _warn_if_comments(path)
     config = _read_toml_config(path)
     servers = config.get("mcp_servers")
     if isinstance(servers, dict):
@@ -775,8 +785,10 @@ def config_status(
     """Show callback MCP env status for Claude and Codex."""
     try:
         targets = _target_names(target)
-        paths = _config_paths(claude_config=claude_config, codex_config=codex_config)
-        envs = _read_config_envs(targets, paths)
+        config_paths_by_target = _config_paths(
+            claude_config=claude_config, codex_config=codex_config
+        )
+        envs = _read_config_envs(targets, config_paths_by_target)
     except ConfigError as exc:
         typer.echo(f"config status failed: {exc}", err=True)
         raise typer.Exit(1) from exc
@@ -875,11 +887,13 @@ def config_env_list(
     """List callback MCP environment variables."""
     try:
         targets = _target_names(target)
-        paths = _config_paths(claude_config=claude_config, codex_config=codex_config)
+        config_paths_by_target = _config_paths(
+            claude_config=claude_config, codex_config=codex_config
+        )
         readers = _config_env_readers()
         printed = False
         for target_name in targets:
-            env = readers[target_name](paths[target_name])
+            env = readers[target_name](config_paths_by_target[target_name])
             typer.echo(f"[{target_name}]")
             if not env:
                 typer.echo("(none)")
@@ -1013,8 +1027,6 @@ def uninstall(
         raise typer.Exit(1) from exc
 
     if purge:
-        import shutil
-
         for directory in (paths.data_dir(), paths.state_dir()):
             if directory.exists():
                 shutil.rmtree(directory)
