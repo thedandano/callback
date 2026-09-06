@@ -769,11 +769,19 @@ def test_submit_keywords_returns_ranked_project_candidates(tmp_path, monkeypatch
     store.write_page(
         resume_label,
         "experience/story-013.md",
-        """# Personal Voice LLM — Gemma Fine-Tuning — May 2026
-
-**Job Title:** Project
-
-Skills: Python, RAG, ChatML, QLoRA, LLMs
+        """---
+type: project
+title: Personal Voice LLM — Gemma Fine-Tuning — May 2026
+job_title: Project
+tags:
+- Python
+- RAG
+- ChatML
+- QLoRA
+- LLMs
+story_type: SBI
+---
+# Personal Voice LLM — Gemma Fine-Tuning — May 2026
 
 **Situation:** Personal voice model work.
 
@@ -785,21 +793,34 @@ Skills: Python, RAG, ChatML, QLoRA, LLMs
     store.write_page(
         resume_label,
         "experience/story-006.md",
-        """# Amazon GenAI Work
-
-**Job Title:** Software Development Engineer II
-
-Skills: Python, RAG, LLMs
+        """---
+type: story
+title: Amazon GenAI Work
+job_title: Software Development Engineer II
+tags:
+- Python
+- RAG
+- LLMs
+story_type: SBI
+---
+# Amazon GenAI Work
 """,
     )
     store.write_page(
         resume_label,
         "experience/story-012.md",
-        """# callback — LangGraph Resume Tailoring MCP Server — April 2026
-
-**Job Title:** Project
-
-Skills: Python, MCP, LangGraph, SQL
+        """---
+type: project
+title: callback — LangGraph Resume Tailoring MCP Server — April 2026
+job_title: Project
+tags:
+- Python
+- MCP
+- LangGraph
+- SQL
+story_type: SBI
+---
+# callback — LangGraph Resume Tailoring MCP Server — April 2026
 
 **Situation:** Resume tailoring workflow.
 
@@ -890,11 +911,18 @@ def test_submit_keywords_recommends_project_append_and_trim_candidates(tmp_path,
     store.write_page(
         resume_label,
         "experience/story-013.md",
-        """# Personal Voice LLM — Gemma Fine-Tuning — May 2026
-
-**Job Title:** Project
-
-Skills: Python, RAG, ChatML, LLMs
+        """---
+type: project
+title: Personal Voice LLM — Gemma Fine-Tuning — May 2026
+job_title: Project
+tags:
+- Python
+- RAG
+- ChatML
+- LLMs
+story_type: SBI
+---
+# Personal Voice LLM — Gemma Fine-Tuning — May 2026
 
 **Behavior:** Built a Python pipeline for RAG and ChatML records.
 """,
@@ -986,11 +1014,18 @@ def test_submit_keywords_recommends_project_replace_when_two_visible_projects(
     store.write_page(
         resume_label,
         "experience/story-013.md",
-        """# Personal Voice LLM — Gemma Fine-Tuning — May 2026
-
-**Job Title:** Project
-
-Skills: Python, RAG, ChatML, LLMs
+        """---
+type: project
+title: Personal Voice LLM — Gemma Fine-Tuning — May 2026
+job_title: Project
+tags:
+- Python
+- RAG
+- ChatML
+- LLMs
+story_type: SBI
+---
+# Personal Voice LLM — Gemma Fine-Tuning — May 2026
 
 **Behavior:** Built a Python RAG and ChatML pipeline for LLM fine-tuning.
 """,
@@ -1217,11 +1252,16 @@ def test_rank_project_candidates_skips_invalid_index_links(tmp_path, monkeypatch
     store.write_page(
         resume_label,
         "experience/ok.md",
-        """# Solid Project
-
-**Job Title:** Project
-
-Skills: Python, RAG
+        """---
+type: project
+title: Solid Project
+job_title: Project
+tags:
+- Python
+- RAG
+story_type: SBI
+---
+# Solid Project
 
 **Situation:** Built a thing.
 
@@ -1253,7 +1293,7 @@ Skills: Python, RAG
             "required_matched": ["Python", "RAG"],
             "preferred_matched": [],
             "evidence_preview": (
-                "Skills: Python, RAG **Situation:** Built a thing. "
+                "**Situation:** Built a thing. "
                 "**Behavior:** Built a Python pipeline. **Impact:** Shipped it."
             ),
         }
@@ -1266,6 +1306,35 @@ Skills: Python, RAG
             "page_id": "experience/../../secret.md",
         },
     )
+
+
+def test_rank_project_candidates_skips_pages_without_frontmatter_and_warns(
+    tmp_path, monkeypatch, caplog
+):
+    from callback.server import _rank_project_candidates
+    from callback.wiki import WikiStore
+
+    caplog.set_level("WARNING", logger="callback.server")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    store = WikiStore()
+    store.write_page(
+        "r", "experience/story-001.md", "# old render\n\n**Job Title:** Project\n\nSkills: Python\n"
+    )
+    store.write_page(
+        "r",
+        "experience/story-002.md",
+        "---\ntype: project\ntitle: Real\ntags:\n- Python\n---\n"
+        "# Real\n\n**Situation:** Python work.\n",
+    )
+    wiki_index = "- [old](experience/story-001.md)\n- [Real](experience/story-002.md)\n"
+    keywords = {"required": ["Python"], "preferred": []}
+    candidates = _rank_project_candidates("r", keywords, wiki_index)
+    actual = {
+        "names": [c["name"] for c in candidates],
+        "warned": any("story-001.md" in r.message for r in caplog.records),
+    }
+    expected = {"names": ["Real"], "warned": True}
+    assert actual == expected
 
 
 class TestOrphanDetection:
