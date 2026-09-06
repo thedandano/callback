@@ -98,3 +98,20 @@ def test_write_json_atomic_round_trips(tmp_path: Path):
     }
     expected = {"parsed": {"a": 1, "b": [1, 2]}, "entries": ["data.json"]}
     assert actual == expected
+
+
+def test_write_text_atomic_cleans_up_temp_file_on_rename_failure(tmp_path: Path, monkeypatch):
+    target = tmp_path / "file.txt"
+
+    def boom(self: Path, _target: Path) -> Path:
+        raise OSError("rename refused")
+
+    monkeypatch.setattr(Path, "replace", boom)
+    raised = None
+    try:
+        paths.write_text_atomic(target, "hello\n")
+    except OSError as exc:
+        raised = str(exc)
+    actual = {"raised": raised, "entries": sorted(p.name for p in tmp_path.iterdir())}
+    expected = {"raised": "rename refused", "entries": []}
+    assert actual == expected
