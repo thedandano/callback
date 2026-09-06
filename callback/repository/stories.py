@@ -77,7 +77,8 @@ def _story_type_from_meta(page_id: str, meta: dict) -> None:
         raise WikiPageError(f"type {page_type!r} is not a story")
 
 
-def _tags_from_meta(meta: dict) -> list[str]:
+def tags_from_meta(meta: dict) -> list[str]:
+    """The page's tags as strings. Raises WikiPageError unless tags is a list (or absent)."""
     tags = meta.get("tags") or []
     if not isinstance(tags, list):
         raise WikiPageError(f"tags must be a list, got {type(tags).__name__}")
@@ -88,7 +89,7 @@ def story_from_page(page_id: str, content: str) -> CreatedStory:
     """Rebuild a CreatedStory from a page. Raises WikiPageError when it is not a story."""
     meta, body = split_frontmatter(content)
     _story_type_from_meta(page_id, meta)
-    skills = _tags_from_meta(meta)
+    skills = tags_from_meta(meta)
     paragraphs = _body_paragraphs(page_id, body)
     return CreatedStory(
         id=_story_id_from_page_id(page_id),
@@ -134,8 +135,17 @@ def next_story_id(resume_label: str) -> str:
     return f"story-{highest + 1:03d}"
 
 
+_BODY_FIELDS = ("situation", "behavior", "impact")
+
+
+def _canonical(story: CreatedStory) -> CreatedStory:
+    """Strip the body paragraphs the way reading a page back does, so equality holds."""
+    return story.model_copy(update={f: getattr(story, f).strip() for f in _BODY_FIELDS})
+
+
 def save_story(resume_label: str, story: CreatedStory) -> CreatedStory:
     """Write one story page. An identical story (all fields but id) returns the stored one."""
+    story = _canonical(story)
     content = story.model_dump(exclude={"id"})
     existing, _ = list_stories(resume_label)
     for stored in existing:
@@ -163,12 +173,32 @@ def _validate_legacy(records: list[dict]) -> tuple[list[CreatedStory], list[str]
     return valid, skipped
 
 
+def _may_overwrite(page_id: str, existing: str) -> bool:
+    """True only for an empty page or a pre-OKF render with no frontmatter.
+
+    Uses the same normalized parser as reading, so a CRLF or BOM page with valid
+    frontmatter is recognized. A page with a malformed fence is left alone too:
+    the JSON copy is kept (read-back verification fails) until someone fixes it.
+    """
+    if not existing:
+        return True
+    try:
+        meta, _ = split_frontmatter(existing)
+    except WikiPageError as exc:
+        logger.warning("%s: left alone; existing page has a malformed fence (%s)", page_id, exc)
+        return False
+    if meta:
+        logger.info("%s: left alone; page already has frontmatter", page_id)
+        return False
+    return True
+
+
 def _write_legacy_page(resume_label: str, story: CreatedStory, timestamp: str) -> bool:
     """Write the page unless one with frontmatter already exists. Returns True when written."""
     page_id = story_page_id(story.id)
     store = WikiStore()
     existing = store.read_pages(resume_label, [page_id])[page_id]
-    if existing.startswith("---\n"):
+    if not _may_overwrite(page_id, existing):
         return False
     store.write_page(resume_label, page_id, story_to_page(story, timestamp))
     logger.info(

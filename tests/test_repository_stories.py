@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from callback.repository import stories
+from callback.repository.accomplishments import AccomplishmentsStore
 from callback.state import CreatedStory
 from callback.wiki import WikiPageError, WikiStore
 
@@ -347,4 +348,56 @@ def test_migrate_drops_empty_legacy_key_without_resume_check(wiki: Path, monkeyp
     written = stories.migrate_legacy_stories("primary")
     actual = {"written": written, "json": json.loads(path.read_text())}
     expected = {"written": 0, "json": {"schema_version": "2", "onboard_text": "notes"}}
+    assert actual == expected
+
+
+def test_migrate_leaves_a_crlf_bom_page_with_frontmatter_alone(wiki: Path, monkeypatch):
+    monkeypatch.setenv("XDG_DATA_HOME", str(wiki))
+    _with_registered_resume(monkeypatch)
+    _legacy_json(wiki, [{"id": "story-001", **_FIELDS}])
+    hand_edited = stories.story_to_page(
+        CreatedStory(id="story-001", **{**_FIELDS, "impact": "hand edit"}), _TS
+    )
+    crlf = "\ufeff" + hand_edited.replace("\n", "\r\n")
+    WikiStore().write_page("primary", "experience/story-001.md", crlf)
+    written = stories.migrate_legacy_stories("primary")
+    listed, _ = stories.list_stories("primary")
+    actual = {
+        "written": written,
+        "impact": listed[0].impact,
+        "json_dropped": not AccomplishmentsStore().legacy_stories(),
+    }
+    expected = {"written": 0, "impact": "hand edit", "json_dropped": True}
+    assert actual == expected
+
+
+def test_migrate_leaves_a_malformed_page_alone_and_keeps_json(wiki: Path, monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="callback.repository.stories")
+    monkeypatch.setenv("XDG_DATA_HOME", str(wiki))
+    _with_registered_resume(monkeypatch)
+    _legacy_json(wiki, [{"id": "story-001", **_FIELDS}])
+    WikiStore().write_page(
+        "primary", "experience/story-001.md", "---\ntype: story\n# no closing fence\n"
+    )
+    written = stories.migrate_legacy_stories("primary")
+    page = WikiStore().read_pages("primary", ["experience/story-001.md"])["experience/story-001.md"]
+    actual = {
+        "written": written,
+        "page_untouched": page == "---\ntype: story\n# no closing fence\n",
+        "json_kept": len(AccomplishmentsStore().legacy_stories()),
+        "warned": any("malformed fence" in r.message for r in caplog.records),
+    }
+    expected = {"written": 0, "page_untouched": True, "json_kept": 1, "warned": True}
+    assert actual == expected
+
+
+def test_save_story_strips_body_whitespace_so_a_retry_is_identical(wiki: Path):
+    padded = CreatedStory(
+        id="", **{**_FIELDS, "situation": "  We had no CI.\n", "impact": "Deploys daily.  "}
+    )
+    first = stories.save_story("primary", padded)
+    second = stories.save_story("primary", padded)
+    files = sorted(p.name for p in (wiki / "primary" / "experience").iterdir())
+    actual = {"same": first == second, "files": files, "situation": first.situation}
+    expected = {"same": True, "files": ["story-001.md"], "situation": "We had no CI."}
     assert actual == expected
