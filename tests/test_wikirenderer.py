@@ -6,7 +6,7 @@ import pytest
 
 from callback.profilecompiler import compile_profile
 from callback.state import CompiledProfile, CreatedStory
-from callback.wikirenderer import render_experience_page, render_index
+from callback.wikirenderer import render_index
 
 
 def _make_story(
@@ -34,68 +34,6 @@ def _make_profile(stories: list[CreatedStory], orphans: list[str] | None = None)
     host_tags = orphans or []
     profile, _ = compile_profile(stories, host_tags=host_tags)
     return profile
-
-
-class TestExperiencePage:
-    def test_experience_page_written(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path)
-        story = _make_story()
-        render_experience_page("backend", story)
-
-        page = tmp_path / "backend" / "experience" / "story-001.md"
-        assert page.exists()
-
-    def test_experience_page_has_sbi_sections(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path)
-        story = _make_story(
-            situation="We had no auth.",
-            behavior="Implemented OAuth.",
-            impact="Zero incidents.",
-        )
-        render_experience_page("backend", story)
-
-        content = (tmp_path / "backend" / "experience" / "story-001.md").read_text()
-        assert "**Situation:** We had no auth." in content
-        assert "**Behavior:** Implemented OAuth." in content
-        assert "**Impact:** Zero incidents." in content
-
-    def test_experience_page_has_skills_line(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path)
-        story = _make_story(skills=["FastAPI", "Python"])
-        render_experience_page("backend", story)
-
-        content = (tmp_path / "backend" / "experience" / "story-001.md").read_text()
-        assert "Skills:" in content
-        assert "FastAPI" in content
-        assert "Python" in content
-
-    def test_experience_page_has_job_title(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path)
-        story = _make_story(job_title="Platform Engineer")
-        render_experience_page("backend", story)
-
-        content = (tmp_path / "backend" / "experience" / "story-001.md").read_text()
-        assert "Platform Engineer" in content
-
-    def test_company_slug_derivation(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path)
-        story = _make_story(id="story-042")
-        render_experience_page("backend", story)
-
-        assert (tmp_path / "backend" / "experience" / "story-042.md").exists()
-
-    def test_deterministic_output(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path)
-        story = _make_story()
-        render_experience_page("backend", story)
-        content1 = (tmp_path / "backend" / "experience" / "story-001.md").read_text()
-
-        render_experience_page("backend", story)
-        content2 = (tmp_path / "backend" / "experience" / "story-001.md").read_text()
-
-        assert content1 == content2
 
 
 class TestIndexPage:

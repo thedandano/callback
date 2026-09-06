@@ -15,12 +15,13 @@ from callback.profilecompiler import (
     save_compiled_profile,
 )
 from callback.profilecompiler import compile_profile as build_profile
+from callback.repository import stories
 from callback.repository.accomplishments import AccomplishmentsStore
 from callback.repository.resumes import list_resumes, replace_resume
 from callback.section_map import SectionMap
 from callback.state import CreatedStory, ProfileState
 from callback.wiki import WikiStore
-from callback.wikirenderer import render_wiki
+from callback.wikirenderer import render_index
 
 logger = logging.getLogger(__name__)
 
@@ -88,8 +89,9 @@ def onboard(state: ProfileState) -> dict:
     intake = state.intake or {}
     _persist_onboard_text(intake)
     WikiStore().write_page(label, "sections.json", section_map.model_dump_json())
+    stories.migrate_legacy_stories(label)
 
-    stories = AccomplishmentsStore().list_stories()
+    story_list, _ = stories.list_stories(label)
     return {
         "resume_label": label,
         "resume_path": state.resume_path,
@@ -97,7 +99,7 @@ def onboard(state: ProfileState) -> dict:
         "intake": {
             "status": "onboarded",
             "resume_label": label,
-            "stories": [s.model_dump() for s in stories],
+            "stories": [s.model_dump() for s in story_list],
         },
     }
 
@@ -105,20 +107,21 @@ def onboard(state: ProfileState) -> dict:
 @trace_node("profile", "compile_profile")
 def compile_profile(state: ProfileState) -> dict:
     _log_enter("compile_profile", state)
-    stories = AccomplishmentsStore().list_stories()
-    host_tags = list(state.host_tags or [])
     label = _registered_label(state.resume_label)
+    stories.migrate_legacy_stories(label)
+    story_list, page_warnings = stories.list_stories(label)
+    host_tags = list(state.host_tags or [])
     resume_skills = _resume_skills(label)
     all_tags = list(dict.fromkeys(host_tags + resume_skills))
-    profile, warnings = build_profile(stories, all_tags)
-    render_wiki(label, profile)
+    profile, lint_warnings = build_profile(story_list, all_tags)
+    render_index(label, profile)
     save_compiled_profile(profile)
 
     return {
         "compiled_profile": profile.model_dump(),
         "intake": {
             **(state.intake or {}),
-            "skill_coverage_warnings": warnings,
+            "skill_coverage_warnings": [*page_warnings, *lint_warnings],
             "skills_index": profile.skills_index,
         },
     }
@@ -168,7 +171,7 @@ def create_story(state: ProfileState) -> dict:
         behavior=intake.get("behavior", ""),
         impact=intake.get("impact", ""),
     )
-    saved = AccomplishmentsStore().save_story(story)
+    saved = stories.save_story(_registered_label(state.resume_label), story)
     return {
         "current_story_target": saved.primary_skill,
         "intake": {**intake, "story_id": saved.id, "needs_compile": True},
