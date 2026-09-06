@@ -150,9 +150,17 @@ def configure_claude(path: Path, command: str | None = None) -> None:
 def _read_toml_config(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
+    text = path.read_text(encoding="utf-8")
+    # ponytail: only full-line comments are detected; an inline `# ...` after a
+    # value is valid TOML but slips past this check undetected.
+    if any(line.lstrip().startswith("#") for line in text.splitlines()):
+        typer.echo(
+            f"warning: {path} contains comments; callback rewrites this file "
+            "and comments are not preserved",
+            err=True,
+        )
     try:
-        with path.open("rb") as handle:
-            loaded = tomllib.load(handle)
+        loaded = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"{path} is not valid TOML: {exc}") from exc
     return dict(loaded)
@@ -179,17 +187,36 @@ def _toml_value(value: object) -> str:
     raise ConfigError(f"cannot serialize TOML value of type {type(value).__name__}")
 
 
+def _is_table_array(value: object) -> bool:
+    return (
+        isinstance(value, list) and bool(value) and all(isinstance(item, Mapping) for item in value)
+    )
+
+
+def _table_array_lines(
+    table_name: str, items: list[Any], prefix: tuple[str, ...], key: str
+) -> list[str]:
+    lines: list[str] = []
+    for item in items:
+        lines.append(f"[[{table_name}]]")
+        lines.extend(_toml_lines(item, (*prefix, key)))
+        lines.append("")
+    return lines
+
+
 def _toml_lines(config: Mapping[str, Any], prefix: tuple[str, ...] = ()) -> list[str]:
     scalar_lines: list[str] = []
     table_lines: list[str] = []
 
     for key in sorted(config):
         value = config[key]
+        table_name = ".".join(_toml_key(part) for part in (*prefix, key))
         if isinstance(value, Mapping):
-            table_name = ".".join(_toml_key(part) for part in (*prefix, key))
             table_lines.append(f"[{table_name}]")
             table_lines.extend(_toml_lines(value, (*prefix, key)))
             table_lines.append("")
+        elif _is_table_array(value):
+            table_lines.extend(_table_array_lines(table_name, value, prefix, key))
         else:
             scalar_lines.append(f"{_toml_key(key)} = {_toml_value(value)}")
 

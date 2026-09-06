@@ -307,6 +307,37 @@ def test_configure_codex_preserves_existing_env(tmp_path):
     }
 
 
+def test_configure_codex_preserves_arrays_of_tables(tmp_path):
+    codex_path = tmp_path / "config.toml"
+    codex_path.write_text(
+        '[[profiles]]\nname = "work"\nmodel = "gpt"\n\n[[profiles]]\nname = "home"\n',
+        encoding="utf-8",
+    )
+    configure_codex(codex_path)
+    actual = {
+        "profiles": _read_toml(codex_path)["profiles"],
+        "server_present": "callback" in _read_toml(codex_path)["mcp_servers"],
+    }
+    expected = {
+        "profiles": [{"name": "work", "model": "gpt"}, {"name": "home"}],
+        "server_present": True,
+    }
+    assert actual == expected
+
+
+def test_configure_codex_warns_when_comments_will_be_dropped(tmp_path, capsys):
+    codex_path = tmp_path / "config.toml"
+    codex_path.write_text('# my notes\nmodel = "gpt"\n', encoding="utf-8")
+    configure_codex(codex_path)
+    err = capsys.readouterr().err
+    actual = {
+        "warned": "comments" in err and str(codex_path) in err,
+        "comment_kept": "# my notes" in codex_path.read_text(),
+    }
+    expected = {"warned": True, "comment_kept": False}
+    assert actual == expected
+
+
 def test_setup_mcp_writes_both_configs(tmp_path):
     claude_path = tmp_path / ".claude.json"
     codex_path = tmp_path / ".codex" / "config.toml"
