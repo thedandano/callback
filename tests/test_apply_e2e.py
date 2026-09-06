@@ -186,7 +186,7 @@ class TestApplyGraphE2E:
         final_state = final_snapshot.values
 
         # Verify expected state keys
-        expected_keys = {"finalized", "pdf_path", "score_initial", "score_final"}
+        expected_keys = {"finalized_at", "pdf_path", "score_initial", "score_final"}
         actual_keys = {k for k in expected_keys if final_state.get(k) is not None}
         assert actual_keys == expected_keys
 
@@ -238,7 +238,7 @@ class TestApplyGraphE2E:
             "pdf_magic_bytes": pdf_bytes[:4],
             "has_parsed_final": bool(parsed_final),
             "parsed_final_nonempty": len(parsed_final) > 0,
-            "finalized": state.get("finalized"),
+            "finalized": state.get("finalized_at") is not None,
         }
         expected = {
             "pdf_magic_bytes": b"%PDF",

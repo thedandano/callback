@@ -180,7 +180,7 @@ def test_finalize_archive_includes_scores_delta(tmp_path, monkeypatch):
         parsed_final="tailored pdf text",
     )
     result = finalize(state)
-    assert result == {"finalized": True, "finalized_at": result["finalized_at"]}
+    assert result == {"finalized_at": result["finalized_at"]}
 
     archive = json.loads((tmp_path / "r4.json").read_text())
     assert archive["scores"] == {

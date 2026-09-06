@@ -176,7 +176,6 @@ def _render_html(tailored: dict) -> str:
         skills_rows=_split_skill_rows(tailored.get("skills_raw")),
         experience_entries=_split_timeline_entries(tailored.get("experience_raw")),
         project_entries=_split_timeline_entries(tailored.get("projects_raw")),
-        volunteer_entries=_split_timeline_entries(tailored.get("volunteer_raw")),
         education_lines=_split_nonempty_lines(tailored.get("education_raw")),
         font_b64=FONT_B64,
     )

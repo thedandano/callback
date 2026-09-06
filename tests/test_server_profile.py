@@ -614,7 +614,7 @@ class TestCreateStory:
             **_STORY_FIELDS,
         )
 
-        backend_index = wiki_module.WikiStore().read_index("backend") or ""
+        backend_index = wiki_module.WikiStore().read_pages("backend", ["index.md"])["index.md"]
         backend_experience_dir = tmp_path / "profile-wiki" / "backend" / "experience"
         story_pages = (
             list(backend_experience_dir.glob("*.md")) if backend_experience_dir.exists() else []

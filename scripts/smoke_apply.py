@@ -33,12 +33,13 @@ JD_JSON = json.dumps(
 )
 
 
-def _load_phase(jd_url: str | None, jd_text: str, resume_label: str) -> dict:
-    """Run the load_jd phase against a live URL or pasted raw text."""
-    if jd_url:
-        load_result = load_jd(jd_url=jd_url, resume_label=resume_label)
-    else:
-        load_result = load_jd(jd_raw_text=jd_text, resume_label=resume_label)
+def _load_phase(jd_url: str | None, jd_text: str) -> dict:
+    """Run the load_jd phase against a live URL or pasted raw text.
+
+    The resume is resolved internally from the registry (a single resume is
+    registered before this phase runs), so no resume_label is passed here.
+    """
+    load_result = load_jd(jd_url=jd_url) if jd_url else load_jd(jd_raw_text=jd_text)
     loaded = json.loads(load_result)
     assert loaded["status"] == "ok", f"load_jd failed: {loaded}"
     assert loaded["next_action"] == "extract_keywords", f"unexpected: {loaded}"
@@ -89,7 +90,7 @@ def main():
 
     try:
         # Phase 1: load_jd
-        loaded = _load_phase(jd_url, jd_text, resume_label)
+        loaded = _load_phase(jd_url, jd_text)
         session_id = loaded["session_id"]
 
         # Phase 2: submit_keywords

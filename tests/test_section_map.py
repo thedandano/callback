@@ -391,3 +391,8 @@ def test_non_editable_section_rejected() -> None:
         },
     )
     assert result == EditResult(applied=False, rejection_reason="non-editable section: education")
+
+
+def test_all_skills_flat_then_categorized_in_order():
+    section = SkillsSection(flat=["Go"], categorized={"Cloud": ["AWS", "GCP"], "Data": ["Pandas"]})
+    assert section.all_skills() == ["Go", "AWS", "GCP", "Pandas"]

@@ -56,7 +56,7 @@ from callback.profile_graph import get_profile_graph, story_pending
 from callback.profile_graph import make_config as make_profile_config
 from callback.repository.preferences import PreferencesStore
 from callback.repository.resumes import list_resumes
-from callback.section_map import SectionMap, apply_edit
+from callback.section_map import SectionMap, SkillsSection, apply_edit
 from callback.state import ApplyState, ProfileState
 from callback.wiki import WikiPageIdError, WikiStore
 
@@ -195,17 +195,6 @@ _NEXT_ADD_STORY_FIRST = "add_story_first"
 # ============================================================================
 
 
-def _all_skills(sections: dict) -> list[str]:
-    """Extract all skill strings from a SectionMap skills dict (flat + categorized)."""
-    skills = sections.get("skills") or {}
-    flat = skills.get("flat") or []
-    cats = skills.get("categorized") or {}
-    result = list(flat)
-    for items in cats.values():
-        result.extend(items)
-    return result
-
-
 def _detect_orphaned_required(
     required_missing: list[str], sections: dict, wiki_index: str
 ) -> list[str]:
@@ -216,7 +205,8 @@ def _detect_orphaned_required(
     exact match; wiki_index uses case-insensitive substring search (the index is
     unstructured markdown text).
     """
-    all_skills_lower = [s.lower() for s in _all_skills(sections)]
+    all_skills = SkillsSection.model_validate(sections.get("skills") or {}).all_skills()
+    all_skills_lower = [s.lower() for s in all_skills]
     orphans: list[str] = []
     for kw in required_missing:
         in_skills = kw.lower() in all_skills_lower
@@ -230,10 +220,10 @@ _WIKI_LINK_RE = re.compile(r"\[[^\]]+\]\((experience/[^)]+\.md)\)")
 
 
 def _keyword_matches_text(keyword: str, text: str) -> bool:
-    normalized_keyword = scorer._normalize_for_match(keyword)
+    normalized_keyword = scorer.normalize_for_match(keyword)
     if not normalized_keyword:
         return False
-    normalized_text = scorer._normalize_for_match(text)
+    normalized_text = scorer.normalize_for_match(text)
     return bool(scorer._compile_keyword_pattern(normalized_keyword).search(normalized_text))
 
 
@@ -558,10 +548,8 @@ def _submit_keywords_state_error(graph, config, session_id: str) -> str | None:
 # ============================================================================
 
 
-def _resolve_resume_label(
-    resume_label: str | None, session_id: str
-) -> tuple[str | None, str | None]:
-    """Resolve resume label from registry. Returns (resolved_label, error_json_or_None)."""
+def _resolve_resume_label(session_id: str) -> tuple[str | None, str | None]:
+    """Return (label, None) for the registered resume, or (None, error envelope)."""
     registered = list_resumes()
     if not registered:
         return None, _err(
@@ -571,32 +559,23 @@ def _resolve_resume_label(
             session_id=session_id,
             retriable=False,
         )
-    if resume_label is not None:
-        if resume_label not in registered:
-            return None, _err(
-                stage="load_jd",
-                code="resume_not_found",
-                message=f"resume '{resume_label}' not found; registered: {registered}",
-                session_id=session_id,
-                retriable=False,
-            )
-        return resume_label, None
-    if len(registered) == 1:
-        return registered[0], None
-    return None, _err(
-        stage="load_jd",
-        code="ambiguous_resume",
-        message=f"multiple resumes registered; specify resume_label: {registered}",
-        session_id=session_id,
-        retriable=False,
-    )
+    if len(registered) > 1:
+        _log(
+            "WARNING",
+            {
+                "tool": "load_jd",
+                "session_id": session_id,
+                "event": "multiple resumes registered; using first",
+                "registered": registered,
+            },
+        )
+    return registered[0], None
 
 
 @mcp.tool()
-def load_jd(  # noqa: C901
+def load_jd(
     jd_url: str | None = None,
     jd_raw_text: str | None = None,
-    resume_label: str | None = None,
 ) -> str:
     """Load a job description and return host extraction instructions.
 
@@ -605,15 +584,13 @@ def load_jd(  # noqa: C901
     jd_raw_text as fallback only for URL fetch failures. Empty URL content is
     reported as an error and does not fall back to pasted text.
 
-    The resume is resolved from the internal registry. If resume_label is
-    omitted and exactly one resume is registered, it is auto-selected. When
-    multiple resumes are registered, resume_label is required for disambiguation.
+    The resume is resolved from the internal registry: the first registered
+    resume is used. If more than one is registered, a warning is logged and
+    the first one wins.
 
     Args:
         jd_url: URL to a job description.
         jd_raw_text: Raw job description text.
-        resume_label: Label of the registered resume to use. Optional when
-            exactly one resume is registered.
 
     Returns:
         JSON envelope with status, session_id, jd_text, extraction_protocol, and
@@ -624,7 +601,6 @@ def load_jd(  # noqa: C901
         session_id,
         jd_raw_text,
         jd_url=jd_url,
-        resume_label=resume_label,
     )
 
 
@@ -634,7 +610,6 @@ def _load_jd_impl(  # noqa: C901
     jd_raw_text: str | None,
     *,
     jd_url: str | None = None,
-    resume_label: str | None = None,
 ) -> str:
     if not (jd_url or jd_raw_text):
         return _err(
@@ -644,7 +619,7 @@ def _load_jd_impl(  # noqa: C901
             session_id=session_id,
         )
 
-    resolved_label, err = _resolve_resume_label(resume_label, session_id)
+    resolved_label, err = _resolve_resume_label(session_id)
     if err:
         return err
 
@@ -1057,6 +1032,12 @@ def _tailor_retry_update(graph, config, values: dict, session_id: str) -> None:
     graph.update_state(config, update, as_node=SCORE_INITIAL_NODE)
 
 
+def _outcome(final: dict) -> dict:
+    if (final.get("report") or {}).get("no_coverage"):
+        return {"no_coverage": True, "reason": "no wiki stories cover required keywords"}
+    return {"no_coverage": False, "reason": None}
+
+
 def _submit_tailor_no_coverage(session_id: str, graph, config, resolved_output_dir) -> str:
     """Run the graph for the no_coverage path and build its success/error envelope."""
     _tailor_retry_update(
@@ -1086,12 +1067,7 @@ def _submit_tailor_no_coverage(session_id: str, graph, config, resolved_output_d
             "score_final": final.get("score_final"),
             "report": final.get("report"),
             "tailor_diagnostics": [],
-            "outcome": (final.get("report") or {}).get("no_coverage")
-            and {
-                "no_coverage": True,
-                "reason": "no wiki stories cover required keywords",
-            }
-            or {"no_coverage": False, "reason": None},
+            "outcome": _outcome(final),
         },
         workflow=_complete_workflow(),
     )
@@ -1222,12 +1198,7 @@ def _apply_tailor_edits(
             "score_final": final.get("score_final"),
             "report": final.get("report"),
             "tailor_diagnostics": final.get("tailor_diagnostics") or [],
-            "outcome": (final.get("report") or {}).get("no_coverage")
-            and {
-                "no_coverage": True,
-                "reason": "no wiki stories cover required keywords",
-            }
-            or {"no_coverage": False, "reason": None},
+            "outcome": _outcome(final),
         },
         workflow=_complete_workflow(),
     )
@@ -1535,11 +1506,11 @@ def compile_profile(story_tags: str | None = None, session_id: str | None = None
 def _resolve_new_thread_resume_label(stage: str, session_id: str) -> str | None:
     """Resolve resume_label for a new profile thread, logging when unresolved.
 
-    A missing/ambiguous resume registry does not stop the profile graph — it
-    just means the wiki write falls back to _registered_label's own default —
-    but the tool logs the miss so it's visible in callback logs.
+    A missing resume registry does not stop the profile graph — it just means
+    the wiki write falls back to _registered_label's own default — but the
+    tool logs the miss so it's visible in callback logs.
     """
-    resume_label, label_error = _resolve_resume_label(None, session_id)
+    resume_label, label_error = _resolve_resume_label(session_id)
     if label_error is not None:
         _log(
             "INFO",

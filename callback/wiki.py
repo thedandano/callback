@@ -53,10 +53,6 @@ class WikiStore:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
 
-    def read_index(self, resume_label: str) -> str | None:
-        p = self.wiki_root(resume_label) / "index.md"
-        return p.read_text(encoding="utf-8") if p.exists() else None
-
     def is_valid_page_id(self, resume_label: str, page_id: str) -> bool:
         """Return True when page_id resolves under the wiki root, False otherwise."""
         try:

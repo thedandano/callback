@@ -57,10 +57,7 @@ def _resume_skills(label: str) -> list[str]:
         section_map = SectionMap.model_validate_json(sections_json)
     except Exception:
         return []
-    skills: list[str] = list(section_map.skills.flat)
-    for items in section_map.skills.categorized.values():
-        skills.extend(items)
-    return skills
+    return section_map.skills.all_skills()
 
 
 @trace_node("profile", "check_profile")

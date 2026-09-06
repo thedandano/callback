@@ -209,7 +209,7 @@ _SLASH_WS_RE = re.compile(r"\s*/\s*")
 _WS_RE = re.compile(r"\s+")
 
 
-def _normalize_for_match(text: str) -> str:
+def normalize_for_match(text: str) -> str:
     text = unicodedata.normalize("NFKC", text)
     text = _DASH_RE.sub(" ", text)
     text = _SLASH_WS_RE.sub("/", text)
@@ -247,7 +247,7 @@ def _compile_keyword_pattern(kw: str) -> re.Pattern:
 
 
 def _keyword_hit(kw: str, normalized_resume: str) -> bool:
-    norm_kw = _normalize_for_match(kw)
+    norm_kw = normalize_for_match(kw)
     # An empty normalized keyword would match anything — never credit it.
     return bool(norm_kw) and bool(_compile_keyword_pattern(norm_kw).search(normalized_resume))
 
@@ -294,7 +294,7 @@ def _score_keywords(
     elif not preferred and not preferred_any:
         req_w, pref_w = 1.0, 0.0
 
-    normalized_resume = _normalize_for_match(resume_text)
+    normalized_resume = normalize_for_match(resume_text)
 
     req_matched, req_unmatched, _ = _classify_keywords(required, normalized_resume)
     pref_matched, pref_unmatched, _ = _classify_keywords(preferred, normalized_resume)
@@ -401,11 +401,11 @@ def _score_ats(
 
 
 def _score_readability(resume_text: str, cfg: ScoringConfig) -> tuple[float, list[str]]:
-    normalized_resume = _normalize_for_match(resume_text)
+    normalized_resume = normalize_for_match(resume_text)
     detected = [
         phrase
         for phrase in cfg.filler_phrases
-        if re.search(r"(?i)\b" + re.escape(_normalize_for_match(phrase)) + r"\b", normalized_resume)
+        if re.search(r"(?i)\b" + re.escape(normalize_for_match(phrase)) + r"\b", normalized_resume)
     ]
     read_score = max(
         cfg.weights.readability - len(detected) * cfg.readability_penalty_per_filler,

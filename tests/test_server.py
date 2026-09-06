@@ -1430,26 +1430,20 @@ def test_load_jd_auto_selects_single_registered_resume():
     assert snapshot.values.get("resume_label") == "default"
 
 
-def test_load_jd_returns_ambiguous_resume_error_for_multiple_resumes():
-    """Multiple resumes registered without label returns ambiguous_resume error."""
-    from callback.server import load_jd
+def test_load_jd_uses_first_registered_resume_and_warns_when_several(caplog):
+    """Multiple resumes registered without a label takes the first and warns."""
+    import callback.server as server
 
-    with patch("callback.server.list_resumes", return_value=["default", "senior"]):
-        result = json.loads(load_jd(jd_raw_text="Python engineer needed"))
-
-    expected = {
-        "session_id": result["session_id"],
-        "status": "error",
-        "error": {
-            "stage": "load_jd",
-            "code": "ambiguous_resume",
-            "message": result["error"]["message"],
-            "retriable": False,
-        },
+    caplog.set_level("WARNING", logger="callback.server")
+    with patch("callback.server.list_resumes", return_value=["a", "b"]):
+        resolved, err = server._resolve_resume_label("sess-1")
+    actual = {
+        "resolved": resolved,
+        "err": err,
+        "warned": any("multiple resumes" in r.message for r in caplog.records),
     }
-    assert result == expected
-    assert "default" in result["error"]["message"]
-    assert "senior" in result["error"]["message"]
+    expected = {"resolved": "a", "err": None, "warned": True}
+    assert actual == expected
 
 
 def test_load_jd_returns_no_resume_registered_error_when_empty():
@@ -1471,49 +1465,6 @@ def test_load_jd_returns_no_resume_registered_error_when_empty():
     }
     assert result == expected
     assert "onboard_user" in result["error"]["message"]
-
-
-def test_load_jd_passes_explicit_label_through_to_state():
-    """Explicit resume_label is stored in session state."""
-    from callback.apply_graph import get_apply_graph, make_config
-    from callback.server import load_jd
-
-    with patch("callback.server.list_resumes", return_value=["default", "senior"]):
-        result = json.loads(load_jd(jd_raw_text="Python engineer needed", resume_label="senior"))
-
-    session_id = result["session_id"]
-    graph = get_apply_graph()
-    snapshot = graph.get_state(make_config(session_id))
-    expected = {
-        "session_id": session_id,
-        "status": "ok",
-        "next_action": "extract_keywords",
-        "data": {"jd_text": "Python engineer needed", "extraction_protocol": EXTRACTION_PROTOCOL},
-        "workflow": _expected_load_jd_workflow(session_id),
-    }
-    assert result == expected
-    assert snapshot.values.get("resume_label") == "senior"
-
-
-def test_load_jd_returns_error_for_unknown_explicit_label():
-    """Explicit resume_label not in registry returns resume_not_found error."""
-    from callback.server import load_jd
-
-    with patch("callback.server.list_resumes", return_value=["default"]):
-        result = json.loads(load_jd(jd_raw_text="Python engineer needed", resume_label="missing"))
-
-    expected = {
-        "session_id": result["session_id"],
-        "status": "error",
-        "error": {
-            "stage": "load_jd",
-            "code": "resume_not_found",
-            "message": result["error"]["message"],
-            "retriable": False,
-        },
-    }
-    assert result == expected
-    assert "missing" in result["error"]["message"]
 
 
 # ============================================================================
