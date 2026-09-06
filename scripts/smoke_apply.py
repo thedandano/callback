@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Smoke test for the apply MCP handoff tools."""
+"""Smoke test for the apply MCP handoff tools.
+
+Pass a job URL as the first argument to exercise the fetcher.
+"""
 
 import contextlib
 import json
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -11,7 +15,9 @@ from pathlib import Path
 # Add current directory to path for running via uv
 sys.path.insert(0, os.getcwd())
 
+from callback.apply_nodes import _get_apps_dir
 from callback.jd_data import EXTRACTION_PROTOCOL
+from callback.jd_fetcher import MIN_MARKDOWN_CHARS
 from callback.repository.resumes import save_resume
 from callback.section_map import ContactInfo, ExperienceEntry, SectionMap, SkillsSection
 from callback.server import load_jd, submit_keywords, submit_tailor
@@ -27,7 +33,33 @@ JD_JSON = json.dumps(
 )
 
 
+def _load_phase(jd_url: str | None, jd_text: str, resume_label: str) -> dict:
+    """Run the load_jd phase against a live URL or pasted raw text."""
+    if jd_url:
+        load_result = load_jd(jd_url=jd_url, resume_label=resume_label)
+    else:
+        load_result = load_jd(jd_raw_text=jd_text, resume_label=resume_label)
+    loaded = json.loads(load_result)
+    assert loaded["status"] == "ok", f"load_jd failed: {loaded}"
+    assert loaded["next_action"] == "extract_keywords", f"unexpected: {loaded}"
+    assert loaded["data"]["extraction_protocol"] == EXTRACTION_PROTOCOL
+    loaded_text = loaded["data"]["jd_text"]
+    if jd_url:
+        assert len(loaded_text) > MIN_MARKDOWN_CHARS, f"fetched JD too short: {loaded_text!r}"
+        print(f"fetched {len(loaded_text)} chars from {jd_url}")
+    else:
+        assert loaded_text == jd_text, f"jd_text mismatch: {loaded_text!r}"
+    return loaded
+
+
 def main():
+    jd_url = sys.argv[1] if len(sys.argv) > 1 else None
+
+    # Redirect archive writes into a scratch dir so this script never touches
+    # the real ~/.local/share/callback/applications/.
+    apps_tmp = tempfile.mkdtemp(prefix="callback-smoke-")
+    os.environ["CALLBACK_APPS_DIR"] = apps_tmp
+
     # Create a temp resume file
     with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w") as f:
         f.write("Sample resume text: Python engineer with 5 years experience.")
@@ -52,32 +84,19 @@ def main():
         ],
     )
     WikiStore().write_page(resume_label, "sections.json", section_map.model_dump_json())
+    WikiStore().write_index(resume_label, "# Profile\n\n## Skills\n- Python\n- Go\n")
     registered_resume_path = save_resume(resume_label, resume_path)
 
     try:
         # Phase 1: load_jd
-        load_result = load_jd(
-            jd_raw_text=jd_text,
-            resume_label=resume_label,
-        )
-        loaded = json.loads(load_result)
+        loaded = _load_phase(jd_url, jd_text, resume_label)
         session_id = loaded["session_id"]
-        expected_loaded = {
-            "session_id": session_id,
-            "status": "ok",
-            "next_action": "extract_keywords",
-            "data": {
-                "jd_text": jd_text,
-                "extraction_protocol": EXTRACTION_PROTOCOL,
-            },
-        }
-        assert loaded == expected_loaded, f"load_jd mismatch: {loaded}"
 
         # Phase 2: submit_keywords
         submit_result = submit_keywords(session_id=session_id, jd_json=JD_JSON)
         submitted = json.loads(submit_result)
         assert submitted["status"] == "ok", f"submit_keywords failed: {submitted}"
-        assert submitted["next_action"] == "parse_initial", (
+        assert submitted["next_action"] == "fetch_wiki_then_tailor", (
             f"unexpected next_action: {submitted['next_action']}"
         )
         assert submitted["data"]["keywords"]["required"] == ["Python", "Kubernetes", "Go"]
@@ -102,8 +121,7 @@ def main():
         assert "total" in tailored["data"]["score_final"], "score_final missing total"
 
         # Phase 4: read archive JSON for score delta
-        apps_dir = Path.home() / ".local" / "share" / "callback" / "applications"
-        archive_path = apps_dir / f"{session_id}.json"
+        archive_path = _get_apps_dir() / f"{session_id}.json"
         assert archive_path.exists(), f"archive not written: {archive_path}"
         archive = json.loads(archive_path.read_text())
         delta = archive["scores"]["delta"]
@@ -129,12 +147,16 @@ def main():
         # Cleanup registered resume from registry (best-effort)
         with contextlib.suppress(Exception):
             Path(registered_resume_path).unlink(missing_ok=True)
-        # Cleanup sections.json from WikiStore (best-effort)
+        # Cleanup sections.json and index.md from WikiStore (best-effort)
         try:
-            wiki_page = WikiStore().wiki_root(resume_label) / "sections.json"
-            wiki_page.unlink(missing_ok=True)
+            wiki_root = WikiStore().wiki_root(resume_label)
+            (wiki_root / "sections.json").unlink(missing_ok=True)
+            (wiki_root / "index.md").unlink(missing_ok=True)
+            with contextlib.suppress(OSError):
+                wiki_root.rmdir()
         except Exception:
             pass
+        shutil.rmtree(apps_tmp, ignore_errors=True)
 
 
 if __name__ == "__main__":
