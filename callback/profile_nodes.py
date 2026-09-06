@@ -54,8 +54,11 @@ def _resume_skills(label: str) -> list[str]:
     if not sections_json:
         return []
     try:
+        # ValidationError (invalid JSON or schema) is a ValueError subclass, so
+        # catching ValueError alone covers both failure modes.
         section_map = SectionMap.model_validate_json(sections_json)
-    except Exception:
+    except ValueError as exc:
+        logger.warning("resume skills unavailable for %s: %s: %s", label, type(exc).__name__, exc)
         return []
     return section_map.skills.all_skills()
 

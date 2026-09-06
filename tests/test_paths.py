@@ -1,5 +1,8 @@
 import json
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 from callback import paths
 
@@ -68,6 +71,21 @@ def test_write_text_atomic_creates_parents_and_leaves_no_temp_file(tmp_path: Pat
         "entries": sorted(p.name for p in target.parent.iterdir()),
     }
     expected = {"content": "hello\n", "entries": ["file.txt"]}
+    assert actual == expected
+
+
+def test_write_text_atomic_cleans_up_temp_file_on_write_failure(tmp_path: Path):
+    target = tmp_path / "nested" / "file.txt"
+    bad_content: Any = 42
+    with pytest.raises(TypeError):
+        paths.write_text_atomic(target, bad_content)
+    actual = {
+        "target_exists": target.exists(),
+        "leftover_entries": (
+            sorted(p.name for p in target.parent.iterdir()) if target.parent.exists() else []
+        ),
+    }
+    expected = {"target_exists": False, "leftover_entries": []}
     assert actual == expected
 
 

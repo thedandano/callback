@@ -49,8 +49,12 @@ def write_text_atomic(path: Path, content: str) -> None:
     """Write via a sibling temp file and rename, so readers never see a partial file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as tmp:
-        tmp.write(content)
         tmp_path = Path(tmp.name)
+        try:
+            tmp.write(content)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
     tmp_path.replace(path)
 
 

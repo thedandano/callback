@@ -6,6 +6,7 @@ import pytest
 
 from callback.profilecompiler import (
     ProfileMissingError,
+    _token_sort_ratio,
     compile_profile,
     load_compiled_profile,
     save_compiled_profile,
@@ -203,8 +204,6 @@ class TestProfileMissingError:
 
 class TestTokenSortRatio:
     def test_order_insensitive_and_case_insensitive(self):
-        from callback.profilecompiler import _token_sort_ratio
-
         actual = {
             "reordered": _token_sort_ratio("REST APIs", "apis rest"),
             "unrelated": _token_sort_ratio("Kubernetes", "k8s"),

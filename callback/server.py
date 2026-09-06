@@ -205,7 +205,10 @@ def _detect_orphaned_required(
     exact match; wiki_index uses case-insensitive substring search (the index is
     unstructured markdown text).
     """
-    all_skills = SkillsSection.model_validate(sections.get("skills") or {}).all_skills()
+    skills = sections.get("skills") or {}
+    all_skills = SkillsSection(
+        flat=skills.get("flat") or [], categorized=skills.get("categorized") or {}
+    ).all_skills()
     all_skills_lower = [s.lower() for s in all_skills]
     orphans: list[str] = []
     for kw in required_missing:

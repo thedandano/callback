@@ -1316,6 +1316,25 @@ class TestOrphanDetection:
 
         assert result == []
 
+    def test_none_skills_values_tolerated_like_empty_section(self):
+        from callback.server import _detect_orphaned_required
+
+        wiki_index = "# Stories\n\n## Docker\n- Built containers\n"
+        required_missing = ["Python"]
+
+        actual = {
+            "none_values": _detect_orphaned_required(
+                required_missing,
+                {"skills": {"flat": None, "categorized": None}},
+                wiki_index,
+            ),
+            "empty_section": _detect_orphaned_required(
+                required_missing, {"skills": {}}, wiki_index
+            ),
+        }
+        expected = {"none_values": [], "empty_section": []}
+        assert actual == expected
+
 
 _NO_COVERAGE_JD_JSON = json.dumps(
     {
@@ -1428,6 +1447,25 @@ def test_load_jd_auto_selects_single_registered_resume():
     }
     assert result == expected
     assert snapshot.values.get("resume_label") == "default"
+
+
+def test_load_jd_stores_first_registered_resume_when_several():
+    """Two registered resumes without a label stores the first one on the graph state."""
+    from callback.apply_graph import get_apply_graph, make_config
+    from callback.server import load_jd
+
+    with patch("callback.server.list_resumes", return_value=["a", "b"]):
+        result = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+
+    session_id = result["session_id"]
+    graph = get_apply_graph()
+    snapshot = graph.get_state(make_config(session_id))
+    actual = {
+        "status": result["status"],
+        "resume_label": snapshot.values.get("resume_label"),
+    }
+    expected = {"status": "ok", "resume_label": "a"}
+    assert actual == expected
 
 
 def test_load_jd_uses_first_registered_resume_and_warns_when_several(caplog):

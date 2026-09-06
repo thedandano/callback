@@ -10,6 +10,7 @@ import callback.extractor as ext
 import callback.repository.resumes as resumes_module
 from callback import paths
 from callback.profile_nodes import (
+    _resume_skills,
     check_orphans,
     check_profile,
     compile_profile,
@@ -197,6 +198,31 @@ class TestCompileProfile:
             "skill_coverage_warnings": [],
             "skills_index": sorted(["Python", "Docker"], key=str.lower),
         }
+
+
+class TestResumeSkills:
+    def test_invalid_sections_json_returns_empty_list_and_logs_warning(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
+
+        page_dir = tmp_path / "profile-wiki" / "jane_doe"
+        page_dir.mkdir(parents=True)
+        (page_dir / "sections.json").write_text("{not valid json", encoding="utf-8")
+
+        with caplog.at_level("WARNING"):
+            result = _resume_skills("jane_doe")
+
+        actual = {
+            "result": result,
+            "warning_logged": any(
+                record.levelname == "WARNING" and "jane_doe" in record.getMessage()
+                for record in caplog.records
+            ),
+        }
+        expected = {"result": [], "warning_logged": True}
+        assert actual == expected
 
 
 class TestCheckOrphans:
