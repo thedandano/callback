@@ -4,12 +4,11 @@ from callback.plugin_install import PluginInstallError, install, resolve_targets
 
 
 def test_resolve_both_returns_claude_and_codex():
-    keys = [t.key for t in resolve_targets("both")]
-    assert keys == ["claude", "codex"]
+    assert resolve_targets("both") == ["claude", "codex"]
 
 
 def test_resolve_single_target():
-    assert [t.key for t in resolve_targets("claude")] == ["claude"]
+    assert resolve_targets("claude") == ["claude"]
 
 
 def test_resolve_unknown_raises():

@@ -70,24 +70,22 @@ def _lint_coverage(stories: list[CreatedStory]) -> list[str]:
     return [w for story in stories if (w := _lint_story_coverage(story)) is not None]
 
 
-class ProfileCompiler:
-    def compile(
-        self,
-        stories: list[CreatedStory],
-        host_tags: list[str],
-    ) -> tuple[CompiledProfile, list[str]]:
-        skills_index = _build_skills_index(stories, host_tags)
-        covered = _covered_skills_set(stories)
-        orphaned = _detect_orphans(host_tags, covered)
-        warnings = _lint_coverage(stories)
-        profile = CompiledProfile(
-            schema_version=_SCHEMA_VERSION,
-            skills_index=skills_index,
-            stories=list(stories),
-            orphaned_skills=orphaned,
-            compiled_at=datetime.now(UTC).isoformat(),
-        )
-        return profile, warnings
+def compile_profile(
+    stories: list[CreatedStory],
+    host_tags: list[str],
+) -> tuple[CompiledProfile, list[str]]:
+    skills_index = _build_skills_index(stories, host_tags)
+    covered = _covered_skills_set(stories)
+    orphaned = _detect_orphans(host_tags, covered)
+    warnings = _lint_coverage(stories)
+    profile = CompiledProfile(
+        schema_version=_SCHEMA_VERSION,
+        skills_index=skills_index,
+        stories=list(stories),
+        orphaned_skills=orphaned,
+        compiled_at=datetime.now(UTC).isoformat(),
+    )
+    return profile, warnings
 
 
 def save_compiled_profile(profile: CompiledProfile, base_dir: Path | None = None) -> None:
