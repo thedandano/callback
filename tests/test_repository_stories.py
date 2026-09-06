@@ -85,6 +85,32 @@ def test_story_from_page_rejects_page_without_type():
     assert "type" in str(exc_info.value)
 
 
+def test_story_from_page_rejects_bad_tags_before_logging_missing_labels(caplog):
+    caplog.set_level(logging.WARNING, logger="callback.repository.stories")
+    page = "---\ntype: story\ntags: notalist\n---\n# No paragraphs at all\n"
+    with pytest.raises(WikiPageError, match="tags must be a list"):
+        stories.story_from_page("experience/story-001.md", page)
+    assert not any("no '**" in r.message for r in caplog.records)
+
+
+def test_body_paragraphs_duplicate_label_keeps_last_and_warns(caplog):
+    caplog.set_level(logging.WARNING, logger="callback.repository.stories")
+    page = stories.story_to_page(CreatedStory(id="story-001", **_FIELDS), _TS).replace(
+        "**Impact:** Deploys daily.\n",
+        "**Impact:** Deploys daily.\n\n**Impact:** Overwritten by a second paragraph.\n",
+    )
+    story = stories.story_from_page("experience/story-001.md", page)
+    actual = {
+        "impact": story.impact,
+        "warned": any("'**Impact:**' appears twice" in r.message for r in caplog.records),
+    }
+    expected = {
+        "impact": "Overwritten by a second paragraph.",
+        "warned": True,
+    }
+    assert actual == expected
+
+
 def test_save_story_assigns_next_id_and_writes_one_file(wiki: Path):
     saved = stories.save_story("primary", CreatedStory(id="", **_FIELDS))
     files = sorted(p.name for p in (wiki / "primary" / "experience").iterdir())

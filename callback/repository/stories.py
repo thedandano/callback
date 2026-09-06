@@ -57,7 +57,11 @@ def story_to_page(story: CreatedStory, timestamp: str) -> str:
 
 
 def _body_paragraphs(page_id: str, body: str) -> dict[str, str]:
-    found = {label: text for label, text in _PARAGRAPH_RE.findall(body)}
+    found: dict[str, str] = {}
+    for label, text in _PARAGRAPH_RE.findall(body):
+        if label in found:
+            logger.warning("%s: '**%s:**' appears twice; keeping the last", page_id, label)
+        found[label] = text
     for label in _LABELS:
         if label not in found:
             logger.warning("%s: no '**%s:**' paragraph in body; stored as empty", page_id, label)
@@ -84,11 +88,12 @@ def story_from_page(page_id: str, content: str) -> CreatedStory:
     """Rebuild a CreatedStory from a page. Raises WikiPageError when it is not a story."""
     meta, body = split_frontmatter(content)
     _story_type_from_meta(page_id, meta)
+    skills = _tags_from_meta(meta)
     paragraphs = _body_paragraphs(page_id, body)
     return CreatedStory(
         id=_story_id_from_page_id(page_id),
         primary_skill=str(meta.get("title", "")),
-        skills=_tags_from_meta(meta),
+        skills=skills,
         story_type=str(meta.get("story_type", "")),
         job_title=str(meta.get("job_title", "")),
         situation=paragraphs["Situation"],

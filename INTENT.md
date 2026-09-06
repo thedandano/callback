@@ -105,8 +105,9 @@ Known weight (works, but costs more than it earns):
 Ordered by dependency and payoff. Each milestone is one PR to `main` and leaves the
 suite green. Estimates are for one person.
 
-Order: M1 → M2 → M3 → M4 → M2.5 (done) → M6 → M7 → M5. Evals come before the fetcher swap and
-the token diet so both are measured against something.
+Order: M1 → M2 → M3 → M4 → M2.5 (done) → M6 → M7 → M5. M6 (evals) was planned before M3; M3 and
+M4 shipped first because the fetcher swap was blocking daily use. M7 still waits for M6 so the
+token diet is measured against something.
 
 ### M1 — Close the trust boundary (half a day)
 

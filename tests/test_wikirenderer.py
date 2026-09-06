@@ -1,4 +1,4 @@
-"""Tests for callback.wikirenderer — render_experience_page and render_index."""
+"""Tests for callback.wikirenderer — render_index."""
 
 from pathlib import Path
 

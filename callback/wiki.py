@@ -26,6 +26,7 @@ def split_frontmatter(content: str) -> tuple[dict, str]:
 
     A page without a leading fence has no frontmatter: returns ({}, content).
     """
+    content = content.lstrip("﻿").replace("\r\n", "\n")
     if not content.startswith(_FENCE):
         return {}, content
     end = content.find("\n" + _FENCE, len(_FENCE) - 1)

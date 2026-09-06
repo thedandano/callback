@@ -151,6 +151,12 @@ def test_split_frontmatter_rejects_non_mapping_yaml():
     assert "mapping" in str(exc_info.value)
 
 
+def test_split_frontmatter_normalizes_crlf_before_the_fence_test():
+    lf_page = "---\ntype: project\ntags:\n- Python\n---\n# Title\n\n**Situation:** x\n"
+    crlf_page = lf_page.replace("\n", "\r\n")
+    assert split_frontmatter(crlf_page) == split_frontmatter(lf_page)
+
+
 def test_join_then_split_round_trips_and_keeps_key_order():
     meta = {"type": "story", "title": "REST APIs", "tags": ["Node.js", "C++"], "n": 3}
     page = join_frontmatter(meta, "# REST APIs\n\nbody\n")
