@@ -32,6 +32,7 @@ from pydantic import ValidationError
 
 import callback.scorer as scorer
 import callback.version_check as version_check
+from callback import paths
 from callback.apply_graph import (
     FINALIZE_NODE,
     KEYWORDS_ACCEPT_NODE,
@@ -46,7 +47,7 @@ from callback.apply_graph import (
 from callback.apply_graph import (
     make_config as make_apply_config,
 )
-from callback.apply_nodes import _detect_uncovered_skills, _get_apps_dir
+from callback.apply_nodes import _detect_uncovered_skills
 from callback.jd_data import EXTRACTION_PROTOCOL, JDDataError, parse_jd_json
 from callback.jd_fetcher import JDFetchError
 from callback.observability import invoke_graph_without_native_tracing, trace_tool
@@ -810,7 +811,7 @@ def _complete_workflow() -> dict:
 
 
 def _submit_tailor_artifacts(final: dict, session_id: str) -> dict:
-    archive_path = str(_get_apps_dir() / f"{session_id}.json")
+    archive_path = str(paths.apps_dir() / f"{session_id}.json")
     return {
         "pdf_path": final.get("pdf_path"),
         "archive_path": archive_path,

@@ -32,7 +32,7 @@ def _fake_graph(state_values: dict):
 
 def _isolate_profile(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-    monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
 
 
 def _resume_txt(tmp_path: Path) -> Path:

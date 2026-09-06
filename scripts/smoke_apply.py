@@ -15,7 +15,7 @@ from pathlib import Path
 # Add current directory to path for running via uv
 sys.path.insert(0, os.getcwd())
 
-from callback.apply_nodes import _get_apps_dir
+from callback import paths
 from callback.jd_data import EXTRACTION_PROTOCOL
 from callback.jd_fetcher import MIN_MARKDOWN_CHARS
 from callback.repository.resumes import save_resume
@@ -56,7 +56,7 @@ def main():
     jd_url = sys.argv[1] if len(sys.argv) > 1 else None
 
     # Redirect archive writes into a scratch dir so this script never touches
-    # the real ~/.local/share/callback/applications/.
+    # the real applications archive (see callback.paths.apps_dir).
     apps_tmp = tempfile.mkdtemp(prefix="callback-smoke-")
     os.environ["CALLBACK_APPS_DIR"] = apps_tmp
 
@@ -121,7 +121,7 @@ def main():
         assert "total" in tailored["data"]["score_final"], "score_final missing total"
 
         # Phase 4: read archive JSON for score delta
-        archive_path = _get_apps_dir() / f"{session_id}.json"
+        archive_path = paths.apps_dir() / f"{session_id}.json"
         assert archive_path.exists(), f"archive not written: {archive_path}"
         archive = json.loads(archive_path.read_text())
         delta = archive["scores"]["delta"]

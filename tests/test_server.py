@@ -661,7 +661,7 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
     from callback.wiki import WikiStore
 
     resume_label = "project_guidance_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -730,7 +730,7 @@ def test_submit_keywords_returns_ranked_project_candidates(tmp_path, monkeypatch
     from callback.wiki import WikiStore
 
     resume_label = "project_candidate_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -850,7 +850,7 @@ def test_submit_keywords_recommends_project_append_and_trim_candidates(tmp_path,
     from callback.wiki import WikiStore
 
     resume_label = "project_append_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -944,7 +944,7 @@ def test_submit_keywords_recommends_project_replace_when_two_visible_projects(
     from callback.wiki import WikiStore
 
     resume_label = "project_replace_layout_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -1029,7 +1029,7 @@ def test_submit_keywords_orphaned_required_routes_to_create_story(tmp_path, monk
     from callback.wiki import WikiStore
 
     resume_label = "orphan_workflow_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     resume_path = tmp_path / "resume.txt"
     resume_path.write_text(
         "Jane Dev\nExperience\nBuilt backend APIs\nEducation\nBS Computer Science\n",
@@ -1082,7 +1082,7 @@ def test_get_wiki_pages_returns_submit_tailor_workflow(tmp_path, monkeypatch):
     from callback.wiki import WikiStore
 
     resume_label = "wiki_pages_workflow_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -1130,7 +1130,7 @@ def test_get_wiki_pages_rejects_page_id_outside_wiki_root(tmp_path, monkeypatch)
     from callback.wiki import WikiStore
 
     resume_label = "wiki_pages_traversal_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -1172,7 +1172,7 @@ def test_get_wiki_pages_rejects_embedded_nul(tmp_path, monkeypatch):
     from callback.wiki import WikiStore
 
     resume_label = "wiki_pages_nul_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -1212,7 +1212,7 @@ def test_rank_project_candidates_skips_invalid_index_links(tmp_path, monkeypatch
     from callback.wiki import WikiStore
 
     resume_label = "invalid_link_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     store = WikiStore()
     store.write_page(
         resume_label,
@@ -1721,7 +1721,7 @@ def test_onboard_user_returns_envelope_when_extractor_raises(tmp_path, monkeypat
     from callback.profile_graph import build_profile_graph
 
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "profile-wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
     db_path = tmp_path / "profile-sessions.db"
     monkeypatch.setattr(server, "get_profile_graph", lambda: build_profile_graph(db_path=db_path))
 

@@ -16,7 +16,6 @@ Implements the 10 nodes of the linear apply pipeline:
 import asyncio
 import json
 import logging
-import os
 import re
 import unicodedata
 from datetime import UTC, datetime
@@ -26,7 +25,7 @@ from time import perf_counter
 from pydantic import ValidationError
 
 from callback import extractor as resume_extractor
-from callback import scorer
+from callback import paths, scorer
 from callback.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError, fetch_url_to_markdown
 from callback.observability import trace_node
 from callback.render import render_resume
@@ -39,14 +38,6 @@ logger = logging.getLogger(__name__)
 jd_fetcher_logger = logging.getLogger("callback.jd_fetcher")
 _DASH_RE = re.compile(r"[-‐–—\u00ad\u2011\u200b]")
 _WS_RE = re.compile(r"\s+")
-
-
-# Module-level constant for applications directory, overridable by env var
-def _get_apps_dir() -> Path:
-    env_path = os.getenv("CALLBACK_APPS_DIR")
-    if env_path:
-        return Path(env_path)
-    return Path.home() / ".local" / "share" / "callback" / "applications"
 
 
 def _resume_filename_part(value: str | None, fallback: str) -> str:
@@ -511,7 +502,7 @@ def render(state: ApplyState) -> dict:
     if state.tailored is None:
         return {"error": "render: state.tailored is None — tailor node must run first"}
 
-    base_dir = Path(state.output_dir) if state.output_dir else _get_apps_dir()
+    base_dir = Path(state.output_dir) if state.output_dir else paths.apps_dir()
     try:
         base_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
@@ -694,7 +685,7 @@ def finalize(state: ApplyState) -> dict:
     """
     _log_enter("finalize", state)
 
-    apps_dir = _get_apps_dir()
+    apps_dir = paths.apps_dir()
     try:
         apps_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:

@@ -1,13 +1,12 @@
 """Tests for the profile graph — structure, routing, and interrupt behaviour.
 
-Isolation: XDG_DATA_HOME + wiki_module.BASE_DIR patched per test so nodes
+Isolation: XDG_DATA_HOME + callback.paths.wiki_dir patched per test so nodes
 write to tmp_path rather than ~/.local/share/callback.
 """
 
 from datetime import UTC, datetime
 from pathlib import Path
 
-import callback.wiki as wiki_module
 from callback.profile_graph import _route_check_profile, build_profile_graph, make_config
 from callback.profilecompiler import save_compiled_profile
 from callback.repository.resumes import list_resumes, save_resume
@@ -73,7 +72,7 @@ class TestProfileGraphStructure:
 class TestCheckProfileRouter:
     def test_routes_to_onboard_when_no_profile_on_disk(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
         graph = _tmp_graph(tmp_path)
         config = make_config("s-router-1")
 
@@ -83,7 +82,7 @@ class TestCheckProfileRouter:
 
     def test_reonboard_with_existing_profile_replaces_resume(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
         _save_profile_with_resumes(tmp_path)
         new_resume = tmp_path / "new.txt"
         new_resume.write_text("John Roe\njohn@example.com\n\nSkills\nRust\n", encoding="utf-8")
@@ -106,7 +105,7 @@ class TestCheckProfileRouter:
 
     def test_reonboard_with_orphans_does_not_enter_create_story(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
         _save_profile_with_resumes(tmp_path, orphans=["Rust"])
         new_resume = _resume_txt(tmp_path)
         graph = _tmp_graph(tmp_path)
@@ -144,7 +143,7 @@ class TestCheckProfileRouter:
 class TestCheckOrphansRouter:
     def test_routes_to_end_when_no_orphans_in_profile(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
         _save_profile_with_resumes(tmp_path, orphans=[])
         graph = _tmp_graph(tmp_path)
         config = make_config("s-orphan-1")
@@ -161,7 +160,7 @@ class TestCheckOrphansRouter:
         # is the pending interrupt, not a current_story_target set by a node that
         # hasn't run yet.
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
         _save_profile_with_resumes(tmp_path)
         graph = _tmp_graph(tmp_path)
         config = make_config("s-orphan-2")
@@ -179,7 +178,7 @@ class TestCheckOrphansRouter:
 class TestInterruptAfterOnboard:
     def test_graph_pauses_after_onboard_on_first_run(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
         graph = _tmp_graph(tmp_path)
         config = make_config("s-interrupt-1")
 
@@ -190,7 +189,7 @@ class TestInterruptAfterOnboard:
 
     def test_graph_resumes_and_reaches_end_after_onboard(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
         graph = _tmp_graph(tmp_path)
         config = make_config("s-interrupt-2")
 
@@ -208,7 +207,7 @@ class TestInterruptAfterOnboard:
 class TestCompileFlowsIntoCheckOrphans:
     def test_compile_profile_runs_through_to_check_orphans(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
         _save_profile_with_resumes(tmp_path)
         graph = _tmp_graph(tmp_path)
         config = make_config("s-cp-1")
@@ -223,7 +222,7 @@ class TestCompileFlowsIntoCheckOrphans:
 
     def test_orphans_pause_before_create_story(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
         _save_profile_with_resumes(tmp_path)
         graph = _tmp_graph(tmp_path)
         config = make_config("s-cp-2")
@@ -241,7 +240,7 @@ class TestCompileFlowsIntoCheckOrphans:
 class TestCreateStoryInterrupt:
     def test_pending_story_on_new_thread_pauses_before_create_story(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
         _save_profile_with_resumes(tmp_path)
         graph = _tmp_graph(tmp_path)
         config = make_config("s-create-1")
@@ -263,7 +262,7 @@ class TestCreateStoryInterrupt:
         self, tmp_path, monkeypatch
     ):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
         _save_profile_with_resumes(tmp_path)
         graph = _tmp_graph(tmp_path)
         config = make_config("s-create-2")

@@ -1,11 +1,10 @@
 import pytest
 
-import callback.wiki as wiki_module
 from callback.wiki import WikiPageIdError, WikiStore, company_slug
 
 
 def store(tmp_path, monkeypatch):
-    monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path)
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path)
     return WikiStore()
 
 

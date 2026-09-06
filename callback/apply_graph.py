@@ -9,7 +9,8 @@ Finish point: finalize
 Interrupts after jd_fetch and keywords_accept so the host can extract and
 submit JDData before later milestones parse and score resumes.
 
-State is persisted in SQLite checkpointer at ~/.local/share/callback/apply-sessions.db.
+State is persisted in SQLite checkpointer at the path returned by
+callback.paths.apply_db_path().
 """
 
 import functools
@@ -20,6 +21,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, StateGraph
 
+from callback import paths
 from callback.apply_nodes import (
     finalize,
     jd_fetch,
@@ -34,9 +36,6 @@ from callback.apply_nodes import (
 )
 from callback.observability import build_graph_config
 from callback.state import ApplyState
-
-DB_PATH = Path.home() / ".local" / "share" / "callback" / "apply-sessions.db"
-
 
 JD_FETCH_NODE = "jd_fetch"
 KEYWORDS_ACCEPT_NODE = "keywords_accept"
@@ -84,7 +83,7 @@ def make_config(
     )
 
 
-def build_apply_graph(db_path: Path = DB_PATH):
+def build_apply_graph(db_path: Path | None = None):
     """Build the apply graph with checkpointing and host handoff interrupts.
 
     Constructs a linear state graph: jd_fetch → keywords_accept →
@@ -93,12 +92,13 @@ def build_apply_graph(db_path: Path = DB_PATH):
 
     Args:
         db_path: Path to the SQLite checkpointer DB.
-                 Defaults to ~/.local/share/callback/apply-sessions.db
+                 Defaults to callback.paths.apply_db_path()
 
     Returns:
         Compiled LangGraph StateGraph for ApplyState. The graph interrupts after
         jd_fetch and keywords_accept for host-owned keyword extraction.
     """
+    db_path = db_path if db_path is not None else paths.apply_db_path()
     # Initialize checkpointer with SQLite backend
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path), check_same_thread=False)

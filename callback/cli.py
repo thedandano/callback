@@ -10,7 +10,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 import tomllib
 from collections.abc import Callable, Mapping, Sequence
@@ -22,6 +21,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from callback import paths
 from callback.observability import (
     DEFAULT_LANGSMITH_ENDPOINT,
     DEFAULT_LANGSMITH_PROJECT,
@@ -44,8 +44,6 @@ PROJECT_LOG_SERVER_ARGS = ["serve", "--project-logs"]
 DEFAULT_LOG_PATH = Path("~/.local/state/callback/server.log").expanduser()
 DEFAULT_CLAUDE_CONFIG = Path("~/.claude.json").expanduser()
 DEFAULT_CODEX_CONFIG = Path("~/.codex/config.toml").expanduser()
-_DATA_DIR = Path("~/.local/share/callback").expanduser()
-_STATE_DIR = Path("~/.local/state/callback").expanduser()
 ENV_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 SECRET_ENV_MARKERS = ("KEY", "TOKEN", "SECRET", "PASSWORD")
 LANGSMITH_ENV_DEFAULTS = {
@@ -120,14 +118,6 @@ def _write_startup_log_event(log_path: Path, line: str) -> None:
         handle.write(line + "\n")
 
 
-def _write_text_atomic(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as tmp:
-        tmp.write(content)
-        tmp_path = Path(tmp.name)
-    tmp_path.replace(path)
-
-
 def _read_json_config(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -158,7 +148,7 @@ def configure_claude(path: Path, command: str | None = None) -> None:
         raise ConfigError(f'{path} key "mcpServers" must be an object')
     env = _coerce_env(servers.get(SERVER_NAME))
     servers[SERVER_NAME] = mcp_server_config(command, env=env)
-    _write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
+    paths.write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
 
 
 def _read_toml_config(path: Path) -> dict[str, Any]:
@@ -227,7 +217,7 @@ def configure_codex(path: Path, command: str | None = None) -> None:
         raise ConfigError(f'{path} key "mcp_servers" must be a table')
     env = _coerce_env(servers.get(SERVER_NAME))
     servers[SERVER_NAME] = mcp_server_config(command, env=env)
-    _write_text_atomic(path, _dump_toml(config))
+    paths.write_text_atomic(path, _dump_toml(config))
 
 
 def _target_names(target: str) -> tuple[str, ...]:
@@ -313,28 +303,28 @@ def _set_claude_env(path: Path, env_updates: Mapping[str, str]) -> None:
     config = _read_json_config(path)
     env = _ensure_claude_server(config, path)
     env.update(env_updates)
-    _write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
+    paths.write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
 
 
 def _set_codex_env(path: Path, env_updates: Mapping[str, str]) -> None:
     config = _read_toml_config(path)
     env = _ensure_codex_server(config, path)
     env.update(env_updates)
-    _write_text_atomic(path, _dump_toml(config))
+    paths.write_text_atomic(path, _dump_toml(config))
 
 
 def _unset_claude_env(path: Path, key: str) -> None:
     config = _read_json_config(path)
     env = _ensure_claude_server(config, path)
     env.pop(key, None)
-    _write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
+    paths.write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
 
 
 def _unset_codex_env(path: Path, key: str) -> None:
     config = _read_toml_config(path)
     env = _ensure_codex_server(config, path)
     env.pop(key, None)
-    _write_text_atomic(path, _dump_toml(config))
+    paths.write_text_atomic(path, _dump_toml(config))
 
 
 def _read_claude_env(path: Path) -> dict[str, str]:
@@ -574,7 +564,7 @@ def _remove_server_from_claude(path: Path) -> None:
     servers = config.get("mcpServers")
     if isinstance(servers, dict):
         servers.pop(SERVER_NAME, None)
-    _write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
+    paths.write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
 
 
 def _remove_server_from_codex(path: Path) -> None:
@@ -584,7 +574,7 @@ def _remove_server_from_codex(path: Path) -> None:
     servers = config.get("mcp_servers")
     if isinstance(servers, dict):
         servers.pop(SERVER_NAME, None)
-    _write_text_atomic(path, _dump_toml(config))
+    paths.write_text_atomic(path, _dump_toml(config))
 
 
 @app.command()
@@ -1001,7 +991,7 @@ def uninstall(
     if purge:
         import shutil
 
-        for directory in (_DATA_DIR, _STATE_DIR):
+        for directory in (paths.data_dir(), paths.state_dir()):
             if directory.exists():
                 shutil.rmtree(directory)
                 console.print(f"Deleted: {directory}")

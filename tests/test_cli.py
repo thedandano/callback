@@ -1184,8 +1184,8 @@ def test_uninstall_without_purge_preserves_data_dir(tmp_path):
 
     state_dir = tmp_path / "state"
     with (
-        patch("callback.cli._DATA_DIR", data_dir),
-        patch("callback.cli._STATE_DIR", state_dir),
+        patch("callback.paths.data_dir", lambda: data_dir),
+        patch("callback.paths.state_dir", lambda: state_dir),
         patch("callback.cli._remove_server_from_claude"),
         patch("callback.cli._remove_server_from_codex"),
     ):
@@ -1202,8 +1202,8 @@ def test_uninstall_purge_deletes_data_and_state_dirs(tmp_path):
     state_dir.mkdir()
 
     with (
-        patch("callback.cli._DATA_DIR", data_dir),
-        patch("callback.cli._STATE_DIR", state_dir),
+        patch("callback.paths.data_dir", lambda: data_dir),
+        patch("callback.paths.state_dir", lambda: state_dir),
         patch("callback.cli._remove_server_from_claude"),
         patch("callback.cli._remove_server_from_codex"),
     ):
@@ -1219,8 +1219,8 @@ def test_uninstall_purge_skips_absent_dirs(tmp_path):
     state_dir = tmp_path / "state"
 
     with (
-        patch("callback.cli._DATA_DIR", data_dir),
-        patch("callback.cli._STATE_DIR", state_dir),
+        patch("callback.paths.data_dir", lambda: data_dir),
+        patch("callback.paths.state_dir", lambda: state_dir),
         patch("callback.cli._remove_server_from_claude"),
         patch("callback.cli._remove_server_from_codex"),
     ):

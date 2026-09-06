@@ -1,6 +1,7 @@
-import os
 import shutil
 from pathlib import Path
+
+from callback import paths
 
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".text", ".markdown"}
 
@@ -9,15 +10,9 @@ class ResumeNotFoundError(Exception):
     pass
 
 
-def data_dir() -> Path:
-    if "XDG_DATA_HOME" in os.environ:
-        return Path(os.environ["XDG_DATA_HOME"]) / "callback" / "inputs"
-    return Path.home() / ".local" / "share" / "callback" / "inputs"
-
-
 def save_resume(label: str, path: str) -> str:
     source = Path(path)
-    dest_dir = data_dir()
+    dest_dir = paths.inputs_dir()
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     dest_path = dest_dir / f"{label}{source.suffix}"
@@ -34,7 +29,7 @@ def replace_resume(label: str, path: str) -> str:
     working resume.
     """
     source = Path(path)
-    dest_dir = data_dir()
+    dest_dir = paths.inputs_dir()
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     staged = dest_dir / f"{label}{source.suffix}.staging"
@@ -51,7 +46,7 @@ def replace_resume(label: str, path: str) -> str:
 
 
 def get_resume(label: str) -> str:
-    dest_dir = data_dir()
+    dest_dir = paths.inputs_dir()
     if not dest_dir.exists():
         raise ResumeNotFoundError(f"Resume '{label}' not found")
 
@@ -64,7 +59,7 @@ def get_resume(label: str) -> str:
 
 
 def list_resumes() -> list[str]:
-    dest_dir = data_dir()
+    dest_dir = paths.inputs_dir()
     if not dest_dir.exists():
         return []
 
@@ -76,7 +71,7 @@ def list_resumes() -> list[str]:
 
 
 def clear_resumes() -> None:
-    dest_dir = data_dir()
+    dest_dir = paths.inputs_dir()
     if not dest_dir.exists():
         return
     for ext in SUPPORTED_EXTENSIONS:

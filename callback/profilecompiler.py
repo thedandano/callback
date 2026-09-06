@@ -1,10 +1,10 @@
 import json
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 
 from rapidfuzz import fuzz
 
+from callback import paths
 from callback.state import CompiledProfile, CreatedStory, OrphanedSkill
 
 _SCHEMA_VERSION = "1"
@@ -14,12 +14,6 @@ _FUZZY_THRESHOLD = 80
 
 class ProfileMissingError(Exception):
     pass
-
-
-def _data_dir() -> Path:
-    if xdg_data_home := os.environ.get("XDG_DATA_HOME"):
-        return Path(xdg_data_home) / "callback"
-    return Path.home() / ".local" / "share" / "callback"
 
 
 def _insert_skills(seen: dict[str, str], skills: list[str]) -> None:
@@ -91,17 +85,12 @@ class ProfileCompiler:
 
 
 def save_compiled_profile(profile: CompiledProfile, base_dir: Path | None = None) -> None:
-    target_dir = base_dir if base_dir is not None else _data_dir()
-    target_dir.mkdir(parents=True, exist_ok=True)
-    file_path = target_dir / _COMPILED_PROFILE_FILE
-    tmp_path = file_path.with_suffix(".json.tmp")
-    with open(tmp_path, "w") as f:
-        json.dump(profile.model_dump(), f)
-    os.replace(tmp_path, file_path)
+    target_dir = base_dir if base_dir is not None else paths.data_dir()
+    paths.write_json_atomic(target_dir / _COMPILED_PROFILE_FILE, profile.model_dump())
 
 
 def load_compiled_profile(base_dir: Path | None = None) -> CompiledProfile:
-    target_dir = base_dir if base_dir is not None else _data_dir()
+    target_dir = base_dir if base_dir is not None else paths.data_dir()
     file_path = target_dir / _COMPILED_PROFILE_FILE
     if not file_path.exists():
         raise ProfileMissingError(f"No compiled profile at {file_path}")

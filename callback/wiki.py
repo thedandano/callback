@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-BASE_DIR = Path.home() / ".local" / "share" / "callback" / "profile-wiki"
+from callback import paths
 
 
 class WikiPageIdError(ValueError):
@@ -24,7 +24,7 @@ def company_slug(company_name: str) -> str:
 
 class WikiStore:
     def wiki_root(self, resume_label: str) -> Path:
-        return BASE_DIR / resume_label
+        return paths.wiki_dir() / resume_label
 
     def write_index(self, resume_label: str, content: str) -> None:
         root = self.wiki_root(resume_label)
