@@ -100,8 +100,9 @@ class JDData(BaseModel):
         cleaned["preferred_any"] = _clean_groups(cleaned.get("preferred_any", []), "preferred_any")
         if not cleaned["required"] and not cleaned["required_any"]:
             raise JDDataError("invalid_jd", "required or required_any must be non-empty")
-        if cleaned["seniority"] not in SUPPORTED_SENIORITIES:
-            raise JDDataError("invalid_jd", f"unsupported seniority: {cleaned['seniority']}")
+        seniority = cleaned["seniority"]
+        if not isinstance(seniority, str) or seniority not in SUPPORTED_SENIORITIES:
+            raise JDDataError("invalid_jd", f"unsupported seniority: {seniority!r}")
         return cleaned
 
 

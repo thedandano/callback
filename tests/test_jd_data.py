@@ -268,3 +268,14 @@ class TestPreferredAny:
             JDData(title="T", company="C", required=["Python"], preferred_any=[["Datadog", 42]])  # type: ignore[list-item]
 
         assert exc_info.value.code == "invalid_jd"
+
+
+def test_non_string_seniority_is_rejected_as_invalid_jd():
+    payload = '{"required": ["Go"], "seniority": ["senior"]}'
+    actual = None
+    try:
+        parse_jd_json(payload)
+    except JDDataError as exc:
+        actual = {"code": exc.code, "mentions_seniority": "seniority" in str(exc)}
+    expected = {"code": "invalid_jd", "mentions_seniority": True}
+    assert actual == expected
