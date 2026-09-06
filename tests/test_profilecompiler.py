@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-from rapidfuzz import fuzz
 
 from callback.profilecompiler import (
     ProfileCompiler,
@@ -138,7 +137,7 @@ class TestFuzzyWarning:
         story = _make_story("story-001", "Kubernetes", ["k8s"])
         compiler = ProfileCompiler()
         _, warnings = compiler.compile([story], host_tags=[])
-        score = int(fuzz.token_sort_ratio("Kubernetes", "k8s"))
+        score = 30
         expected_warnings = [
             f"story-001: primary_skill 'Kubernetes' not found in skills"
             f" (best match: 'k8s' at {score}%)"
@@ -171,7 +170,7 @@ class TestFuzzyWarning:
         story_bad = _make_story("story-002", "Kubernetes", ["k8s"])
         compiler = ProfileCompiler()
         _, warnings = compiler.compile([story_ok, story_bad], host_tags=[])
-        score = int(fuzz.token_sort_ratio("Kubernetes", "k8s"))
+        score = 30
         expected_warnings = [
             f"story-002: primary_skill 'Kubernetes' not found in skills"
             f" (best match: 'k8s' at {score}%)"
@@ -217,3 +216,16 @@ class TestProfileMissingError:
     def test_load_raises_when_file_absent(self, tmp_path: Path):
         with pytest.raises(ProfileMissingError):
             load_compiled_profile(base_dir=tmp_path)
+
+
+class TestTokenSortRatio:
+    def test_order_insensitive_and_case_insensitive(self):
+        from callback.profilecompiler import _token_sort_ratio
+
+        actual = {
+            "reordered": _token_sort_ratio("REST APIs", "apis rest"),
+            "unrelated": _token_sort_ratio("Kubernetes", "k8s"),
+            "close": _token_sort_ratio("PostgreSQL", "Postgres"),
+        }
+        expected = {"reordered": 100, "unrelated": 30, "close": 88}
+        assert actual == expected

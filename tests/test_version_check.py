@@ -69,3 +69,12 @@ def test_cached_result_no_second_network_call():
 
     assert first is second
     mock_fetch.assert_called_once()
+
+
+def test_fetch_latest_tag_returns_none_and_logs_when_request_fails(caplog):
+    caplog.set_level("WARNING", logger="callback.version_check")
+    with patch.object(vc.urllib.request, "urlopen", side_effect=OSError("offline")):
+        tag = vc.fetch_latest_tag()
+    actual = {"tag": tag, "warned": any("latest release" in r.message for r in caplog.records)}
+    expected = {"tag": None, "warned": True}
+    assert actual == expected

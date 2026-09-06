@@ -1,8 +1,7 @@
 import json
 from datetime import UTC, datetime
+from difflib import SequenceMatcher
 from pathlib import Path
-
-from rapidfuzz import fuzz
 
 from callback import paths
 from callback.state import CompiledProfile, CreatedStory, OrphanedSkill
@@ -42,6 +41,13 @@ def _detect_orphans(host_tags: list[str], covered: set[str]) -> list[OrphanedSki
     return [OrphanedSkill(skill=tag) for tag in host_tags if tag.lower() not in covered]
 
 
+def _token_sort_ratio(a: str, b: str) -> int:
+    """0-100 similarity after lowercasing and sorting whitespace-separated tokens."""
+    left = " ".join(sorted(a.lower().split()))
+    right = " ".join(sorted(b.lower().split()))
+    return int(100 * SequenceMatcher(None, left, right).ratio())
+
+
 def _lint_story_coverage(story: CreatedStory) -> str | None:
     primary = story.primary_skill
     if primary.lower() in {s.lower() for s in story.skills}:
@@ -49,13 +55,13 @@ def _lint_story_coverage(story: CreatedStory) -> str | None:
     if not story.skills:
         return f"{story.id}: primary_skill {primary!r} not found in skills (best match: none at 0%)"
     best_skill, best_score = max(
-        ((s, fuzz.token_sort_ratio(primary, s)) for s in story.skills),
+        ((s, _token_sort_ratio(primary, s)) for s in story.skills),
         key=lambda pair: pair[1],
     )
-    if int(best_score) < _FUZZY_THRESHOLD:
+    if best_score < _FUZZY_THRESHOLD:
         return (
             f"{story.id}: primary_skill {primary!r} not found in skills"
-            f" (best match: {best_skill!r} at {int(best_score)}%)"
+            f" (best match: {best_skill!r} at {best_score}%)"
         )
     return None
 
