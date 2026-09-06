@@ -661,7 +661,7 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
     from callback.wiki import WikiStore
 
     resume_label = "project_guidance_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -730,7 +730,7 @@ def test_submit_keywords_returns_ranked_project_candidates(tmp_path, monkeypatch
     from callback.wiki import WikiStore
 
     resume_label = "project_candidate_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -850,7 +850,7 @@ def test_submit_keywords_recommends_project_append_and_trim_candidates(tmp_path,
     from callback.wiki import WikiStore
 
     resume_label = "project_append_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -944,7 +944,7 @@ def test_submit_keywords_recommends_project_replace_when_two_visible_projects(
     from callback.wiki import WikiStore
 
     resume_label = "project_replace_layout_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -1029,7 +1029,7 @@ def test_submit_keywords_orphaned_required_routes_to_create_story(tmp_path, monk
     from callback.wiki import WikiStore
 
     resume_label = "orphan_workflow_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     resume_path = tmp_path / "resume.txt"
     resume_path.write_text(
         "Jane Dev\nExperience\nBuilt backend APIs\nEducation\nBS Computer Science\n",
@@ -1082,7 +1082,7 @@ def test_get_wiki_pages_returns_submit_tailor_workflow(tmp_path, monkeypatch):
     from callback.wiki import WikiStore
 
     resume_label = "wiki_pages_workflow_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -1130,7 +1130,7 @@ def test_get_wiki_pages_rejects_page_id_outside_wiki_root(tmp_path, monkeypatch)
     from callback.wiki import WikiStore
 
     resume_label = "wiki_pages_traversal_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -1172,7 +1172,7 @@ def test_get_wiki_pages_rejects_embedded_nul(tmp_path, monkeypatch):
     from callback.wiki import WikiStore
 
     resume_label = "wiki_pages_nul_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -1212,7 +1212,7 @@ def test_rank_project_candidates_skips_invalid_index_links(tmp_path, monkeypatch
     from callback.wiki import WikiStore
 
     resume_label = "invalid_link_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     store = WikiStore()
     store.write_page(
         resume_label,
@@ -1315,6 +1315,25 @@ class TestOrphanDetection:
         result = _detect_orphaned_required(["Python"], sections, wiki_index)
 
         assert result == []
+
+    def test_none_skills_values_tolerated_like_empty_section(self):
+        from callback.server import _detect_orphaned_required
+
+        wiki_index = "# Stories\n\n## Docker\n- Built containers\n"
+        required_missing = ["Python"]
+
+        actual = {
+            "none_values": _detect_orphaned_required(
+                required_missing,
+                {"skills": {"flat": None, "categorized": None}},
+                wiki_index,
+            ),
+            "empty_section": _detect_orphaned_required(
+                required_missing, {"skills": {}}, wiki_index
+            ),
+        }
+        expected = {"none_values": [], "empty_section": []}
+        assert actual == expected
 
 
 _NO_COVERAGE_JD_JSON = json.dumps(
@@ -1430,26 +1449,39 @@ def test_load_jd_auto_selects_single_registered_resume():
     assert snapshot.values.get("resume_label") == "default"
 
 
-def test_load_jd_returns_ambiguous_resume_error_for_multiple_resumes():
-    """Multiple resumes registered without label returns ambiguous_resume error."""
+def test_load_jd_stores_first_registered_resume_when_several():
+    """Two registered resumes without a label stores the first one on the graph state."""
+    from callback.apply_graph import get_apply_graph, make_config
     from callback.server import load_jd
 
-    with patch("callback.server.list_resumes", return_value=["default", "senior"]):
+    with patch("callback.server.list_resumes", return_value=["a", "b"]):
         result = json.loads(load_jd(jd_raw_text="Python engineer needed"))
 
-    expected = {
-        "session_id": result["session_id"],
-        "status": "error",
-        "error": {
-            "stage": "load_jd",
-            "code": "ambiguous_resume",
-            "message": result["error"]["message"],
-            "retriable": False,
-        },
+    session_id = result["session_id"]
+    graph = get_apply_graph()
+    snapshot = graph.get_state(make_config(session_id))
+    actual = {
+        "status": result["status"],
+        "resume_label": snapshot.values.get("resume_label"),
     }
-    assert result == expected
-    assert "default" in result["error"]["message"]
-    assert "senior" in result["error"]["message"]
+    expected = {"status": "ok", "resume_label": "a"}
+    assert actual == expected
+
+
+def test_load_jd_uses_first_registered_resume_and_warns_when_several(caplog):
+    """Multiple resumes registered without a label takes the first and warns."""
+    import callback.server as server
+
+    caplog.set_level("WARNING", logger="callback.server")
+    with patch("callback.server.list_resumes", return_value=["a", "b"]):
+        resolved, err = server._resolve_resume_label("sess-1")
+    actual = {
+        "resolved": resolved,
+        "err": err,
+        "warned": any("multiple resumes" in r.message for r in caplog.records),
+    }
+    expected = {"resolved": "a", "err": None, "warned": True}
+    assert actual == expected
 
 
 def test_load_jd_returns_no_resume_registered_error_when_empty():
@@ -1471,49 +1503,6 @@ def test_load_jd_returns_no_resume_registered_error_when_empty():
     }
     assert result == expected
     assert "onboard_user" in result["error"]["message"]
-
-
-def test_load_jd_passes_explicit_label_through_to_state():
-    """Explicit resume_label is stored in session state."""
-    from callback.apply_graph import get_apply_graph, make_config
-    from callback.server import load_jd
-
-    with patch("callback.server.list_resumes", return_value=["default", "senior"]):
-        result = json.loads(load_jd(jd_raw_text="Python engineer needed", resume_label="senior"))
-
-    session_id = result["session_id"]
-    graph = get_apply_graph()
-    snapshot = graph.get_state(make_config(session_id))
-    expected = {
-        "session_id": session_id,
-        "status": "ok",
-        "next_action": "extract_keywords",
-        "data": {"jd_text": "Python engineer needed", "extraction_protocol": EXTRACTION_PROTOCOL},
-        "workflow": _expected_load_jd_workflow(session_id),
-    }
-    assert result == expected
-    assert snapshot.values.get("resume_label") == "senior"
-
-
-def test_load_jd_returns_error_for_unknown_explicit_label():
-    """Explicit resume_label not in registry returns resume_not_found error."""
-    from callback.server import load_jd
-
-    with patch("callback.server.list_resumes", return_value=["default"]):
-        result = json.loads(load_jd(jd_raw_text="Python engineer needed", resume_label="missing"))
-
-    expected = {
-        "session_id": result["session_id"],
-        "status": "error",
-        "error": {
-            "stage": "load_jd",
-            "code": "resume_not_found",
-            "message": result["error"]["message"],
-            "retriable": False,
-        },
-    }
-    assert result == expected
-    assert "missing" in result["error"]["message"]
 
 
 # ============================================================================
@@ -1721,7 +1710,7 @@ def test_onboard_user_returns_envelope_when_extractor_raises(tmp_path, monkeypat
     from callback.profile_graph import build_profile_graph
 
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "profile-wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
     db_path = tmp_path / "profile-sessions.db"
     monkeypatch.setattr(server, "get_profile_graph", lambda: build_profile_graph(db_path=db_path))
 

@@ -62,7 +62,8 @@ uv run python scripts/smoke_profile.py
 
 ## Env Vars
 
-- `CALLBACK_APPS_DIR`: Override where application PDFs and JSON archives are written.
+- `XDG_DATA_HOME`: Moves the whole data root (resumes, wiki, checkpoint DBs, compiled profile, applications archive) from `~/.local/share/callback` to `$XDG_DATA_HOME/callback`.
+- `CALLBACK_APPS_DIR`: Override where application PDFs and JSON archives are written; overrides only the archive directory, not the other data roots.
 - `CALLBACK_FETCH_PAGE_TIMEOUT_MS`: Override the Playwright page-load timeout in milliseconds. Default: `30000`.
 - `CALLBACK_FETCH_OUTER_TIMEOUT_S`: Override the outer fetch timeout in seconds. Default: `35`.
 - `CALLBACK_TRACE_BACKEND`: Optional tracing backend. Set to `langsmith` to enable LangSmith tracing.
@@ -125,7 +126,7 @@ jd_fetch → keywords_accept → parse_initial → score_initial → tailor → 
 Errors in `tailor`, `render`, `parse_final`, or `finalize` route back to the `tailor` interrupt; `submit_tailor` returns `pipeline_error` with `retriable: true` and may be called again with the same session to retry.
 `jd_fetch` loads the page with Playwright (Chrome user agent, `domcontentloaded` plus a 2.5 s settle), extracts markdown with trafilatura, falls back to body text when the extraction is thin (and rejects a page that is still under 1,200 characters as `fetch_thin`), and caps `jd_text` at 16,000 characters (about 4,000 tokens), logging `fetch_oversized`.
 
-Checkpointer DB: `~/.local/share/callback/apply-sessions.db`.
+Checkpointer DB: `~/.local/share/callback/apply-sessions.db` (or `$XDG_DATA_HOME/callback/apply-sessions.db` if `XDG_DATA_HOME` is set).
 State schema: `ApplyState` in `state.py` (single Pydantic model — entire graph state).
 Keyword extraction is host-owned: `callback` returns the JD markdown and extraction protocol, then stores only validated JDData submitted by the host.
 
@@ -143,7 +144,7 @@ check_profile ──(resume_path or no profile)──▶ onboard ─▶ compile_
 
 Interrupts: after `onboard`; before `create_story`. `compile_profile` and `create_story` accept an optional `session_id` to resume the thread; without one they start a new thread that `check_profile` routes to the right node.
 
-Checkpointer DB: `~/.local/share/callback/profile-sessions.db`.
+Checkpointer DB: `~/.local/share/callback/profile-sessions.db` (or `$XDG_DATA_HOME/callback/profile-sessions.db` if `XDG_DATA_HOME` is set).
 State schema: `ProfileState` in `state.py`.
 
 ### Scoring (`scorer.py`)
@@ -184,6 +185,7 @@ The apply graph's `render` node uses HTML + Playwright via `callback.render.html
 | `state.py`           | `ApplyState`, `ProfileState` — Pydantic schemas for each graph |
 | `scorer.py`          | Deterministic ATS scorer (no I/O, no LLM) |
 | `extractor.py`       | Resume text extraction (PDF via pdfplumber, DOCX via python-docx, TXT) |
+| `paths.py`           | Every data directory and the atomic writers |
 | `observability.py`   | Trace config port and LangSmith adapter |
 
 ## Change Discipline

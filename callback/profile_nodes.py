@@ -10,17 +10,17 @@ import logging
 import callback.extractor as extractor
 from callback.observability import trace_node
 from callback.profilecompiler import (
-    ProfileCompiler,
     ProfileMissingError,
     load_compiled_profile,
     save_compiled_profile,
 )
+from callback.profilecompiler import compile_profile as build_profile
 from callback.repository.accomplishments import AccomplishmentsStore
 from callback.repository.resumes import list_resumes, replace_resume
 from callback.section_map import SectionMap
 from callback.state import CreatedStory, ProfileState
 from callback.wiki import WikiStore
-from callback.wikirenderer import WikiRenderer
+from callback.wikirenderer import render_wiki
 
 logger = logging.getLogger(__name__)
 
@@ -54,20 +54,13 @@ def _resume_skills(label: str) -> list[str]:
     if not sections_json:
         return []
     try:
+        # ValidationError (invalid JSON or schema) is a ValueError subclass, so
+        # catching ValueError alone covers both failure modes.
         section_map = SectionMap.model_validate_json(sections_json)
-    except Exception:
+    except ValueError as exc:
+        logger.warning("resume skills unavailable for %s: %s: %s", label, type(exc).__name__, exc)
         return []
-    skills: list[str] = list(section_map.skills.flat)
-    for items in section_map.skills.categorized.values():
-        skills.extend(items)
-    return skills
-
-
-def _render_wiki(label: str, profile) -> None:
-    renderer = WikiRenderer()
-    for story in profile.stories:
-        renderer.render_experience_page(label, story)
-    renderer.render_index(label, profile)
+    return section_map.skills.all_skills()
 
 
 @trace_node("profile", "check_profile")
@@ -117,8 +110,8 @@ def compile_profile(state: ProfileState) -> dict:
     label = _registered_label(state.resume_label)
     resume_skills = _resume_skills(label)
     all_tags = list(dict.fromkeys(host_tags + resume_skills))
-    profile, warnings = ProfileCompiler().compile(stories, all_tags)
-    _render_wiki(label, profile)
+    profile, warnings = build_profile(stories, all_tags)
+    render_wiki(label, profile)
     save_compiled_profile(profile)
 
     return {

@@ -68,7 +68,7 @@ uv run python scripts/smoke_profile.py
 
 - `LOG_LEVEL`: Server log level.
 - `CALLBACK_LOG_PATH`: Override the server log file path.
-- `CALLBACK_APPS_DIR`: Override where application PDFs and JSON archives are written.
+- `CALLBACK_APPS_DIR`: Override where application PDFs and JSON archives are written; overrides only the applications archive directory, not the other data roots.
 - `CALLBACK_FETCH_PAGE_TIMEOUT_MS`: Override the Playwright page-load timeout in milliseconds. Default: `30000`.
 - `CALLBACK_FETCH_OUTER_TIMEOUT_S`: Override the outer fetch timeout in seconds. Default: `35`.
 - `CALLBACK_TRACE_BACKEND`: Optional tracing backend. Set to `langsmith` to enable the LangSmith adapter.
@@ -76,7 +76,7 @@ uv run python scripts/smoke_profile.py
 - `LANGSMITH_ENDPOINT`: LangSmith API endpoint. Defaults to `https://api.smith.langchain.com`.
 - `LANGSMITH_API_KEY`: Required for LangSmith tracing.
 - `LANGSMITH_PROJECT`: LangSmith project name. Defaults to `Callback` when tracing is enabled.
-- `XDG_DATA_HOME`: Overrides resume, wiki, and profile data roots.
+- `XDG_DATA_HOME`: Moves the whole data root (resumes, wiki, checkpoint DBs, compiled profile, applications archive) from `~/.local/share/callback` to `$XDG_DATA_HOME/callback`.
 
 `callback setup-mcp` is noninteractive and only registers the MCP server entry.
 Use `callback config langsmith` or `callback config env ...` to write env vars
@@ -234,9 +234,12 @@ PDF rendering uses HTML + Playwright in `callback/render/html_builder.py`.
 | `section_map.py` | Resume section editing helpers |
 | `wiki.py` | Wiki storage for resume-linked behavioral stories |
 | `repository/` | Resume and accomplishments persistence helpers |
-| `profilecompiler.py` | Compiles skills and stories into a profile summary |
+| `profilecompiler.py` | `compile_profile()` function |
+| `wikirenderer.py` | `render_wiki()`, `render_experience_page()`, `render_index()` functions |
 | `render/` | HTML + Playwright resume rendering |
+| `paths.py` | Every data directory and the atomic writers |
 | `cli.py` | `callback` CLI entry point |
+| `plugin_install.py` | Plugin installation functions (replaces `HarnessTarget` dataclass) |
 | `observability.py` | Trace config port and LangSmith adapter |
 | `version_check.py` | Current-vs-latest release comparison |
 

@@ -4,7 +4,6 @@
 Pass a job URL as the first argument to exercise the fetcher.
 """
 
-import contextlib
 import json
 import os
 import shutil
@@ -15,7 +14,7 @@ from pathlib import Path
 # Add current directory to path for running via uv
 sys.path.insert(0, os.getcwd())
 
-from callback.apply_nodes import _get_apps_dir
+from callback import paths
 from callback.jd_data import EXTRACTION_PROTOCOL
 from callback.jd_fetcher import MIN_MARKDOWN_CHARS
 from callback.repository.resumes import save_resume
@@ -33,12 +32,13 @@ JD_JSON = json.dumps(
 )
 
 
-def _load_phase(jd_url: str | None, jd_text: str, resume_label: str) -> dict:
-    """Run the load_jd phase against a live URL or pasted raw text."""
-    if jd_url:
-        load_result = load_jd(jd_url=jd_url, resume_label=resume_label)
-    else:
-        load_result = load_jd(jd_raw_text=jd_text, resume_label=resume_label)
+def _load_phase(jd_url: str | None, jd_text: str) -> dict:
+    """Run the load_jd phase against a live URL or pasted raw text.
+
+    The resume is resolved internally from the registry (a single resume is
+    registered before this phase runs), so no resume_label is passed here.
+    """
+    load_result = load_jd(jd_url=jd_url) if jd_url else load_jd(jd_raw_text=jd_text)
     loaded = json.loads(load_result)
     assert loaded["status"] == "ok", f"load_jd failed: {loaded}"
     assert loaded["next_action"] == "extract_keywords", f"unexpected: {loaded}"
@@ -55,10 +55,11 @@ def _load_phase(jd_url: str | None, jd_text: str, resume_label: str) -> dict:
 def main():
     jd_url = sys.argv[1] if len(sys.argv) > 1 else None
 
-    # Redirect archive writes into a scratch dir so this script never touches
-    # the real ~/.local/share/callback/applications/.
-    apps_tmp = tempfile.mkdtemp(prefix="callback-smoke-")
-    os.environ["CALLBACK_APPS_DIR"] = apps_tmp
+    # Run under an isolated data root so the temp resume is the only one registered
+    # and nothing here touches the real wiki, sessions, or archive (callback.paths).
+    data_root = tempfile.mkdtemp(prefix="callback-smoke-")
+    os.environ["XDG_DATA_HOME"] = data_root
+    os.environ.pop("CALLBACK_APPS_DIR", None)
 
     # Create a temp resume file
     with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w") as f:
@@ -85,11 +86,11 @@ def main():
     )
     WikiStore().write_page(resume_label, "sections.json", section_map.model_dump_json())
     WikiStore().write_index(resume_label, "# Profile\n\n## Skills\n- Python\n- Go\n")
-    registered_resume_path = save_resume(resume_label, resume_path)
+    save_resume(resume_label, resume_path)
 
     try:
         # Phase 1: load_jd
-        loaded = _load_phase(jd_url, jd_text, resume_label)
+        loaded = _load_phase(jd_url, jd_text)
         session_id = loaded["session_id"]
 
         # Phase 2: submit_keywords
@@ -121,7 +122,7 @@ def main():
         assert "total" in tailored["data"]["score_final"], "score_final missing total"
 
         # Phase 4: read archive JSON for score delta
-        archive_path = _get_apps_dir() / f"{session_id}.json"
+        archive_path = paths.apps_dir() / f"{session_id}.json"
         assert archive_path.exists(), f"archive not written: {archive_path}"
         archive = json.loads(archive_path.read_text())
         delta = archive["scores"]["delta"]
@@ -142,21 +143,8 @@ def main():
         print(f"SMOKE FAILED: {e}", file=sys.stderr)
         return 1
     finally:
-        # Cleanup temp resume
         Path(resume_path).unlink(missing_ok=True)
-        # Cleanup registered resume from registry (best-effort)
-        with contextlib.suppress(Exception):
-            Path(registered_resume_path).unlink(missing_ok=True)
-        # Cleanup sections.json and index.md from WikiStore (best-effort)
-        try:
-            wiki_root = WikiStore().wiki_root(resume_label)
-            (wiki_root / "sections.json").unlink(missing_ok=True)
-            (wiki_root / "index.md").unlink(missing_ok=True)
-            with contextlib.suppress(OSError):
-                wiki_root.rmdir()
-        except Exception:
-            pass
-        shutil.rmtree(apps_tmp, ignore_errors=True)
+        shutil.rmtree(data_root, ignore_errors=True)  # the whole isolated data root
 
 
 if __name__ == "__main__":

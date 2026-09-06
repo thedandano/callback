@@ -8,12 +8,13 @@ importing the server does not pay for it and a stuck extraction can be killed.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import multiprocessing
 import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from multiprocessing.connection import Connection
 from typing import Any
 
@@ -92,6 +93,19 @@ def _extract_worker(conn: Connection, html: str) -> None:
         conn.close()
 
 
+@contextlib.contextmanager
+def _spawned(ctx: Any, worker: Callable[..., None], args: tuple[Any, ...]) -> Iterator[Any]:
+    """Start a child process; on exit kill it if still alive and reap it."""
+    proc = ctx.Process(target=worker, args=args, daemon=True)
+    proc.start()
+    try:
+        yield proc
+    finally:
+        if proc.is_alive():
+            proc.kill()
+        proc.join(timeout=1.0)
+
+
 def run_killable(worker: Callable[[Connection, Any], None], arg: Any, timeout_s: float) -> str:
     """Run worker(conn, arg) in a spawned child and kill it when timeout_s expires.
 
@@ -101,21 +115,14 @@ def run_killable(worker: Callable[[Connection, Any], None], arg: Any, timeout_s:
     """
     ctx = multiprocessing.get_context("spawn")
     parent, child = ctx.Pipe(duplex=False)
-    proc = ctx.Process(target=worker, args=(child, arg), daemon=True)
-    proc.start()
-    child.close()
-    try:
+    with parent, _spawned(ctx, worker, (child, arg)):
+        child.close()  # parent's copy; the child holds its own
         if not parent.poll(max(timeout_s, 0.0)):
             raise TimeoutError(f"extraction exceeded {timeout_s:.1f}s; worker killed")
         try:
             status, payload = parent.recv()
         except EOFError as exc:
             raise RuntimeError("extraction worker exited without a result") from exc
-    finally:
-        parent.close()
-        if proc.is_alive():
-            proc.kill()
-        proc.join(timeout=1.0)
     if status != "ok":
         raise RuntimeError(f"extraction failed: {payload}")
     return payload

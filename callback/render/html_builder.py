@@ -5,9 +5,9 @@ import base64
 import re
 from pathlib import Path
 
+import pdfplumber
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from playwright.async_api import async_playwright
-from pypdf import PdfReader
 
 _RENDER_DIR = Path(__file__).parent
 _TEMPLATE = "resume_template.html.j2"
@@ -176,7 +176,6 @@ def _render_html(tailored: dict) -> str:
         skills_rows=_split_skill_rows(tailored.get("skills_raw")),
         experience_entries=_split_timeline_entries(tailored.get("experience_raw")),
         project_entries=_split_timeline_entries(tailored.get("projects_raw")),
-        volunteer_entries=_split_timeline_entries(tailored.get("volunteer_raw")),
         education_lines=_split_nonempty_lines(tailored.get("education_raw")),
         font_b64=FONT_B64,
     )
@@ -226,7 +225,8 @@ def render_resume(tailored: dict, output_path: str) -> dict:
         asyncio.run(_render_async(tailored, output_path))
         if not out.exists() or out.stat().st_size == 0:
             raise RuntimeError("rendered PDF is missing or empty")
-        page_count = len(PdfReader(str(out)).pages)
+        with pdfplumber.open(str(out)) as pdf:
+            page_count = len(pdf.pages)
         max_pages = int(tailored.get("max_pages") or 0)
         warnings = _render_page_warnings(
             page_count=page_count,

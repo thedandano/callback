@@ -307,6 +307,50 @@ def test_configure_codex_preserves_existing_env(tmp_path):
     }
 
 
+def test_configure_codex_preserves_arrays_of_tables(tmp_path):
+    codex_path = tmp_path / "config.toml"
+    codex_path.write_text(
+        '[[profiles]]\nname = "work"\nmodel = "gpt"\n\n[[profiles]]\nname = "home"\n',
+        encoding="utf-8",
+    )
+    configure_codex(codex_path)
+    actual = {
+        "profiles": _read_toml(codex_path)["profiles"],
+        "server_present": "callback" in _read_toml(codex_path)["mcp_servers"],
+    }
+    expected = {
+        "profiles": [{"name": "work", "model": "gpt"}, {"name": "home"}],
+        "server_present": True,
+    }
+    assert actual == expected
+
+
+def test_configure_codex_warns_when_comments_will_be_dropped(tmp_path, capsys):
+    codex_path = tmp_path / "config.toml"
+    codex_path.write_text('# my notes\nmodel = "gpt"\n', encoding="utf-8")
+    configure_codex(codex_path)
+    err = capsys.readouterr().err
+    actual = {
+        "warned": "comments" in err and str(codex_path) in err,
+        "comment_kept": "# my notes" in codex_path.read_text(),
+    }
+    expected = {"warned": True, "comment_kept": False}
+    assert actual == expected
+
+
+def test_config_status_does_not_warn_about_comments(tmp_path):
+    codex_path = tmp_path / "config.toml"
+    codex_path.write_text(
+        '# my notes\n[mcp_servers.callback]\ncommand = "callback"\n', encoding="utf-8"
+    )
+    result = runner.invoke(
+        app, ["config", "status", "--target", "codex", "--codex-config", str(codex_path)]
+    )
+    actual = {"exit_code": result.exit_code, "warned": "comments" in result.stderr}
+    expected = {"exit_code": 0, "warned": False}
+    assert actual == expected
+
+
 def test_setup_mcp_writes_both_configs(tmp_path):
     claude_path = tmp_path / ".claude.json"
     codex_path = tmp_path / ".codex" / "config.toml"
@@ -400,6 +444,36 @@ def test_setup_mcp_preserves_existing_env(tmp_path):
         "args": ["serve"],
         "env": {"LANGSMITH_PROJECT": "demo"},
     }
+
+
+def test_setup_mcp_warns_about_comments_exactly_once(tmp_path):
+    claude_path = tmp_path / ".claude.json"
+    codex_path = tmp_path / "config.toml"
+    codex_path.write_text('# my notes\n[mcp_servers.callback]\ncommand = "old"\n', encoding="utf-8")
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+
+    with (
+        patch("callback.cli._resolve_command", return_value="/usr/local/bin/callback"),
+        patch("callback.cli.subprocess.run", return_value=mock_result),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "setup-mcp",
+                "--claude-config",
+                str(claude_path),
+                "--codex-config",
+                str(codex_path),
+            ],
+        )
+
+    actual = {
+        "exit_code": result.exit_code,
+        "comment_warning_count": result.stderr.count("contains comments"),
+    }
+    expected = {"exit_code": 0, "comment_warning_count": 1}
+    assert actual == expected
 
 
 def test_config_env_set_list_unset_claude(tmp_path):
@@ -1184,8 +1258,8 @@ def test_uninstall_without_purge_preserves_data_dir(tmp_path):
 
     state_dir = tmp_path / "state"
     with (
-        patch("callback.cli._DATA_DIR", data_dir),
-        patch("callback.cli._STATE_DIR", state_dir),
+        patch("callback.paths.data_dir", lambda: data_dir),
+        patch("callback.paths.state_dir", lambda: state_dir),
         patch("callback.cli._remove_server_from_claude"),
         patch("callback.cli._remove_server_from_codex"),
     ):
@@ -1202,8 +1276,8 @@ def test_uninstall_purge_deletes_data_and_state_dirs(tmp_path):
     state_dir.mkdir()
 
     with (
-        patch("callback.cli._DATA_DIR", data_dir),
-        patch("callback.cli._STATE_DIR", state_dir),
+        patch("callback.paths.data_dir", lambda: data_dir),
+        patch("callback.paths.state_dir", lambda: state_dir),
         patch("callback.cli._remove_server_from_claude"),
         patch("callback.cli._remove_server_from_codex"),
     ):
@@ -1219,8 +1293,8 @@ def test_uninstall_purge_skips_absent_dirs(tmp_path):
     state_dir = tmp_path / "state"
 
     with (
-        patch("callback.cli._DATA_DIR", data_dir),
-        patch("callback.cli._STATE_DIR", state_dir),
+        patch("callback.paths.data_dir", lambda: data_dir),
+        patch("callback.paths.state_dir", lambda: state_dir),
         patch("callback.cli._remove_server_from_claude"),
         patch("callback.cli._remove_server_from_codex"),
     ):

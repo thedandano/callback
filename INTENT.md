@@ -78,10 +78,10 @@ Known defects, verified by running code:
 | D2 | Fixed (M1) | Re-onboarding with an existing profile skips the `onboard` node; crashes if orphans exist, silently no-ops otherwise | `callback/profile_graph.py:51` |
 | D3 | Fixed (M1) | Every log line is written to `server.log` twice | `callback/server.py:109` |
 | D4 | Fixed (M2) | A render failure ends the graph; retrying `submit_tailor` returns `invalid_state`; only recovery is restarting from `load_jd` | `callback/apply_graph.py` |
-| D5 | Med | `XDG_DATA_HOME` honored by four stores, ignored by wiki, both checkpoint DBs, and applications dir | `callback/wiki.py`, `apply_graph.py`, `profile_graph.py`, `apply_nodes.py` |
+| D5 | Fixed (M4) | `XDG_DATA_HOME` honored by four stores, ignored by wiki, both checkpoint DBs, and applications dir | `callback/wiki.py`, `apply_graph.py`, `profile_graph.py`, `apply_nodes.py` |
 | D6 | Fixed (M1) | A bare year range in the resume header is captured as the phone number | `callback/extractor.py` |
 | D7 | Fixed (M1) | Extractor errors escape `submit_keywords` / `submit_tailor` as raw MCP failures instead of the envelope | `callback/server.py` |
-| D8 | Low | `_dump_toml` rewrites all of `~/.codex/config.toml`, drops comments, raises on arrays of tables | `callback/cli.py:215` |
+| D8 | Fixed (M4) | `_dump_toml` rewrites all of `~/.codex/config.toml`, drops comments, raises on arrays of tables | `callback/cli.py:215` |
 
 Known weight (works, but costs more than it earns):
 
@@ -89,15 +89,15 @@ Known weight (works, but costs more than it earns):
 |---|------|------|----------|
 | W1 | dep | crawl4ai: 93 of 147 runtime packages and 2.0 s of import time to fetch one page; Playwright is already installed. Its pruning also produced the 48,000-token JD outlier | Fixed (M3) |
 | W2 | arch | Profile graph is decorative; `compile_profile` and `create_story` bypass it. Wiki markdown is a render of `accomplishments.json`, so hand edits are overwritten; story metadata is regex-scraped from prose (`server.py:255`) | graph half fixed (M2); data half is M2.5 |
-| W3 | dep | dataclass-wizard for JDData; pydantic already present | 1 dep, ~40 lines |
+| W3 | dep | dataclass-wizard for JDData; pydantic already present | Fixed (M4) |
 | W4 | dup | 8 near-identical Claude/Codex env functions in `cli.py` | ~80 lines |
-| W5 | dead | Multi-resume plumbing (`ambiguous_resume`, `resume_label` param) unreachable | ~30 lines |
-| W6 | dup | 4 copies of `data_dir()`, 3 copies of atomic JSON write | ~40 lines, fixes D5 |
-| W7 | dep | rapidfuzz (one warning string), pypdf (page count only), httpx (one GET) | 3 deps |
-| W8 | yagni | `HarnessTarget` dataclass + injectable runner for 2 targets; `ProfileCompiler` and `WikiRenderer` classes with no state | ~90 lines |
-| W9 | dead | `ProfileState.wiki_path/error`, `TailoredResume.volunteer_raw`, `ApplyState.finalized`, `WikiStore.read_index`, `main.py`, dormant `[tool.ruff.lint.pylint]` block | ~30 lines |
-| W10 | dup | 3 copies of flatten-skills; `apply_nodes._normalize_for_match` duplicates scorer's; `outcome` computed twice | ~30 lines |
-| W11 | size | `observability.py` (465 lines) exceeds both graphs combined; `cli.py` (1,103 lines) is 17% of the codebase | judgment call |
+| W5 | dead | Multi-resume plumbing (`ambiguous_resume`, `resume_label` param) unreachable | Fixed (M4) |
+| W6 | dup | 4 copies of `data_dir()`, 3 copies of atomic JSON write | Fixed (M4) |
+| W7 | dep | rapidfuzz (one warning string), pypdf (page count only), httpx (one GET) | Fixed (M4) |
+| W8 | yagni | `HarnessTarget` dataclass + injectable runner for 2 targets; `ProfileCompiler` and `WikiRenderer` classes with no state | Fixed (M4) |
+| W9 | dead | `ProfileState.wiki_path/error`, `TailoredResume.volunteer_raw`, `ApplyState.finalized`, `WikiStore.read_index`, `main.py`, dormant `[tool.ruff.lint.pylint]` block | Fixed (M4) |
+| W10 | dup | 3 copies of flatten-skills; `apply_nodes._normalize_for_match` duplicates scorer's; `outcome` computed twice | Fixed (M4) |
+| W11 | size | `observability.py` (465 lines) exceeds both graphs combined; `cli.py` (1,103 lines) is 17% of the codebase; PLR09 was never enabled; M4 deleted the dormant block. Enabling it: 26 violations under the block's thresholds (args 4, branches 8, statements 20), 9 under ruff defaults — input for M5. | judgment call |
 | W12 | perf | `build_apply_graph()` per tool call opens a new SQLite connection and never closes it | Fixed (M2) |
 
 ## Intended direction (roadmap inputs)
@@ -186,8 +186,7 @@ Out of scope: LinkedIn login walls and Cloudflare challenge pages. Those remain
 ### M4 — Shed weight (one day, mechanical)
 
 Ships: W3, W5, W6, W7, W8, W9, W10, D5, D8.
-Done when: `pyproject.toml` lists at most 11 runtime dependencies, one `paths.py` owns
-every data directory, and enabling `PLR09` in ruff either passes or the block is removed.
+Done (M4): `pyproject.toml` lists 11 runtime dependencies (was 17); `callback/paths.py` owns every data directory and `XDG_DATA_HOME` moves all of them; `ProfileCompiler` → `profilecompiler.compile_profile()`, `WikiRenderer` → `wikirenderer.render_wiki()/render_experience_page()/render_index()`, `HarnessTarget` → plain functions in `plugin_install.py`; `load_jd` no longer takes `resume_label`; the dormant `[tool.ruff.lint.pylint]` block is removed (PLR09 violations recorded under W11: 26 under the old block's thresholds, 9 under ruff defaults).
 
 ### M5 — Shrink the plumbing (judgment, one day)
 

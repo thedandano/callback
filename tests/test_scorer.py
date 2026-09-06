@@ -10,8 +10,8 @@ from callback.scorer import (
     ATSHeaderDiagnostic,
     KeywordResult,
     ScoringConfig,
-    _normalize_for_match,
     _score_ats,
+    normalize_for_match,
     score,
 )
 
@@ -445,12 +445,12 @@ class TestExperienceFitV2:
     ],
 )
 def test_normalize_for_match(text: str, expected: str) -> None:
-    assert _normalize_for_match(text) == expected
+    assert normalize_for_match(text) == expected
 
 
 def test_normalize_for_match_deterministic() -> None:
-    result_a = _normalize_for_match("agent-based workflows")
-    result_b = _normalize_for_match("agent-based workflows")
+    result_a = normalize_for_match("agent-based workflows")
+    result_b = normalize_for_match("agent-based workflows")
     assert result_a == result_b == "agent based workflows"
 
 

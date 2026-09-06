@@ -222,28 +222,6 @@
     </section>
     {% endif %}
 
-    {% if volunteer_entries %}
-    <section class="section">
-      <div class="section-header">VOLUNTEER</div>
-      {% for entry in volunteer_entries %}
-      <div class="entry">
-        {% if entry.organization %}
-        <div class="entry-organization">{{ entry.organization }}</div>
-        {% endif %}
-        {% if entry.role or entry.date %}
-        <div class="entry-meta">
-          <span class="entry-role">{{ entry.role }}</span>
-          {% if entry.date %}<span class="entry-date">{{ entry.date }}</span>{% endif %}
-        </div>
-        {% endif %}
-        {% for bullet in entry.bullets %}
-        <div class="bullet"><span class="bullet-marker">•</span><span class="bullet-text">{{ bullet }}</span></div>
-        {% endfor %}
-      </div>
-      {% endfor %}
-    </section>
-    {% endif %}
-
     {% if education_lines %}
     <section class="section">
       <div class="section-header">EDUCATION</div>

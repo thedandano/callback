@@ -1,11 +1,10 @@
 import pytest
 
-import callback.wiki as wiki_module
 from callback.wiki import WikiPageIdError, WikiStore, company_slug
 
 
 def store(tmp_path, monkeypatch):
-    monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path)
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path)
     return WikiStore()
 
 
@@ -13,7 +12,7 @@ def test_write_read_index_round_trip(tmp_path, monkeypatch):
     s = store(tmp_path, monkeypatch)
     content = "# Index\n\n- [Acme](experience/acme.md)"
     s.write_index("my-resume", content)
-    assert s.read_index("my-resume") == content
+    assert s.read_pages("my-resume", ["index.md"]) == {"index.md": content}
 
 
 def test_write_read_experience_page(tmp_path, monkeypatch):

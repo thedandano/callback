@@ -32,6 +32,13 @@ class SkillsSection(BaseModel):
     flat: list[str] = []
     categorized: dict[str, list[str]] = {}
 
+    def all_skills(self) -> list[str]:
+        """Every skill string: the flat list first, then each category in order."""
+        result = list(self.flat)
+        for items in self.categorized.values():
+            result.extend(items)
+        return result
+
 
 class ExperienceEntry(BaseModel):
     company: str

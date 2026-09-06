@@ -8,8 +8,9 @@ import pytest
 
 import callback.extractor as ext
 import callback.repository.resumes as resumes_module
-import callback.wiki as wiki_module
+from callback import paths
 from callback.profile_nodes import (
+    _resume_skills,
     check_orphans,
     check_profile,
     compile_profile,
@@ -19,7 +20,6 @@ from callback.profile_nodes import (
 from callback.profilecompiler import save_compiled_profile
 from callback.repository.accomplishments import AccomplishmentsStore
 from callback.repository.resumes import (
-    data_dir,
     get_resume,
     list_resumes,
     replace_resume,
@@ -117,7 +117,7 @@ class TestCheckProfile:
 class TestOnboard:
     def test_no_resume_path_returns_no_resume_status(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
 
         result = onboard(_make_state())
 
@@ -125,7 +125,7 @@ class TestOnboard:
 
     def test_valid_resume_path_saves_sections_json(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
 
         resume_file = _make_resume_file(tmp_path)
         state = _make_state(resume_path=str(resume_file))
@@ -152,7 +152,7 @@ class TestOnboard:
 
     def test_onboard_saves_onboard_text_when_present(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
 
         resume_file = _make_resume_file(tmp_path)
         state = _make_state(
@@ -173,7 +173,7 @@ class TestOnboard:
 class TestCompileProfile:
     def test_builds_wiki_pages_and_saves_compiled_profile(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
 
         store = AccomplishmentsStore(base_dir=tmp_path / "callback")
         saved_story = store.save_story(CreatedStory(id="", **_STORY_FIELDS))
@@ -198,6 +198,31 @@ class TestCompileProfile:
             "skill_coverage_warnings": [],
             "skills_index": sorted(["Python", "Docker"], key=str.lower),
         }
+
+
+class TestResumeSkills:
+    def test_invalid_sections_json_returns_empty_list_and_logs_warning(
+        self, tmp_path, monkeypatch, caplog
+    ):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
+
+        page_dir = tmp_path / "profile-wiki" / "jane_doe"
+        page_dir.mkdir(parents=True)
+        (page_dir / "sections.json").write_text("{not valid json", encoding="utf-8")
+
+        with caplog.at_level("WARNING"):
+            result = _resume_skills("jane_doe")
+
+        actual = {
+            "result": result,
+            "warning_logged": any(
+                record.levelname == "WARNING" and "jane_doe" in record.getMessage()
+                for record in caplog.records
+            ),
+        }
+        expected = {"result": [], "warning_logged": True}
+        assert actual == expected
 
 
 class TestCheckOrphans:
@@ -293,7 +318,7 @@ class TestCreateStory:
 class TestOnboardValidatesBeforeClearing:
     def test_onboard_keeps_old_resume_when_replacement_is_missing(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
 
         existing_resume = _make_resume_file(tmp_path)
         save_resume("existing_label", str(existing_resume))
@@ -310,7 +335,7 @@ class TestOnboardValidatesBeforeClearing:
 class TestOnboardIdempotency:
     def test_re_onboard_replaces_resume(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
 
         resume1_txt = """\
 Jane Doe
@@ -381,4 +406,4 @@ class TestReplaceResume:
             replace_resume("primary", str(replacement))
 
         assert list_resumes() == ["primary"]
-        assert list(data_dir().glob("*.staging")) == []
+        assert list(paths.inputs_dir().glob("*.staging")) == []

@@ -1,7 +1,7 @@
 import json
-import os
 from pathlib import Path
 
+from callback import paths
 from callback.state import CreatedStory
 
 
@@ -9,15 +9,9 @@ class StoryNotFoundError(Exception):
     pass
 
 
-def data_dir() -> Path:
-    if xdg_data_home := os.environ.get("XDG_DATA_HOME"):
-        return Path(xdg_data_home) / "callback"
-    return Path.home() / ".local" / "share" / "callback"
-
-
 class AccomplishmentsStore:
     def __init__(self, base_dir: Path | None = None):
-        self._base_dir = base_dir if base_dir is not None else data_dir()
+        self._base_dir = base_dir if base_dir is not None else paths.data_dir()
 
     def _file_path(self) -> Path:
         return self._base_dir / "accomplishments.json"
@@ -30,12 +24,7 @@ class AccomplishmentsStore:
             return json.load(f)
 
     def _save(self, data: dict) -> None:
-        file_path = self._file_path()
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = file_path.with_suffix(".json.tmp")
-        with open(tmp_path, "w") as f:
-            json.dump(data, f)
-        os.replace(tmp_path, file_path)
+        paths.write_json_atomic(self._file_path(), data)
 
     def save_story(self, story: CreatedStory) -> CreatedStory:
         """Persist a story. Saving a story identical to one already stored returns

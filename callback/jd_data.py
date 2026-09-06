@@ -1,9 +1,8 @@
 """JDData contract for host-owned keyword extraction."""
 
-from dataclasses import asdict, dataclass, field
 from typing import Literal
 
-from dataclass_wizard import JSONWizard
+from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 EXTRACTION_PROTOCOL = """Extract keywords from jd_text using this exact protocol:
 
@@ -37,89 +36,79 @@ class JDDataError(Exception):
         self.code = code
 
 
-@dataclass
-class JDData(JSONWizard):
+_LIST_FIELDS = ("required", "preferred", "key_responsibilities", "required_any", "preferred_any")
+
+
+def _clean_strings(values: object, field_name: str) -> list[str]:
+    if not isinstance(values, list):
+        raise JDDataError("invalid_jd", f"{field_name} must be a list")
+    cleaned: list[str] = []
+    for value in values:
+        if not isinstance(value, str):
+            raise JDDataError("invalid_jd", f"{field_name} entries must be strings")
+        if value.strip():
+            cleaned.append(value.strip())
+    return cleaned
+
+
+def _clean_groups(groups: object, field_name: str) -> list[list[str]]:
+    if not isinstance(groups, list):
+        raise JDDataError("invalid_jd", f"{field_name} must be a list")
+    cleaned_groups: list[list[str]] = []
+    for group in groups:
+        if not isinstance(group, list):
+            raise JDDataError("invalid_jd", f"{field_name} entries must be lists")
+        cleaned_group = _clean_strings(group, field_name)
+        if cleaned_group:
+            cleaned_groups.append(cleaned_group)
+    return cleaned_groups
+
+
+class JDData(BaseModel):
     """JSON-compatible JDData contract."""
+
+    model_config = ConfigDict(extra="ignore")
 
     title: str | None = None
     company: str | None = None
-    required: list[str] = field(default_factory=list)
-    preferred: list[str] = field(default_factory=list)
-    required_any: list[list[str]] = field(default_factory=list)
-    preferred_any: list[list[str]] = field(default_factory=list)
+    required: list[str] = []
+    preferred: list[str] = []
+    required_any: list[list[str]] = []
+    preferred_any: list[list[str]] = []
     location: str | None = None
     seniority: Seniority | str = "unspecified"
     required_years: float = 0.0
     team: str | None = None
-    key_responsibilities: list[str] = field(default_factory=list)
+    key_responsibilities: list[str] = []
     pay_range_min: float | None = None
     pay_range_max: float | None = None
 
-    def __post_init__(self) -> None:
-        if self.seniority in (None, ""):
-            self.seniority = "unspecified"
-        list_fields = (
-            "required",
-            "preferred",
-            "key_responsibilities",
-            "required_any",
-            "preferred_any",
-        )
-        for field_name in list_fields:
-            if not isinstance(getattr(self, field_name), list):
+    @model_validator(mode="before")
+    @classmethod
+    def _clean(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            raise JDDataError("invalid_jd", "jd_json must encode an object")
+        cleaned = dict(data)
+        if cleaned.get("seniority") in (None, ""):
+            cleaned["seniority"] = "unspecified"
+        for field_name in _LIST_FIELDS:
+            if not isinstance(cleaned.get(field_name, []), list):
                 raise JDDataError("invalid_jd", f"{field_name} must be a list")
-        self.required = self._clean_keywords("required")
-        self.preferred = self._clean_keywords("preferred")
-        self.required_any = self._clean_groups("required_any")
-        self.preferred_any = self._clean_groups("preferred_any")
-        if not self.required and not self.required_any:
+        cleaned["required"] = _clean_strings(cleaned.get("required", []), "required")
+        cleaned["preferred"] = _clean_strings(cleaned.get("preferred", []), "preferred")
+        cleaned["required_any"] = _clean_groups(cleaned.get("required_any", []), "required_any")
+        cleaned["preferred_any"] = _clean_groups(cleaned.get("preferred_any", []), "preferred_any")
+        if not cleaned["required"] and not cleaned["required_any"]:
             raise JDDataError("invalid_jd", "required or required_any must be non-empty")
-        if self.seniority not in SUPPORTED_SENIORITIES:
-            raise JDDataError("invalid_jd", f"unsupported seniority: {self.seniority}")
-
-    def _clean_keywords(self, field_name: str) -> list[str]:
-        return self._clean_strings(getattr(self, field_name), field_name)
-
-    def _clean_groups(self, field_name: str) -> list[list[str]]:
-        cleaned_groups: list[list[str]] = []
-        for group in getattr(self, field_name):
-            if not isinstance(group, list):
-                raise JDDataError("invalid_jd", f"{field_name} entries must be lists")
-            cleaned_group = self._clean_strings(group, field_name)
-            if cleaned_group:
-                cleaned_groups.append(cleaned_group)
-        return cleaned_groups
-
-    @staticmethod
-    def _clean_strings(values: list, field_name: str) -> list[str]:
-        cleaned: list[str] = []
-        for value in values:
-            if not isinstance(value, str):
-                raise JDDataError("invalid_jd", f"{field_name} entries must be strings")
-            if value.strip():
-                cleaned.append(value.strip())
+        seniority = cleaned["seniority"]
+        if not isinstance(seniority, str) or seniority not in SUPPORTED_SENIORITIES:
+            raise JDDataError("invalid_jd", f"unsupported seniority: {seniority!r}")
         return cleaned
-
-    def model_dump(self) -> dict:
-        return asdict(self)
 
 
 def parse_jd_json(jd_json: str) -> dict:
     """Parse and validate host-submitted JDData JSON."""
-
-    jd_data = _load_jd_data(jd_json)
-    return jd_data.model_dump()
-
-
-def _load_jd_data(jd_json: str) -> JDData:
     try:
-        jd_data = JDData.from_json(jd_json)
-    except ValueError as exc:
+        return JDData.model_validate_json(jd_json).model_dump()
+    except ValidationError as exc:
         raise JDDataError("invalid_jd", f"jd_json parse failed: {exc}") from exc
-    except TypeError as exc:
-        raise JDDataError("invalid_jd", str(exc)) from exc
-
-    if not isinstance(jd_data, JDData):
-        raise JDDataError("invalid_jd", "jd_json must encode an object")
-
-    return jd_data
