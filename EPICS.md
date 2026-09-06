@@ -156,7 +156,7 @@ Archived openspec changes: `2026-05-05-holistic-tailor`,
 
 ### 2a — `TailoredResume` schema
 
-- [x] `TailoredResume(BaseModel)` in `state.py` — `name`, `location`, `email`, `phone`, `linkedin`, `website`, `title`, `summary`, `skills_raw`, `experience_raw`, `projects_raw`, `volunteer_raw`, `education_raw`, `max_pages`
+- [x] `TailoredResume(BaseModel)` in `state.py` — `name`, `location`, `email`, `phone`, `linkedin`, `website`, `title`, `summary`, `skills_raw`, `experience_raw`, `projects_raw`, `education_raw`, `max_pages`
 - [x] `state.tailored: TailoredResume | None`
 - [x] Tests: schema round-trip, validation errors
 

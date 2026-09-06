@@ -76,7 +76,7 @@ uv run python scripts/smoke_profile.py
 - `LANGSMITH_ENDPOINT`: LangSmith API endpoint. Defaults to `https://api.smith.langchain.com`.
 - `LANGSMITH_API_KEY`: Required for LangSmith tracing.
 - `LANGSMITH_PROJECT`: LangSmith project name. Defaults to `Callback` when tracing is enabled.
-- `XDG_DATA_HOME`: Overrides resume, wiki, and profile data roots.
+- `XDG_DATA_HOME`: Moves the whole data root (resumes, wiki, checkpoint DBs, compiled profile, applications archive) from `~/.local/share/callback` to `$XDG_DATA_HOME/callback`.
 
 `callback setup-mcp` is noninteractive and only registers the MCP server entry.
 Use `callback config langsmith` or `callback config env ...` to write env vars
@@ -225,7 +225,7 @@ PDF rendering uses HTML + Playwright in `callback/render/html_builder.py`.
 | `apply_graph.py` | `get_apply_graph()` cached accessor; linear apply pipeline with host handoff interrupts and error routing |
 | `apply_nodes.py` | Apply nodes (`jd_fetch`, `keywords_accept`, `parse_initial`, `score_initial`, `tailor`, `render`, `parse_final`, `score_final`, `report`, `finalize`) |
 | `profile_graph.py` | `get_profile_graph()` cached accessor; cyclic profile graph with router edges and interrupts |
-| `profile_nodes.py` | Profile nodes (`check_profile`, `onboard`, `compile_profile`, `check_orphans`, `create_story`) |
+| `profile_nodes.py` | Profile nodes (`check_profile`, `onboard`, `build_profile`, `check_orphans`, `create_story`) |
 | `state.py` | `ApplyState`, `ProfileState`, and related profile data models |
 | `scorer.py` | Deterministic ATS scorer |
 | `jd_data.py` | JD JSON schema, extraction protocol, and validators |
@@ -234,9 +234,12 @@ PDF rendering uses HTML + Playwright in `callback/render/html_builder.py`.
 | `section_map.py` | Resume section editing helpers |
 | `wiki.py` | Wiki storage for resume-linked behavioral stories |
 | `repository/` | Resume and accomplishments persistence helpers |
-| `profilecompiler.py` | Compiles skills and stories into a profile summary |
+| `profilecompiler.py` | `compile_profile()` function |
+| `wikirenderer.py` | `render_wiki()`, `render_experience_page()`, `render_index()` functions |
 | `render/` | HTML + Playwright resume rendering |
+| `paths.py` | Every data directory and the atomic writers |
 | `cli.py` | `callback` CLI entry point |
+| `plugin_install.py` | Plugin installation functions (replaces `HarnessTarget` dataclass) |
 | `observability.py` | Trace config port and LangSmith adapter |
 | `version_check.py` | Current-vs-latest release comparison |
 
