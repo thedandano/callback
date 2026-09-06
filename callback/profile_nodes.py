@@ -171,7 +171,9 @@ def create_story(state: ProfileState) -> dict:
         behavior=intake.get("behavior", ""),
         impact=intake.get("impact", ""),
     )
-    saved = stories.save_story(_registered_label(state.resume_label), story)
+    label = _registered_label(state.resume_label)
+    stories.migrate_legacy_stories(label)  # before next_story_id can claim a legacy id
+    saved = stories.save_story(label, story)
     return {
         "current_story_target": saved.primary_skill,
         "intake": {**intake, "story_id": saved.id, "needs_compile": True},

@@ -460,3 +460,34 @@ class TestReplaceResume:
 
         assert list_resumes() == ["primary"]
         assert list(paths.inputs_dir().glob("*.staging")) == []
+
+
+class TestCreateStoryMigratesFirst:
+    def test_create_story_does_not_claim_a_legacy_story_id(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.repository.stories.list_resumes", lambda: ["default"])
+        legacy = {"id": "story-001", **{**_STORY_FIELDS, "primary_skill": "Legacy"}}
+        data_dir = tmp_path / "callback"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        (data_dir / "accomplishments.json").write_text(
+            json.dumps({"schema_version": "1", "onboard_text": "", "created_stories": [legacy]})
+        )
+
+        result = create_story(_make_state(intake=_STORY_FIELDS))
+
+        listed, _ = stories.list_stories("default")
+        actual = {
+            "new_id": result["intake"]["story_id"],
+            "ids": [s.id for s in listed],
+            "legacy_skill": listed[0].primary_skill,
+            "json_dropped": "created_stories"
+            not in json.loads((data_dir / "accomplishments.json").read_text()),
+        }
+        expected = {
+            "new_id": "story-002",
+            "ids": ["story-001", "story-002"],
+            "legacy_skill": "Legacy",
+            "json_dropped": True,
+        }
+        assert actual == expected
