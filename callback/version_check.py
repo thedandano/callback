@@ -26,9 +26,12 @@ def _current_version() -> str:
 def fetch_latest_tag() -> str | None:
     try:
         with urllib.request.urlopen(_LATEST_URL, timeout=3) as response:  # noqa: S310
-            return json.load(response).get("tag_name")
+            payload = json.load(response)
+        if not isinstance(payload, dict):
+            raise ValueError(f"release payload is a {type(payload).__name__}, not an object")
+        return payload.get("tag_name")
     except (OSError, ValueError, http.client.HTTPException) as exc:
-        # OSError: URLError/HTTPError/timeouts. ValueError: bad JSON.
+        # OSError: URLError/HTTPError/timeouts. ValueError: bad JSON or a non-object payload.
         # HTTPException: a truncated body (IncompleteRead) surfaces from json.load.
         logger.warning(
             "latest release lookup failed (%s: %s); update status unknown", type(exc).__name__, exc

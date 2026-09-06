@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import http.client
+import io
 from unittest.mock import MagicMock, patch
 
 import callback.version_check as vc
@@ -87,5 +89,15 @@ def test_fetch_latest_tag_treats_truncated_body_as_failure(caplog):
     with patch.object(vc.urllib.request, "urlopen", side_effect=truncated):
         tag = vc.fetch_latest_tag()
     actual = {"tag": tag, "warned": any("latest release" in r.message for r in caplog.records)}
+    expected = {"tag": None, "warned": True}
+    assert actual == expected
+
+
+def test_fetch_latest_tag_treats_non_object_payload_as_failure(caplog):
+    caplog.set_level("WARNING", logger="callback.version_check")
+    response = contextlib.nullcontext(io.BytesIO(b"[1, 2]"))
+    with patch.object(vc.urllib.request, "urlopen", return_value=response):
+        tag = vc.fetch_latest_tag()
+    actual = {"tag": tag, "warned": any("not an object" in r.message for r in caplog.records)}
     expected = {"tag": None, "warned": True}
     assert actual == expected
