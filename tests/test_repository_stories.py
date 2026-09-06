@@ -1,3 +1,4 @@
+import json
 import logging
 from pathlib import Path
 
@@ -137,3 +138,69 @@ def test_list_stories_in_id_order_and_skips_unreadable_with_warning(wiki: Path, 
 
 def test_list_stories_empty_when_no_experience_dir(wiki: Path):
     assert stories.list_stories("nobody") == ([], [])
+
+
+def _legacy_json(tmp_path: Path, records: list[dict]) -> Path:
+    data_dir = tmp_path / "callback"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    path = data_dir / "accomplishments.json"
+    path.write_text(
+        json.dumps({"schema_version": "1", "onboard_text": "notes", "created_stories": records})
+    )
+    return path
+
+
+def test_migrate_writes_missing_files_and_drops_json_stories(wiki: Path, monkeypatch, caplog):
+    caplog.set_level(logging.INFO, logger="callback.repository.stories")
+    monkeypatch.setenv("XDG_DATA_HOME", str(wiki))
+    path = _legacy_json(
+        wiki,
+        [
+            {"id": "story-001", **_FIELDS},
+            {"id": "story-002", **{**_FIELDS, "job_title": "Project"}},
+        ],
+    )
+    written = stories.migrate_legacy_stories("primary")
+    listed, warnings = stories.list_stories("primary")
+    actual = {
+        "written": written,
+        "ids": [s.id for s in listed],
+        "types": [
+            (wiki / "primary" / "experience" / f"{s.id}.md").read_text().splitlines()[1]
+            for s in listed
+        ],
+        "warnings": warnings,
+        "json": json.loads(path.read_text()),
+        "logged": any("migrated" in r.message for r in caplog.records),
+    }
+    expected = {
+        "written": 2,
+        "ids": ["story-001", "story-002"],
+        "types": ["type: story", "type: project"],
+        "warnings": [],
+        "json": {"schema_version": "2", "onboard_text": "notes"},
+        "logged": True,
+    }
+    assert actual == expected
+
+
+def test_migrate_rewrites_a_legacy_page_without_frontmatter_but_not_one_with(
+    wiki: Path, monkeypatch
+):
+    monkeypatch.setenv("XDG_DATA_HOME", str(wiki))
+    _legacy_json(wiki, [{"id": "story-001", **_FIELDS}, {"id": "story-002", **_FIELDS}])
+    WikiStore().write_page("primary", "experience/story-001.md", "# old render, no frontmatter\n")
+    hand_edited = stories.story_to_page(
+        CreatedStory(id="story-002", **{**_FIELDS, "impact": "hand edit"}), _TS
+    )
+    WikiStore().write_page("primary", "experience/story-002.md", hand_edited)
+    written = stories.migrate_legacy_stories("primary")
+    listed, _ = stories.list_stories("primary")
+    actual = {"written": written, "impacts": [s.impact for s in listed]}
+    expected = {"written": 1, "impacts": ["Deploys daily.", "hand edit"]}
+    assert actual == expected
+
+
+def test_migrate_is_a_noop_once_json_has_no_stories(wiki: Path, monkeypatch):
+    monkeypatch.setenv("XDG_DATA_HOME", str(wiki))
+    assert stories.migrate_legacy_stories("primary") == 0

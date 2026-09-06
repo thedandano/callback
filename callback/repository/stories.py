@@ -10,6 +10,7 @@ import logging
 import re
 from datetime import UTC, datetime
 
+from callback.repository.accomplishments import AccomplishmentsStore
 from callback.state import CreatedStory
 from callback.wiki import WikiPageError, WikiStore, join_frontmatter, split_frontmatter
 
@@ -137,3 +138,40 @@ def save_story(resume_label: str, story: CreatedStory) -> CreatedStory:
     WikiStore().write_page(resume_label, story_page_id(saved.id), story_to_page(saved, timestamp))
     logger.info("story written: %s (%s)", story_page_id(saved.id), saved.primary_skill)
     return saved
+
+
+def _needs_page(resume_label: str, page_id: str) -> bool:
+    """True when the page is missing or is an old render without frontmatter."""
+    content = WikiStore().read_pages(resume_label, [page_id])[page_id]
+    return not content or not content.startswith("---\n")
+
+
+def migrate_legacy_stories(resume_label: str) -> int:
+    """One-time move of stories from accomplishments.json to OKF pages.
+
+    Writes a page only where none exists or the existing one is a pre-OKF
+    render (no frontmatter); a page that already has frontmatter is the
+    original and is left alone. Then drops the stories from the JSON so this
+    never runs twice. Returns the number of pages written.
+    """
+    store = AccomplishmentsStore()
+    legacy = store.legacy_stories()
+    if not legacy:
+        return 0
+    timestamp = datetime.now(UTC).isoformat()
+    written = 0
+    for record in legacy:
+        story = CreatedStory.model_validate(record)
+        page_id = story_page_id(story.id)
+        if _needs_page(resume_label, page_id):
+            WikiStore().write_page(resume_label, page_id, story_to_page(story, timestamp))
+            written += 1
+    store.drop_legacy_stories()
+    logger.info(
+        "legacy stories migrated: %d of %d pages written under %s; "
+        "accomplishments.json now holds onboard_text only",
+        written,
+        len(legacy),
+        resume_label,
+    )
+    return written
