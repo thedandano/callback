@@ -26,7 +26,7 @@ A wrong mental model here causes real, recurring mistakes — so internalize thi
 - **`job_title` is a raw passthrough of whatever you pass to `create_story`,** and it is the *only* field that carries where a story belongs. There is no separate section/category field today.
 - **Stories are markdown files** under the wiki (`experience/story-NNN.md`), not JSON. The user may open and edit one in any editor — the next `compile_profile` reads the file fresh and respects the edit.
 
-The consequence: **every grouping decision is yours, made at `create_story` time, and frozen permanently.** Re-onboarding recompiles the stored stories verbatim — it does not re-read the file — so an authoring mistake (e.g. tagging a Projects entry with a Freelancing role) silently survives forever. This is exactly why the workflow below gates compilation behind an explicit user check.
+The consequence: **every grouping decision is yours, made at `create_story` time — but it is not frozen.** Each story is a markdown file; the user (or you, by editing the file) can correct `job_title`, `tags`, or the body, and the next `compile_profile` reads the corrected file. What re-onboarding does *not* do is re-read the accomplishments source: an authoring mistake (e.g. tagging a Projects entry with a Freelancing role) survives until someone edits the story page or creates a corrected story. This is why the workflow below gates compilation behind an explicit user check.
 
 ## Workflow: Scan → Plan → Confirm → Compile
 
