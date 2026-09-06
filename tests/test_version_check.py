@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 from unittest.mock import MagicMock, patch
 
 import callback.version_check as vc
@@ -74,6 +75,16 @@ def test_cached_result_no_second_network_call():
 def test_fetch_latest_tag_returns_none_and_logs_when_request_fails(caplog):
     caplog.set_level("WARNING", logger="callback.version_check")
     with patch.object(vc.urllib.request, "urlopen", side_effect=OSError("offline")):
+        tag = vc.fetch_latest_tag()
+    actual = {"tag": tag, "warned": any("latest release" in r.message for r in caplog.records)}
+    expected = {"tag": None, "warned": True}
+    assert actual == expected
+
+
+def test_fetch_latest_tag_treats_truncated_body_as_failure(caplog):
+    caplog.set_level("WARNING", logger="callback.version_check")
+    truncated = http.client.IncompleteRead(b"")
+    with patch.object(vc.urllib.request, "urlopen", side_effect=truncated):
         tag = vc.fetch_latest_tag()
     actual = {"tag": tag, "warned": any("latest release" in r.message for r in caplog.records)}
     expected = {"tag": None, "warned": True}

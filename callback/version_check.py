@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import importlib.metadata
 import json
 import logging
@@ -26,8 +27,9 @@ def fetch_latest_tag() -> str | None:
     try:
         with urllib.request.urlopen(_LATEST_URL, timeout=3) as response:  # noqa: S310
             return json.load(response).get("tag_name")
-    except (OSError, ValueError) as exc:
-        # OSError covers URLError/HTTPError/timeouts; ValueError covers bad JSON.
+    except (OSError, ValueError, http.client.HTTPException) as exc:
+        # OSError: URLError/HTTPError/timeouts. ValueError: bad JSON.
+        # HTTPException: a truncated body (IncompleteRead) surfaces from json.load.
         logger.warning(
             "latest release lookup failed (%s: %s); update status unknown", type(exc).__name__, exc
         )
