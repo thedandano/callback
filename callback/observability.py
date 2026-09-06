@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from functools import wraps
 from typing import Any
 
+# langgraph re-exports langchain_core's RunnableConfig but leaves it out of __all__.
 from langgraph.types import RunnableConfig  # pyright: ignore[reportPrivateImportUsage]
 
 logger = logging.getLogger(__name__)

@@ -19,6 +19,8 @@ from pathlib import Path
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, StateGraph
+
+# langgraph re-exports langchain_core's RunnableConfig but leaves it out of __all__.
 from langgraph.types import RunnableConfig  # pyright: ignore[reportPrivateImportUsage]
 
 from callback import paths

@@ -186,7 +186,7 @@ Out of scope: LinkedIn login walls and Cloudflare challenge pages. Those remain
 ### M4 — Shed weight (one day, mechanical)
 
 Ships: W3, W5, W6, W7, W8, W9, W10, D5, D8.
-Done (M4): `pyproject.toml` lists 11 runtime dependencies (was 17); `callback/paths.py` owns every data directory and `XDG_DATA_HOME` moves all of them; `ProfileCompiler` → `profilecompiler.compile_profile()`, `WikiRenderer` → `wikirenderer.render_wiki()/render_experience_page()/render_index()`, `HarnessTarget` → plain functions in `plugin_install.py`; `load_jd` no longer takes `resume_label`; the dormant `[tool.ruff.lint.pylint]` block is removed (26 PLR09 violations recorded under W11).
+Done (M4): `pyproject.toml` lists 11 runtime dependencies (was 17); `callback/paths.py` owns every data directory and `XDG_DATA_HOME` moves all of them; `ProfileCompiler` → `profilecompiler.compile_profile()`, `WikiRenderer` → `wikirenderer.render_wiki()/render_experience_page()/render_index()`, `HarnessTarget` → plain functions in `plugin_install.py`; `load_jd` no longer takes `resume_label`; the dormant `[tool.ruff.lint.pylint]` block is removed (PLR09 violations recorded under W11: 26 under the old block's thresholds, 9 under ruff defaults).
 
 ### M5 — Shrink the plumbing (judgment, one day)
 
