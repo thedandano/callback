@@ -17,9 +17,9 @@ import functools
 import sqlite3
 from pathlib import Path
 
-from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, StateGraph
+from langgraph.types import RunnableConfig  # pyright: ignore[reportPrivateImportUsage]
 
 from callback import paths
 from callback.apply_nodes import (

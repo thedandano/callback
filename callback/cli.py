@@ -18,8 +18,6 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import typer
-from rich.console import Console
-from rich.table import Table
 
 from callback import paths
 from callback.observability import (
@@ -34,8 +32,6 @@ config_app = typer.Typer(no_args_is_help=True)
 env_app = typer.Typer(no_args_is_help=True)
 app.add_typer(config_app, name="config")
 config_app.add_typer(env_app, name="env")
-console = Console(soft_wrap=True)
-error_console = Console(stderr=True, soft_wrap=True)
 
 SERVER_NAME = "callback"
 SERVER_COMMAND = "callback"
@@ -414,36 +410,35 @@ def _status_cell(
     return _display_env_value(env_key, env[env_key], show_secrets=show_secrets)
 
 
-def _build_config_status_table(
+def _build_config_status_text(
     targets: tuple[str, ...],
     envs: Mapping[str, Mapping[str, str]],
     *,
     show_secrets: bool,
-) -> Table:
-    table = Table(title="callback MCP env status")
-    table.add_column("env var")
-    table.add_column("Claude")
-    table.add_column("Codex")
-    table.add_column("status")
-
+) -> str:
+    header = ("env var", "Claude", "Codex", "status")
     env_keys = sorted({env_key for env in envs.values() for env_key in env})
-    if not env_keys:
-        table.add_row(
-            "(none)",
-            _status_cell("claude", None, targets, envs, show_secrets=show_secrets),
-            _status_cell("codex", None, targets, envs, show_secrets=show_secrets),
-            "unset",
-        )
-        return table
-
-    for env_key in env_keys:
-        table.add_row(
+    rows = [
+        (
             env_key,
             _status_cell("claude", env_key, targets, envs, show_secrets=show_secrets),
             _status_cell("codex", env_key, targets, envs, show_secrets=show_secrets),
             _status_for_env_key(env_key, targets, envs),
         )
-    return table
+        for env_key in env_keys
+    ] or [
+        (
+            "(none)",
+            _status_cell("claude", None, targets, envs, show_secrets=show_secrets),
+            _status_cell("codex", None, targets, envs, show_secrets=show_secrets),
+            "unset",
+        )
+    ]
+    widths = [max(len(row[i]) for row in (header, *rows)) for i in range(len(header))]
+    lines = ["callback MCP env status"]
+    for row in (header, *rows):
+        lines.append("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)).rstrip())
+    return "\n".join(lines)
 
 
 def _env_value_enabled(value: str | None) -> bool:
@@ -604,7 +599,7 @@ def serve(
     try:
         _write_startup_log_event(resolved_log_path, startup_event)
     except OSError as exc:
-        error_console.print(
+        typer.echo(
             json.dumps(
                 {
                     "event": "cli_serve_log_unavailable",
@@ -613,7 +608,8 @@ def serve(
                     "path": str(resolved_log_path),
                     "error": str(exc),
                 }
-            )
+            ),
+            err=True,
         )
 
     from callback.server import configure_logging, run
@@ -649,25 +645,26 @@ def setup_mcp(
         _validate_claude_config(claude_path)
         _validate_codex_config(codex_path)
         if not skip_browsers:
-            console.print("Installing Playwright Chromium for callback...")
+            typer.echo("Installing Playwright Chromium for callback...")
             browser_install_returncode = _install_browsers()
             if browser_install_returncode != 0:
-                error_console.print(
+                typer.echo(
                     "setup-mcp failed: browser install failed; "
-                    "run `callback install-browsers` for details"
+                    "run `callback install-browsers` for details",
+                    err=True,
                 )
                 raise typer.Exit(browser_install_returncode)
         configure_claude(claude_path, command)
         configure_codex(codex_path, command)
     except ConfigError as exc:
-        error_console.print(f"setup-mcp failed: {exc}")
+        typer.echo(f"setup-mcp failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
-    console.print(f"Updated Claude config: {claude_path}")
-    console.print(f"Updated Codex config: {codex_path}")
-    console.print("Next: run `callback config langsmith` to enable LangSmith tracing.")
-    console.print("Then restart your MCP host so Claude or Codex reloads the config.")
-    console.print("Use `callback logs --follow` to watch server logs.")
+    typer.echo(f"Updated Claude config: {claude_path}")
+    typer.echo(f"Updated Codex config: {codex_path}")
+    typer.echo("Next: run `callback config langsmith` to enable LangSmith tracing.")
+    typer.echo("Then restart your MCP host so Claude or Codex reloads the config.")
+    typer.echo("Use `callback logs --follow` to watch server logs.")
 
 
 @config_app.command("langsmith")
@@ -721,12 +718,12 @@ def config_langsmith(
             codex_path=codex_config or DEFAULT_CODEX_CONFIG,
         )
     except ConfigError as exc:
-        error_console.print(f"config langsmith failed: {exc}")
+        typer.echo(f"config langsmith failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
-    console.print(f"Updated LangSmith env for: {', '.join(targets)}")
-    console.print("Restart your MCP host so it reloads the new environment.")
-    console.print("Use `callback logs --follow` to inspect startup or tracing warnings.")
+    typer.echo(f"Updated LangSmith env for: {', '.join(targets)}")
+    typer.echo("Restart your MCP host so it reloads the new environment.")
+    typer.echo("Use `callback logs --follow` to inspect startup or tracing warnings.")
 
 
 @config_app.command("status")
@@ -754,10 +751,10 @@ def config_status(
         paths = _config_paths(claude_config=claude_config, codex_config=codex_config)
         envs = _read_config_envs(targets, paths)
     except ConfigError as exc:
-        error_console.print(f"config status failed: {exc}")
+        typer.echo(f"config status failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
-    console.print(_build_config_status_table(targets, envs, show_secrets=show_secrets))
+    typer.echo(_build_config_status_text(targets, envs, show_secrets=show_secrets))
 
 
 @env_app.command("set")
@@ -788,11 +785,11 @@ def config_env_set(
             codex_path=codex_config or DEFAULT_CODEX_CONFIG,
         )
     except ConfigError as exc:
-        error_console.print(f"config env set failed: {exc}")
+        typer.echo(f"config env set failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
-    console.print(f"Set {env_key} for: {', '.join(targets)}")
-    console.print("Restart your MCP host so it reloads the new environment.")
+    typer.echo(f"Set {env_key} for: {', '.join(targets)}")
+    typer.echo("Restart your MCP host so it reloads the new environment.")
 
 
 @env_app.command("unset")
@@ -822,11 +819,11 @@ def config_env_unset(
             codex_path=codex_config or DEFAULT_CODEX_CONFIG,
         )
     except ConfigError as exc:
-        error_console.print(f"config env unset failed: {exc}")
+        typer.echo(f"config env unset failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
-    console.print(f"Unset {env_key} for: {', '.join(targets)}")
-    console.print("Restart your MCP host so it reloads the new environment.")
+    typer.echo(f"Unset {env_key} for: {', '.join(targets)}")
+    typer.echo("Restart your MCP host so it reloads the new environment.")
 
 
 @env_app.command("list")
@@ -856,18 +853,18 @@ def config_env_list(
         printed = False
         for target_name in targets:
             env = readers[target_name](paths[target_name])
-            console.print(f"[{target_name}]", markup=False)
+            typer.echo(f"[{target_name}]")
             if not env:
-                console.print("(none)")
+                typer.echo("(none)")
                 continue
             printed = True
             for env_key in sorted(env):
                 value = _display_env_value(env_key, env[env_key], show_secrets=show_secrets)
-                console.print(f"{env_key}={value}")
+                typer.echo(f"{env_key}={value}")
         if not printed:
             return
     except ConfigError as exc:
-        error_console.print(f"config env list failed: {exc}")
+        typer.echo(f"config env list failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
 
@@ -894,7 +891,7 @@ def trace_check(
     try:
         targets = _trace_check_target_names(target)
     except TraceCheckError as exc:
-        error_console.print(f"trace-check failed: {exc}")
+        typer.echo(f"trace-check failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
     failures = 0
@@ -912,10 +909,10 @@ def trace_check(
             )
         except (ConfigError, TraceCheckError) as exc:
             failures += 1
-            error_console.print(f"{target_name}: failed: {_redact_text(str(exc), env)}")
+            typer.echo(f"{target_name}: failed: {_redact_text(str(exc), env)}", err=True)
             continue
 
-        console.print(f"{target_name}: ok (project: {project})")
+        typer.echo(f"{target_name}: ok (project: {project})")
 
     if failures:
         raise typer.Exit(1)
@@ -948,19 +945,19 @@ def logs(
         project_logs=project_logs,
     )
     if not resolved_log_path.exists():
-        error_console.print(f"Log file not found: {resolved_log_path}")
+        typer.echo(f"Log file not found: {resolved_log_path}", err=True)
         raise typer.Exit(1)
 
     with resolved_log_path.open(encoding="utf-8") as handle:
         entries = handle.readlines()
         for line in entries[-lines:]:
-            console.print(line.rstrip("\n"))
+            typer.echo(line.rstrip("\n"))
 
         if follow:
             while True:
                 line = handle.readline()
                 if line:
-                    console.print(line.rstrip("\n"))
+                    typer.echo(line.rstrip("\n"))
                 else:
                     time.sleep(0.5)
 
@@ -985,7 +982,7 @@ def uninstall(
         _remove_server_from_claude(claude_path)
         _remove_server_from_codex(codex_path)
     except ConfigError as exc:
-        error_console.print(f"uninstall failed: {exc}")
+        typer.echo(f"uninstall failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
     if purge:
@@ -994,7 +991,7 @@ def uninstall(
         for directory in (paths.data_dir(), paths.state_dir()):
             if directory.exists():
                 shutil.rmtree(directory)
-                console.print(f"Deleted: {directory}")
+                typer.echo(f"Deleted: {directory}")
 
 
 @app.command()
@@ -1023,9 +1020,9 @@ def _display_version() -> str:
 def version() -> None:
     """Print the installed callback build version."""
     try:
-        console.print(_display_version())
+        typer.echo(_display_version())
     except importlib.metadata.PackageNotFoundError as exc:
-        error_console.print("callback is not installed as a package")
+        typer.echo("callback is not installed as a package", err=True)
         raise typer.Exit(1) from exc
 
 
@@ -1033,12 +1030,13 @@ def _maybe_install_browsers(*, skip_browsers: bool, print_only: bool) -> None:
     """Install Playwright Chromium unless skipped or in print-only mode."""
     if skip_browsers or print_only:
         return
-    console.print("Installing Playwright Chromium for callback...")
+    typer.echo("Installing Playwright Chromium for callback...")
     returncode = _install_browsers()
     if returncode != 0:
-        error_console.print(
+        typer.echo(
             "setup-plugin failed: browser install failed; "
-            "run `callback install-browsers` for details"
+            "run `callback install-browsers` for details",
+            err=True,
         )
         raise typer.Exit(returncode)
 
@@ -1068,7 +1066,7 @@ def setup_plugin(
     try:
         targets = resolve_targets(target)
     except ValueError as exc:
-        error_console.print(f"setup-plugin failed: {exc}")
+        typer.echo(f"setup-plugin failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
     _maybe_install_browsers(skip_browsers=skip_browsers, print_only=print_only)
@@ -1076,14 +1074,14 @@ def setup_plugin(
     try:
         commands = install(targets, source=source, print_only=print_only)
     except PluginInstallError as exc:
-        error_console.print(f"setup-plugin failed: {exc}")
+        typer.echo(f"setup-plugin failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
     prefix = "Would run:" if print_only else "Ran:"
     for cmd in commands:
-        console.print(f"{prefix} {cmd}")
+        typer.echo(f"{prefix} {cmd}")
 
-    console.print(
+    typer.echo(
         "Restart the session or run /reload-plugins to load MCP servers. "
         "Note: claude and codex must be on PATH."
     )

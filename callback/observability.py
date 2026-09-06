@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from functools import wraps
 from typing import Any
 
-from langchain_core.runnables import RunnableConfig
+from langgraph.types import RunnableConfig  # pyright: ignore[reportPrivateImportUsage]
 
 logger = logging.getLogger(__name__)
 

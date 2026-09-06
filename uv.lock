@@ -131,7 +131,6 @@ source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
     { name = "jinja2" },
-    { name = "langchain-core" },
     { name = "langgraph" },
     { name = "langgraph-checkpoint-sqlite" },
     { name = "langsmith" },
@@ -139,7 +138,6 @@ dependencies = [
     { name = "playwright" },
     { name = "pydantic" },
     { name = "python-docx" },
-    { name = "rich" },
     { name = "trafilatura" },
     { name = "typer" },
 ]
@@ -158,7 +156,6 @@ dev = [
 requires-dist = [
     { name = "fastmcp", specifier = ">=3.2.4" },
     { name = "jinja2", specifier = ">=3.1" },
-    { name = "langchain-core", specifier = ">=1.3.2" },
     { name = "langgraph", specifier = ">=1.1.10" },
     { name = "langgraph-checkpoint-sqlite", specifier = ">=3.0.3" },
     { name = "langsmith", specifier = ">=0.8.0" },
@@ -166,7 +163,6 @@ requires-dist = [
     { name = "playwright", specifier = ">=1.62.0" },
     { name = "pydantic", specifier = ">=2.13.3" },
     { name = "python-docx", specifier = ">=1.1.0" },
-    { name = "rich", specifier = ">=13.9" },
     { name = "trafilatura", specifier = ">=2.2.0" },
     { name = "typer", specifier = ">=0.15" },
 ]
