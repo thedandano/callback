@@ -88,7 +88,7 @@ Known weight (works, but costs more than it earns):
 | # | Kind | What | Est. cut |
 |---|------|------|----------|
 | W1 | dep | crawl4ai: 93 of 147 runtime packages and 2.0 s of import time to fetch one page; Playwright is already installed. Its pruning also produced the 48,000-token JD outlier | Fixed (M3) |
-| W2 | arch | Profile graph is decorative; `compile_profile` and `create_story` bypass it. Wiki markdown is a render of `accomplishments.json`, so hand edits are overwritten; story metadata is regex-scraped from prose (`server.py:255`) | graph half fixed (M2); data half is M2.5 |
+| W2 | arch | Profile graph is decorative; `compile_profile` and `create_story` bypass it. Wiki markdown is a render of `accomplishments.json`, so hand edits are overwritten; story metadata is regex-scraped from prose (`server.py:255`) | Fixed (M2, M2.5) |
 | W3 | dep | dataclass-wizard for JDData; pydantic already present | Fixed (M4) |
 | W4 | dup | 8 near-identical Claude/Codex env functions in `cli.py` | ~80 lines |
 | W5 | dead | Multi-resume plumbing (`ambiguous_resume`, `resume_label` param) unreachable | Fixed (M4) |
@@ -105,7 +105,7 @@ Known weight (works, but costs more than it earns):
 Ordered by dependency and payoff. Each milestone is one PR to `main` and leaves the
 suite green. Estimates are for one person.
 
-Order: M1 → M2 → M2.5 → M6 → M3 → M7 → M4 → M5. Evals come before the fetcher swap and
+Order: M1 → M2 → M3 → M4 → M2.5 (done) → M6 → M7 → M5. Evals come before the fetcher swap and
 the token diet so both are measured against something.
 
 ### M1 — Close the trust boundary (half a day)
@@ -143,9 +143,11 @@ Spec: the diagram linked above. In short:
 Out of scope for this milestone: converting `sections.json` (the resume) to markdown,
 `log.md`, per-folder `index.md`. Revisit after M6 shows what the evals need.
 
-Done when: every wiki file has frontmatter with `type`; a hand edit to a story body
-survives `compile_profile`; compiling the 14 existing stories produces an `index.md`
-identical to today's; no regex reads story metadata anywhere in `callback/`.
+Done (M2.5): every story page has frontmatter with `type`; a hand edit to a story
+body survives `compile_profile` (tested); compiling the 14 existing stories produced
+an `index.md` identical to the pre-migration one (`scripts/check_wiki_migration.py`);
+no regex reads story metadata in `callback/`. `accomplishments.json` keeps
+`onboard_text` only.
 
 ### M3 — Replace the fetcher (half a day plus smoke runs)
 
