@@ -56,6 +56,7 @@ from callback.profile_graph import get_profile_graph, story_pending
 from callback.profile_graph import make_config as make_profile_config
 from callback.repository.preferences import PreferencesStore
 from callback.repository.resumes import list_resumes
+from callback.repository.stories import tags_from_meta
 from callback.section_map import SectionMap, SkillsSection, apply_edit
 from callback.state import ApplyState, ProfileState
 from callback.wiki import WikiPageError, WikiPageIdError, WikiStore, split_frontmatter
@@ -259,7 +260,22 @@ def _project_page_meta(page_id: str, content: str) -> dict | None:
             },
         )
         return None
-    return meta if meta.get("type") == "project" else None
+    if meta.get("type") != "project":
+        return None
+    try:
+        meta["tags"] = tags_from_meta(meta)
+    except WikiPageError as exc:
+        _log(
+            "WARNING",
+            {
+                "tool": "submit_keywords",
+                "event": "story_page_unreadable",
+                "page_id": page_id,
+                "reason": str(exc),
+            },
+        )
+        return None
+    return meta
 
 
 def _evidence_preview(content: str) -> str:

@@ -1953,3 +1953,53 @@ class TestSearchPreferencesTools:
         assert env["status"] == "error"
         assert env["error"]["code"] == "invalid_preferences"
         assert env["error"]["stage"] == "set_search_preferences"
+
+
+def test_rank_project_candidates_skips_project_pages_with_non_list_tags(
+    tmp_path, monkeypatch, caplog
+):
+    from callback.server import _rank_project_candidates
+    from callback.wiki import WikiStore
+
+    caplog.set_level("WARNING", logger="callback.server")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    store = WikiStore()
+    store.write_page(
+        "r",
+        "experience/story-001.md",
+        "---\ntype: project\ntitle: Bad\ntags: 123\n---\n# Bad\n\n**Situation:** Python.\n",
+    )
+    store.write_page(
+        "r",
+        "experience/story-002.md",
+        "---\ntype: project\ntitle: Scalar\ntags: Python\n---\n# Scalar\n\n**Situation:** Py.\n",
+    )
+    store.write_page(
+        "r",
+        "experience/story-003.md",
+        "---\ntype: project\ntitle: Good\ntags:\n- Python\n---\n# Good\n\n**Situation:** Python.\n",
+    )
+    wiki_index = (
+        "- [a](experience/story-001.md)\n"
+        "- [b](experience/story-002.md)\n"
+        "- [c](experience/story-003.md)\n"
+    )
+    candidates = _rank_project_candidates(
+        "r", {"required": ["Python"], "preferred": []}, wiki_index
+    )
+    warned = sorted(
+        pid
+        for pid in ("story-001.md", "story-002.md")
+        if any(pid in r.message for r in caplog.records)
+    )
+    actual = {
+        "names": [c["name"] for c in candidates],
+        "skills": [c["skills"] for c in candidates],
+        "warned": warned,
+    }
+    expected = {
+        "names": ["Good"],
+        "skills": [["Python"]],
+        "warned": ["story-001.md", "story-002.md"],
+    }
+    assert actual == expected
