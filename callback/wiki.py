@@ -66,13 +66,11 @@ class WikiStore:
 
     def write_index(self, resume_label: str, content: str) -> None:
         root = self.wiki_root(resume_label)
-        root.mkdir(parents=True, exist_ok=True)
-        (root / "index.md").write_text(content, encoding="utf-8")
+        paths.write_text_atomic(root / "index.md", content)
 
     def write_experience_page(self, resume_label: str, company_slug_: str, content: str) -> None:
         exp_dir = self.wiki_root(resume_label) / "experience"
-        exp_dir.mkdir(parents=True, exist_ok=True)
-        (exp_dir / f"{company_slug_}.md").write_text(content, encoding="utf-8")
+        paths.write_text_atomic(exp_dir / f"{company_slug_}.md", content)
 
     def _page_path(self, resume_label: str, page_id: str) -> Path:
         """Resolve page_id under the wiki root; reject ids that escape it."""
@@ -88,8 +86,7 @@ class WikiStore:
     def write_page(self, resume_label: str, page_id: str, content: str) -> None:
         """Write any page by page_id (path relative to wiki_root)."""
         p = self._page_path(resume_label, page_id)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content, encoding="utf-8")
+        paths.write_text_atomic(p, content)
 
     def is_valid_page_id(self, resume_label: str, page_id: str) -> bool:
         """Return True when page_id resolves under the wiki root, False otherwise."""

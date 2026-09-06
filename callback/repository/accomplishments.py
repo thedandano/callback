@@ -35,6 +35,10 @@ class AccomplishmentsStore:
         """Stories still held in the JSON (schema 1). Empty once migrated."""
         return list(self._load().get("created_stories") or [])
 
+    def has_legacy_key(self) -> bool:
+        """True when the JSON still holds a `created_stories` key, even if empty."""
+        return "created_stories" in self._load()
+
     def drop_legacy_stories(self) -> None:
         data = self._load()
         data.pop("created_stories", None)

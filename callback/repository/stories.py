@@ -10,7 +10,10 @@ import logging
 import re
 from datetime import UTC, datetime
 
+from pydantic import ValidationError
+
 from callback.repository.accomplishments import AccomplishmentsStore
+from callback.repository.resumes import list_resumes
 from callback.state import CreatedStory
 from callback.wiki import WikiPageError, WikiStore, join_frontmatter, split_frontmatter
 
@@ -140,38 +143,85 @@ def save_story(resume_label: str, story: CreatedStory) -> CreatedStory:
     return saved
 
 
-def _needs_page(resume_label: str, page_id: str) -> bool:
-    """True when the page is missing or is an old render without frontmatter."""
-    content = WikiStore().read_pages(resume_label, [page_id])[page_id]
-    return not content or not content.startswith("---\n")
+def _validate_legacy(records: list[dict]) -> tuple[list[CreatedStory], list[str]]:
+    """Validated stories plus the ids (or index) of records that could not be read."""
+    valid: list[CreatedStory] = []
+    skipped: list[str] = []
+    for index, record in enumerate(records):
+        try:
+            valid.append(CreatedStory.model_validate(record))
+        except ValidationError as exc:
+            fallback = f"#{index}"
+            ident = str(record.get("id") or fallback) if isinstance(record, dict) else fallback
+            logger.warning("legacy story %s skipped: not a valid story: %s", ident, exc)
+            skipped.append(ident)
+    return valid, skipped
+
+
+def _write_legacy_page(resume_label: str, story: CreatedStory, timestamp: str) -> bool:
+    """Write the page unless one with frontmatter already exists. Returns True when written."""
+    page_id = story_page_id(story.id)
+    store = WikiStore()
+    existing = store.read_pages(resume_label, [page_id])[page_id]
+    if existing.startswith("---\n"):
+        return False
+    store.write_page(resume_label, page_id, story_to_page(story, timestamp))
+    logger.info(
+        "story migrated: %s (%s, %s)",
+        page_id,
+        story.primary_skill,
+        "overwritten" if existing else "created",
+    )
+    return True
+
+
+def _drop_legacy_if_complete(
+    store: AccomplishmentsStore,
+    resume_label: str,
+    expected: list[CreatedStory],
+    skipped: list[str],
+) -> None:
+    listed, _ = list_stories(resume_label)
+    present = {s.id for s in listed}
+    missing = [s.id for s in expected if s.id not in present]
+    if skipped or missing:
+        logger.warning(
+            "legacy stories kept in accomplishments.json: "
+            "%d invalid (%s), %d not readable after write (%s)",
+            len(skipped),
+            ", ".join(skipped) or "-",
+            len(missing),
+            ", ".join(missing) or "-",
+        )
+        return
+    store.drop_legacy_stories()
+    logger.info(
+        "legacy stories migrated under %s; accomplishments.json now holds onboard_text only",
+        resume_label,
+    )
 
 
 def migrate_legacy_stories(resume_label: str) -> int:
     """One-time move of stories from accomplishments.json to OKF pages.
 
-    Writes a page only where none exists or the existing one is a pre-OKF
-    render (no frontmatter); a page that already has frontmatter is the
-    original and is left alone. Then drops the stories from the JSON so this
-    never runs twice. Returns the number of pages written.
+    Validates every record first, writes only pages that are missing or lack
+    frontmatter (logging each), reads them back, and drops the JSON stories
+    only when every one is readable. Returns the number of pages written.
     """
     store = AccomplishmentsStore()
     legacy = store.legacy_stories()
     if not legacy:
+        if store.has_legacy_key():
+            store.drop_legacy_stories()
+            logger.info("accomplishments.json had an empty created_stories list; dropped")
         return 0
+    if not list_resumes():
+        logger.warning(
+            "legacy stories not migrated: no resume registered, so no wiki label to write under"
+        )
+        return 0
+    stories, skipped = _validate_legacy(legacy)
     timestamp = datetime.now(UTC).isoformat()
-    written = 0
-    for record in legacy:
-        story = CreatedStory.model_validate(record)
-        page_id = story_page_id(story.id)
-        if _needs_page(resume_label, page_id):
-            WikiStore().write_page(resume_label, page_id, story_to_page(story, timestamp))
-            written += 1
-    store.drop_legacy_stories()
-    logger.info(
-        "legacy stories migrated: %d of %d pages written under %s; "
-        "accomplishments.json now holds onboard_text only",
-        written,
-        len(legacy),
-        resume_label,
-    )
+    written = sum(_write_legacy_page(resume_label, story, timestamp) for story in stories)
+    _drop_legacy_if_complete(store, resume_label, stories, skipped)
     return written

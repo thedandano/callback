@@ -15,6 +15,18 @@ def store(tmp_path, monkeypatch):
     return WikiStore()
 
 
+def test_write_page_is_atomic_no_tmp_leftovers(tmp_path, monkeypatch):
+    s = store(tmp_path, monkeypatch)
+    s.write_page("my-resume", "experience/story-001.md", "content")
+    exp_dir = tmp_path / "my-resume" / "experience"
+    actual = {
+        "files": sorted(p.name for p in exp_dir.iterdir()),
+        "content": (exp_dir / "story-001.md").read_text(encoding="utf-8"),
+    }
+    expected = {"files": ["story-001.md"], "content": "content"}
+    assert actual == expected
+
+
 def test_write_read_index_round_trip(tmp_path, monkeypatch):
     s = store(tmp_path, monkeypatch)
     content = "# Index\n\n- [Acme](experience/acme.md)"

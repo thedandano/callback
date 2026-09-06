@@ -150,9 +150,16 @@ def _legacy_json(tmp_path: Path, records: list[dict]) -> Path:
     return path
 
 
+def _with_registered_resume(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Migration refuses to run with no resume registered (A4); tests that exercise
+    the write path stand one up."""
+    monkeypatch.setattr("callback.repository.stories.list_resumes", lambda: ["primary"])
+
+
 def test_migrate_writes_missing_files_and_drops_json_stories(wiki: Path, monkeypatch, caplog):
     caplog.set_level(logging.INFO, logger="callback.repository.stories")
     monkeypatch.setenv("XDG_DATA_HOME", str(wiki))
+    _with_registered_resume(monkeypatch)
     path = _legacy_json(
         wiki,
         [
@@ -172,6 +179,9 @@ def test_migrate_writes_missing_files_and_drops_json_stories(wiki: Path, monkeyp
         "warnings": warnings,
         "json": json.loads(path.read_text()),
         "logged": any("migrated" in r.message for r in caplog.records),
+        "migrated_records": sorted(
+            r.message for r in caplog.records if r.message.startswith("story migrated:")
+        ),
     }
     expected = {
         "written": 2,
@@ -180,14 +190,20 @@ def test_migrate_writes_missing_files_and_drops_json_stories(wiki: Path, monkeyp
         "warnings": [],
         "json": {"schema_version": "2", "onboard_text": "notes"},
         "logged": True,
+        "migrated_records": [
+            "story migrated: experience/story-001.md (Python, created)",
+            "story migrated: experience/story-002.md (Python, created)",
+        ],
     }
     assert actual == expected
 
 
 def test_migrate_rewrites_a_legacy_page_without_frontmatter_but_not_one_with(
-    wiki: Path, monkeypatch
+    wiki: Path, monkeypatch, caplog
 ):
+    caplog.set_level(logging.INFO, logger="callback.repository.stories")
     monkeypatch.setenv("XDG_DATA_HOME", str(wiki))
+    _with_registered_resume(monkeypatch)
     _legacy_json(wiki, [{"id": "story-001", **_FIELDS}, {"id": "story-002", **_FIELDS}])
     WikiStore().write_page("primary", "experience/story-001.md", "# old render, no frontmatter\n")
     hand_edited = stories.story_to_page(
@@ -196,11 +212,113 @@ def test_migrate_rewrites_a_legacy_page_without_frontmatter_but_not_one_with(
     WikiStore().write_page("primary", "experience/story-002.md", hand_edited)
     written = stories.migrate_legacy_stories("primary")
     listed, _ = stories.list_stories("primary")
-    actual = {"written": written, "impacts": [s.impact for s in listed]}
-    expected = {"written": 1, "impacts": ["Deploys daily.", "hand edit"]}
+    actual = {
+        "written": written,
+        "impacts": [s.impact for s in listed],
+        "migrated_records": sorted(
+            r.message for r in caplog.records if r.message.startswith("story migrated:")
+        ),
+    }
+    expected = {
+        "written": 1,
+        "impacts": ["Deploys daily.", "hand edit"],
+        "migrated_records": ["story migrated: experience/story-001.md (Python, overwritten)"],
+    }
     assert actual == expected
 
 
 def test_migrate_is_a_noop_once_json_has_no_stories(wiki: Path, monkeypatch):
     monkeypatch.setenv("XDG_DATA_HOME", str(wiki))
+    _with_registered_resume(monkeypatch)
     assert stories.migrate_legacy_stories("primary") == 0
+
+
+def test_migrate_skips_invalid_record_but_writes_valid_ones(wiki: Path, monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="callback.repository.stories")
+    monkeypatch.setenv("XDG_DATA_HOME", str(wiki))
+    _with_registered_resume(monkeypatch)
+    path = _legacy_json(
+        wiki,
+        [
+            {"id": "story-001", **_FIELDS},
+            {"id": "story-002", "primary_skill": "Broken"},
+        ],
+    )
+    written = stories.migrate_legacy_stories("primary")
+    listed, _ = stories.list_stories("primary")
+    actual = {
+        "written": written,
+        "ids": [s.id for s in listed],
+        "warned_invalid_id": any("story-002" in r.message for r in caplog.records),
+        "json_schema_version": json.loads(path.read_text())["schema_version"],
+        "json_has_stories": "created_stories" in json.loads(path.read_text()),
+    }
+    expected = {
+        "written": 1,
+        "ids": ["story-001"],
+        "warned_invalid_id": True,
+        "json_schema_version": "1",
+        "json_has_stories": True,
+    }
+    assert actual == expected
+
+
+def test_migrate_keeps_json_when_read_back_fails(wiki: Path, monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="callback.repository.stories")
+    monkeypatch.setenv("XDG_DATA_HOME", str(wiki))
+    _with_registered_resume(monkeypatch)
+    path = _legacy_json(wiki, [{"id": "story-001", **_FIELDS}])
+    monkeypatch.setattr(stories, "list_stories", lambda label: ([], []))
+    written = stories.migrate_legacy_stories("primary")
+    actual = {
+        "written": written,
+        "page_written": (wiki / "primary" / "experience" / "story-001.md").is_file(),
+        "warned_kept": any("kept in accomplishments.json" in r.message for r in caplog.records),
+        "json_intact": json.loads(path.read_text()),
+    }
+    expected = {
+        "written": 1,
+        "page_written": True,
+        "warned_kept": True,
+        "json_intact": {
+            "schema_version": "1",
+            "onboard_text": "notes",
+            "created_stories": [{"id": "story-001", **_FIELDS}],
+        },
+    }
+    assert actual == expected
+
+
+def test_migrate_refuses_when_no_resume_registered(wiki: Path, monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="callback.repository.stories")
+    monkeypatch.setenv("XDG_DATA_HOME", str(wiki))
+    monkeypatch.setattr("callback.repository.stories.list_resumes", lambda: [])
+    path = _legacy_json(wiki, [{"id": "story-001", **_FIELDS}])
+    written = stories.migrate_legacy_stories("primary")
+    actual = {
+        "written": written,
+        "page_written": (wiki / "primary" / "experience" / "story-001.md").is_file(),
+        "warned_no_resume": any("no resume registered" in r.message for r in caplog.records),
+        "json_intact": json.loads(path.read_text()),
+    }
+    expected = {
+        "written": 0,
+        "page_written": False,
+        "warned_no_resume": True,
+        "json_intact": {
+            "schema_version": "1",
+            "onboard_text": "notes",
+            "created_stories": [{"id": "story-001", **_FIELDS}],
+        },
+    }
+    assert actual == expected
+
+
+def test_migrate_drops_empty_legacy_key_without_resume_check(wiki: Path, monkeypatch):
+    monkeypatch.setenv("XDG_DATA_HOME", str(wiki))
+    monkeypatch.setattr("callback.repository.stories.list_resumes", lambda: [])
+    path = _legacy_json(wiki, [])
+    written = stories.migrate_legacy_stories("primary")
+    actual = {"written": written, "json": json.loads(path.read_text())}
+    expected = {"written": 0, "json": {"schema_version": "2", "onboard_text": "notes"}}
+    assert actual == expected
