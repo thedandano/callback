@@ -311,17 +311,18 @@ def _candidate(
     page_id: str,
     meta: dict,
     body: str,
-    content: str,
     required: list[str],
     preferred: list[str],
 ) -> dict:
+    skills = [str(tag) for tag in (meta.get("tags") or [])]
+    match_text = f"{body}\n{', '.join(skills)}"
     return {
         "page_id": page_id,
         "name": str(meta.get("title") or ""),
-        "skills": [str(tag) for tag in (meta.get("tags") or [])],
-        "score": _project_score(required, preferred, content),
-        "required_matched": _matched_keywords(required, content),
-        "preferred_matched": _matched_keywords(preferred, content),
+        "skills": skills,
+        "score": _project_score(required, preferred, match_text),
+        "required_matched": _matched_keywords(required, match_text),
+        "preferred_matched": _matched_keywords(preferred, match_text),
         "evidence_preview": _evidence_preview(body),
     }
 
@@ -338,7 +339,7 @@ def _rank_project_candidates(resume_label: str, keywords: dict, wiki_index: str)
         if meta is None:
             continue
         _, body = split_frontmatter(content)
-        candidate = _candidate(page_id, meta, body, content, required, preferred)
+        candidate = _candidate(page_id, meta, body, required, preferred)
         if candidate["score"] == 0:
             continue
         candidates.append(candidate)

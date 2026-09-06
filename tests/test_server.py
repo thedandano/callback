@@ -1337,6 +1337,29 @@ def test_rank_project_candidates_skips_pages_without_frontmatter_and_warns(
     assert actual == expected
 
 
+def test_rank_project_candidates_matches_body_and_tags_not_raw_frontmatter(tmp_path, monkeypatch):
+    from callback.server import _rank_project_candidates
+    from callback.wiki import WikiStore
+
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    store = WikiStore()
+    store.write_page(
+        "r",
+        "experience/story-001.md",
+        "---\ntype: project\ntitle: Site\ntags:\n- accessibility\n- WCAG 2.1 AA\n---\n"
+        "# Site\n\nBuilt the site.\n",
+    )
+    wiki_index = "- [Site](experience/story-001.md)\n"
+    keywords = {"required": ["accessibility WCAG"], "preferred": ["accessibility"]}
+    candidates = _rank_project_candidates("r", keywords, wiki_index)
+    actual = {
+        "required_matched": candidates[0]["required_matched"],
+        "preferred_matched": candidates[0]["preferred_matched"],
+    }
+    expected = {"required_matched": [], "preferred_matched": ["accessibility"]}
+    assert actual == expected
+
+
 class TestOrphanDetection:
     """Tests for _detect_orphaned_required orphan classification logic."""
 
