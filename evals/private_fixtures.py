@@ -2,7 +2,9 @@
 
 The real data is copied to a scratch dir, migrated (legacy JSON stories become
 pages) and compiled there, and the results are written under the private root.
-The source is never written to. The destination must be outside the repo.
+Never modifies existing files under the data dir; all output goes under
+--dest (default ~/.local/share/callback/evals). The destination must be
+outside the repo.
 """
 
 from __future__ import annotations
@@ -24,6 +26,22 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 EXTRACT_DIR = REPO_ROOT / "evals" / "extract"
 DEFAULT_CONSTRAINTS = {"expect_no_coverage": False, "grounding_ratio": DEFAULT_GROUNDING_RATIO}
 
+# Only inputs/, profile-wiki/, and accomplishments.json matter here; skip the
+# checkpoint DBs, the applications archive, and any prior evals output (the
+# default --dest lives under the default --source) so the copy stays small.
+_COPY_IGNORE = (
+    "*.db",
+    "*.db-*",
+    "applications",
+    "evals",
+    "*.bak",
+    "*.preonboard-*",
+    "*.reonboard-*",
+    "*.k8sfix-*",
+    "reonboard-*",
+    "profile-wiki.preonboard-*",
+)
+
 
 def _copy(src: Path, dest: Path, written: list[Path]) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -39,7 +57,7 @@ def _write_json(path: Path, data: object, written: list[Path]) -> None:
 
 def _compiled_copy(source: Path, scratch: Path, label: str) -> Path:
     """Copy source under scratch/callback, migrate + compile there, return the wiki root."""
-    shutil.copytree(source, scratch / "callback")
+    shutil.copytree(source, scratch / "callback", ignore=shutil.ignore_patterns(*_COPY_IGNORE))
     previous = os.environ.get("XDG_DATA_HOME")
     os.environ["XDG_DATA_HOME"] = str(scratch)
     try:
@@ -93,5 +111,8 @@ def build(source: Path, dest: Path, boards: list[str], label: str = "primary") -
         for board in boards:
             written.extend(_write_tailor_case(wiki, dest, board))
     finally:
-        shutil.rmtree(scratch, ignore_errors=True)
+        try:
+            shutil.rmtree(scratch)
+        except OSError as exc:
+            logger.warning("scratch dir %s not removed: %s", scratch, exc)
     return written

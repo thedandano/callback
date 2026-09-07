@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Build the private E2/E3 eval cases from a copy of the real callback data dir.
 
-Never writes to the real data dir. Writes under CALLBACK_EVALS_DIR (default
-~/.local/share/callback/evals), one compile case (`compile/primary`) and one
-tailor case per board in evals/extract/sources.json. An existing
-constraints.json is kept so you can tune a case by hand.
+Never modifies existing files under the data dir; all output goes under --dest
+(default ~/.local/share/callback/evals). Writes one compile case
+(`compile/primary`) and one tailor case per board in evals/extract/sources.json.
+An existing constraints.json is kept so you can tune a case by hand.
 
 Usage: uv run python scripts/build_eval_fixtures.py [--source DATA_DIR] [--dest EVALS_DIR]
 """
