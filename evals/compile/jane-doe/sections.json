@@ -1,0 +1,52 @@
+{
+  "summary": "Backend engineer with 5 years building Python services on AWS. Cut checkout p95 latency 40% at Acme Corp.",
+  "skills": {
+    "flat": [],
+    "categorized": {
+      "Languages": ["Python", "SQL"],
+      "Backend & Data": ["FastAPI", "PostgreSQL", "Redis"],
+      "Cloud & Infrastructure": ["AWS", "Docker", "Terraform"],
+      "Practices": ["CI/CD", "Observability"]
+    }
+  },
+  "experience": [
+    {
+      "company": "Acme Corp",
+      "role": "Backend Engineer",
+      "start_date": "2021-03",
+      "end_date": null,
+      "context_line": "Backend Engineer · Checkout Platform · 2M orders/month · Python, FastAPI, PostgreSQL, AWS",
+      "bullets": [
+        "Rebuilt the checkout API on FastAPI with PostgreSQL connection pooling, cutting p95 latency 40% for 2M monthly orders",
+        "Added Redis caching for cart reads, dropping database load 30% during peak sales",
+        "Wrote Terraform modules for the AWS ECS deployment so a new service ships in one pull request"
+      ]
+    },
+    {
+      "company": "Widget Labs",
+      "role": "Software Engineer",
+      "start_date": "2019-06",
+      "end_date": "2021-02",
+      "context_line": "Software Engineer · Data Platform · 50GB nightly · Python, PostgreSQL, Docker",
+      "bullets": [
+        "Built a nightly ETL in Python that loads 50GB of vendor feeds into PostgreSQL with 99.9% on-time delivery",
+        "Set up GitHub Actions CI/CD with Docker images, cutting the release cycle from two weeks to one day"
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "name": "Open Ledger",
+      "description": "Open-source double-entry bookkeeping API in Python",
+      "bullets": [
+        "Designed the PostgreSQL schema and FastAPI endpoints used by 300 GitHub stargazers"
+      ]
+    }
+  ],
+  "education": [
+    {"institution": "State University", "degree": "B.S.", "field": "Computer Science", "graduation_date": "2019"}
+  ],
+  "contact": {"name": "Jane Doe", "email": "jane@example.com", "location": "San Francisco, CA"},
+  "certifications": [],
+  "awards": []
+}
