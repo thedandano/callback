@@ -91,6 +91,7 @@ def test_honest_edits_pass_every_check():
         "no_rejected_edits": True,
         "added_skills_in_dated_bullets": True,
         "added_skills_in_source": True,
+        "introduced_keywords_in_source": True,
         "grounded": True,
         "no_banned_terms": True,
         "score_not_lower": True,
@@ -119,6 +120,7 @@ def test_keyword_stuffed_output_fails():
     expected = [
         Check("added_skills_in_dated_bullets", False, "not in a dated bullet: ['Redis']"),
         Check("added_skills_in_source", False, "not in the resume or wiki: ['Kubernetes']"),
+        Check("introduced_keywords_in_source", False, "not in the resume or wiki: ['Kubernetes']"),
         Check("grounded", False, "ungrounded: ['Kubernetes', '70%', '12']"),
         Check("no_banned_terms", False, "banned: ['leveraged']"),
     ]
@@ -150,8 +152,64 @@ def test_invented_lowercase_skill_with_self_supplied_bullet_fails():
             "added_skills_in_source",
             False,
             "not in the resume or wiki: ['distributed systems']",
+        ),
+        Check(
+            "introduced_keywords_in_source",
+            False,
+            "not in the resume or wiki: ['distributed systems']",
+        ),
+    ]
+    assert actual == expected
+
+
+def test_lowercase_keyword_fabricated_in_a_bullet_fails_only_this_check():
+    """A host that slips a JD keyword into a bullet in lowercase, with no skills edit,
+    isn't caught by `_claim_tokens()` (it skips lowercase words) or `_skills_in_source_check`
+    (there's no skills edit to check). This is the check that catches it."""
+    case = TailorCase.from_dir(TAILOR_FIXTURES / "jane-doe-backend")
+    sneaky = {
+        "edits": [
+            {
+                "section": "experience",
+                "op": "replace",
+                "target": "exp-0-b0",
+                "value": "Rebuilt the checkout API on FastAPI with PostgreSQL connection "
+                "pooling, cutting p95 latency 40% for 2M monthly orders while running "
+                "kubernetes clusters",
+            },
+        ],
+        "no_coverage": False,
+    }
+
+    actual = [c for c in run_checks(case, sneaky) if not c.passed]
+
+    expected = [
+        Check(
+            "introduced_keywords_in_source",
+            False,
+            "not in the resume or wiki: ['Kubernetes']",
         )
     ]
+    assert actual == expected
+
+
+def test_keyword_already_in_source_is_not_flagged_as_introduced():
+    """A bullet that mentions a keyword already present in the source resume or wiki
+    isn't fabrication, even in lowercase."""
+    case = TailorCase.from_dir(TAILOR_FIXTURES / "jane-doe-backend")
+    edit = {
+        "section": "experience",
+        "op": "replace",
+        "target": "exp-0-b0",
+        "value": "Rebuilt the checkout API on fastapi with PostgreSQL connection pooling, "
+        "cutting p95 latency 40% for 2M monthly orders",
+    }
+
+    actual = _names(run_checks(case, {"edits": [edit], "no_coverage": False}))[
+        "introduced_keywords_in_source"
+    ]
+
+    expected = True
     assert actual == expected
 
 

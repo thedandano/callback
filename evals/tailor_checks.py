@@ -22,7 +22,7 @@ from callback.apply_nodes import _sections_to_text
 from callback.profilecompiler import _token_sort_ratio
 from callback.section_map import SectionMap, apply_edit
 from evals.checks import Check
-from evals.recall import term_present
+from evals.recall import golden_terms, term_present
 
 BANNED_TERMS = (
     "spearheaded",
@@ -172,6 +172,32 @@ def _skills_in_source_check(case: TailorCase, edits: list[dict]) -> Check:
     )
 
 
+def _introduced_keywords_in_source_check(case: TailorCase, edits: list[dict]) -> Check:
+    """Catches a host that inserts a JD keyword in lowercase prose it wrote itself, with no
+    separate skills edit to trip `_skills_in_source_check` (e.g. replacing a bullet with
+    "built kubernetes clusters"). `_claim_tokens()` in `_grounding_check` skips lowercase
+    words entirely, so this check is the only thing that would catch it. Scoped to JD
+    keywords on purpose: the host only has an incentive to insert those, and grounding
+    every lowercase word would false-positive on ordinary prose."""
+    source_text = _source_text(case)
+    terms = golden_terms(case.keywords)
+    introduced: set[str] = set()
+    for edit in edits:
+        value = edit.get("value")
+        if not isinstance(value, str):
+            continue
+        lowered = value.lower()
+        for term in terms:
+            if term_present(term.lower(), lowered) and not term_present(term.lower(), source_text):
+                introduced.add(term)
+    missing = sorted(introduced)
+    return Check(
+        "introduced_keywords_in_source",
+        not missing,
+        "" if not missing else f"not in the resume or wiki: {missing}",
+    )
+
+
 def _edit_texts(edits: list[dict]) -> list[str]:
     texts: list[str] = []
     for edit in edits:
@@ -270,6 +296,7 @@ def _edit_checks(case: TailorCase, host: HostTailor) -> list[Check]:
     checks.append(Check("no_rejected_edits", not rejected, "" if not rejected else str(rejected)))
     checks.append(_skills_check(section_map, host.edits))
     checks.append(_skills_in_source_check(case, host.edits))
+    checks.append(_introduced_keywords_in_source_check(case, host.edits))
     checks.append(_grounding_check(case, host.edits))
     checks.append(_banned_check(case, host.edits))
     checks.append(_score_check(case, section_map))
