@@ -1,0 +1,11 @@
+{
+  "title": "Senior Backend Engineer",
+  "company": "Northwind",
+  "required": ["Python", "FastAPI", "PostgreSQL", "AWS", "Terraform", "Docker", "distributed systems"],
+  "preferred": ["Redis", "Kubernetes", "GraphQL", "Datadog"],
+  "required_any": [],
+  "preferred_any": [],
+  "location": "Remote",
+  "seniority": "senior",
+  "required_years": 4.0
+}
