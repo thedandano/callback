@@ -27,6 +27,7 @@ logger = logging.getLogger("callback.evals")
 
 EXTRACT_DIR = Path(__file__).resolve().parent / "extract"
 DATASET_PREFIX = "callback-evals-"
+PRIVATE_PREFIX = "private:"
 MISSING_KEY_MESSAGE = (
     "LangSmith recording skipped: LANGSMITH_API_KEY is not set in this shell "
     "(`callback config env list` shows the value stored for the MCP hosts); "
@@ -66,6 +67,12 @@ def record(
         return None
     client = Client()
     dataset = _dataset(client, f"{DATASET_PREFIX}{eval_name}")
+    logger.info(
+        "uploading %d fixture inputs to LangSmith dataset %s: %s",
+        len(inputs),
+        dataset.name,
+        sorted(inputs),
+    )
     examples = _upsert_examples(client, dataset, inputs)
     checks_by_fixture = {row.fixture: row.checks for row in rows}
 
@@ -80,12 +87,6 @@ def record(
             ]
         }
 
-    logger.info(
-        "uploading %d fixture inputs to LangSmith dataset %s: %s",
-        len(inputs),
-        dataset.name,
-        sorted(inputs),
-    )
     prefix = f"{run_meta['commit']}-{run_meta['host']}-{run_meta['model']}"
     # langsmith types evaluate()'s target as returning dict, not dict | None, and matches
     # target's Callable against its Union[target, ..., tuple[...]] overloads too strictly;
@@ -108,26 +109,48 @@ def _saved_output(path: Path) -> dict | None:
     return json.loads(path.read_text(encoding="utf-8")).get("output")
 
 
-def record_extract(rows: list[EvalRow], run_meta: dict) -> str | None:
-    inputs = {
-        r.fixture: {"jd_text": (EXTRACT_DIR / f"{r.fixture}.md").read_text(encoding="utf-8")}
-        for r in rows
-    }
+def _log_withheld(count: int) -> None:
+    if count:
+        logger.info("%d private fixtures recorded metrics-only (inputs withheld)", count)
+
+
+def record_extract(
+    rows: list[EvalRow], run_meta: dict, *, upload_private: bool = False
+) -> str | None:
+    inputs = {}
+    withheld = 0
+    for r in rows:
+        if r.fixture.startswith(PRIVATE_PREFIX) and not upload_private:
+            inputs[r.fixture] = {"scope": "private"}
+            withheld += 1
+        else:
+            inputs[r.fixture] = {
+                "jd_text": (EXTRACT_DIR / f"{r.fixture}.md").read_text(encoding="utf-8")
+            }
+    _log_withheld(withheld)
     outputs = {r.fixture: _saved_output(EXTRACT_DIR / f"{r.fixture}.host.json") for r in rows}
     return record("extract", rows, inputs, outputs, run_meta)
 
 
-def record_tailor(rows: list[EvalRow], run_meta: dict) -> str | None:
+def record_tailor(
+    rows: list[EvalRow], run_meta: dict, *, upload_private: bool = False
+) -> str | None:
     dirs = {case_id(d): d for d in case_dirs("tailor")}
     inputs = {}
     outputs = {}
+    withheld = 0
     for row in rows:
-        case = TailorCase.from_dir(dirs[row.fixture])
-        inputs[row.fixture] = {
-            "sections": case.sections,
-            "keywords": case.keywords,
-            "wiki_pages": case.wiki_pages,
-            "constraints": case.constraints,
-        }
+        if row.fixture.startswith(PRIVATE_PREFIX) and not upload_private:
+            inputs[row.fixture] = {"scope": "private"}
+            withheld += 1
+        else:
+            case = TailorCase.from_dir(dirs[row.fixture])
+            inputs[row.fixture] = {
+                "sections": case.sections,
+                "keywords": case.keywords,
+                "wiki_pages": case.wiki_pages,
+                "constraints": case.constraints,
+            }
         outputs[row.fixture] = _saved_output(dirs[row.fixture] / "host.json")
+    _log_withheld(withheld)
     return record("tailor", rows, inputs, outputs, run_meta)

@@ -113,3 +113,72 @@ def test_record_upserts_examples_and_evaluates(monkeypatch):
         },
     }
     assert actual == expected
+
+
+def _fake_evaluate(target, *, data, evaluators, experiment_prefix, metadata, client):
+    return SimpleNamespace(experiment_name=f"{experiment_prefix}-1")
+
+
+def test_private_inputs_are_withheld_by_default(monkeypatch, tmp_path):
+    monkeypatch.setenv("LANGSMITH_API_KEY", "k")
+    monkeypatch.setattr(experiments, "evaluate", _fake_evaluate)
+    public_dir, private_dir = tmp_path / "x", tmp_path / "y"
+    public_dir.mkdir()
+    private_dir.mkdir()
+    monkeypatch.setattr(experiments, "case_dirs", lambda kind: [public_dir, private_dir])
+    monkeypatch.setattr(
+        experiments, "case_id", lambda d: "public:x" if d is public_dir else "private:y"
+    )
+    fake_case = SimpleNamespace(
+        sections={"s": 1}, keywords={"k": 1}, wiki_pages={"w": "1"}, constraints={"c": 1}
+    )
+    monkeypatch.setattr(experiments.TailorCase, "from_dir", staticmethod(lambda d: fake_case))
+    rows = [
+        EvalRow("tailor", "public:x", [Check("valid_output", True)]),
+        EvalRow("tailor", "private:y", [Check("valid_output", True)]),
+    ]
+    run_meta = {"commit": "abc1234", "host": "claude", "model": "default"}
+
+    withheld_client = FakeClient()
+    monkeypatch.setattr(experiments, "Client", lambda: withheld_client)
+    experiments.record_tailor(rows, run_meta)
+
+    uploaded_client = FakeClient()
+    monkeypatch.setattr(experiments, "Client", lambda: uploaded_client)
+    experiments.record_tailor(rows, run_meta, upload_private=True)
+
+    actual = {
+        "withheld_by_default": {e.inputs["fixture"]: e.inputs for e in withheld_client.examples},
+        "uploaded_when_requested": {
+            e.inputs["fixture"]: e.inputs for e in uploaded_client.examples
+        },
+    }
+    expected = {
+        "withheld_by_default": {
+            "public:x": {
+                "fixture": "public:x",
+                "sections": {"s": 1},
+                "keywords": {"k": 1},
+                "wiki_pages": {"w": "1"},
+                "constraints": {"c": 1},
+            },
+            "private:y": {"fixture": "private:y", "scope": "private"},
+        },
+        "uploaded_when_requested": {
+            "public:x": {
+                "fixture": "public:x",
+                "sections": {"s": 1},
+                "keywords": {"k": 1},
+                "wiki_pages": {"w": "1"},
+                "constraints": {"c": 1},
+            },
+            "private:y": {
+                "fixture": "private:y",
+                "sections": {"s": 1},
+                "keywords": {"k": 1},
+                "wiki_pages": {"w": "1"},
+                "constraints": {"c": 1},
+            },
+        },
+    }
+    assert actual == expected
