@@ -59,12 +59,13 @@ uv run python scripts/smoke_apply.py
 uv run python scripts/smoke_profile.py
 
 # Evals (E3 runs in CI; E1/E2 need a host model and are marked `local`)
-uv run pytest evals/                                   # E3 + check unit tests
+uv run pytest -m "not local" evals/                    # E3 + check unit tests (CI)
 uv run python scripts/build_eval_fixtures.py           # private E2/E3 cases from a copy of the real data
 uv run python scripts/run_evals.py                     # E1 + E2 against `claude -p`, writes host outputs
 uv run python scripts/run_evals.py --host codex --model gpt-5.6-terra --eval tailor
 uv run python scripts/run_evals.py --checks-only       # re-check saved host outputs, no model call
 uv run pytest -m local evals/                          # E1 + E2 checks over the saved host outputs
+# baseline 2026-09-06, claude default model: E1 3/6 (SKIP apple, FAIL cedar/qualcomm), E2 2/8 (see INTENT §M6 for why the rest fail)
 
 ```
 
@@ -199,11 +200,20 @@ runs the real `compile_profile` node on a staged copy of a case. Cases live in
 two roots: committed synthetic ones (`evals/{extract,tailor,compile}/`, Jane
 Doe) and the private root (`CALLBACK_EVALS_DIR`) built from the real data by
 `scripts/build_eval_fixtures.py`. `scripts/run_evals.py` is the only code that
-calls a model: it shells out to `claude -p --bare` or `codex exec`, saves the
-reply next to the fixture (`<board>.host.json`, `<case>/host.json`), runs the
-checks, prints one table, and records the run as a LangSmith experiment named
-`<commit>-<host>-<model>` when `LANGSMITH_API_KEY` is set. CI never calls a
-model; tests that read host outputs are marked `local`.
+calls a model: it shells out to `claude -p` or `codex exec`, isolated with
+`--strict-mcp-config` and an empty `--mcp-config`, `--tools ""`,
+`--setting-sources ""`, and a scratch working directory (`--bare` is avoided
+because it disables keychain auth); it saves the reply next to the fixture
+(`<board>.host.json`, `<case>/host.json`), runs the checks, prints one table,
+and records the run as a LangSmith experiment named `<commit>-<host>-<model>`
+when `LANGSMITH_API_KEY` is set. CI never calls a model; tests that read host
+outputs are marked `local`.
+
+With `LANGSMITH_API_KEY` set, the runner uploads public fixture inputs (JD
+text, the synthetic resume, and wiki pages) to LangSmith. For a private
+fixture it uploads only the fixture name and the check results unless
+`--upload-private-inputs` is passed, in which case the real sections, wiki
+pages, and keywords go up too.
 
 ### Module map
 

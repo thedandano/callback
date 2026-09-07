@@ -237,7 +237,14 @@ E2 has two committed synthetic cases (one `no_coverage`) plus one private case p
 board. The runner records LangSmith experiments named `<commit>-<host>-<model>`.
 A keyword-stuffed tailoring output fails E2 (`evals/test_tailor_checks.py::test_keyword_stuffed_output_fails`).
 Personal data stays out of git (private root `CALLBACK_EVALS_DIR`).
-Proof run: <fill in: proof run>.
+Proof run: commit ea2990d, host claude, default model, via `uv run python scripts/run_evals.py --checks-only --no-langsmith`.
+E1 is 3 of 6. Apple is SKIP: only 4 of 14 golden terms are still in the JD, so it reads as content drift and is not scored.
+Qualcomm fails because the host classified every term as preferred, leaving required empty, and JDData validation rejects that.
+Cedar fails because the host flattened its four OR-groups into flat required and preferred lists, so none of the groups match.
+E2 is 2 of 8. Both synthetic cases, jane-doe-backend and jane-doe-no-coverage, pass.
+All six private cases fail: apple used a banned verb (orchestrated); ashby, cedar, and qualcomm each added a skill with no
+dated bullet behind it; greenhouse and reddit each added a skill that is not in the resume or wiki at all.
+E3 is 6 of 6 on the committed Jane Doe case.
 
 ### M7 — Token diet (one day)
 
