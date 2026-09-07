@@ -170,12 +170,17 @@ def _claude_cmd(model: str | None) -> list[str]:
 
 
 def _codex_cmd(model: str | None, out_file: Path) -> list[str]:
+    # --ignore-user-config skips $CODEX_HOME/config.toml, matching the isolation the claude
+    # command above gets from --strict-mcp-config/--mcp-config '{}'/--tools ''/--setting-sources
+    # '' — otherwise a configured callback MCP server or other user-level instructions would
+    # leak into the supposedly isolated eval run.
     return [
         "codex",
         "exec",
         "-m",
         model or CODEX_DEFAULT_MODEL,
         "--skip-git-repo-check",
+        "--ignore-user-config",
         "--sandbox",
         "read-only",
         "-o",

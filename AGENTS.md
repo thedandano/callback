@@ -246,8 +246,10 @@ postings for extract, synthetic Jane Doe data for the rest) and the private root
 `scripts/build_eval_fixtures.py`. `scripts/run_evals.py` is the only code that
 calls a model: it shells out to `claude -p` or `codex exec`, isolated with
 `--strict-mcp-config` and an empty `--mcp-config`, `--tools ""`,
-`--setting-sources ""`, and a scratch working directory (`--bare` is avoided
-because it disables keychain auth); it saves the reply next to the fixture
+`--setting-sources ""`, and a scratch working directory for Claude (`--bare`
+is avoided because it disables keychain auth), and `--ignore-user-config` for
+Codex (so `$CODEX_HOME/config.toml` — and any MCP servers or instructions it
+configures — can't leak into the run); it saves the reply next to the fixture
 (`<board>.host.json`, `<case>/host.json`), runs the checks, prints one table,
 and records the run as a LangSmith experiment named `<commit>-<host>-<model>`
 when `LANGSMITH_API_KEY` is set. CI never calls a model; tests that read host

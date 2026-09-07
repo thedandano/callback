@@ -164,13 +164,34 @@ def test_call_host_claude_passes_model_flag():
 
 
 def test_call_host_codex_reads_last_message_file(tmp_path, monkeypatch):
+    calls = []
+
     def fake_run(cmd, **kwargs):
+        calls.append(cmd)
         Path(cmd[cmd.index("-o") + 1]).write_text('codex says {"ok": 2}', encoding="utf-8")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-    actual = call_host("codex", "gpt-5.6-terra", "P", run=fake_run)
+    reply = call_host("codex", "gpt-5.6-terra", "P", run=fake_run)
 
-    expected = 'codex says {"ok": 2}'
+    out_file = Path(calls[0][calls[0].index("-o") + 1])
+    actual = {"reply": reply, "calls": calls}
+    expected = {
+        "reply": 'codex says {"ok": 2}',
+        "calls": [
+            [
+                "codex",
+                "exec",
+                "-m",
+                "gpt-5.6-terra",
+                "--skip-git-repo-check",
+                "--ignore-user-config",
+                "--sandbox",
+                "read-only",
+                "-o",
+                str(out_file),
+            ]
+        ],
+    }
     assert actual == expected
 
 
