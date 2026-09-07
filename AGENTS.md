@@ -192,7 +192,7 @@ Interrupts: after `onboard`; before `create_story`. `compile_profile` and `creat
 (`type`, `title`, `job_title`, `tags`, `story_type`, `timestamp`) and a body of
 `# title` then `**Situation:**` / `**Behavior:**` / `**Impact:**` paragraphs.
 `compile_profile` reads every story page and rewrites only `index.md` and
-`compiled_profile.json` — it never touches a story file, so hand edits to a
+`compiled_profile.json` — once the one-time migration has run it never touches a story file, so hand edits to a
 story's body survive `compile_profile`. `accomplishments.json` holds only
 `onboard_text`; migration of any legacy stories out of the JSON and onto pages
 runs automatically at the start of the first `onboard` or `compile_profile`.
