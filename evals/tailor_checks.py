@@ -78,16 +78,22 @@ class HostTailor:
 
 
 def _malformed_edit_reason(edits: list) -> str | None:
-    """None when every edit is a dict with a string `section` and a string `op`; otherwise
-    the reason naming the first bad entry's index, so a malformed batch fails the gate
-    check instead of crashing later in `_apply_all`/`apply_edit`."""
+    """None when every edit is a dict with a string `section`, a string `op`, and (when
+    present) a `value` shaped for that section — a string everywhere except `projects`,
+    which also allows a dict (a full project entry). Otherwise the reason naming the first
+    bad entry's index, so a malformed batch fails the gate check instead of crashing later
+    in `_apply_all`/`apply_edit` or downstream string joins over the applied section map."""
     for index, edit in enumerate(edits):
         if not isinstance(edit, dict):
             return f"edit {index} is not a JSON object"
-        if not isinstance(edit.get("section"), str):
+        section = edit.get("section")
+        if not isinstance(section, str):
             return f"edit {index} is missing a string 'section'"
         if not isinstance(edit.get("op"), str):
             return f"edit {index} is missing a string 'op'"
+        allowed_value_types = (str, dict) if section == "projects" else (str,)
+        if "value" in edit and not isinstance(edit["value"], allowed_value_types):
+            return f"edit {index} has a non-string 'value'"
     return None
 
 

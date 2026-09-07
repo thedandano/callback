@@ -231,6 +231,27 @@ def test_malformed_edit_entry_fails_valid_output_without_raising():
     assert actual == expected
 
 
+def test_non_string_value_fails_valid_output_without_raising():
+    """A non-string `value` outside `projects` must gate on valid_output instead of
+    reaching apply_edit(), which assumes a string for summary/skills/experience edits."""
+    actual = run_checks(CASE, {"edits": [{"section": "summary", "op": "replace", "value": 5}]})
+
+    expected = [Check("valid_output", False, "edit 0 has a non-string 'value'")]
+    assert actual == expected
+
+
+def test_experience_edit_missing_target_fails_no_rejected_edits_without_raising():
+    """Regression for a crash in apply_edit(): an experience edit with no target used to
+    reach target_match.group(1) on None. The server now rejects it cleanly, so the batch
+    keeps running and this shows up as a normal rejected edit, not a raised exception."""
+    actual = first_failure(
+        run_checks(CASE, {"edits": [{"section": "experience", "op": "replace", "value": "x"}]})
+    )
+
+    expected = "no_rejected_edits: [{'index': 0, 'reason': 'experience edit requires a target'}]"
+    assert actual == expected
+
+
 def test_rejected_edit_is_reported():
     bad = {
         "edits": [{"section": "experience", "op": "replace", "target": "exp-9-b0", "value": "x"}]
