@@ -165,7 +165,7 @@ def list_stories(resume_label: str) -> tuple[list[CreatedStory], list[str]]:
     for page_id in _story_page_ids(resume_label):
         try:
             stories.append(story_from_page(page_id, _read_page(resume_label, page_id)))
-        except WikiPageError as exc:
+        except (WikiPageError, WikiPageIdError) as exc:
             message = f"{page_id}: skipped: {exc}"
             logger.warning(message)
             warnings.append(message)

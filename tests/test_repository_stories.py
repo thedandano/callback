@@ -596,3 +596,23 @@ def test_list_stories_skips_an_unreadable_page_and_keeps_the_rest(wiki: Path, ca
     }
     expected = {"ids": ["story-001"], "warned": True}
     assert actual == expected
+
+
+def test_list_stories_skips_a_symlink_that_escapes_the_wiki_root(
+    wiki: Path, tmp_path: Path, caplog
+):
+    caplog.set_level(logging.WARNING, logger="callback.repository.stories")
+    stories.save_story("primary", CreatedStory(id="", **_FIELDS))
+    outside = tmp_path.parent / f"{tmp_path.name}-outside.md"
+    outside.write_text(stories.story_to_page(CreatedStory(id="story-002", **_FIELDS), _TS))
+    (wiki / "primary" / "experience" / "story-002.md").symlink_to(outside)
+    try:
+        listed, warnings = stories.list_stories("primary")
+    finally:
+        outside.unlink()
+    actual = {
+        "ids": [s.id for s in listed],
+        "warned": any("story-002.md" in w and "escapes" in w for w in warnings),
+    }
+    expected = {"ids": ["story-001"], "warned": True}
+    assert actual == expected
