@@ -331,7 +331,8 @@ def _candidate(
     preferred: list[str],
 ) -> dict:
     skills = [str(tag) for tag in (meta.get("tags") or [])]
-    match_text = f"{body}\n{', '.join(skills)}"
+    title = str(meta.get("title") or "")
+    match_text = f"{title}\n{body}\n{', '.join(skills)}"
     return {
         "page_id": page_id,
         "name": str(meta.get("title") or ""),

@@ -2003,3 +2003,24 @@ def test_rank_project_candidates_skips_project_pages_with_non_list_tags(
         "warned": ["story-001.md", "story-002.md"],
     }
     assert actual == expected
+
+
+def test_rank_project_candidates_matches_the_frontmatter_title(tmp_path, monkeypatch):
+    from callback.server import _rank_project_candidates
+    from callback.wiki import WikiStore
+
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    page = (
+        "---\ntype: project\ntitle: Kubernetes\ntags:\n- Docker\n---\n"
+        "# old heading\n\n**Situation:** Ran containers.\n"
+    )
+    WikiStore().write_page("r", "experience/story-001.md", page)
+    candidates = _rank_project_candidates(
+        "r", {"required": ["Kubernetes"], "preferred": []}, "- [k](experience/story-001.md)\n"
+    )
+    actual = {
+        "names": [c["name"] for c in candidates],
+        "matched": [c["required_matched"] for c in candidates],
+    }
+    expected = {"names": ["Kubernetes"], "matched": [["Kubernetes"]]}
+    assert actual == expected
