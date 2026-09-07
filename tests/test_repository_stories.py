@@ -401,3 +401,79 @@ def test_save_story_strips_body_whitespace_so_a_retry_is_identical(wiki: Path):
     actual = {"same": first == second, "files": files, "situation": first.situation}
     expected = {"same": True, "files": ["story-001.md"], "situation": "We had no CI."}
     assert actual == expected
+
+
+def test_list_stories_skips_a_non_utf8_page_and_keeps_the_rest(wiki: Path, caplog):
+    caplog.set_level(logging.WARNING, logger="callback.repository.stories")
+    stories.save_story("primary", CreatedStory(id="", **_FIELDS))
+    bad = wiki / "primary" / "experience" / "story-002.md"
+    bad.write_bytes("---\ntype: story\ntitle: caf\xe9\n---\n# x\n".encode("latin-1"))
+    listed, warnings = stories.list_stories("primary")
+    actual = {
+        "ids": [s.id for s in listed],
+        "warned": any("story-002.md" in w and "UTF-8" in w for w in warnings),
+        "logged": any("story-002.md" in r.message for r in caplog.records),
+    }
+    expected = {"ids": ["story-001"], "warned": True, "logged": True}
+    assert actual == expected
+
+
+def test_story_to_page_rejects_a_structural_label_line_inside_a_field():
+    story = CreatedStory(id="story-001", **{**_FIELDS, "situation": "line one\n**Impact:** hijack"})
+    with pytest.raises(ValueError) as exc_info:
+        stories.story_to_page(story, _TS)
+    assert "situation" in str(exc_info.value)
+
+
+def test_migrate_skips_a_record_with_a_label_line_and_keeps_json(wiki: Path, monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="callback.repository.stories")
+    monkeypatch.setenv("XDG_DATA_HOME", str(wiki))
+    _with_registered_resume(monkeypatch)
+    bad = {"id": "story-001", **{**_FIELDS, "behavior": "did x\n**Impact:** nested"}}
+    _legacy_json(wiki, [bad, {"id": "story-002", **_FIELDS}])
+    written = stories.migrate_legacy_stories("primary")
+    listed, _ = stories.list_stories("primary")
+    actual = {
+        "written": written,
+        "ids": [s.id for s in listed],
+        "json_kept": len(AccomplishmentsStore().legacy_stories()),
+        "warned": any(
+            "story-001" in r.message and "structural label" in r.message for r in caplog.records
+        ),
+    }
+    expected = {"written": 1, "ids": ["story-002"], "json_kept": 2, "warned": True}
+    assert actual == expected
+
+
+def test_migrate_keeps_json_when_a_written_page_reads_back_differently(
+    wiki: Path, monkeypatch, caplog
+):
+    caplog.set_level(logging.WARNING, logger="callback.repository.stories")
+    monkeypatch.setenv("XDG_DATA_HOME", str(wiki))
+    _with_registered_resume(monkeypatch)
+    _legacy_json(wiki, [{"id": "story-001", **_FIELDS}])
+    altered = CreatedStory(id="story-001", **{**_FIELDS, "impact": "something else"})
+    monkeypatch.setattr(stories, "list_stories", lambda label: ([altered], []))
+    written = stories.migrate_legacy_stories("primary")
+    actual = {
+        "written": written,
+        "json_kept": len(AccomplishmentsStore().legacy_stories()),
+        "warned": any("read back differently" in r.message for r in caplog.records),
+    }
+    expected = {"written": 1, "json_kept": 1, "warned": True}
+    assert actual == expected
+
+
+def test_story_from_page_warns_when_type_disagrees_with_job_title(caplog):
+    caplog.set_level(logging.WARNING, logger="callback.repository.stories")
+    page = stories.story_to_page(
+        CreatedStory(id="story-001", **{**_FIELDS, "job_title": "Project"}), _TS
+    )
+    stale = page.replace("type: project", "type: story", 1)
+    story = stories.story_from_page("experience/story-001.md", stale)
+    actual = {
+        "job_title": story.job_title,
+        "warned": any("disagrees" in r.message for r in caplog.records),
+    }
+    expected = {"job_title": "Project", "warned": True}
+    assert actual == expected

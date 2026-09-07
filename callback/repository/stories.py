@@ -23,6 +23,7 @@ STORY_TYPES = ("story", "project")
 _PROJECT_JOB_TITLE = "Project"
 _STORY_FILE_RE = re.compile(r"^story-(\d{3,})\.md$")
 _LABELS = ("Situation", "Behavior", "Impact")
+_BODY_FIELDS = ("situation", "behavior", "impact")
 _PARAGRAPH_RE = re.compile(
     r"^\*\*(Situation|Behavior|Impact):\*\*\s*(.*?)\s*"
     r"(?=^\*\*(?:Situation|Behavior|Impact):\*\*|\Z)",
@@ -38,7 +39,23 @@ def _story_id_from_page_id(page_id: str) -> str:
     return page_id.rsplit("/", 1)[-1].removesuffix(".md")
 
 
+_LABEL_LINE_RE = re.compile(r"^\*\*(?:Situation|Behavior|Impact):\*\*", re.M)
+
+
+def label_line_field(story: CreatedStory) -> str | None:
+    """Name of the first body field holding a line that starts with a structural label."""
+    for field in _BODY_FIELDS:
+        if _LABEL_LINE_RE.search(getattr(story, field)):
+            return field
+    return None
+
+
 def story_to_page(story: CreatedStory, timestamp: str) -> str:
+    if (field := label_line_field(story)) is not None:
+        raise ValueError(
+            f"{field} contains a line starting with **Situation:**, **Behavior:**, or "
+            "**Impact:**; those mark paragraph boundaries in the page, rephrase it"
+        )
     meta = {
         "type": "project" if story.job_title == _PROJECT_JOB_TITLE else "story",
         "title": story.primary_skill,
@@ -85,10 +102,23 @@ def tags_from_meta(meta: dict) -> list[str]:
     return [str(t) for t in tags]
 
 
+def _warn_if_type_disagrees(page_id: str, meta: dict) -> None:
+    expected = "project" if meta.get("job_title") == _PROJECT_JOB_TITLE else "story"
+    if meta.get("type") != expected:
+        logger.warning(
+            "%s: type %r disagrees with job_title %r (submit_keywords classifies by type; "
+            "set both when regrouping)",
+            page_id,
+            meta.get("type"),
+            meta.get("job_title"),
+        )
+
+
 def story_from_page(page_id: str, content: str) -> CreatedStory:
     """Rebuild a CreatedStory from a page. Raises WikiPageError when it is not a story."""
     meta, body = split_frontmatter(content)
     _story_type_from_meta(page_id, meta)
+    _warn_if_type_disagrees(page_id, meta)
     skills = tags_from_meta(meta)
     paragraphs = _body_paragraphs(page_id, body)
     return CreatedStory(
@@ -110,20 +140,26 @@ def _story_page_ids(resume_label: str) -> list[str]:
     return [f"experience/{p.name}" for p in sorted(exp_dir.iterdir()) if p.suffix == ".md"]
 
 
+def _read_page(resume_label: str, page_id: str) -> str:
+    """One page's text. Raises WikiPageError when the file is not valid UTF-8."""
+    try:
+        return WikiStore().read_pages(resume_label, [page_id])[page_id]
+    except UnicodeDecodeError as exc:
+        raise WikiPageError(f"file is not valid UTF-8 ({exc.reason} at byte {exc.start})") from exc
+
+
 def list_stories(resume_label: str) -> tuple[list[CreatedStory], list[str]]:
     """Every readable story page in id order, plus one warning per page skipped."""
-    page_ids = _story_page_ids(resume_label)
-    pages = WikiStore().read_pages(resume_label, page_ids)
-    found: list[CreatedStory] = []
+    stories: list[CreatedStory] = []
     warnings: list[str] = []
-    for page_id in page_ids:
+    for page_id in _story_page_ids(resume_label):
         try:
-            found.append(story_from_page(page_id, pages[page_id]))
+            stories.append(story_from_page(page_id, _read_page(resume_label, page_id)))
         except WikiPageError as exc:
             message = f"{page_id}: skipped: {exc}"
             logger.warning(message)
             warnings.append(message)
-    return found, warnings
+    return stories, warnings
 
 
 def next_story_id(resume_label: str) -> str:
@@ -133,9 +169,6 @@ def next_story_id(resume_label: str) -> str:
         if match:
             highest = max(highest, int(match.group(1)))
     return f"story-{highest + 1:03d}"
-
-
-_BODY_FIELDS = ("situation", "behavior", "impact")
 
 
 def _canonical(story: CreatedStory) -> CreatedStory:
@@ -164,8 +197,11 @@ def _validate_legacy(records: list[dict]) -> tuple[list[CreatedStory], list[str]
     skipped: list[str] = []
     for index, record in enumerate(records):
         try:
-            valid.append(CreatedStory.model_validate(record))
-        except ValidationError as exc:
+            story = CreatedStory.model_validate(record)
+            if (field := label_line_field(story)) is not None:
+                raise ValueError(f"{field} holds a line starting with a structural label")
+            valid.append(story)
+        except (ValidationError, ValueError) as exc:
             fallback = f"#{index}"
             ident = str(record.get("id") or fallback) if isinstance(record, dict) else fallback
             logger.warning("legacy story %s skipped: not a valid story: %s", ident, exc)
@@ -215,18 +251,33 @@ def _drop_legacy_if_complete(
     resume_label: str,
     expected: list[CreatedStory],
     skipped: list[str],
+    written_ids: set[str],
 ) -> None:
+    """Drop the JSON stories only when every legacy story reads back.
+
+    Pages written this run must read back with identical content; pages left
+    alone (they already had frontmatter) only need to exist.
+    """
     listed, _ = list_stories(resume_label)
-    present = {s.id for s in listed}
-    missing = [s.id for s in expected if s.id not in present]
-    if skipped or missing:
+    by_id = {s.id: s for s in listed}
+    missing = [s.id for s in expected if s.id not in by_id]
+    mismatched = [
+        s.id
+        for s in expected
+        if s.id in written_ids
+        and s.id in by_id
+        and by_id[s.id].model_dump(exclude={"id"}) != _canonical(s).model_dump(exclude={"id"})
+    ]
+    if skipped or missing or mismatched:
         logger.warning(
             "legacy stories kept in accomplishments.json: "
-            "%d invalid (%s), %d not readable after write (%s)",
+            "%d invalid (%s), %d not readable after write (%s), %d read back differently (%s)",
             len(skipped),
             ", ".join(skipped) or "-",
             len(missing),
             ", ".join(missing) or "-",
+            len(mismatched),
+            ", ".join(mismatched) or "-",
         )
         return
     store.drop_legacy_stories()
@@ -257,6 +308,6 @@ def migrate_legacy_stories(resume_label: str) -> int:
         return 0
     stories, skipped = _validate_legacy(legacy)
     timestamp = datetime.now(UTC).isoformat()
-    written = sum(_write_legacy_page(resume_label, story, timestamp) for story in stories)
-    _drop_legacy_if_complete(store, resume_label, stories, skipped)
-    return written
+    written_ids = {s.id for s in stories if _write_legacy_page(resume_label, s, timestamp)}
+    _drop_legacy_if_complete(store, resume_label, stories, skipped, written_ids)
+    return len(written_ids)
