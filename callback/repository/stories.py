@@ -96,9 +96,11 @@ def _story_type_from_meta(page_id: str, meta: dict) -> None:
 
 def tags_from_meta(meta: dict) -> list[str]:
     """The page's tags as strings. Raises WikiPageError unless tags is a list (or absent)."""
-    tags = meta.get("tags") or []
+    tags = meta.get("tags")
+    if tags is None:
+        return []
     if not isinstance(tags, list):
-        raise WikiPageError(f"tags must be a list, got {type(tags).__name__}")
+        raise WikiPageError(f"tags must be a list, got {type(tags).__name__} {tags!r}")
     return [str(t) for t in tags]
 
 

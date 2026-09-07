@@ -527,3 +527,19 @@ def test_next_story_id_reserves_ids_still_held_in_legacy_json(wiki: Path, monkey
     actual = {"id": saved.id, "files": files}
     expected = {"id": "story-006", "files": ["story-006.md"]}
     assert actual == expected
+
+
+@pytest.mark.parametrize("raw", ["tags: {}", "tags: ''", "tags: 0", "tags: false"])
+def test_story_from_page_rejects_falsy_non_list_tags(raw: str):
+    page = f"---\ntype: story\ntitle: X\n{raw}\n---\n# X\n\n**Situation:** s\n"
+    with pytest.raises(WikiPageError) as exc_info:
+        stories.story_from_page("experience/story-001.md", page)
+    assert "tags must be a list" in str(exc_info.value)
+
+
+def test_story_from_page_treats_absent_or_null_tags_as_empty():
+    absent = stories.story_from_page("experience/story-001.md", "---\ntype: story\n---\n# X\n")
+    null = stories.story_from_page("experience/story-002.md", "---\ntype: story\ntags:\n---\n# X\n")
+    actual = {"absent": absent.skills, "null": null.skills}
+    expected = {"absent": [], "null": []}
+    assert actual == expected
