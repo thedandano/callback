@@ -197,8 +197,8 @@ The apply graph's `render` node uses HTML + Playwright via `callback.render.html
 Three evals, no framework. `extract_checks.py` (E1) and `tailor_checks.py` (E2)
 are pure functions over a host output and a fixture; `test_compile.py` (E3)
 runs the real `compile_profile` node on a staged copy of a case. Cases live in
-two roots: committed synthetic ones (`evals/{extract,tailor,compile}/`, Jane
-Doe) and the private root (`CALLBACK_EVALS_DIR`) built from the real data by
+two roots: committed ones (`evals/{extract,tailor,compile}/`: public job
+postings for extract, synthetic Jane Doe data for the rest) and the private root (`CALLBACK_EVALS_DIR`) built from the real data by
 `scripts/build_eval_fixtures.py`. `scripts/run_evals.py` is the only code that
 calls a model: it shells out to `claude -p` or `codex exec`, isolated with
 `--strict-mcp-config` and an empty `--mcp-config`, `--tools ""`,
