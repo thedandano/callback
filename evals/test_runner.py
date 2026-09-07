@@ -159,6 +159,24 @@ def test_call_host_nonzero_exit_raises_with_stderr():
         call_host("claude", None, "P", run=fake_run)
 
 
+def test_call_host_claude_raises_on_non_json_stdout():
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, stdout="not json", stderr="")
+
+    with pytest.raises(HostError, match="claude returned non-JSON stdout"):
+        call_host("claude", None, "P", run=fake_run)
+
+
+def test_call_host_claude_raises_when_reply_has_no_result():
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout=json.dumps({"is_error": True, "error": "rate_limited"}), stderr=""
+        )
+
+    with pytest.raises(HostError, match="claude reply has no result"):
+        call_host("claude", None, "P", run=fake_run)
+
+
 def test_format_table_lists_first_failure():
     rows = [
         EvalRow("extract", "ashby", [Check("valid_jd_data", True)]),
@@ -216,6 +234,35 @@ def test_run_extract_writes_host_file_and_checks(tmp_path, monkeypatch):
             "output": golden,
         },
     }
+    assert actual == expected
+
+
+def test_run_extract_continues_after_host_failure(tmp_path, monkeypatch, caplog):
+    extract_dir = tmp_path / "extract"
+    extract_dir.mkdir()
+    golden = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    for board in ("a", "b"):
+        (extract_dir / f"{board}.md").write_text(
+            "Engineer. Requirements: Python.", encoding="utf-8"
+        )
+        (extract_dir / f"{board}.golden.json").write_text(json.dumps(golden), encoding="utf-8")
+    monkeypatch.setattr("evals.runner.EXTRACT_DIR", extract_dir)
+    monkeypatch.setattr("evals.runner._commit", lambda: "abc1234")
+    monkeypatch.setattr("evals.runner._now", lambda: "2026-09-06T00:00:00+00:00")
+    reply = json.dumps({"result": json.dumps(golden)})
+    calls = {"n": 0}
+
+    def fake_run(cmd, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise subprocess.TimeoutExpired(cmd, 900)
+        return subprocess.CompletedProcess(cmd, 0, stdout=reply, stderr="")
+
+    with caplog.at_level("WARNING", logger="callback.evals"):
+        rows = run_extract("claude", None, ["a", "b"], checks_only=False, run=fake_run)
+
+    actual = [(r.fixture, r.passed, (r.first_failure or "").split(":")[0]) for r in rows]
+    expected = [("a", False, "host_call"), ("b", True, "")]
     assert actual == expected
 
 

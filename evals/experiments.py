@@ -80,7 +80,16 @@ def record(
             ]
         }
 
+    logger.info(
+        "uploading %d fixture inputs to LangSmith dataset %s: %s",
+        len(inputs),
+        dataset.name,
+        sorted(inputs),
+    )
     prefix = f"{run_meta['commit']}-{run_meta['host']}-{run_meta['model']}"
+    # langsmith types evaluate()'s target as returning dict, not dict | None, and matches
+    # target's Callable against its Union[target, ..., tuple[...]] overloads too strictly;
+    # both work at runtime (a missing output is a real possibility, replayed as a failed check).
     result = evaluate(  # pyright: ignore[reportCallIssue]
         target,  # pyright: ignore[reportArgumentType]
         data=examples,

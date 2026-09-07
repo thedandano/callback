@@ -147,6 +147,23 @@ def _codex_cmd(model: str | None, out_file: Path) -> list[str]:
     ]
 
 
+def _claude_result(stdout: str) -> str:
+    """Parse claude -p's JSON stdout and return the `result` field, or raise HostError."""
+    try:
+        parsed = json.loads(stdout)
+    except json.JSONDecodeError as exc:
+        raise HostError(f"claude returned non-JSON stdout: {stdout[:200]!r}") from exc
+    result = parsed.get("result") if isinstance(parsed, dict) else None
+    if isinstance(result, str):
+        return result
+    extra = ""
+    if isinstance(parsed, dict):
+        flags = {k: parsed[k] for k in ("is_error", "error") if k in parsed}
+        if flags:
+            extra = f" ({flags})"
+    raise HostError(f"claude reply has no result: {stdout[:200]!r}{extra}")
+
+
 def call_host(host: str, model: str | None, prompt: str, run: RunFn = subprocess.run) -> str:
     """Send one prompt to the host CLI and return its reply text."""
     with tempfile.TemporaryDirectory(prefix="callback-eval-") as scratch:
@@ -158,7 +175,7 @@ def call_host(host: str, model: str | None, prompt: str, run: RunFn = subprocess
         if proc.returncode != 0:
             raise HostError(f"{host} exited {proc.returncode}: {proc.stderr.strip()[-500:]}")
         if host == "claude":
-            return json.loads(proc.stdout)["result"]
+            return _claude_result(proc.stdout)
         return out_file.read_text(encoding="utf-8")
 
 
@@ -186,9 +203,19 @@ def _write_host_file(path: Path, host: str, model: str | None, raw: str) -> dict
 
 
 def _host_output(
-    path: Path, host: str, model: str | None, prompt: str, *, checks_only: bool, run: RunFn | None
+    path: Path,
+    host: str,
+    model: str | None,
+    prompt: str,
+    fixture: str,
+    *,
+    checks_only: bool,
+    run: RunFn | None,
 ) -> tuple[dict | None, Check | None]:
-    """The host output for one fixture: freshly produced, or read back with --checks-only."""
+    """The host output for one fixture: freshly produced, or read back with --checks-only.
+
+    A host call that times out or errors fails only this fixture's row; the batch continues.
+    """
     if checks_only:
         if not path.exists():
             return None, Check(
@@ -196,7 +223,12 @@ def _host_output(
             )
         return json.loads(path.read_text(encoding="utf-8")).get("output"), None
     assert run is not None
-    return _write_host_file(path, host, model, call_host(host, model, prompt, run=run)), None
+    try:
+        raw = call_host(host, model, prompt, run=run)
+    except (HostError, subprocess.TimeoutExpired) as exc:
+        logger.warning("%s: host call failed: %s", fixture, exc)
+        return None, Check("host_call", False, f"{type(exc).__name__}: {exc}")
+    return _write_host_file(path, host, model, raw), None
 
 
 def run_extract(
@@ -208,7 +240,7 @@ def run_extract(
         golden = json.loads((EXTRACT_DIR / f"{board}.golden.json").read_text(encoding="utf-8"))
         path = EXTRACT_DIR / f"{board}.host.json"
         output, gate = _host_output(
-            path, host, model, extract_prompt(jd_text), checks_only=checks_only, run=run
+            path, host, model, extract_prompt(jd_text), board, checks_only=checks_only, run=run
         )
         checks = [gate] if gate else extract_run_checks(json.dumps(output), golden, jd_text)
         rows.append(EvalRow("extract", board, checks))
@@ -222,17 +254,14 @@ def run_tailor(
     rows = []
     for case_dir in dirs:
         case = TailorCase.from_dir(case_dir)
+        fixture = case_id(case_dir)
         path = case_dir / "host.json"
         output, gate = _host_output(
-            path, host, model, tailor_prompt(case), checks_only=checks_only, run=run
+            path, host, model, tailor_prompt(case), fixture, checks_only=checks_only, run=run
         )
         checks = [gate] if gate else tailor_run_checks(case, output)
-        rows.append(EvalRow("tailor", case_id(case_dir), checks))
-        logger.info(
-            "tailor %s: %s",
-            case_id(case_dir),
-            "PASS" if rows[-1].passed else rows[-1].first_failure,
-        )
+        rows.append(EvalRow("tailor", fixture, checks))
+        logger.info("tailor %s: %s", fixture, "PASS" if rows[-1].passed else rows[-1].first_failure)
     return rows
 
 
