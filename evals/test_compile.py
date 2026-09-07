@@ -20,7 +20,7 @@ HAND_EDIT = "\n\n**Impact:** Edited by hand after compile; this line must surviv
 
 def _data_root(wiki: Path) -> Path:
     """Get the data root from a wiki path (wiki is <root>/callback/profile-wiki/primary)."""
-    return wiki.parents[3]
+    return wiki.parents[2]
 
 
 @pytest.fixture(params=CASES, ids=[case_id(c) for c in CASES])

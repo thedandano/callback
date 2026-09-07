@@ -213,6 +213,7 @@ def test_format_table_lists_first_failure():
                     "term_recall",
                     True,
                     "not evaluated: only 3 golden terms are still in the JD (content drift)",
+                    skipped=True,
                 ),
             ],
         ),
@@ -224,7 +225,7 @@ def test_format_table_lists_first_failure():
         "eval     fixture                  result  first failing check / note\n"
         "extract  ashby                    PASS    \n"
         "tailor   public:jane-doe-backend  FAIL    grounded: ungrounded: ['70%']\n"
-        "extract  greenhouse               PASS    not evaluated: only 3 golden terms are "
+        "extract  greenhouse               SKIP    not evaluated: only 3 golden terms are "
         "still in the JD (content drift)"
     )
     assert actual == expected
@@ -243,14 +244,13 @@ def test_run_extract_writes_host_file_and_checks(tmp_path, monkeypatch):
     (extract_dir / "acme.md").write_text(jd, encoding="utf-8")
     (extract_dir / "acme.golden.json").write_text(json.dumps(golden), encoding="utf-8")
     monkeypatch.setattr("evals.runner.EXTRACT_DIR", extract_dir)
-    monkeypatch.setattr("evals.runner._commit", lambda: "abc1234")
     monkeypatch.setattr("evals.runner._now", lambda: "2026-09-06T00:00:00+00:00")
     reply = json.dumps({"result": json.dumps(golden)})
 
     def fake_run(cmd, **kwargs):
         return subprocess.CompletedProcess(cmd, 0, stdout=reply, stderr="")
 
-    rows = run_extract("claude", None, ["acme"], checks_only=False, run=fake_run)
+    rows = run_extract("claude", None, ["acme"], checks_only=False, run=fake_run, commit="abc1234")
 
     actual = {
         "rows": [(r.eval_name, r.fixture, r.passed) for r in rows],
@@ -280,7 +280,6 @@ def test_run_extract_continues_after_host_failure(tmp_path, monkeypatch, caplog)
         )
         (extract_dir / f"{board}.golden.json").write_text(json.dumps(golden), encoding="utf-8")
     monkeypatch.setattr("evals.runner.EXTRACT_DIR", extract_dir)
-    monkeypatch.setattr("evals.runner._commit", lambda: "abc1234")
     monkeypatch.setattr("evals.runner._now", lambda: "2026-09-06T00:00:00+00:00")
     reply = json.dumps({"result": json.dumps(golden)})
     calls = {"n": 0}
@@ -292,7 +291,9 @@ def test_run_extract_continues_after_host_failure(tmp_path, monkeypatch, caplog)
         return subprocess.CompletedProcess(cmd, 0, stdout=reply, stderr="")
 
     with caplog.at_level("WARNING", logger="callback.evals"):
-        rows = run_extract("claude", None, ["a", "b"], checks_only=False, run=fake_run)
+        rows = run_extract(
+            "claude", None, ["a", "b"], checks_only=False, run=fake_run, commit="abc1234"
+        )
 
     actual = [(r.fixture, r.passed, (r.first_failure or "").split(":")[0]) for r in rows]
     expected = [("a", False, "host_call"), ("b", True, "")]
@@ -313,7 +314,7 @@ def test_run_extract_checks_only_reads_existing_output(tmp_path, monkeypatch):
     def never(cmd, **kwargs):
         raise AssertionError("checks_only must not call the host")
 
-    rows = run_extract("claude", None, ["acme"], checks_only=True, run=never)
+    rows = run_extract("claude", None, ["acme"], checks_only=True, run=never, commit="abc1234")
 
     actual = [(r.fixture, r.passed, r.first_failure) for r in rows]
 
@@ -328,7 +329,7 @@ def test_run_extract_checks_only_without_output_is_a_failed_row(tmp_path, monkey
     (extract_dir / "acme.golden.json").write_text(json.dumps({"required": ["x"]}), encoding="utf-8")
     monkeypatch.setattr("evals.runner.EXTRACT_DIR", extract_dir)
 
-    rows = run_extract("claude", None, ["acme"], checks_only=True, run=None)
+    rows = run_extract("claude", None, ["acme"], checks_only=True, run=None, commit="abc1234")
 
     actual = [(r.fixture, r.passed, r.first_failure) for r in rows]
 
@@ -348,7 +349,6 @@ def test_run_tailor_writes_host_file_and_checks(tmp_path, monkeypatch):
     )
     (case_dir / "wiki" / "index.md").write_text("# Profile Index\n", encoding="utf-8")
     (case_dir / "wiki" / "experience" / "story-001.md").write_text("story", encoding="utf-8")
-    monkeypatch.setattr("evals.runner._commit", lambda: "abc1234")
     monkeypatch.setattr("evals.runner._now", lambda: "2026-09-06T00:00:00+00:00")
     host_output = {"edits": [], "no_coverage": True}
     reply = json.dumps({"result": json.dumps(host_output)})
@@ -356,7 +356,7 @@ def test_run_tailor_writes_host_file_and_checks(tmp_path, monkeypatch):
     def fake_run(cmd, **kwargs):
         return subprocess.CompletedProcess(cmd, 0, stdout=reply, stderr="")
 
-    rows = run_tailor("claude", None, [case_dir], checks_only=False, run=fake_run)
+    rows = run_tailor("claude", None, [case_dir], checks_only=False, run=fake_run, commit="abc1234")
 
     actual = {
         "rows": [(r.eval_name, r.fixture, r.passed) for r in rows],

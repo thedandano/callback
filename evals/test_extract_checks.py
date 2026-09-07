@@ -70,6 +70,13 @@ def test_precision_recall_reports_missing_and_extra():
     assert actual == expected
 
 
+def test_duplicate_golden_terms_do_not_break_recall():
+    actual = precision_recall([], ["Python", "python"], "we use python")
+
+    expected = PrecisionRecall(precision=1.0, recall=0.0, missing=["Python"], extra=[])
+    assert actual == expected
+
+
 def test_paraphrase_alone_is_caught_by_substring_check():
     """A rewritten term ("Postgres" for "PostgreSQL") no longer sinks recall/precision on its
     own (GOLDEN has 7 terms present, well past the thin-golden guard) - only the substring
@@ -126,6 +133,22 @@ def test_extra_host_group_is_a_note():
     assert actual == expected
 
 
+def test_hyphenated_golden_group_is_not_treated_as_drift():
+    """A dash-flattened golden group ("arm cortex m") must not be tested for presence against
+    the JD text - only the raw member ("ARM Cortex-M") appears there, so a naive presence
+    check on the normalized form would wrongly read this as content drift and skip it."""
+    golden = {**GOLDEN, "required_any": [["ARM Cortex-M", "RTOS"]]}
+    jd = JD + " Experience with ARM Cortex-M and RTOS required."
+    host_json = _host(required_any=[])
+
+    checks = run_checks(host_json, golden, jd)
+
+    actual = [c for c in checks if c.name == "groups_match"]
+
+    expected = [Check("groups_match", False, "unmatched golden groups: [['arm cortex m', 'rtos']]")]
+    assert actual == expected
+
+
 def test_drifted_golden_group_is_skipped():
     golden = {**GOLDEN, "required_any": [["Kubernetes", "Docker Swarm"]]}
     host_json = _host(required_any=[])
@@ -150,16 +173,46 @@ def test_wrong_years_and_title_fail_exact_checks():
     assert actual == expected
 
 
-def test_thin_golden_is_not_evaluated():
-    golden = {**GOLDEN, "preferred": [], "required_any": []}  # 3 golden terms, all still in the JD
-    host_json = _host(required=["Python"], preferred=[], required_any=[])  # missing 2 of them
+THIN_GOLDEN = {
+    "title": "Senior Backend Engineer",
+    "company": "Northwind",
+    "required": ["Python", "FastAPI", "Kubernetes"],
+    "preferred": ["Redis", "Terraform"],
+    "required_any": [],
+    "preferred_any": [],
+    "required_years": 4.0,
+}
 
-    checks = run_checks(host_json, golden, JD)
+
+def test_thin_golden_is_not_evaluated():
+    # 5 golden terms total; only Python and FastAPI are still in the JD (2/5 = 0.4 < 0.6)
+    jd = "Senior Backend Engineer at Northwind. Requirements: Python, FastAPI."
+    host_json = json.dumps({**THIN_GOLDEN, "required": ["Python"], "preferred": []})
+
+    checks = run_checks(host_json, THIN_GOLDEN, jd)
 
     actual = [c for c in checks if c.name in ("term_recall", "term_precision")]
 
-    detail = "not evaluated: only 3 golden terms are still in the JD (content drift)"
-    expected = [Check("term_recall", True, detail), Check("term_precision", True, detail)]
+    detail = "not evaluated: only 2 of 5 golden terms are still in the JD (content drift)"
+    expected = [
+        Check("term_recall", True, detail, skipped=True),
+        Check("term_precision", True, detail, skipped=True),
+    ]
+    assert actual == expected
+
+
+def test_golden_with_most_terms_live_is_evaluated_normally():
+    # 5 golden terms total; 4 are still in the JD (4/5 = 0.8 >= 0.6), so the guard does not trip
+    jd = "Senior Backend Engineer at Northwind. Requirements: Python, FastAPI, Redis, Terraform."
+    host_json = json.dumps(
+        {**THIN_GOLDEN, "required": ["Python", "FastAPI"], "preferred": ["Redis", "Terraform"]}
+    )
+
+    checks = run_checks(host_json, THIN_GOLDEN, jd)
+
+    actual = [c for c in checks if c.name in ("term_recall", "term_precision")]
+
+    expected = [Check("term_recall", True, ""), Check("term_precision", True, "")]
     assert actual == expected
 
 

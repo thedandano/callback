@@ -24,11 +24,11 @@ from dataclasses import dataclass
 from callback.jd_data import JDDataError, parse_jd_json
 from callback.scorer import normalize_for_match
 from evals.checks import Check
-from evals.recall import term_present
+from evals.recall import golden_terms, term_present
 
 RECALL_MIN = 0.6
 PRECISION_MIN = 0.6
-MIN_GOLDEN_TERMS = 5
+MIN_LIVE_RATIO = 0.6
 
 
 @dataclass(frozen=True)
@@ -47,11 +47,25 @@ def _ratio(hits: int, total: int) -> float:
     return 1.0 if total == 0 else round(hits / total, 2)
 
 
+def _dedupe_by_norm(terms: list[str]) -> list[str]:
+    """First occurrence wins for each normalized form, so a golden with both "Python" and
+    "python" doesn't double-count a single real term and drive recall negative."""
+    seen: set[str] = set()
+    deduped = []
+    for term in terms:
+        norm = _norm(term)
+        if norm not in seen:
+            seen.add(norm)
+            deduped.append(term)
+    return deduped
+
+
 def precision_recall(
-    host_terms: list[str], golden_terms: list[str], jd_text: str
+    host_terms: list[str], golden_terms_list: list[str], jd_text: str
 ) -> PrecisionRecall:
     haystack = jd_text.lower()
-    golden_in_jd = [t for t in golden_terms if term_present(t.lower(), haystack)]
+    present = [t for t in golden_terms_list if term_present(t.lower(), haystack)]
+    golden_in_jd = _dedupe_by_norm(present)
     golden_norm = {_norm(t) for t in golden_in_jd}
     host_norm = {_norm(t) for t in host_terms}
     missing = [t for t in golden_in_jd if _norm(t) not in host_norm]
@@ -70,20 +84,25 @@ def _group_matched(group: tuple[str, ...], others: set[tuple[str, ...]]) -> bool
 
 
 def _present_golden_groups(
-    golden_groups: set[tuple[str, ...]], jd_text: str
+    golden_groups_raw: list[list[str]], jd_text: str
 ) -> set[tuple[str, ...]]:
+    """Presence is tested on the raw, un-normalized members: a normalized member like
+    "arm cortex m" (dash flattened to a space) would never match the JD's literal
+    "ARM Cortex-M" and would wrongly read as content drift."""
     haystack = jd_text.lower()
-    return {g for g in golden_groups if any(term_present(m, haystack) for m in g)}
+    present = set()
+    for group in golden_groups_raw:
+        if any(term_present(m.lower(), haystack) for m in group):
+            present.add(tuple(sorted(_norm(t) for t in group)))
+    return present
 
 
 def _groups_check(host: dict, golden: dict, jd_text: str) -> Check:
     host_groups = _group_set(host.get("required_any", [])) | _group_set(
         host.get("preferred_any", [])
     )
-    golden_groups = _group_set(golden.get("required_any", [])) | _group_set(
-        golden.get("preferred_any", [])
-    )
-    present_golden = _present_golden_groups(golden_groups, jd_text)
+    golden_groups_raw = golden.get("required_any", []) + golden.get("preferred_any", [])
+    present_golden = _present_golden_groups(golden_groups_raw, jd_text)
     missing = sorted(list(g) for g in present_golden if not _group_matched(g, host_groups))
     if missing:
         return Check("groups_match", False, f"unmatched golden groups: {missing}")
@@ -91,16 +110,9 @@ def _groups_check(host: dict, golden: dict, jd_text: str) -> Check:
     return Check("groups_match", True, f"extra host groups: {extras}" if extras else "")
 
 
-def _all_terms(data: dict) -> list[str]:
-    terms = list(data.get("required", [])) + list(data.get("preferred", []))
-    for group in data.get("required_any", []) + data.get("preferred_any", []):
-        terms.extend(group)
-    return terms
-
-
 def _substring_check(host: dict, jd_text: str) -> Check:
     haystack = jd_text.lower()
-    absent = [t for t in _all_terms(host) if not term_present(t.lower(), haystack)]
+    absent = [t for t in golden_terms(host) if not term_present(t.lower(), haystack)]
     return Check(
         "terms_are_jd_substrings",
         not absent,
@@ -108,17 +120,27 @@ def _substring_check(host: dict, jd_text: str) -> Check:
     )
 
 
-def _golden_terms_present(golden: dict, jd_text: str) -> int:
+def _live_golden_terms(golden_list: list[str], jd_text: str) -> tuple[int, int]:
+    """(live, total): how many golden terms are still present in the JD text."""
     haystack = jd_text.lower()
-    return sum(1 for t in _all_terms(golden) if term_present(t.lower(), haystack))
+    total = len(golden_list)
+    live = sum(1 for t in golden_list if term_present(t.lower(), haystack))
+    return live, total
 
 
 def _term_checks(host: dict, golden: dict, jd_text: str) -> list[Check]:
-    present = _golden_terms_present(golden, jd_text)
-    if present < MIN_GOLDEN_TERMS:
-        detail = f"not evaluated: only {present} golden terms are still in the JD (content drift)"
-        return [Check("term_recall", True, detail), Check("term_precision", True, detail)]
-    pr = precision_recall(_all_terms(host), _all_terms(golden), jd_text)
+    golden_list = golden_terms(golden)
+    live, total = _live_golden_terms(golden_list, jd_text)
+    if total == 0 or (live / total) < MIN_LIVE_RATIO:
+        detail = (
+            f"not evaluated: only {live} of {total} golden terms are still in the JD "
+            "(content drift)"
+        )
+        return [
+            Check("term_recall", True, detail, skipped=True),
+            Check("term_precision", True, detail, skipped=True),
+        ]
+    pr = precision_recall(golden_terms(host), golden_list, jd_text)
     recall_ok = pr.recall >= RECALL_MIN
     precision_ok = pr.precision >= PRECISION_MIN
     return [

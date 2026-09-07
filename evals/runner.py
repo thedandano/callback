@@ -66,6 +66,16 @@ class EvalRow:
         return all(c.passed for c in self.checks)
 
     @property
+    def status(self) -> str:
+        """FAIL if any check failed, else SKIP if any check was skipped (thin-golden guard,
+        drifted content, etc.), else PASS."""
+        if not self.passed:
+            return "FAIL"
+        if any(c.skipped for c in self.checks):
+            return "SKIP"
+        return "PASS"
+
+    @property
     def first_failure(self) -> str | None:
         return first_failure(self.checks)
 
@@ -203,7 +213,9 @@ def call_host(host: str, model: str | None, prompt: str, run: RunFn = subprocess
         return out_file.read_text(encoding="utf-8")
 
 
-def _write_host_file(path: Path, host: str, model: str | None, raw: str) -> dict | None:
+def _write_host_file(
+    path: Path, host: str, model: str | None, raw: str, commit: str
+) -> dict | None:
     output = extract_json_object(raw)
     if output is None:
         logger.warning("%s: no JSON object in host reply; recorded raw text only", path.name)
@@ -212,7 +224,7 @@ def _write_host_file(path: Path, host: str, model: str | None, raw: str) -> dict
             {
                 "host": host,
                 "model": model or "default",
-                "commit": _commit(),
+                "commit": commit,
                 "ran_at": _now(),
                 "raw": raw,
                 "output": output,
@@ -235,6 +247,7 @@ def _host_output(
     *,
     checks_only: bool,
     run: RunFn | None,
+    commit: str,
 ) -> tuple[dict | None, Check | None]:
     """The host output for one fixture: freshly produced, or read back with --checks-only.
 
@@ -246,17 +259,24 @@ def _host_output(
                 "host_output_present", False, f"{path.name} missing; run without --checks-only"
             )
         return json.loads(path.read_text(encoding="utf-8")).get("output"), None
-    assert run is not None
+    if run is None:
+        raise ValueError("run is required unless checks_only")
     try:
         raw = call_host(host, model, prompt, run=run)
     except (HostError, subprocess.TimeoutExpired) as exc:
         logger.warning("%s: host call failed: %s", fixture, exc)
         return None, Check("host_call", False, f"{type(exc).__name__}: {exc}")
-    return _write_host_file(path, host, model, raw), None
+    return _write_host_file(path, host, model, raw, commit), None
 
 
 def run_extract(
-    host: str, model: str | None, boards: list[str], *, checks_only: bool, run: RunFn | None
+    host: str,
+    model: str | None,
+    boards: list[str],
+    *,
+    checks_only: bool,
+    run: RunFn | None,
+    commit: str,
 ) -> list[EvalRow]:
     rows = []
     for board in boards:
@@ -264,7 +284,14 @@ def run_extract(
         golden = json.loads((EXTRACT_DIR / f"{board}.golden.json").read_text(encoding="utf-8"))
         path = EXTRACT_DIR / f"{board}.host.json"
         output, gate = _host_output(
-            path, host, model, extract_prompt(jd_text), board, checks_only=checks_only, run=run
+            path,
+            host,
+            model,
+            extract_prompt(jd_text),
+            board,
+            checks_only=checks_only,
+            run=run,
+            commit=commit,
         )
         checks = [gate] if gate else extract_run_checks(json.dumps(output), golden, jd_text)
         rows.append(EvalRow("extract", board, checks))
@@ -273,7 +300,13 @@ def run_extract(
 
 
 def run_tailor(
-    host: str, model: str | None, dirs: list[Path], *, checks_only: bool, run: RunFn | None
+    host: str,
+    model: str | None,
+    dirs: list[Path],
+    *,
+    checks_only: bool,
+    run: RunFn | None,
+    commit: str,
 ) -> list[EvalRow]:
     rows = []
     for case_dir in dirs:
@@ -281,7 +314,14 @@ def run_tailor(
         fixture = case_id(case_dir)
         path = case_dir / "host.json"
         output, gate = _host_output(
-            path, host, model, tailor_prompt(case), fixture, checks_only=checks_only, run=run
+            path,
+            host,
+            model,
+            tailor_prompt(case),
+            fixture,
+            checks_only=checks_only,
+            run=run,
+            commit=commit,
         )
         checks = [gate] if gate else tailor_run_checks(case, output)
         rows.append(EvalRow("tailor", fixture, checks))
@@ -293,9 +333,8 @@ def format_table(rows: list[EvalRow]) -> str:
     width = max([len("fixture"), *(len(r.fixture) for r in rows)])
     lines = [f"{'eval':8} {'fixture':{width}}  result  first failing check / note"]
     for row in rows:
-        status = "PASS" if row.passed else "FAIL"
         last_column = row.first_failure if not row.passed else (row.note or "")
-        lines.append(f"{row.eval_name:8} {row.fixture:{width}}  {status:6}  {last_column}")
+        lines.append(f"{row.eval_name:8} {row.fixture:{width}}  {row.status:6}  {last_column}")
     return "\n".join(lines)
 
 
@@ -316,6 +355,11 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--no-langsmith", action="store_true", help="do not record a LangSmith experiment"
+    )
+    parser.add_argument(
+        "--upload-private-inputs",
+        action="store_true",
+        help="upload full private-fixture inputs to LangSmith too (default: metrics only)",
     )
     return parser.parse_args(argv)
 
@@ -338,9 +382,10 @@ def _run_one_eval(name: str, args: argparse.Namespace, run_meta: dict) -> list[E
             _selected_boards(args.case),
             checks_only=args.checks_only,
             run=subprocess.run,
+            commit=run_meta["commit"],
         )
         if not args.no_langsmith:
-            experiments.record_extract(rows, run_meta)
+            experiments.record_extract(rows, run_meta, upload_private=args.upload_private_inputs)
         return rows
     rows = run_tailor(
         args.host,
@@ -348,9 +393,10 @@ def _run_one_eval(name: str, args: argparse.Namespace, run_meta: dict) -> list[E
         _selected_cases(args.case),
         checks_only=args.checks_only,
         run=subprocess.run,
+        commit=run_meta["commit"],
     )
     if not args.no_langsmith:
-        experiments.record_tailor(rows, run_meta)
+        experiments.record_tailor(rows, run_meta, upload_private=args.upload_private_inputs)
     return rows
 
 

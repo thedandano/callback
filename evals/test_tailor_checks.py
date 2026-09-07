@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from evals.checks import Check, first_failure
 from evals.tailor_checks import HostTailor, TailorCase, _claim_tokens, run_checks, score_total
+
+TAILOR_FIXTURES = Path(__file__).resolve().parent / "tailor"
 
 SECTIONS = {
     "summary": "Backend engineer with 5 years building Python services on AWS.",
@@ -78,6 +81,7 @@ def test_honest_edits_pass_every_check():
         "has_edits": True,
         "no_rejected_edits": True,
         "added_skills_in_dated_bullets": True,
+        "added_skills_in_source": True,
         "grounded": True,
         "no_banned_terms": True,
         "score_not_lower": True,
@@ -105,8 +109,39 @@ def test_keyword_stuffed_output_fails():
 
     expected = [
         Check("added_skills_in_dated_bullets", False, "not in a dated bullet: ['Redis']"),
+        Check("added_skills_in_source", False, "not in the resume or wiki: ['Kubernetes']"),
         Check("grounded", False, "ungrounded: ['Kubernetes', '70%', '12']"),
         Check("no_banned_terms", False, "banned: ['leveraged']"),
+    ]
+    assert actual == expected
+
+
+def test_invented_lowercase_skill_with_self_supplied_bullet_fails():
+    """A host can't invent a lowercase skill and then write its own bullet to back it up."""
+    case = TailorCase.from_dir(TAILOR_FIXTURES / "jane-doe-backend")
+    sneaky = {
+        "edits": [
+            {"section": "skills", "op": "add", "value": "distributed systems"},
+            {
+                "section": "experience",
+                "op": "replace",
+                "target": "exp-0-b0",
+                "value": "Rebuilt the checkout API on FastAPI with PostgreSQL connection "
+                "pooling, cutting p95 latency 40% for 2M monthly orders across distributed "
+                "systems",
+            },
+        ],
+        "no_coverage": False,
+    }
+
+    actual = [c for c in run_checks(case, sneaky) if not c.passed]
+
+    expected = [
+        Check(
+            "added_skills_in_source",
+            False,
+            "not in the resume or wiki: ['distributed systems']",
+        )
     ]
     assert actual == expected
 
@@ -230,6 +265,19 @@ def test_multi_sentence_summary_is_grounded():
     actual = _names(run_checks(CASE, {"edits": [edit], "no_coverage": False}))["grounded"]
 
     expected = True
+    assert actual == expected
+
+
+def test_small_number_is_not_grounded_by_a_larger_one():
+    sections = {**SECTIONS, "summary": SECTIONS["summary"] + " Handles 512 requests per second."}
+    case = TailorCase(sections, KEYWORDS, WIKI, CONSTRAINTS)
+    edit = {"section": "summary", "op": "replace", "value": "Scaled to 12 clusters."}
+
+    actual = [
+        c for c in run_checks(case, {"edits": [edit], "no_coverage": False}) if c.name == "grounded"
+    ]
+
+    expected = [Check("grounded", False, "ungrounded: ['12']")]
     assert actual == expected
 
 

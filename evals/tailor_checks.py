@@ -1,10 +1,13 @@
 """E2 deterministic checks: host tailoring edits against the source resume and wiki.
 
 A tailoring output is honest when every edit applies cleanly, every skill it
-adds is backed by a dated experience bullet, every number and proper noun it
-introduces already exists in the resume or the supplied wiki pages, it
-introduces no banned filler that was not already in the source resume, and the
-ATS score does not go down.
+adds is backed by a dated experience bullet, every skill it adds or replaces
+already appears somewhere in the source resume or the supplied wiki pages
+(case-insensitively, so a host can't invent a lowercase skill and then write
+its own supporting bullet), every number and proper noun it introduces
+already exists in the resume or the supplied wiki pages, it introduces no
+banned filler that was not already in the source resume, and the ATS score
+does not go down.
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ from callback.apply_nodes import _sections_to_text
 from callback.profilecompiler import _token_sort_ratio
 from callback.section_map import SectionMap, apply_edit
 from evals.checks import Check
+from evals.recall import term_present
 
 BANNED_TERMS = (
     "spearheaded",
@@ -137,6 +141,25 @@ def _skills_check(section_map: SectionMap, edits: list[dict]) -> Check:
     )
 
 
+def _source_text(case: TailorCase) -> str:
+    return "\n".join(
+        [json.dumps(case.sections, ensure_ascii=False), *case.wiki_pages.values()]
+    ).lower()
+
+
+def _skills_in_source_check(case: TailorCase, edits: list[dict]) -> Check:
+    """Catches a host that invents a skill and writes its own supporting bullet:
+    every added/replaced skill must already be present in the pre-edit resume or wiki,
+    not merely in the post-edit bullet the host just wrote."""
+    source_text = _source_text(case)
+    missing = [s for s in _added_skills(edits) if not term_present(s.lower(), source_text)]
+    return Check(
+        "added_skills_in_source",
+        not missing,
+        "" if not missing else f"not in the resume or wiki: {missing}",
+    )
+
+
 def _edit_texts(edits: list[dict]) -> list[str]:
     texts: list[str] = []
     for edit in edits:
@@ -165,17 +188,16 @@ def _claim_tokens(text: str) -> list[str]:
 
 def _grounded(token: str, source_text: str, source_tokens: set[str], ratio_min: int) -> bool:
     lowered = token.lower()
+    if any(ch.isdigit() for ch in token):
+        # Boundary-aware: a raw substring match would let "12" be grounded by "512".
+        return term_present(lowered, source_text)
     if lowered in source_text:
         return True
-    if any(ch.isdigit() for ch in token):
-        return False
     return any(_token_sort_ratio(lowered, s) >= ratio_min for s in source_tokens)
 
 
 def _grounding_check(case: TailorCase, edits: list[dict]) -> Check:
-    source_text = "\n".join(
-        [json.dumps(case.sections, ensure_ascii=False), *case.wiki_pages.values()]
-    ).lower()
+    source_text = _source_text(case)
     source_tokens = {t.strip(_CLAIM_STRIP).lower() for t in _TOKEN_RE.findall(source_text)}
     ratio_min = int(case.constraints.get("grounding_ratio", DEFAULT_GROUNDING_RATIO))
     ungrounded: list[str] = []
@@ -234,6 +256,7 @@ def _edit_checks(case: TailorCase, host: HostTailor) -> list[Check]:
     section_map, rejected = _apply_all(case.sections, host.edits)
     checks.append(Check("no_rejected_edits", not rejected, "" if not rejected else str(rejected)))
     checks.append(_skills_check(section_map, host.edits))
+    checks.append(_skills_in_source_check(case, host.edits))
     checks.append(_grounding_check(case, host.edits))
     checks.append(_banned_check(case, host.edits))
     checks.append(_score_check(case, section_map))

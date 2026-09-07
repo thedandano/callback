@@ -10,6 +10,7 @@ class Check:
     name: str
     passed: bool
     detail: str = ""
+    skipped: bool = False
 
 
 def first_failure(checks: list[Check]) -> str | None:
