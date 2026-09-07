@@ -2041,3 +2041,27 @@ def test_rank_project_candidates_ignores_a_stale_body_heading(tmp_path, monkeypa
     actual = [(c["name"], c["required_matched"], c["preferred_matched"]) for c in candidates]
     expected = [("Azure", [], ["Azure"])]
     assert actual == expected
+
+
+def test_rank_project_candidates_skips_an_undecodable_page(tmp_path, monkeypatch, caplog):
+    from callback.server import _rank_project_candidates
+    from callback.wiki import WikiStore
+
+    caplog.set_level("WARNING", logger="callback.server")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    store = WikiStore()
+    store.write_page(
+        "r", "experience/story-002.md", "---\ntype: project\ntitle: Good\ntags:\n- Python\n---\n"
+    )
+    bad = tmp_path / "wiki" / "r" / "experience" / "story-001.md"
+    bad.write_bytes("---\ntype: project\ntitle: caf\xe9\n---\n".encode("latin-1"))
+    wiki_index = "- [a](experience/story-001.md)\n- [b](experience/story-002.md)\n"
+    candidates = _rank_project_candidates(
+        "r", {"required": ["Python"], "preferred": []}, wiki_index
+    )
+    actual = {
+        "names": [c["name"] for c in candidates],
+        "warned": any("story-001.md" in r.message for r in caplog.records),
+    }
+    expected = {"names": ["Good"], "warned": True}
+    assert actual == expected

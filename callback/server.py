@@ -235,6 +235,23 @@ def _matched_keywords(keywords: list[str], text: str) -> list[str]:
     return [keyword for keyword in keywords if _keyword_matches_text(keyword, text)]
 
 
+def _read_project_page(resume_label: str, page_id: str) -> str | None:
+    """One page's text, or None (logged) when the file cannot be read or decoded."""
+    try:
+        return WikiStore().read_pages(resume_label, [page_id])[page_id]
+    except (UnicodeDecodeError, OSError) as exc:
+        _log(
+            "WARNING",
+            {
+                "tool": "submit_keywords",
+                "event": "story_page_unreadable",
+                "page_id": page_id,
+                "reason": f"{type(exc).__name__}: {exc}",
+            },
+        )
+        return None
+
+
 def _project_page_meta(page_id: str, content: str) -> dict | None:
     """Frontmatter of a project page; None (logged) for non-projects and unreadable pages."""
     try:
@@ -351,10 +368,11 @@ def _rank_project_candidates(resume_label: str, keywords: dict, wiki_index: str)
     required = keywords.get("required") or []
     preferred = keywords.get("preferred") or []
     page_ids = _valid_project_page_ids(resume_label, _project_page_ids(wiki_index))
-    pages = WikiStore().read_pages(resume_label, page_ids)
     candidates: list[dict] = []
     for page_id in page_ids:
-        content = pages.get(page_id) or ""
+        content = _read_project_page(resume_label, page_id)
+        if content is None:
+            continue
         meta = _project_page_meta(page_id, content)
         if meta is None:
             continue
