@@ -48,10 +48,15 @@ def _story_id_from_page_id(page_id: str) -> str:
 _LABEL_LINE_RE = re.compile(r"^\*\*(?:Situation|Behavior|Impact):\*\*", re.M)
 
 
+def _normalize_newlines(text: str) -> str:
+    """CRLF and lone CR become LF, the form a page reads back as."""
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def label_line_field(story: CreatedStory) -> str | None:
     """Name of the first body field holding a line that starts with a structural label."""
     for field in _BODY_FIELDS:
-        if _LABEL_LINE_RE.search(getattr(story, field)):
+        if _LABEL_LINE_RE.search(_normalize_newlines(getattr(story, field))):
             return field
     return None
 
@@ -195,7 +200,7 @@ def next_story_id(resume_label: str) -> str:
 def _canonical(story: CreatedStory) -> CreatedStory:
     """Strip the body paragraphs the way reading a page back does, so equality holds."""
     return story.model_copy(
-        update={f: getattr(story, f).replace("\r\n", "\n").strip() for f in _BODY_FIELDS}
+        update={f: _normalize_newlines(getattr(story, f)).strip() for f in _BODY_FIELDS}
     )
 
 

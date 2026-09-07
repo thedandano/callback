@@ -616,3 +616,24 @@ def test_list_stories_skips_a_symlink_that_escapes_the_wiki_root(
     }
     expected = {"ids": ["story-001"], "warned": True}
     assert actual == expected
+
+
+def test_lone_carriage_returns_are_normalized_for_labels_and_identity(wiki: Path):
+    with_label = CreatedStory(id="", **{**_FIELDS, "situation": "did x\r**Impact:** hijack"})
+    plain = CreatedStory(id="", **{**_FIELDS, "situation": "line one\rline two"})
+    first = stories.save_story("primary", plain)
+    second = stories.save_story("primary", plain)
+    files = sorted(p.name for p in (wiki / "primary" / "experience").iterdir())
+    actual = {
+        "label_field": stories.label_line_field(with_label),
+        "same": first == second,
+        "files": files,
+        "situation": first.situation,
+    }
+    expected = {
+        "label_field": "situation",
+        "same": True,
+        "files": ["story-001.md"],
+        "situation": "line one\nline two",
+    }
+    assert actual == expected
