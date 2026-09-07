@@ -62,6 +62,14 @@ uv run pyright
 # Smoke scripts (end-to-end exercises against the graphs)
 uv run python scripts/smoke_apply.py
 uv run python scripts/smoke_profile.py
+
+# Evals (E3 runs in CI; E1/E2 need a host model and are marked `local`)
+uv run pytest evals/                                   # E3 + check unit tests
+uv run python scripts/build_eval_fixtures.py           # private E2/E3 cases from a copy of the real data
+uv run python scripts/run_evals.py                     # E1 + E2 against `claude -p`, writes host outputs
+uv run python scripts/run_evals.py --host codex --model gpt-5.6-terra --eval tailor
+uv run python scripts/run_evals.py --checks-only       # re-check saved host outputs, no model call
+uv run pytest -m local evals/                          # E1 + E2 checks over the saved host outputs
 ```
 
 ## Environment
@@ -74,8 +82,9 @@ uv run python scripts/smoke_profile.py
 - `CALLBACK_TRACE_BACKEND`: Optional tracing backend. Set to `langsmith` to enable the LangSmith adapter.
 - `LANGSMITH_TRACING`: Must be `true` when `CALLBACK_TRACE_BACKEND=langsmith`.
 - `LANGSMITH_ENDPOINT`: LangSmith API endpoint. Defaults to `https://api.smith.langchain.com`.
-- `LANGSMITH_API_KEY`: Required for LangSmith tracing.
+- `LANGSMITH_API_KEY`: Required for LangSmith tracing; also gates eval experiment recording. The runner logs a WARNING and skips recording when unset.
 - `LANGSMITH_PROJECT`: LangSmith project name. Defaults to `Callback` when tracing is enabled.
+- `CALLBACK_EVALS_DIR`: Where the private eval cases (real resume, wiki, stories) live. Default: `~/.local/share/callback/evals`. Never inside the repo.
 - `XDG_DATA_HOME`: Moves the whole data root (resumes, wiki, checkpoint DBs, compiled profile, applications archive) from `~/.local/share/callback` to `$XDG_DATA_HOME/callback`.
 
 `callback setup-mcp` is noninteractive and only registers the MCP server entry.
@@ -226,6 +235,20 @@ Pure deterministic Python - no I/O, no LLM calls.
 
 PDF rendering uses HTML + Playwright in `callback/render/html_builder.py`.
 
+### Evals (`evals/`)
+
+Three evals, no framework. `extract_checks.py` (E1) and `tailor_checks.py` (E2)
+are pure functions over a host output and a fixture; `test_compile.py` (E3)
+runs the real `compile_profile` node on a staged copy of a case. Cases live in
+two roots: committed synthetic ones (`evals/{extract,tailor,compile}/`, Jane
+Doe) and the private root (`CALLBACK_EVALS_DIR`) built from the real data by
+`scripts/build_eval_fixtures.py`. `scripts/run_evals.py` is the only code that
+calls a model: it shells out to `claude -p --bare` or `codex exec`, saves the
+reply next to the fixture (`<board>.host.json`, `<case>/host.json`), runs the
+checks, prints one table, and records the run as a LangSmith experiment named
+`<commit>-<host>-<model>` when `LANGSMITH_API_KEY` is set. CI never calls a
+model; tests that read host outputs are marked `local`.
+
 ### Module map
 
 | Module | Role |
@@ -252,6 +275,7 @@ PDF rendering uses HTML + Playwright in `callback/render/html_builder.py`.
 | `plugin_install.py` | Plugin installation functions (replaces `HarnessTarget` dataclass) |
 | `observability.py` | Trace config port and LangSmith adapter |
 | `version_check.py` | Current-vs-latest release comparison |
+| `evals/` | Eval checks, fixtures, runner; see Evals |
 
 ## Change Discipline
 
