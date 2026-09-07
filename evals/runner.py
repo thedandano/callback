@@ -1,0 +1,314 @@
+"""Feed each E1/E2 fixture to a host model, save its output, run the checks, print one table.
+
+The runner is the only thing in the repo that calls a model. It shells out to
+`claude -p` or `codex exec`, both in bare/non-interactive mode from a scratch
+directory so no CLAUDE.md, plugin, or MCP server colors the answer.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import subprocess
+import sys
+import tempfile
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+
+from callback.jd_data import EXTRACTION_PROTOCOL
+from callback.server import _TAILOR_INSTRUCTIONS
+from evals import experiments
+from evals.cases import case_dirs, case_id
+from evals.checks import Check, first_failure
+from evals.extract_checks import run_checks as extract_run_checks
+from evals.tailor_checks import TailorCase, missing_keywords
+from evals.tailor_checks import run_checks as tailor_run_checks
+
+logger = logging.getLogger("callback.evals")
+
+EXTRACT_DIR = Path(__file__).resolve().parent / "extract"
+HOSTS = ("claude", "codex")
+EVALS = ("extract", "tailor")
+CODEX_DEFAULT_MODEL = "gpt-5.6-terra"
+HOST_TIMEOUT_S = 900
+RunFn = Callable[..., subprocess.CompletedProcess]
+
+EDIT_SCHEMA = (
+    "Each edit is an object with:\n"
+    "  section: str (summary | skills | experience | projects)\n"
+    "  op: str (add | replace | remove)\n"
+    "  target: str (required for experience/projects; exp-N-bM replaces or removes bullet M\n"
+    "    of experience entry N, exp-N-context sets the context line, proj-N replaces a whole\n"
+    "    project, proj-end appends one project, proj-N-desc / proj-N-bM edit a project's\n"
+    "    description or bullet)\n"
+    "  value: str | dict (required for add/replace; a project add/replacement is a\n"
+    "    {name, description, bullets} object)\n"
+    "  category: str (optional, the skills category to add into)\n"
+)
+
+
+class HostError(RuntimeError):
+    """The host CLI failed; the message carries the exit code and stderr tail."""
+
+
+@dataclass(frozen=True)
+class EvalRow:
+    eval_name: str
+    fixture: str
+    checks: list[Check]
+
+    @property
+    def passed(self) -> bool:
+        return all(c.passed for c in self.checks)
+
+    @property
+    def first_failure(self) -> str | None:
+        return first_failure(self.checks)
+
+
+def _commit() -> str:
+    return subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def extract_json_object(text: str) -> dict | None:
+    """The first `{` to the last `}` of a host reply, parsed; None when that is not an object."""
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        parsed = json.loads(text[start : end + 1])
+    except json.JSONDecodeError as exc:
+        logger.warning("host reply is not JSON: %s", exc)
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def extract_prompt(jd_text: str) -> str:
+    return (
+        f"{EXTRACTION_PROTOCOL}\n\n"
+        "Respond with only the JSON object: no prose, no code fence.\n\n"
+        f"<jd_text>\n{jd_text}\n</jd_text>"
+    )
+
+
+def _pages_block(pages: dict[str, str]) -> str:
+    return "\n\n".join(f"## {page_id}\n{content.rstrip()}" for page_id, content in pages.items())
+
+
+def _dump(obj: object) -> str:
+    return json.dumps(obj, ensure_ascii=False, indent=2)
+
+
+def tailor_prompt(case: TailorCase) -> str:
+    return (
+        "You are the host model in callback's resume tailoring step. Produce the arguments for "
+        'submit_tailor as one JSON object: {"edits": [...], "no_coverage": false}. Respond with '
+        "only that JSON object: no prose, no code fence.\n\n"
+        f"{EDIT_SCHEMA}\n"
+        'Set "no_coverage": true with "edits": [] only when no truthful, evidence-backed edit '
+        "exists.\n\n"
+        f"{_TAILOR_INSTRUCTIONS}\n"
+        "- Add a keyword only when it is supported by dated experience or clear project evidence.\n"
+        "- Rewrite bullets only when the mechanism and impact are supported by the resume or the "
+        "wiki pages below.\n"
+        "- Do not keyword-stuff skills. Prefer fewer strong edits over many weak edits.\n\n"
+        f"<sections>\n{_dump(case.sections)}\n</sections>\n\n"
+        f"<keywords>\n{_dump(case.keywords)}\n</keywords>\n\n"
+        f"<score_gaps>\n{_dump(missing_keywords(case.sections, case.keywords))}\n</score_gaps>\n\n"
+        f"<wiki_pages>\n{_pages_block(case.wiki_pages)}\n</wiki_pages>"
+    )
+
+
+def _claude_cmd(model: str | None) -> list[str]:
+    cmd = ["claude", "-p", "--bare", "--output-format", "json", "--no-session-persistence"]
+    return cmd + (["--model", model] if model else [])
+
+
+def _codex_cmd(model: str | None, out_file: Path) -> list[str]:
+    return [
+        "codex",
+        "exec",
+        "-m",
+        model or CODEX_DEFAULT_MODEL,
+        "--skip-git-repo-check",
+        "--sandbox",
+        "read-only",
+        "-o",
+        str(out_file),
+    ]
+
+
+def call_host(host: str, model: str | None, prompt: str, run: RunFn = subprocess.run) -> str:
+    """Send one prompt to the host CLI and return its reply text."""
+    with tempfile.TemporaryDirectory(prefix="callback-eval-") as scratch:
+        out_file = Path(scratch) / "reply.txt"
+        cmd = _claude_cmd(model) if host == "claude" else _codex_cmd(model, out_file)
+        proc = run(
+            cmd, input=prompt, capture_output=True, text=True, cwd=scratch, timeout=HOST_TIMEOUT_S
+        )
+        if proc.returncode != 0:
+            raise HostError(f"{host} exited {proc.returncode}: {proc.stderr.strip()[-500:]}")
+        if host == "claude":
+            return json.loads(proc.stdout)["result"]
+        return out_file.read_text(encoding="utf-8")
+
+
+def _write_host_file(path: Path, host: str, model: str | None, raw: str) -> dict | None:
+    output = extract_json_object(raw)
+    if output is None:
+        logger.warning("%s: no JSON object in host reply; recorded raw text only", path.name)
+    path.write_text(
+        json.dumps(
+            {
+                "host": host,
+                "model": model or "default",
+                "commit": _commit(),
+                "ran_at": _now(),
+                "raw": raw,
+                "output": output,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return output
+
+
+def _host_output(
+    path: Path, host: str, model: str | None, prompt: str, *, checks_only: bool, run: RunFn | None
+) -> tuple[dict | None, Check | None]:
+    """The host output for one fixture: freshly produced, or read back with --checks-only."""
+    if checks_only:
+        if not path.exists():
+            return None, Check(
+                "host_output_present", False, f"{path.name} missing; run without --checks-only"
+            )
+        return json.loads(path.read_text(encoding="utf-8")).get("output"), None
+    assert run is not None
+    return _write_host_file(path, host, model, call_host(host, model, prompt, run=run)), None
+
+
+def run_extract(
+    host: str, model: str | None, boards: list[str], *, checks_only: bool, run: RunFn | None
+) -> list[EvalRow]:
+    rows = []
+    for board in boards:
+        jd_text = (EXTRACT_DIR / f"{board}.md").read_text(encoding="utf-8")
+        golden = json.loads((EXTRACT_DIR / f"{board}.golden.json").read_text(encoding="utf-8"))
+        path = EXTRACT_DIR / f"{board}.host.json"
+        output, gate = _host_output(
+            path, host, model, extract_prompt(jd_text), checks_only=checks_only, run=run
+        )
+        checks = [gate] if gate else extract_run_checks(json.dumps(output), golden, jd_text)
+        rows.append(EvalRow("extract", board, checks))
+        logger.info("extract %s: %s", board, "PASS" if rows[-1].passed else rows[-1].first_failure)
+    return rows
+
+
+def run_tailor(
+    host: str, model: str | None, dirs: list[Path], *, checks_only: bool, run: RunFn | None
+) -> list[EvalRow]:
+    rows = []
+    for case_dir in dirs:
+        case = TailorCase.from_dir(case_dir)
+        path = case_dir / "host.json"
+        output, gate = _host_output(
+            path, host, model, tailor_prompt(case), checks_only=checks_only, run=run
+        )
+        checks = [gate] if gate else tailor_run_checks(case, output)
+        rows.append(EvalRow("tailor", case_id(case_dir), checks))
+        logger.info(
+            "tailor %s: %s",
+            case_id(case_dir),
+            "PASS" if rows[-1].passed else rows[-1].first_failure,
+        )
+    return rows
+
+
+def format_table(rows: list[EvalRow]) -> str:
+    width = max([len("fixture"), *(len(r.fixture) for r in rows)])
+    lines = [f"{'eval':8} {'fixture':{width}}  result  first failing check"]
+    for row in rows:
+        status = "PASS" if row.passed else "FAIL"
+        lines.append(
+            f"{row.eval_name:8} {row.fixture:{width}}  {status:6}  {row.first_failure or ''}"
+        )
+    return "\n".join(lines)
+
+
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--host", choices=HOSTS, default="claude")
+    parser.add_argument(
+        "--model", default=None, help="host model flag; default is the host's own default"
+    )
+    parser.add_argument(
+        "--eval", choices=EVALS, action="append", help="run only this eval (repeatable)"
+    )
+    parser.add_argument(
+        "--case", action="append", help="run only this board or case name (repeatable)"
+    )
+    parser.add_argument(
+        "--checks-only", action="store_true", help="re-run checks on saved host outputs"
+    )
+    parser.add_argument(
+        "--no-langsmith", action="store_true", help="do not record a LangSmith experiment"
+    )
+    return parser.parse_args(argv)
+
+
+def _selected_boards(only: list[str] | None) -> list[str]:
+    boards = sorted(json.loads((EXTRACT_DIR / "sources.json").read_text(encoding="utf-8")))
+    return [b for b in boards if not only or b in only]
+
+
+def _selected_cases(only: list[str] | None) -> list[Path]:
+    return [d for d in case_dirs("tailor") if not only or d.name in only]
+
+
+def _run_one_eval(name: str, args: argparse.Namespace, run_meta: dict) -> list[EvalRow]:
+    """Run one eval kind (extract or tailor), recording a LangSmith experiment unless disabled."""
+    if name == "extract":
+        rows = run_extract(
+            args.host,
+            args.model,
+            _selected_boards(args.case),
+            checks_only=args.checks_only,
+            run=subprocess.run,
+        )
+        if not args.no_langsmith:
+            experiments.record_extract(rows, run_meta)
+        return rows
+    rows = run_tailor(
+        args.host,
+        args.model,
+        _selected_cases(args.case),
+        checks_only=args.checks_only,
+        run=subprocess.run,
+    )
+    if not args.no_langsmith:
+        experiments.record_tailor(rows, run_meta)
+    return rows
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(sys.argv[1:] if argv is None else argv)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s", stream=sys.stderr)
+    wanted = args.eval or list(EVALS)
+    run_meta = {"host": args.host, "model": args.model or "default", "commit": _commit()}
+    rows: list[EvalRow] = []
+    for name in wanted:
+        rows.extend(_run_one_eval(name, args, run_meta))
+    print(format_table(rows))
+    return 0 if all(r.passed for r in rows) else 1
