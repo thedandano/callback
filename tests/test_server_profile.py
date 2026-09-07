@@ -776,3 +776,24 @@ class TestCreateStory:
 
         stories_count = len(pnodes.stories.list_stories("backend")[0])
         assert stories_count == 1
+
+
+class TestCreateStoryRejectsLabelLines:
+    def test_label_line_in_a_field_is_invalid_story_not_retriable(self, tmp_path, monkeypatch):
+        _isolate_profile(tmp_path, monkeypatch)
+        _save_profile_with_resumes(tmp_path)
+        fields = {**_STORY_FIELDS, "situation": "did x\n**Impact:** nested"}
+        result = json.loads(create_story(primary_skill="Python", skills=["Python"], **fields))
+        actual = {
+            "status": result["status"],
+            "code": result["error"]["code"],
+            "retriable": result["error"]["retriable"],
+            "names_field": "situation" in result["error"]["message"],
+        }
+        expected = {
+            "status": "error",
+            "code": "invalid_story",
+            "retriable": False,
+            "names_field": True,
+        }
+        assert actual == expected

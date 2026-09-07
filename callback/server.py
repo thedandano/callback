@@ -56,9 +56,9 @@ from callback.profile_graph import get_profile_graph, story_pending
 from callback.profile_graph import make_config as make_profile_config
 from callback.repository.preferences import PreferencesStore
 from callback.repository.resumes import list_resumes
-from callback.repository.stories import tags_from_meta
+from callback.repository.stories import label_line_field, tags_from_meta
 from callback.section_map import SectionMap, SkillsSection, apply_edit
-from callback.state import ApplyState, ProfileState
+from callback.state import ApplyState, CreatedStory, ProfileState
 from callback.wiki import WikiPageError, WikiPageIdError, WikiStore, split_frontmatter
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -1645,6 +1645,16 @@ def create_story(
         "behavior": behavior,
         "impact": impact,
     }
+    field = label_line_field(CreatedStory(id="", **intake))
+    if field is not None:
+        return _err(
+            "create_story",
+            "invalid_story",
+            f"{field} contains a line starting with **Situation:**, **Behavior:**, or "
+            "**Impact:**; those mark paragraph boundaries in the story page, rephrase it",
+            session_id,
+            retriable=False,
+        )
     return _create_story_impl(session_id, intake, resumed=resumed)
 
 
