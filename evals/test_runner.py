@@ -7,15 +7,19 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from langsmith.utils import LangSmithError
 
+from evals import runner
 from evals.checks import Check
 from evals.runner import (
+    CHECKS_ONLY_SKIP_MESSAGE,
     EvalRow,
     HostError,
     call_host,
     extract_json_object,
     extract_prompt,
     format_table,
+    main,
     run_extract,
     run_tailor,
     tailor_prompt,
@@ -300,6 +304,47 @@ def test_run_extract_continues_after_host_failure(tmp_path, monkeypatch, caplog)
     assert actual == expected
 
 
+def test_host_call_failure_discards_a_stale_host_file(tmp_path, monkeypatch):
+    """A prior successful run's host.json must not survive a fresh host-call failure: an
+    unnoticed stale output would let LangSmith/--checks-only replay it as if it were current."""
+    extract_dir = tmp_path / "extract"
+    extract_dir.mkdir()
+    golden = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    (extract_dir / "acme.md").write_text("Engineer. Requirements: Python.", encoding="utf-8")
+    (extract_dir / "acme.golden.json").write_text(json.dumps(golden), encoding="utf-8")
+    (extract_dir / "acme.host.json").write_text(
+        json.dumps(
+            {
+                "host": "claude",
+                "model": "default",
+                "commit": "old0000",
+                "ran_at": "2026-01-01T00:00:00+00:00",
+                "raw": '{"title": "Stale"}',
+                "output": {"title": "Stale"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("evals.runner.EXTRACT_DIR", extract_dir)
+    monkeypatch.setattr("evals.runner._now", lambda: "2026-09-06T00:00:00+00:00")
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="not logged in")
+
+    run_extract("claude", None, ["acme"], checks_only=False, run=fake_run, commit="abc1234")
+
+    actual = json.loads((extract_dir / "acme.host.json").read_text(encoding="utf-8"))
+    expected = {
+        "host": "claude",
+        "model": "default",
+        "commit": "abc1234",
+        "ran_at": "2026-09-06T00:00:00+00:00",
+        "raw": "HostError: claude exited 1: not logged in",
+        "output": None,
+    }
+    assert actual == expected
+
+
 def test_run_extract_checks_only_reads_existing_output(tmp_path, monkeypatch):
     extract_dir = tmp_path / "extract"
     extract_dir.mkdir()
@@ -374,3 +419,82 @@ def test_run_tailor_writes_host_file_and_checks(tmp_path, monkeypatch):
         },
     }
     assert actual == expected
+
+
+def _write_extract_fixture(extract_dir: Path, board: str, golden: dict) -> None:
+    extract_dir.mkdir(exist_ok=True)
+    (extract_dir / f"{board}.md").write_text("Engineer. Requirements: Python.", encoding="utf-8")
+    (extract_dir / f"{board}.golden.json").write_text(json.dumps(golden), encoding="utf-8")
+    (extract_dir / f"{board}.host.json").write_text(
+        json.dumps({"output": golden}), encoding="utf-8"
+    )
+    sources = (
+        json.loads((extract_dir / "sources.json").read_text(encoding="utf-8"))
+        if (extract_dir / "sources.json").exists()
+        else []
+    )
+    if board not in sources:
+        sources.append(board)
+    (extract_dir / "sources.json").write_text(json.dumps(sources), encoding="utf-8")
+
+
+def test_main_fails_when_a_case_filter_matches_nothing(tmp_path, monkeypatch, capsys):
+    extract_dir = tmp_path / "extract"
+    golden = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    _write_extract_fixture(extract_dir, "acme", golden)
+    monkeypatch.setattr("evals.runner.EXTRACT_DIR", extract_dir)
+    monkeypatch.setattr("evals.runner._commit", lambda: "abc1234")
+
+    actual = main(["--checks-only", "--no-langsmith", "--eval", "extract", "--case", "nope"])
+
+    expected = 1
+    assert actual == expected
+    assert "no extract fixtures match --case ['nope']" in capsys.readouterr().err
+
+
+def test_checks_only_never_records_a_langsmith_experiment(tmp_path, monkeypatch, caplog):
+    extract_dir = tmp_path / "extract"
+    golden = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    _write_extract_fixture(extract_dir, "acme", golden)
+    monkeypatch.setattr("evals.runner.EXTRACT_DIR", extract_dir)
+    monkeypatch.setattr("evals.runner._commit", lambda: "abc1234")
+
+    def sentinel(*args, **kwargs):
+        raise AssertionError("record_extract must not be called during --checks-only")
+
+    monkeypatch.setattr(runner.experiments, "record_extract", sentinel)
+
+    with caplog.at_level("WARNING", logger="callback.evals"):
+        exit_code = main(["--checks-only", "--eval", "extract"])
+
+    assert exit_code == 0
+    assert CHECKS_ONLY_SKIP_MESSAGE in caplog.messages
+
+
+def test_langsmith_failure_is_logged_and_local_results_still_print(tmp_path, monkeypatch, caplog):
+    extract_dir = tmp_path / "extract"
+    golden = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    _write_extract_fixture(extract_dir, "acme", golden)
+    reply = json.dumps({"result": json.dumps(golden)})
+    monkeypatch.setattr("evals.runner.EXTRACT_DIR", extract_dir)
+    monkeypatch.setattr("evals.runner._commit", lambda: "abc1234")
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 0, stdout=reply, stderr=""),
+    )
+
+    def raise_auth_error(*args, **kwargs):
+        raise LangSmithError("auth")
+
+    monkeypatch.setattr(runner.experiments, "record_extract", raise_auth_error)
+
+    with caplog.at_level("WARNING", logger="callback.evals"):
+        exit_code = main(["--eval", "extract"])
+
+    assert exit_code == 0
+    assert any(
+        "extract: LangSmith recording failed (auth); local results kept; experiment not recorded"
+        in m
+        for m in caplog.messages
+    )

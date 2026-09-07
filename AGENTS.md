@@ -68,7 +68,7 @@ uv run pytest -m "not local" evals/                    # E3 + check unit tests (
 uv run python scripts/build_eval_fixtures.py           # private E2/E3 cases from a copy of the real data
 uv run python scripts/run_evals.py                     # E1 + E2 against `claude -p`, writes host outputs
 uv run python scripts/run_evals.py --host codex --model gpt-5.6-terra --eval tailor
-uv run python scripts/run_evals.py --checks-only       # re-check saved host outputs, no model call
+uv run python scripts/run_evals.py --checks-only       # re-check saved outputs, no model call, no LangSmith upload
 uv run pytest -m local evals/                          # E1 + E2 checks over the saved host outputs
 # baseline 2026-09-06, claude default model: E1 3/6 (SKIP apple, FAIL cedar/qualcomm), E2 2/8 (see INTENT §M6 for why the rest fail)
 ```

@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from langsmith.utils import LangSmithError
+
 from callback.jd_data import EXTRACTION_PROTOCOL
 from callback.server import _TAILOR_INSTRUCTIONS
 from evals import experiments
@@ -214,11 +216,8 @@ def call_host(host: str, model: str | None, prompt: str, run: RunFn = subprocess
 
 
 def _write_host_file(
-    path: Path, host: str, model: str | None, raw: str, commit: str
-) -> dict | None:
-    output = extract_json_object(raw)
-    if output is None:
-        logger.warning("%s: no JSON object in host reply; recorded raw text only", path.name)
+    path: Path, host: str, model: str | None, raw: str, output: dict | None, commit: str
+) -> None:
     path.write_text(
         json.dumps(
             {
@@ -235,6 +234,15 @@ def _write_host_file(
         + "\n",
         encoding="utf-8",
     )
+
+
+def _record_host_reply(
+    path: Path, host: str, model: str | None, raw: str, commit: str
+) -> dict | None:
+    output = extract_json_object(raw)
+    if output is None:
+        logger.warning("%s: no JSON object in host reply; recorded raw text only", path.name)
+    _write_host_file(path, host, model, raw, output, commit)
     return output
 
 
@@ -264,9 +272,13 @@ def _host_output(
     try:
         raw = call_host(host, model, prompt, run=run)
     except (HostError, subprocess.TimeoutExpired) as exc:
-        logger.warning("%s: host call failed: %s", fixture, exc)
-        return None, Check("host_call", False, f"{type(exc).__name__}: {exc}")
-    return _write_host_file(path, host, model, raw, commit), None
+        message = f"{type(exc).__name__}: {exc}"
+        logger.warning("%s: host call failed: %s", fixture, message)
+        # A stale host file from a prior successful run must not survive this failure:
+        # LangSmith and --checks-only would otherwise silently replay the old output.
+        _write_host_file(path, host, model, message, None, commit)
+        return None, Check("host_call", False, message)
+    return _record_host_reply(path, host, model, raw, commit), None
 
 
 def run_extract(
@@ -366,11 +378,51 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 def _selected_boards(only: list[str] | None) -> list[str]:
     boards = sorted(json.loads((EXTRACT_DIR / "sources.json").read_text(encoding="utf-8")))
-    return [b for b in boards if not only or b in only]
+    selected = [b for b in boards if not only or b in only]
+    if only and not selected:
+        raise ValueError(f"no extract fixtures match --case {only}")
+    return selected
 
 
 def _selected_cases(only: list[str] | None) -> list[Path]:
-    return [d for d in case_dirs("tailor") if not only or d.name in only]
+    selected = [d for d in case_dirs("tailor") if not only or d.name in only]
+    if only and not selected:
+        raise ValueError(f"no tailor fixtures match --case {only}")
+    return selected
+
+
+CHECKS_ONLY_SKIP_MESSAGE = (
+    "checks-only run: LangSmith recording skipped because saved outputs may come from "
+    "another host, model, or commit"
+)
+
+
+def _record_experiment(
+    record_fn: Callable[..., str | None],
+    rows: list[EvalRow],
+    args: argparse.Namespace,
+    run_meta: dict,
+    name: str,
+) -> None:
+    """Record a LangSmith experiment for this eval, unless disabled or ineligible.
+
+    --checks-only never records: the saved host outputs it replays may come from a
+    different host, model, or commit than `run_meta` claims. A LangSmith failure (auth,
+    network, dataset) is logged and swallowed so the local results are still printed.
+    """
+    if args.checks_only:
+        logger.warning(CHECKS_ONLY_SKIP_MESSAGE)
+        return
+    if args.no_langsmith:
+        return
+    try:
+        record_fn(rows, run_meta, upload_private=args.upload_private_inputs)
+    except LangSmithError as exc:
+        logger.warning(
+            "%s: LangSmith recording failed (%s); local results kept; experiment not recorded",
+            name,
+            exc,
+        )
 
 
 def _run_one_eval(name: str, args: argparse.Namespace, run_meta: dict) -> list[EvalRow]:
@@ -384,8 +436,7 @@ def _run_one_eval(name: str, args: argparse.Namespace, run_meta: dict) -> list[E
             run=subprocess.run,
             commit=run_meta["commit"],
         )
-        if not args.no_langsmith:
-            experiments.record_extract(rows, run_meta, upload_private=args.upload_private_inputs)
+        _record_experiment(experiments.record_extract, rows, args, run_meta, name)
         return rows
     rows = run_tailor(
         args.host,
@@ -395,8 +446,7 @@ def _run_one_eval(name: str, args: argparse.Namespace, run_meta: dict) -> list[E
         run=subprocess.run,
         commit=run_meta["commit"],
     )
-    if not args.no_langsmith:
-        experiments.record_tailor(rows, run_meta, upload_private=args.upload_private_inputs)
+    _record_experiment(experiments.record_tailor, rows, args, run_meta, name)
     return rows
 
 
@@ -406,7 +456,11 @@ def main(argv: list[str] | None = None) -> int:
     wanted = args.eval or list(EVALS)
     run_meta = {"host": args.host, "model": args.model or "default", "commit": _commit()}
     rows: list[EvalRow] = []
-    for name in wanted:
-        rows.extend(_run_one_eval(name, args, run_meta))
+    try:
+        for name in wanted:
+            rows.extend(_run_one_eval(name, args, run_meta))
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 1
     print(format_table(rows))
     return 0 if all(r.passed for r in rows) else 1
