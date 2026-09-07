@@ -28,6 +28,7 @@ logger = logging.getLogger("callback.evals")
 EXTRACT_DIR = Path(__file__).resolve().parent / "extract"
 DATASET_PREFIX = "callback-evals-"
 PRIVATE_PREFIX = "private:"
+PRIVATE_SCOPE = {"scope": "private"}
 MISSING_KEY_MESSAGE = (
     "LangSmith recording skipped: LANGSMITH_API_KEY is not set in this shell "
     "(`callback config env list` shows the value stored for the MCP hosts); "
@@ -43,12 +44,15 @@ def _dataset(client, name: str):
 
 
 def _upsert_examples(client, dataset, inputs: dict[str, dict]) -> list:
-    existing = {e.inputs.get("fixture") for e in client.list_examples(dataset_id=dataset.id)}
+    existing = {e.inputs.get("fixture"): e for e in client.list_examples(dataset_id=dataset.id)}
     for fixture, fixture_inputs in inputs.items():
-        if fixture not in existing:
-            client.create_example(
-                inputs={"fixture": fixture, **fixture_inputs}, outputs={}, dataset_id=dataset.id
-            )
+        new_inputs = {"fixture": fixture, **fixture_inputs}
+        example = existing.get(fixture)
+        if example is None:
+            client.create_example(inputs=new_inputs, outputs={}, dataset_id=dataset.id)
+        elif {k: v for k, v in example.inputs.items() if k != "fixture"} != fixture_inputs:
+            client.update_example(example_id=example.id, inputs=new_inputs)
+            logger.info("refreshed stale LangSmith example for fixture %s", fixture)
     return [
         e for e in client.list_examples(dataset_id=dataset.id) if e.inputs.get("fixture") in inputs
     ]
@@ -118,17 +122,19 @@ def record_extract(
     rows: list[EvalRow], run_meta: dict, *, upload_private: bool = False
 ) -> str | None:
     inputs = {}
+    outputs = {}
     withheld = 0
     for r in rows:
         if r.fixture.startswith(PRIVATE_PREFIX) and not upload_private:
-            inputs[r.fixture] = {"scope": "private"}
+            inputs[r.fixture] = PRIVATE_SCOPE
+            outputs[r.fixture] = PRIVATE_SCOPE
             withheld += 1
         else:
             inputs[r.fixture] = {
                 "jd_text": (EXTRACT_DIR / f"{r.fixture}.md").read_text(encoding="utf-8")
             }
+            outputs[r.fixture] = _saved_output(EXTRACT_DIR / f"{r.fixture}.host.json")
     _log_withheld(withheld)
-    outputs = {r.fixture: _saved_output(EXTRACT_DIR / f"{r.fixture}.host.json") for r in rows}
     return record("extract", rows, inputs, outputs, run_meta)
 
 
@@ -141,7 +147,8 @@ def record_tailor(
     withheld = 0
     for row in rows:
         if row.fixture.startswith(PRIVATE_PREFIX) and not upload_private:
-            inputs[row.fixture] = {"scope": "private"}
+            inputs[row.fixture] = PRIVATE_SCOPE
+            outputs[row.fixture] = PRIVATE_SCOPE
             withheld += 1
         else:
             case = TailorCase.from_dir(dirs[row.fixture])
@@ -151,6 +158,6 @@ def record_tailor(
                 "wiki_pages": case.wiki_pages,
                 "constraints": case.constraints,
             }
-        outputs[row.fixture] = _saved_output(dirs[row.fixture] / "host.json")
+            outputs[row.fixture] = _saved_output(dirs[row.fixture] / "host.json")
     _log_withheld(withheld)
     return record("tailor", rows, inputs, outputs, run_meta)
