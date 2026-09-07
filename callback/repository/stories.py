@@ -15,7 +15,13 @@ from pydantic import ValidationError
 from callback.repository.accomplishments import AccomplishmentsStore
 from callback.repository.resumes import list_resumes
 from callback.state import CreatedStory
-from callback.wiki import WikiPageError, WikiStore, join_frontmatter, split_frontmatter
+from callback.wiki import (
+    WikiPageError,
+    WikiPageIdError,
+    WikiStore,
+    join_frontmatter,
+    split_frontmatter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -125,10 +131,10 @@ def story_from_page(page_id: str, content: str) -> CreatedStory:
     paragraphs = _body_paragraphs(page_id, body)
     return CreatedStory(
         id=_story_id_from_page_id(page_id),
-        primary_skill=str(meta.get("title", "")),
+        primary_skill=str(meta.get("title") or ""),
         skills=skills,
-        story_type=str(meta.get("story_type", "")),
-        job_title=str(meta.get("job_title", "")),
+        story_type=str(meta.get("story_type") or ""),
+        job_title=str(meta.get("job_title") or ""),
         situation=paragraphs["Situation"],
         behavior=paragraphs["Behavior"],
         impact=paragraphs["Impact"],
@@ -211,6 +217,8 @@ def _validate_legacy(records: list[dict]) -> tuple[list[CreatedStory], list[str]
     for index, record in enumerate(records):
         try:
             story = CreatedStory.model_validate(record)
+            if not _STORY_FILE_RE.match(f"{story.id}.md"):
+                raise ValueError(f"id {story.id!r} is not of the form story-NNN")
             if (field := label_line_field(story)) is not None:
                 raise ValueError(f"{field} holds a line starting with a structural label")
             valid.append(story)
@@ -247,7 +255,7 @@ def _write_legacy_page(resume_label: str, story: CreatedStory, timestamp: str) -
     page_id = story_page_id(story.id)
     try:
         existing = _read_page(resume_label, page_id)
-    except WikiPageError as exc:
+    except (WikiPageError, WikiPageIdError) as exc:
         logger.warning("%s: left alone; %s", page_id, exc)
         return False
     if not _may_overwrite(page_id, existing):

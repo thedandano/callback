@@ -543,3 +543,28 @@ def test_story_from_page_treats_absent_or_null_tags_as_empty():
     actual = {"absent": absent.skills, "null": null.skills}
     expected = {"absent": [], "null": []}
     assert actual == expected
+
+
+def test_story_from_page_reads_null_scalars_as_empty_strings():
+    page = "---\ntype: story\ntitle:\njob_title: null\nstory_type:\n---\n# X\n\n**Situation:** s\n"
+    story = stories.story_from_page("experience/story-001.md", page)
+    actual = {"skill": story.primary_skill, "job": story.job_title, "type": story.story_type}
+    expected = {"skill": "", "job": "", "type": ""}
+    assert actual == expected
+
+
+def test_migrate_skips_a_record_whose_id_is_not_story_nnn(wiki: Path, monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="callback.repository.stories")
+    monkeypatch.setenv("XDG_DATA_HOME", str(wiki))
+    _with_registered_resume(monkeypatch)
+    _legacy_json(wiki, [{"id": "../evil", **_FIELDS}, {"id": "story-002", **_FIELDS}])
+    written = stories.migrate_legacy_stories("primary")
+    outside = (wiki / "primary" / "evil.md").exists() or (wiki / "evil.md").exists()
+    actual = {
+        "written": written,
+        "outside_written": outside,
+        "json_kept": len(AccomplishmentsStore().legacy_stories()),
+        "warned": any("../evil" in r.message and "story-NNN" in r.message for r in caplog.records),
+    }
+    expected = {"written": 1, "outside_written": False, "json_kept": 2, "warned": True}
+    assert actual == expected
