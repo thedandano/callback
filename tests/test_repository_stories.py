@@ -477,3 +477,42 @@ def test_story_from_page_warns_when_type_disagrees_with_job_title(caplog):
     }
     expected = {"job_title": "Project", "warned": True}
     assert actual == expected
+
+
+def test_migrate_leaves_an_empty_frontmatter_page_alone(wiki: Path, monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="callback.repository.stories")
+    monkeypatch.setenv("XDG_DATA_HOME", str(wiki))
+    _with_registered_resume(monkeypatch)
+    _legacy_json(wiki, [{"id": "story-001", **_FIELDS}])
+    WikiStore().write_page(
+        "primary", "experience/story-001.md", "---\n---\n# hand edit in progress\n"
+    )
+    written = stories.migrate_legacy_stories("primary")
+    page = WikiStore().read_pages("primary", ["experience/story-001.md"])["experience/story-001.md"]
+    actual = {
+        "written": written,
+        "page_untouched": page == "---\n---\n# hand edit in progress\n",
+        "json_kept": len(AccomplishmentsStore().legacy_stories()),
+    }
+    expected = {"written": 0, "page_untouched": True, "json_kept": 1}
+    assert actual == expected
+
+
+def test_migrate_leaves_a_non_utf8_page_alone_and_keeps_json(wiki: Path, monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="callback.repository.stories")
+    monkeypatch.setenv("XDG_DATA_HOME", str(wiki))
+    _with_registered_resume(monkeypatch)
+    _legacy_json(wiki, [{"id": "story-001", **_FIELDS}])
+    bad = wiki / "primary" / "experience" / "story-001.md"
+    bad.parent.mkdir(parents=True, exist_ok=True)
+    raw = "---\ntype: story\ntitle: caf\xe9\n---\n# x\n".encode("latin-1")
+    bad.write_bytes(raw)
+    written = stories.migrate_legacy_stories("primary")
+    actual = {
+        "written": written,
+        "bytes_untouched": bad.read_bytes() == raw,
+        "json_kept": len(AccomplishmentsStore().legacy_stories()),
+        "warned": any("story-001.md" in r.message and "UTF-8" in r.message for r in caplog.records),
+    }
+    expected = {"written": 0, "bytes_untouched": True, "json_kept": 1, "warned": True}
+    assert actual == expected
