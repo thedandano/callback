@@ -83,5 +83,21 @@
       ],
       "title_found": true
     }
+  },
+  "reddit": {
+    "jd_url": "https://job-boards.greenhouse.io/reddit/jobs/8139781",
+    "archived_session": "3708a476-d507-4a2a-9257-4bd0af43d4ce",
+    "note": "No labeled Requirements/Preferred sections; three required_any groups. Golden from the 2026-08-23 application.",
+    "fetched_at": "2026-09-07T04:25:13+00:00",
+    "fetched_chars": 5876,
+    "fetched_tokens_est": 1469,
+    "recall": {
+      "found": 15,
+      "total": 16,
+      "missing": [
+        "cross-functional collaboration"
+      ],
+      "title_found": true
+    }
   }
 }
