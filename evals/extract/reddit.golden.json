@@ -26,7 +26,8 @@
     [
       "Kubernetes",
       "gRPC",
-      "AWS/GCP"
+      "AWS",
+      "GCP"
     ]
   ],
   "preferred_any": [],

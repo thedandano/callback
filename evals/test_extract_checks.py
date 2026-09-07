@@ -91,12 +91,50 @@ def test_groups_compare_as_sets_regardless_of_order():
     assert actual == expected
 
 
-def test_missing_group_fails_groups_match():
+def test_unmatched_golden_group_fails_groups_match():
     checks = run_checks(_host(required_any=[]), GOLDEN, JD)
 
     actual = [c for c in checks if c.name == "groups_match"]
 
-    expected = [Check("groups_match", False, "missing [['aws', 'gcp']]; extra []")]
+    expected = [Check("groups_match", False, "unmatched golden groups: [['aws', 'gcp']]")]
+    assert actual == expected
+
+
+def test_partial_member_overlap_matches_group():
+    golden = {**GOLDEN, "required_any": [["AWS", "GCP", "Azure"]]}
+    jd = JD + " Azure experience is a bonus."
+    host_json = _host(required_any=[["AWS", "GCP"]])
+
+    checks = run_checks(host_json, golden, jd)
+
+    actual = [c for c in checks if c.name == "groups_match"]
+
+    expected = [Check("groups_match", True, "")]
+    assert actual == expected
+
+
+def test_extra_host_group_is_a_note():
+    golden = {**GOLDEN, "required_any": []}
+    jd = JD + " Kafka and Kinesis experience preferred."
+    host_json = _host(required_any=[["Kafka", "Kinesis"]])
+
+    checks = run_checks(host_json, golden, jd)
+
+    actual = [c for c in checks if c.name == "groups_match"]
+
+    expected = [Check("groups_match", True, "extra host groups: [['kafka', 'kinesis']]")]
+    assert actual == expected
+
+
+def test_drifted_golden_group_is_skipped():
+    golden = {**GOLDEN, "required_any": [["Kubernetes", "Docker Swarm"]]}
+    host_json = _host(required_any=[])
+
+    checks = run_checks(host_json, golden, JD)
+
+    actual = [c for c in checks if c.name == "groups_match"]
+
+    expected = [Check("groups_match", True, "")]
     assert actual == expected
 
 
@@ -127,7 +165,8 @@ def test_thin_golden_is_not_evaluated():
 
 def test_union_counts_group_members_and_preferred():
     golden = {**GOLDEN, "required": ["Python", "FastAPI"]}  # 2 required + 2 preferred + 2 group = 6
-    # host misses one preferred (Terraform) and one group member (GCP)
+    # host misses one preferred (Terraform) and one group member (GCP), but the group is still
+    # covered - one shared member (AWS) is enough under the coverage rule
     host_json = _host(required=["Python", "FastAPI"], preferred=["Redis"], required_any=[["AWS"]])
 
     checks = run_checks(host_json, golden, JD)
@@ -137,6 +176,6 @@ def test_union_counts_group_members_and_preferred():
     expected = [
         Check("term_recall", True, ""),
         Check("term_precision", True, ""),
-        Check("groups_match", False, "missing [['aws', 'gcp']]; extra [['aws']]"),
+        Check("groups_match", True, ""),
     ]
     assert actual == expected

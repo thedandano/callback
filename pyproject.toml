@@ -57,3 +57,6 @@ markers = [
     "integration: marks tests as integration",
     "local: marks tests that require local-only tools or filesystem paths",
 ]
+filterwarnings = [
+    "ignore:ast.Str is deprecated:DeprecationWarning:langsmith",
+]

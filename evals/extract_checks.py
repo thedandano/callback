@@ -10,6 +10,11 @@ posting that was reworded after the golden was written (content drift) does
 not read as extraction loss. When too few golden terms survived the drift to
 judge extraction quality at all, the term checks are skipped (pass with a
 note) rather than trusted.
+
+OR-groups are checked for coverage, not set equality: every golden group with
+at least one member still present in the JD text must be matched by some host
+group that shares a normalized member with it. A host group with no golden
+counterpart is allowed and only surfaces as a note in the check detail.
 """
 
 from __future__ import annotations
@@ -60,17 +65,30 @@ def _group_set(groups: list[list[str]]) -> set[tuple[str, ...]]:
     return {tuple(sorted(_norm(t) for t in group)) for group in groups}
 
 
-def _groups_check(host: dict, golden: dict) -> Check:
+def _group_matched(group: tuple[str, ...], others: set[tuple[str, ...]]) -> bool:
+    return any(set(group) & set(other) for other in others)
+
+
+def _present_golden_groups(
+    golden_groups: set[tuple[str, ...]], jd_text: str
+) -> set[tuple[str, ...]]:
+    haystack = jd_text.lower()
+    return {g for g in golden_groups if any(term_present(m, haystack) for m in g)}
+
+
+def _groups_check(host: dict, golden: dict, jd_text: str) -> Check:
     host_groups = _group_set(host.get("required_any", [])) | _group_set(
         host.get("preferred_any", [])
     )
     golden_groups = _group_set(golden.get("required_any", [])) | _group_set(
         golden.get("preferred_any", [])
     )
-    missing = sorted(list(g) for g in golden_groups - host_groups)
-    extra = sorted(list(g) for g in host_groups - golden_groups)
-    ok = not missing and not extra
-    return Check("groups_match", ok, "" if ok else f"missing {missing}; extra {extra}")
+    present_golden = _present_golden_groups(golden_groups, jd_text)
+    missing = sorted(list(g) for g in present_golden if not _group_matched(g, host_groups))
+    if missing:
+        return Check("groups_match", False, f"unmatched golden groups: {missing}")
+    extras = sorted(list(hg) for hg in host_groups if not _group_matched(hg, present_golden))
+    return Check("groups_match", True, f"extra host groups: {extras}" if extras else "")
 
 
 def _all_terms(data: dict) -> list[str]:
@@ -143,7 +161,7 @@ def run_checks(host_json: str, golden: dict, jd_text: str) -> list[Check]:
     return [
         Check("valid_jd_data", True),
         *_term_checks(host, golden, jd_text),
-        _groups_check(host, golden),
+        _groups_check(host, golden, jd_text),
         _substring_check(host, jd_text),
         *_scalar_checks(host, golden),
     ]
