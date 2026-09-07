@@ -198,6 +198,23 @@ def test_build_removes_a_stale_generated_wiki_page(tmp_path, monkeypatch):
     assert actual == expected
 
 
+def test_build_prunes_tailor_cases_for_removed_boards(tmp_path, monkeypatch):
+    """A board dropped from sources.json must not linger as a private tailor case, or
+    case_dirs("tailor") keeps evaluating and uploading it."""
+    source = _fake_source(tmp_path)
+    monkeypatch.setattr("evals.private_fixtures.EXTRACT_DIR", _fake_extract(tmp_path))
+    dest = tmp_path / "dest"
+    stale = dest / "tailor" / "old-board" / "constraints.json"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("{}", encoding="utf-8")
+
+    build(source, dest, ["a"])
+
+    actual = sorted(p.name for p in (dest / "tailor").iterdir())
+    expected = ["a"]
+    assert actual == expected
+
+
 def test_build_removes_stale_generated_files_in_the_compile_case(tmp_path, monkeypatch):
     """`stories/` and `golden/` under compile/<label> are fully generated too."""
     source = _fake_source(tmp_path)

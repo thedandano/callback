@@ -110,6 +110,17 @@ def _write_tailor_case(wiki: Path, dest: Path, board: str) -> list[Path]:
     return written
 
 
+def _prune_stale_boards(tailor_root: Path, boards: list[str]) -> None:
+    """Remove tailor cases for boards no longer in sources.json, so `case_dirs("tailor")`
+    matches the configured board list. The hand-kept constraints.json goes with the case."""
+    if not tailor_root.is_dir():
+        return
+    for case in sorted(tailor_root.iterdir()):
+        if case.is_dir() and case.name not in boards:
+            logger.warning("%s is not a configured board; removing the stale case", case)
+            shutil.rmtree(case)
+
+
 def build(source: Path, dest: Path, boards: list[str], label: str = "primary") -> list[Path]:
     """Write the private compile case and one tailor case per board. Returns the paths written."""
     if dest.resolve().is_relative_to(REPO_ROOT):
@@ -121,6 +132,7 @@ def build(source: Path, dest: Path, boards: list[str], label: str = "primary") -
         written = _write_compile_case(wiki, compiled_json, dest, label)
         for board in boards:
             written.extend(_write_tailor_case(wiki, dest, board))
+        _prune_stale_boards(dest / "tailor", boards)
     finally:
         try:
             shutil.rmtree(scratch)

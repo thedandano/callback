@@ -240,6 +240,16 @@ def test_non_string_value_fails_valid_output_without_raising():
     assert actual == expected
 
 
+def test_non_string_target_fails_valid_output_without_raising():
+    """A null target must gate on valid_output instead of reaching apply_edit(), where
+    _EXP_BULLET_RE.match(None) raises TypeError and kills the batch."""
+    edit = {"section": "experience", "op": "replace", "target": None, "value": "x"}
+    actual = run_checks(CASE, {"edits": [edit], "no_coverage": False})
+
+    expected = [Check("valid_output", False, "edit 0 has a non-string 'target'")]
+    assert actual == expected
+
+
 def test_experience_edit_missing_target_fails_no_rejected_edits_without_raising():
     """Regression for a crash in apply_edit(): an experience edit with no target used to
     reach target_match.group(1) on None. The server now rejects it cleanly, so the batch

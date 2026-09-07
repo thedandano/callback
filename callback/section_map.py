@@ -176,6 +176,8 @@ def validate_edit_target(section_map: SectionMap, edit: dict[str, Any]) -> str |
     if section not in _EDITABLE:
         return f"non-editable section: {section}"
     target = edit.get("target", "")
+    if not isinstance(target, str):
+        return f"target must be a string, got {type(target).__name__}"
     if section == "experience":
         return _validate_experience_target(section_map.experience, target)
     if section == "projects":
