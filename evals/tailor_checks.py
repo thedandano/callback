@@ -32,8 +32,9 @@ BANNED_TERMS = (
     "proven track record",
 )
 DEFAULT_GROUNDING_RATIO = 85
-_TOKEN_RE = re.compile(r"[A-Za-z0-9$%+#./-]+")
+_TOKEN_RE = re.compile(r"[A-Za-z0-9$%+#./!?:-]+")
 _SENTENCE_END = (".", "!", "?", ":")
+_CLAIM_STRIP = ".!?:"
 _PROJECT_TEXT_KEYS = ("name", "description")
 
 
@@ -149,14 +150,15 @@ def _edit_texts(edits: list[dict]) -> list[str]:
 
 def _claim_tokens(text: str) -> list[str]:
     """Numbers and capitalized words that don't start a sentence: the parts that can be invented."""
-    tokens = [t.strip(".") for t in _TOKEN_RE.findall(text)]
+    raw = _TOKEN_RE.findall(text)
     claims: list[str] = []
-    for index, token in enumerate(tokens):
-        if not token:
+    for index, token in enumerate(raw):
+        stripped = token.strip(_CLAIM_STRIP)
+        if not stripped:
             continue
-        starts_sentence = index == 0 or tokens[index - 1].endswith(_SENTENCE_END)
-        if any(ch.isdigit() for ch in token) or (token[0].isupper() and not starts_sentence):
-            claims.append(token)
+        starts_sentence = index == 0 or raw[index - 1].endswith(_SENTENCE_END)
+        if any(ch.isdigit() for ch in stripped) or (stripped[0].isupper() and not starts_sentence):
+            claims.append(stripped)
     return claims
 
 
@@ -173,7 +175,7 @@ def _grounding_check(case: TailorCase, edits: list[dict]) -> Check:
     source_text = "\n".join(
         [json.dumps(case.sections, ensure_ascii=False), *case.wiki_pages.values()]
     ).lower()
-    source_tokens = {t.strip(".").lower() for t in _TOKEN_RE.findall(source_text)}
+    source_tokens = {t.strip(_CLAIM_STRIP).lower() for t in _TOKEN_RE.findall(source_text)}
     ratio_min = int(case.constraints.get("grounding_ratio", DEFAULT_GROUNDING_RATIO))
     ungrounded: list[str] = []
     for text in _edit_texts(edits):

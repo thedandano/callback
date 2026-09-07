@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from evals.checks import Check, first_failure
-from evals.tailor_checks import HostTailor, TailorCase, run_checks, score_total
+from evals.tailor_checks import HostTailor, TailorCase, _claim_tokens, run_checks, score_total
 
 SECTIONS = {
     "summary": "Backend engineer with 5 years building Python services on AWS.",
@@ -197,6 +197,26 @@ def test_project_edit_values_are_grounded_and_fuzzy_matched():
     actual = _names(run_checks(CASE, {"edits": [edit], "no_coverage": False}))["grounded"]
 
     expected = True
+    assert actual == expected
+
+
+def test_multi_sentence_summary_is_grounded():
+    edit = {
+        "section": "summary",
+        "op": "replace",
+        "value": "Backend engineer with 5 years on AWS. Cut checkout p95 latency 40% at Acme Corp.",
+    }
+
+    actual = _names(run_checks(CASE, {"edits": [edit], "no_coverage": False}))["grounded"]
+
+    expected = True
+    assert actual == expected
+
+
+def test_claim_tokens_respects_sentence_boundaries():
+    actual = _claim_tokens("Rebuilt something great. Handled onboarding for Acme Corp.")
+
+    expected = ["Acme", "Corp"]
     assert actual == expected
 
 
