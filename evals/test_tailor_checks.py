@@ -5,8 +5,17 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from callback.section_map import SectionMap
 from evals.checks import Check, first_failure
-from evals.tailor_checks import HostTailor, TailorCase, _claim_tokens, run_checks, score_total
+from evals.tailor_checks import (
+    HostTailor,
+    TailorCase,
+    _claim_tokens,
+    _grounded,
+    _skills_check,
+    run_checks,
+    score_total,
+)
 
 TAILOR_FIXTURES = Path(__file__).resolve().parent / "tailor"
 
@@ -152,6 +161,15 @@ def test_unparseable_output_is_the_only_check():
     actual = [(c.name, c.passed, c.detail) for c in checks]
 
     expected = [("valid_output", False, "host output is not a JSON object with an edits list")]
+    assert actual == expected
+
+
+def test_malformed_edit_entry_fails_valid_output_without_raising():
+    """A non-object edit entry must gate on valid_output instead of reaching _apply_all(),
+    which would call .get() on it and crash the batch."""
+    actual = run_checks(CASE, {"edits": ["oops"], "no_coverage": False})
+
+    expected = [Check("valid_output", False, "edit 0 is not a JSON object")]
     assert actual == expected
 
 
@@ -311,4 +329,35 @@ def test_host_tailor_from_output_defaults_no_coverage():
     expected = HostTailor(
         edits=[{"section": "summary", "op": "replace", "value": "x"}], no_coverage=False
     )
+    assert actual == expected
+
+
+def test_added_skill_matches_a_dated_bullet_ending_in_punctuation():
+    """A raw \\b regex can't match the boundary after "C++" or "C#"; term_present() can."""
+    sections = {
+        **SECTIONS,
+        "experience": [
+            {**SECTIONS["experience"][0], "bullets": ["Wrote services in C++ for telemetry"]}
+        ],
+    }
+    section_map = SectionMap.model_validate(sections)
+    edits = [{"section": "skills", "op": "add", "value": "C++"}]
+
+    actual = _skills_check(section_map, edits)
+
+    expected = Check("added_skills_in_dated_bullets", True)
+    assert actual == expected
+
+
+def test_grounded_word_tokens_are_exact_matched_before_the_fuzzy_fallback():
+    """A raw `in` substring check let "Go" pass against "golang" and "Rust" against "trust";
+    term_present() is boundary-aware and rejects both. Fuzzy fallback is disabled here
+    (empty source_tokens) so only the exact-match fix is under test."""
+    actual = {
+        "go_in_golang": _grounded("Go", "golang", set(), 85),
+        "rust_in_trust": _grounded("Rust", "trust", set(), 85),
+        "golang_in_golang": _grounded("Golang", "golang", set(), 85),
+    }
+
+    expected = {"go_in_golang": False, "rust_in_trust": False, "golang_in_golang": True}
     assert actual == expected

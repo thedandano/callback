@@ -72,9 +72,19 @@ def _compiled_copy(source: Path, scratch: Path, label: str) -> Path:
     return scratch / "callback" / "profile-wiki" / label
 
 
+def _reset_generated_dir(path: Path) -> None:
+    """Remove a fully generated subtree before rewriting it, so a story deleted or renamed
+    in the real profile doesn't survive as a stale file in the fixture."""
+    if path.exists():
+        logger.info("replacing existing generated directory %s", path)
+        shutil.rmtree(path)
+
+
 def _write_compile_case(wiki: Path, compiled_json: Path, dest: Path, label: str) -> list[Path]:
     written: list[Path] = []
     case = dest / "compile" / label
+    _reset_generated_dir(case / "stories")
+    _reset_generated_dir(case / "golden")
     for story in sorted((wiki / "experience").glob("story-*.md")):
         _copy(story, case / "stories" / story.name, written)
     _copy(wiki / "sections.json", case / "sections.json", written)
@@ -86,6 +96,7 @@ def _write_compile_case(wiki: Path, compiled_json: Path, dest: Path, label: str)
 def _write_tailor_case(wiki: Path, dest: Path, board: str) -> list[Path]:
     written: list[Path] = []
     case = dest / "tailor" / board
+    _reset_generated_dir(case / "wiki")
     _copy(wiki / "sections.json", case / "sections.json", written)
     _copy(EXTRACT_DIR / f"{board}.golden.json", case / "keywords.json", written)
     _copy(wiki / "index.md", case / "wiki" / "index.md", written)

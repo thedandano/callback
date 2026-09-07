@@ -77,6 +77,20 @@ class HostTailor:
         return cls(edits=list(output["edits"]), no_coverage=bool(output.get("no_coverage", False)))
 
 
+def _malformed_edit_reason(edits: list) -> str | None:
+    """None when every edit is a dict with a string `section` and a string `op`; otherwise
+    the reason naming the first bad entry's index, so a malformed batch fails the gate
+    check instead of crashing later in `_apply_all`/`apply_edit`."""
+    for index, edit in enumerate(edits):
+        if not isinstance(edit, dict):
+            return f"edit {index} is not a JSON object"
+        if not isinstance(edit.get("section"), str):
+            return f"edit {index} is missing a string 'section'"
+        if not isinstance(edit.get("op"), str):
+            return f"edit {index} is missing a string 'op'"
+    return None
+
+
 def _score(sections: dict, keywords: dict) -> scorer.ScoreResult:
     text = _sections_to_text(SectionMap.model_validate(sections))
     return scorer.score(
@@ -128,12 +142,10 @@ def _dated_bullet_text(section_map: SectionMap) -> str:
 
 
 def _skills_check(section_map: SectionMap, edits: list[dict]) -> Check:
-    bullets = _dated_bullet_text(section_map)
-    uncovered = [
-        s
-        for s in _added_skills(edits)
-        if not re.search(rf"\b{re.escape(s)}\b", bullets, re.IGNORECASE)
-    ]
+    # term_present()'s boundary class excludes "+"/"#", so it matches "C++"/"C#"/".NET"
+    # correctly where a plain \b regex cannot.
+    bullets = _dated_bullet_text(section_map).lower()
+    uncovered = [s for s in _added_skills(edits) if not term_present(s.lower(), bullets)]
     return Check(
         "added_skills_in_dated_bullets",
         not uncovered,
@@ -188,11 +200,12 @@ def _claim_tokens(text: str) -> list[str]:
 
 def _grounded(token: str, source_text: str, source_tokens: set[str], ratio_min: int) -> bool:
     lowered = token.lower()
-    if any(ch.isdigit() for ch in token):
-        # Boundary-aware: a raw substring match would let "12" be grounded by "512".
-        return term_present(lowered, source_text)
-    if lowered in source_text:
+    # Boundary-aware: a raw substring match would let "12" be grounded by "512", or "Go"
+    # by "Golang". Only a word token gets a fuzzy fallback after the exact check.
+    if term_present(lowered, source_text):
         return True
+    if any(ch.isdigit() for ch in token):
+        return False
     return any(_token_sort_ratio(lowered, s) >= ratio_min for s in source_tokens)
 
 
@@ -268,6 +281,9 @@ def run_checks(case: TailorCase, host_output: object) -> list[Check]:
     host = HostTailor.from_output(host_output)
     if host is None:
         return [Check("valid_output", False, "host output is not a JSON object with an edits list")]
+    malformed = _malformed_edit_reason(host.edits)
+    if malformed is not None:
+        return [Check("valid_output", False, malformed)]
     checks = [Check("valid_output", True), _coverage_check(case, host)]
     if host.no_coverage:
         return checks

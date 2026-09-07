@@ -172,3 +172,56 @@ def test_build_ignores_state_and_prior_output(tmp_path, monkeypatch):
     actual_ignored = ignored_names
     expected_ignored = {"applications", "apply-sessions.db", "evals"}
     assert actual_ignored == expected_ignored
+
+
+def test_build_removes_a_stale_generated_wiki_page(tmp_path, monkeypatch):
+    """A story deleted or renamed in the real profile must not survive as a stale wiki
+    page in the tailor fixture: the wiki dir is fully generated, so it is reset first."""
+    source = _fake_source(tmp_path)
+    monkeypatch.setattr("evals.private_fixtures.EXTRACT_DIR", _fake_extract(tmp_path))
+    dest = tmp_path / "dest"
+    stale = dest / "tailor" / "a" / "wiki" / "experience" / "story-999.md"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("orphaned story", encoding="utf-8")
+
+    build(source, dest, ["a"])
+
+    actual = {
+        "stale_gone": stale.exists(),
+        "current_pages": sorted(
+            str(p.relative_to(dest / "tailor" / "a" / "wiki"))
+            for p in (dest / "tailor" / "a" / "wiki").rglob("*")
+            if p.is_file()
+        ),
+    }
+    expected = {"stale_gone": False, "current_pages": ["experience/story-001.md", "index.md"]}
+    assert actual == expected
+
+
+def test_build_removes_stale_generated_files_in_the_compile_case(tmp_path, monkeypatch):
+    """`stories/` and `golden/` under compile/<label> are fully generated too."""
+    source = _fake_source(tmp_path)
+    monkeypatch.setattr("evals.private_fixtures.EXTRACT_DIR", _fake_extract(tmp_path))
+    dest = tmp_path / "dest"
+    stale_story = dest / "compile" / "primary" / "stories" / "story-999.md"
+    stale_story.parent.mkdir(parents=True)
+    stale_story.write_text("orphaned story", encoding="utf-8")
+    stale_golden = dest / "compile" / "primary" / "golden" / "old-report.json"
+    stale_golden.parent.mkdir(parents=True)
+    stale_golden.write_text("{}", encoding="utf-8")
+
+    build(source, dest, ["a"])
+
+    actual = {
+        "stale_story_gone": stale_story.exists(),
+        "stale_golden_gone": stale_golden.exists(),
+        "current_stories": sorted(
+            p.name for p in (dest / "compile" / "primary" / "stories").iterdir()
+        ),
+    }
+    expected = {
+        "stale_story_gone": False,
+        "stale_golden_gone": False,
+        "current_stories": ["story-001.md"],
+    }
+    assert actual == expected
