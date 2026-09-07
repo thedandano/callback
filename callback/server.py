@@ -332,7 +332,10 @@ def _candidate(
 ) -> dict:
     skills = [str(tag) for tag in (meta.get("tags") or [])]
     title = str(meta.get("title") or "")
-    match_text = f"{title}\n{body}\n{', '.join(skills)}"
+    # Headings are dropped: the frontmatter title is the authoritative name, and a
+    # stale H1 left behind by a hand edit must not keep matching the old skill.
+    paragraphs = "\n".join(line for line in body.splitlines() if not line.startswith("#"))
+    match_text = f"{title}\n{paragraphs}\n{', '.join(skills)}"
     return {
         "page_id": page_id,
         "name": str(meta.get("title") or ""),

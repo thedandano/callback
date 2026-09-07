@@ -2024,3 +2024,20 @@ def test_rank_project_candidates_matches_the_frontmatter_title(tmp_path, monkeyp
     }
     expected = {"names": ["Kubernetes"], "matched": [["Kubernetes"]]}
     assert actual == expected
+
+
+def test_rank_project_candidates_ignores_a_stale_body_heading(tmp_path, monkeypatch):
+    from callback.server import _rank_project_candidates
+    from callback.wiki import WikiStore
+
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    page = (
+        "---\ntype: project\ntitle: Azure\ntags:\n- Terraform\n---\n"
+        "# AWS\n\n**Situation:** Moved the platform to Azure.\n"
+    )
+    WikiStore().write_page("r", "experience/story-001.md", page)
+    keywords = {"required": ["AWS"], "preferred": ["Azure"]}
+    candidates = _rank_project_candidates("r", keywords, "- [a](experience/story-001.md)\n")
+    actual = [(c["name"], c["required_matched"], c["preferred_matched"]) for c in candidates]
+    expected = [("Azure", [], ["Azure"])]
+    assert actual == expected
