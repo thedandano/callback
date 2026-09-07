@@ -107,7 +107,20 @@ def test_call_host_claude_reads_result_field():
         "reply": '{"ok": 1}',
         "calls": [
             (
-                ["claude", "-p", "--bare", "--output-format", "json", "--no-session-persistence"],
+                [
+                    "claude",
+                    "-p",
+                    "--output-format",
+                    "json",
+                    "--no-session-persistence",
+                    "--strict-mcp-config",
+                    "--mcp-config",
+                    '{"mcpServers":{}}',
+                    "--tools",
+                    "",
+                    "--setting-sources",
+                    "",
+                ],
                 "PROMPT",
             )
         ],
@@ -129,10 +142,16 @@ def test_call_host_claude_passes_model_flag():
         [
             "claude",
             "-p",
-            "--bare",
             "--output-format",
             "json",
             "--no-session-persistence",
+            "--strict-mcp-config",
+            "--mcp-config",
+            '{"mcpServers":{}}',
+            "--tools",
+            "",
+            "--setting-sources",
+            "",
             "--model",
             "sonnet",
         ]

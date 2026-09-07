@@ -1,8 +1,9 @@
 """Feed each E1/E2 fixture to a host model, save its output, run the checks, print one table.
 
 The runner is the only thing in the repo that calls a model. It shells out to
-`claude -p` or `codex exec`, both in bare/non-interactive mode from a scratch
-directory so no CLAUDE.md, plugin, or MCP server colors the answer.
+`claude -p` or `codex exec`, both non-interactive and isolated (no MCP servers,
+tools, settings, or CLAUDE.md) from a scratch directory so nothing colors the
+answer.
 """
 
 from __future__ import annotations
@@ -129,7 +130,22 @@ def tailor_prompt(case: TailorCase) -> str:
 
 
 def _claude_cmd(model: str | None) -> list[str]:
-    cmd = ["claude", "-p", "--bare", "--output-format", "json", "--no-session-persistence"]
+    # --bare disables keychain auth on this machine, so isolation instead comes from an
+    # empty MCP config, no tools, no settings sources, and the scratch cwd below.
+    cmd = [
+        "claude",
+        "-p",
+        "--output-format",
+        "json",
+        "--no-session-persistence",
+        "--strict-mcp-config",
+        "--mcp-config",
+        '{"mcpServers":{}}',
+        "--tools",
+        "",
+        "--setting-sources",
+        "",
+    ]
     return cmd + (["--model", model] if model else [])
 
 
