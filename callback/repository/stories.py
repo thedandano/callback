@@ -163,9 +163,20 @@ def list_stories(resume_label: str) -> tuple[list[CreatedStory], list[str]]:
 
 
 def next_story_id(resume_label: str) -> str:
+    """One past the highest story-NNN on disk or still held in the legacy JSON.
+
+    Legacy records the migration skipped (invalid, or their page unreadable)
+    keep their ids reserved so a new story can never take one.
+    """
+    names = [page_id.rsplit("/", 1)[-1] for page_id in _story_page_ids(resume_label)]
+    names += [
+        f"{record.get('id')}.md"
+        for record in AccomplishmentsStore().legacy_stories()
+        if isinstance(record, dict)
+    ]
     highest = 0
-    for page_id in _story_page_ids(resume_label):
-        match = _STORY_FILE_RE.match(page_id.rsplit("/", 1)[-1])
+    for name in names:
+        match = _STORY_FILE_RE.match(name)
         if match:
             highest = max(highest, int(match.group(1)))
     return f"story-{highest + 1:03d}"

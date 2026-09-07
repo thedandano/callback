@@ -516,3 +516,14 @@ def test_migrate_leaves_a_non_utf8_page_alone_and_keeps_json(wiki: Path, monkeyp
     }
     expected = {"written": 0, "bytes_untouched": True, "json_kept": 1, "warned": True}
     assert actual == expected
+
+
+def test_next_story_id_reserves_ids_still_held_in_legacy_json(wiki: Path, monkeypatch):
+    monkeypatch.setenv("XDG_DATA_HOME", str(wiki))
+    invalid = {"id": "story-005", "primary_skill": "Broken"}  # fails validation, so never migrated
+    _legacy_json(wiki, [invalid])
+    saved = stories.save_story("primary", CreatedStory(id="", **_FIELDS))
+    files = sorted(p.name for p in (wiki / "primary" / "experience").iterdir())
+    actual = {"id": saved.id, "files": files}
+    expected = {"id": "story-006", "files": ["story-006.md"]}
+    assert actual == expected
