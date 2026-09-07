@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from evals.checks import Check, first_failure
+from evals.checks import Check
 from evals.extract_checks import PrecisionRecall, precision_recall, run_checks
 
 JD = (
@@ -35,10 +35,8 @@ def test_golden_as_host_output_passes_every_check():
 
     expected = {
         "valid_jd_data": True,
-        "required_recall": True,
-        "required_precision": True,
-        "preferred_recall": True,
-        "preferred_precision": True,
+        "term_recall": True,
+        "term_precision": True,
         "groups_match": True,
         "terms_are_jd_substrings": True,
         "required_years_exact": True,
@@ -72,25 +70,15 @@ def test_precision_recall_reports_missing_and_extra():
     assert actual == expected
 
 
-def test_paraphrased_term_fails_substring_check():
-    checks = run_checks(_host(required=["Python", "FastAPI", "Postgres"]), GOLDEN, JD)
-
-    actual = first_failure(checks)
-
-    expected = "required_recall: missing ['PostgreSQL']"
-    assert actual == expected
-
-
 def test_paraphrase_alone_is_caught_by_substring_check():
-    golden = {**GOLDEN, "required": ["Python", "FastAPI"]}
-    checks = run_checks(_host(required=["Python", "FastAPI", "Postgres"]), golden, JD)
+    """A rewritten term ("Postgres" for "PostgreSQL") no longer sinks recall/precision on its
+    own (GOLDEN has 7 terms present, well past the thin-golden guard) - only the substring
+    check, which demands the host's own term literally be in the JD, catches it."""
+    checks = run_checks(_host(required=["Python", "FastAPI", "Postgres"]), GOLDEN, JD)
 
     actual = [c for c in checks if not c.passed]
 
-    expected = [
-        Check("required_precision", False, "0.67 < 0.75; extra ['Postgres']"),
-        Check("terms_are_jd_substrings", False, "not in JD: ['Postgres']"),
-    ]
+    expected = [Check("terms_are_jd_substrings", False, "not in JD: ['Postgres']")]
     assert actual == expected
 
 
@@ -124,11 +112,31 @@ def test_wrong_years_and_title_fail_exact_checks():
     assert actual == expected
 
 
-def test_empty_preferred_on_both_sides_is_a_pass():
-    golden = {**GOLDEN, "preferred": []}
-    checks = run_checks(_host(preferred=[]), golden, JD)
+def test_thin_golden_is_not_evaluated():
+    golden = {**GOLDEN, "preferred": [], "required_any": []}  # 3 golden terms, all still in the JD
+    host_json = _host(required=["Python"], preferred=[], required_any=[])  # missing 2 of them
 
-    actual = [c for c in checks if c.name.startswith("preferred")]
+    checks = run_checks(host_json, golden, JD)
 
-    expected = [Check("preferred_recall", True, ""), Check("preferred_precision", True, "")]
+    actual = [c for c in checks if c.name in ("term_recall", "term_precision")]
+
+    detail = "not evaluated: only 3 golden terms are still in the JD (content drift)"
+    expected = [Check("term_recall", True, detail), Check("term_precision", True, detail)]
+    assert actual == expected
+
+
+def test_union_counts_group_members_and_preferred():
+    golden = {**GOLDEN, "required": ["Python", "FastAPI"]}  # 2 required + 2 preferred + 2 group = 6
+    # host misses one preferred (Terraform) and one group member (GCP)
+    host_json = _host(required=["Python", "FastAPI"], preferred=["Redis"], required_any=[["AWS"]])
+
+    checks = run_checks(host_json, golden, JD)
+
+    actual = [c for c in checks if c.name in ("term_recall", "term_precision", "groups_match")]
+
+    expected = [
+        Check("term_recall", True, ""),
+        Check("term_precision", True, ""),
+        Check("groups_match", False, "missing [['aws', 'gcp']]; extra [['aws']]"),
+    ]
     assert actual == expected

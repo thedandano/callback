@@ -186,6 +186,26 @@ def test_score_drop_is_caught():
     assert actual == expected
 
 
+def test_banned_word_already_in_resume_is_not_flagged():
+    case = TailorCase(
+        sections={**SECTIONS, "projects": [{"name": "Results-Driven Ledger", "bullets": []}]},
+        keywords=KEYWORDS,
+        wiki_pages=WIKI,
+        constraints=CONSTRAINTS,
+    )
+    edit = {
+        "section": "projects",
+        "op": "add",
+        "target": "proj-end",
+        "value": {"name": "Results-Driven Ledger", "description": "", "bullets": []},
+    }
+
+    actual = _names(run_checks(case, {"edits": [edit], "no_coverage": False}))["no_banned_terms"]
+
+    expected = True
+    assert actual == expected
+
+
 def test_project_edit_values_are_grounded_and_fuzzy_matched():
     edit = {
         "section": "projects",

@@ -2,8 +2,9 @@
 
 A tailoring output is honest when every edit applies cleanly, every skill it
 adds is backed by a dated experience bullet, every number and proper noun it
-introduces already exists in the resume or the supplied wiki pages, it uses no
-banned filler, and the ATS score does not go down.
+introduces already exists in the resume or the supplied wiki pages, it
+introduces no banned filler that was not already in the source resume, and the
+ATS score does not go down.
 """
 
 from __future__ import annotations
@@ -187,9 +188,17 @@ def _grounding_check(case: TailorCase, edits: list[dict]) -> Check:
     return Check("grounded", not ungrounded, "" if not ungrounded else f"ungrounded: {ungrounded}")
 
 
-def _banned_check(edits: list[dict]) -> Check:
+def _word_in(term: str, text: str) -> bool:
+    return re.search(rf"\b{re.escape(term)}\b", text) is not None
+
+
+def _banned_check(case: TailorCase, edits: list[dict]) -> Check:
+    """Only flags a banned term the host introduced. A term already present in the source
+    resume (e.g. inside an existing project name) is the host merely re-sending it, not
+    keyword-stuffing, so it does not count as a hit."""
+    source = json.dumps(case.sections, ensure_ascii=False).lower()
     joined = "\n".join(_edit_texts(edits)).lower()
-    hits = [term for term in BANNED_TERMS if re.search(rf"\b{re.escape(term)}\b", joined)]
+    hits = [term for term in BANNED_TERMS if _word_in(term, joined) and not _word_in(term, source)]
     return Check("no_banned_terms", not hits, "" if not hits else f"banned: {hits}")
 
 
@@ -226,7 +235,7 @@ def _edit_checks(case: TailorCase, host: HostTailor) -> list[Check]:
     checks.append(Check("no_rejected_edits", not rejected, "" if not rejected else str(rejected)))
     checks.append(_skills_check(section_map, host.edits))
     checks.append(_grounding_check(case, host.edits))
-    checks.append(_banned_check(host.edits))
+    checks.append(_banned_check(case, host.edits))
     checks.append(_score_check(case, section_map))
     return checks
 

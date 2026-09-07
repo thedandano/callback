@@ -69,6 +69,14 @@ class EvalRow:
     def first_failure(self) -> str | None:
         return first_failure(self.checks)
 
+    @property
+    def note(self) -> str | None:
+        """The detail of the first passed check that has one, e.g. a thin-golden skip notice."""
+        for check in self.checks:
+            if check.passed and check.detail:
+                return check.detail
+        return None
+
 
 def _commit() -> str:
     return subprocess.run(
@@ -283,12 +291,11 @@ def run_tailor(
 
 def format_table(rows: list[EvalRow]) -> str:
     width = max([len("fixture"), *(len(r.fixture) for r in rows)])
-    lines = [f"{'eval':8} {'fixture':{width}}  result  first failing check"]
+    lines = [f"{'eval':8} {'fixture':{width}}  result  first failing check / note"]
     for row in rows:
         status = "PASS" if row.passed else "FAIL"
-        lines.append(
-            f"{row.eval_name:8} {row.fixture:{width}}  {status:6}  {row.first_failure or ''}"
-        )
+        last_column = row.first_failure if not row.passed else (row.note or "")
+        lines.append(f"{row.eval_name:8} {row.fixture:{width}}  {status:6}  {last_column}")
     return "\n".join(lines)
 
 

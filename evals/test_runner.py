@@ -204,14 +204,28 @@ def test_format_table_lists_first_failure():
             "public:jane-doe-backend",
             [Check("valid_output", True), Check("grounded", False, "ungrounded: ['70%']")],
         ),
+        EvalRow(
+            "extract",
+            "greenhouse",
+            [
+                Check("valid_jd_data", True),
+                Check(
+                    "term_recall",
+                    True,
+                    "not evaluated: only 3 golden terms are still in the JD (content drift)",
+                ),
+            ],
+        ),
     ]
 
     actual = format_table(rows)
 
     expected = (
-        "eval     fixture                  result  first failing check\n"
+        "eval     fixture                  result  first failing check / note\n"
         "extract  ashby                    PASS    \n"
-        "tailor   public:jane-doe-backend  FAIL    grounded: ungrounded: ['70%']"
+        "tailor   public:jane-doe-backend  FAIL    grounded: ungrounded: ['70%']\n"
+        "extract  greenhouse               PASS    not evaluated: only 3 golden terms are "
+        "still in the JD (content drift)"
     )
     assert actual == expected
 

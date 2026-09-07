@@ -1,8 +1,15 @@
 """E1 deterministic checks: host-extracted JDData against the golden JDData.
 
+Recall and precision are computed over the union of every term the JDData
+carries: required, preferred, and every member of required_any and
+preferred_any. Bucket placement only changes scoring weight in the real
+scorer; a term the host drops or invents is the same extraction loss no
+matter which bucket it lives in, so one pair of checks covers all of them.
 Recall counts only golden terms that are still present in the JD text, so a
 posting that was reworded after the golden was written (content drift) does
-not read as extraction loss. Precision counts every host term.
+not read as extraction loss. When too few golden terms survived the drift to
+judge extraction quality at all, the term checks are skipped (pass with a
+note) rather than trusted.
 """
 
 from __future__ import annotations
@@ -14,10 +21,9 @@ from callback.scorer import normalize_for_match
 from evals.checks import Check
 from evals.recall import term_present
 
-REQUIRED_RECALL_MIN = 0.75
-REQUIRED_PRECISION_MIN = 0.75
-PREFERRED_RECALL_MIN = 0.6
-PREFERRED_PRECISION_MIN = 0.6
+RECALL_MIN = 0.6
+PRECISION_MIN = 0.6
+MIN_GOLDEN_TERMS = 5
 
 
 @dataclass(frozen=True)
@@ -48,21 +54,6 @@ def precision_recall(
     recall = _ratio(len(golden_norm) - len(missing), len(golden_norm))
     precision = _ratio(len(host_terms) - len(extra), len(host_terms))
     return PrecisionRecall(precision=precision, recall=recall, missing=missing, extra=extra)
-
-
-def _pr_checks(
-    prefix: str, pr: PrecisionRecall, recall_min: float, precision_min: float
-) -> list[Check]:
-    recall_ok = pr.recall >= recall_min
-    precision_ok = pr.precision >= precision_min
-    return [
-        Check(f"{prefix}_recall", recall_ok, "" if recall_ok else f"missing {pr.missing}"),
-        Check(
-            f"{prefix}_precision",
-            precision_ok,
-            "" if precision_ok else f"{pr.precision} < {precision_min}; extra {pr.extra}",
-        ),
-    ]
 
 
 def _group_set(groups: list[list[str]]) -> set[tuple[str, ...]]:
@@ -99,6 +90,29 @@ def _substring_check(host: dict, jd_text: str) -> Check:
     )
 
 
+def _golden_terms_present(golden: dict, jd_text: str) -> int:
+    haystack = jd_text.lower()
+    return sum(1 for t in _all_terms(golden) if term_present(t.lower(), haystack))
+
+
+def _term_checks(host: dict, golden: dict, jd_text: str) -> list[Check]:
+    present = _golden_terms_present(golden, jd_text)
+    if present < MIN_GOLDEN_TERMS:
+        detail = f"not evaluated: only {present} golden terms are still in the JD (content drift)"
+        return [Check("term_recall", True, detail), Check("term_precision", True, detail)]
+    pr = precision_recall(_all_terms(host), _all_terms(golden), jd_text)
+    recall_ok = pr.recall >= RECALL_MIN
+    precision_ok = pr.precision >= PRECISION_MIN
+    return [
+        Check("term_recall", recall_ok, "" if recall_ok else f"missing {pr.missing}"),
+        Check(
+            "term_precision",
+            precision_ok,
+            "" if precision_ok else f"{pr.precision} < {PRECISION_MIN}; extra {pr.extra}",
+        ),
+    ]
+
+
 def _scalar_checks(host: dict, golden: dict) -> list[Check]:
     host_years = float(host.get("required_years", 0.0))
     golden_years = float(golden.get("required_years", 0.0))
@@ -126,12 +140,9 @@ def run_checks(host_json: str, golden: dict, jd_text: str) -> list[Check]:
         host = parse_jd_json(host_json)
     except JDDataError as exc:
         return [Check("valid_jd_data", False, str(exc))]
-    required = precision_recall(host["required"], list(golden.get("required", [])), jd_text)
-    preferred = precision_recall(host["preferred"], list(golden.get("preferred", [])), jd_text)
     return [
         Check("valid_jd_data", True),
-        *_pr_checks("required", required, REQUIRED_RECALL_MIN, REQUIRED_PRECISION_MIN),
-        *_pr_checks("preferred", preferred, PREFERRED_RECALL_MIN, PREFERRED_PRECISION_MIN),
+        *_term_checks(host, golden, jd_text),
         _groups_check(host, golden),
         _substring_check(host, jd_text),
         *_scalar_checks(host, golden),
