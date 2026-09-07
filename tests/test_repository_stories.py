@@ -568,3 +568,31 @@ def test_migrate_skips_a_record_whose_id_is_not_story_nnn(wiki: Path, monkeypatc
     }
     expected = {"written": 1, "outside_written": False, "json_kept": 2, "warned": True}
     assert actual == expected
+
+
+def test_save_story_treats_crlf_in_a_field_as_the_same_story(wiki: Path):
+    crlf = CreatedStory(id="", **{**_FIELDS, "situation": "line one\r\nline two"})
+    first = stories.save_story("primary", crlf)
+    second = stories.save_story("primary", crlf)
+    files = sorted(p.name for p in (wiki / "primary" / "experience").iterdir())
+    actual = {"same": first == second, "files": files, "situation": first.situation}
+    expected = {"same": True, "files": ["story-001.md"], "situation": "line one\nline two"}
+    assert actual == expected
+
+
+def test_list_stories_skips_an_unreadable_page_and_keeps_the_rest(wiki: Path, caplog):
+    caplog.set_level(logging.WARNING, logger="callback.repository.stories")
+    stories.save_story("primary", CreatedStory(id="", **_FIELDS))
+    locked = wiki / "primary" / "experience" / "story-002.md"
+    locked.write_text(stories.story_to_page(CreatedStory(id="story-002", **_FIELDS), _TS))
+    locked.chmod(0o000)
+    try:
+        listed, warnings = stories.list_stories("primary")
+    finally:
+        locked.chmod(0o644)
+    actual = {
+        "ids": [s.id for s in listed],
+        "warned": any("story-002.md" in w and "could not be read" in w for w in warnings),
+    }
+    expected = {"ids": ["story-001"], "warned": True}
+    assert actual == expected

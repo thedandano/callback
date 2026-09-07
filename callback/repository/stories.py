@@ -149,11 +149,13 @@ def _story_page_ids(resume_label: str) -> list[str]:
 
 
 def _read_page(resume_label: str, page_id: str) -> str:
-    """One page's text. Raises WikiPageError when the file is not valid UTF-8."""
+    """One page's text. Raises WikiPageError when the file cannot be read or decoded."""
     try:
         return WikiStore().read_pages(resume_label, [page_id])[page_id]
     except UnicodeDecodeError as exc:
         raise WikiPageError(f"file is not valid UTF-8 ({exc.reason} at byte {exc.start})") from exc
+    except OSError as exc:
+        raise WikiPageError(f"file could not be read ({type(exc).__name__}: {exc})") from exc
 
 
 def list_stories(resume_label: str) -> tuple[list[CreatedStory], list[str]]:
@@ -192,7 +194,9 @@ def next_story_id(resume_label: str) -> str:
 
 def _canonical(story: CreatedStory) -> CreatedStory:
     """Strip the body paragraphs the way reading a page back does, so equality holds."""
-    return story.model_copy(update={f: getattr(story, f).strip() for f in _BODY_FIELDS})
+    return story.model_copy(
+        update={f: getattr(story, f).replace("\r\n", "\n").strip() for f in _BODY_FIELDS}
+    )
 
 
 def save_story(resume_label: str, story: CreatedStory) -> CreatedStory:
