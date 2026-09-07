@@ -1,0 +1,41 @@
+{
+  "host": "claude",
+  "model": "default",
+  "commit": "ea2990d",
+  "ran_at": "2026-09-07T05:13:35.605532+00:00",
+  "raw": "{\"title\":\"Software Engineer, Customer Studio Backend\",\"company\":\"Hightouch\",\"required\":[\"backend\",\"distributed systems\",\"architecture\",\"scalability\",\"maintainability\",\"reliability\",\"product specs\",\"data warehouses\",\"optimizing queries\",\"CDC\",\"real-time audience computation\",\"Generative AI\",\"SQL\",\"Analytics\",\"Experimentation\"],\"location\":\"Remote\",\"seniority\":\"senior\",\"team\":\"Customer Studio\",\"key_responsibilities\":[\"Data Warehouse Performance: pushing the limits of what data warehouses can handle in terms of speed, performance, and interactivity, including optimizing queries and storing pre-computed state\",\"Analytics and Experimentation: help customers build segments and decide what data they want to sync, and facilitate experimentation to downstream tools including tracking the performance of different audiences\",\"Real-time Audience Syncing: explore real-time audience computation and syncing as warehouses adopt technologies like CDC\",\"Generative AI: making the user experience of acting on data more seamless and enhancing user workflows with generative AI\",\"Think holistically about architecture, scalability, maintainability, and reliability\",\"Writing and engaging with product specs\"],\"pay_range_min\":180000,\"pay_range_max\":400000}",
+  "output": {
+    "title": "Software Engineer, Customer Studio Backend",
+    "company": "Hightouch",
+    "required": [
+      "backend",
+      "distributed systems",
+      "architecture",
+      "scalability",
+      "maintainability",
+      "reliability",
+      "product specs",
+      "data warehouses",
+      "optimizing queries",
+      "CDC",
+      "real-time audience computation",
+      "Generative AI",
+      "SQL",
+      "Analytics",
+      "Experimentation"
+    ],
+    "location": "Remote",
+    "seniority": "senior",
+    "team": "Customer Studio",
+    "key_responsibilities": [
+      "Data Warehouse Performance: pushing the limits of what data warehouses can handle in terms of speed, performance, and interactivity, including optimizing queries and storing pre-computed state",
+      "Analytics and Experimentation: help customers build segments and decide what data they want to sync, and facilitate experimentation to downstream tools including tracking the performance of different audiences",
+      "Real-time Audience Syncing: explore real-time audience computation and syncing as warehouses adopt technologies like CDC",
+      "Generative AI: making the user experience of acting on data more seamless and enhancing user workflows with generative AI",
+      "Think holistically about architecture, scalability, maintainability, and reliability",
+      "Writing and engaging with product specs"
+    ],
+    "pay_range_min": 180000,
+    "pay_range_max": 400000
+  }
+}

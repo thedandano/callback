@@ -1,0 +1,38 @@
+{
+  "host": "claude",
+  "model": "default",
+  "commit": "ea2990d",
+  "ran_at": "2026-09-07T05:13:45.360401+00:00",
+  "raw": "{\"title\":\"Software Engineer - Edge AI/Gen AI\",\"company\":\"Qualcomm Technologies, Inc.\",\"preferred\":[\"Database Management Software\",\"API\"],\"preferred_any\":[[\"C\",\"C++\",\"Java\",\"Python\"],[\"Git\",\"Perforce\",\"Source Code Management System\"]],\"seniority\":\"junior\",\"key_responsibilities\":[\"Applies Software knowledge to assist and support the design, development, creation, modification, and validation of embedded and cloud edge software, applications, and/or specialized utility programs\",\"Analyzes user needs and software requirements\",\"Designs and implements small software features for products and systems\",\"Participates in the design, coding for small features, unit testing, minor debugging fixes, and integration efforts to ensure projects are completed on schedule\",\"Assists in performing code reviews and regression tests as well as the triaging of issues to ensure the quality of code\",\"Collaborates with others inside project team to accomplish project objectives\",\"Writes technical documentation for Software projects\"]}",
+  "output": {
+    "title": "Software Engineer - Edge AI/Gen AI",
+    "company": "Qualcomm Technologies, Inc.",
+    "preferred": [
+      "Database Management Software",
+      "API"
+    ],
+    "preferred_any": [
+      [
+        "C",
+        "C++",
+        "Java",
+        "Python"
+      ],
+      [
+        "Git",
+        "Perforce",
+        "Source Code Management System"
+      ]
+    ],
+    "seniority": "junior",
+    "key_responsibilities": [
+      "Applies Software knowledge to assist and support the design, development, creation, modification, and validation of embedded and cloud edge software, applications, and/or specialized utility programs",
+      "Analyzes user needs and software requirements",
+      "Designs and implements small software features for products and systems",
+      "Participates in the design, coding for small features, unit testing, minor debugging fixes, and integration efforts to ensure projects are completed on schedule",
+      "Assists in performing code reviews and regression tests as well as the triaging of issues to ensure the quality of code",
+      "Collaborates with others inside project team to accomplish project objectives",
+      "Writes technical documentation for Software projects"
+    ]
+  }
+}

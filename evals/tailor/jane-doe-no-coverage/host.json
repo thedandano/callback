@@ -1,0 +1,11 @@
+{
+  "host": "claude",
+  "model": "default",
+  "commit": "ea2990d",
+  "ran_at": "2026-09-07T05:14:21.214702+00:00",
+  "raw": "{\"edits\": [], \"no_coverage\": true}",
+  "output": {
+    "edits": [],
+    "no_coverage": true
+  }
+}
