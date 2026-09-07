@@ -8,7 +8,6 @@ import callback.profile_nodes as pnodes
 import callback.server as server_module
 import callback.wiki as wiki_module
 from callback.profilecompiler import save_compiled_profile
-from callback.repository.accomplishments import AccomplishmentsStore
 from callback.repository.resumes import save_resume
 from callback.server import compile_profile, create_story, onboard_user
 from callback.state import CompiledProfile, OrphanedSkill
@@ -524,10 +523,10 @@ class TestCreateStory:
         _isolate_profile(tmp_path, monkeypatch)
         _save_profile_with_resumes(tmp_path)
 
-        def _raise(self, story):
+        def _raise(label, story):
             raise RuntimeError("disk")
 
-        monkeypatch.setattr(pnodes.AccomplishmentsStore, "save_story", _raise)
+        monkeypatch.setattr(pnodes.stories, "save_story", _raise)
 
         result = json.loads(
             create_story(
@@ -694,18 +693,17 @@ class TestCreateStory:
         _isolate_profile(tmp_path, monkeypatch)
         _save_profile_with_resumes(tmp_path)
 
-        real_store = pnodes.AccomplishmentsStore
+        real_save = pnodes.stories.save_story
         state = {"raised": False}
 
-        class _StoreThenFail(real_store):
-            def save_story(self, story):
-                saved = super().save_story(story)
-                if not state["raised"]:
-                    state["raised"] = True
-                    raise RuntimeError("checkpoint write failed")
-                return saved
+        def _save_then_fail(label, story):
+            saved = real_save(label, story)
+            if not state["raised"]:
+                state["raised"] = True
+                raise RuntimeError("checkpoint write failed")
+            return saved
 
-        monkeypatch.setattr(pnodes, "AccomplishmentsStore", _StoreThenFail)
+        monkeypatch.setattr(pnodes.stories, "save_story", _save_then_fail)
 
         first = json.loads(create_story(primary_skill="Python", skills=["Python"], **_STORY_FIELDS))
         expected = {
@@ -734,7 +732,7 @@ class TestCreateStory:
         actual = {
             "status": retry["status"],
             "story_id": retry["data"]["story_id"],
-            "stored": len(AccomplishmentsStore().list_stories()),
+            "stored": len(pnodes.stories.list_stories("backend")[0]),
         }
         assert actual == {"status": "ok", "story_id": "story-001", "stored": 1}
 
@@ -776,5 +774,26 @@ class TestCreateStory:
         compiled = json.loads(compile_profile(session_id=result["session_id"]))
         assert compiled["status"] == "ok"
 
-        stories_count = len(AccomplishmentsStore().list_stories())
+        stories_count = len(pnodes.stories.list_stories("backend")[0])
         assert stories_count == 1
+
+
+class TestCreateStoryRejectsLabelLines:
+    def test_label_line_in_a_field_is_invalid_story_not_retriable(self, tmp_path, monkeypatch):
+        _isolate_profile(tmp_path, monkeypatch)
+        _save_profile_with_resumes(tmp_path)
+        fields = {**_STORY_FIELDS, "situation": "did x\n**Impact:** nested"}
+        result = json.loads(create_story(primary_skill="Python", skills=["Python"], **fields))
+        actual = {
+            "status": result["status"],
+            "code": result["error"]["code"],
+            "retriable": result["error"]["retriable"],
+            "names_field": "situation" in result["error"]["message"],
+        }
+        expected = {
+            "status": "error",
+            "code": "invalid_story",
+            "retriable": False,
+            "names_field": True,
+        }
+        assert actual == expected
