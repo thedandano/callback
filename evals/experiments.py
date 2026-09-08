@@ -27,8 +27,6 @@ logger = logging.getLogger("callback.evals")
 
 EXTRACT_DIR = Path(__file__).resolve().parent / "extract"
 DATASET_PREFIX = "callback-evals-"
-PRIVATE_PREFIX = "private:"
-PRIVATE_SCOPE = {"scope": "private"}
 MISSING_KEY_MESSAGE = (
     "LangSmith recording skipped: LANGSMITH_API_KEY is not set in this shell "
     "(`callback config env list` shows the value stored for the MCP hosts); "
@@ -113,51 +111,28 @@ def _saved_output(path: Path) -> dict | None:
     return json.loads(path.read_text(encoding="utf-8")).get("output")
 
 
-def _log_withheld(count: int) -> None:
-    if count:
-        logger.info("%d private fixtures recorded metrics-only (inputs withheld)", count)
-
-
-def record_extract(
-    rows: list[EvalRow], run_meta: dict, *, upload_private: bool = False
-) -> str | None:
+def record_extract(rows: list[EvalRow], run_meta: dict) -> str | None:
     inputs = {}
     outputs = {}
-    withheld = 0
     for r in rows:
-        if r.fixture.startswith(PRIVATE_PREFIX) and not upload_private:
-            inputs[r.fixture] = PRIVATE_SCOPE
-            outputs[r.fixture] = PRIVATE_SCOPE
-            withheld += 1
-        else:
-            inputs[r.fixture] = {
-                "jd_text": (EXTRACT_DIR / f"{r.fixture}.md").read_text(encoding="utf-8")
-            }
-            outputs[r.fixture] = _saved_output(EXTRACT_DIR / f"{r.fixture}.host.json")
-    _log_withheld(withheld)
+        inputs[r.fixture] = {
+            "jd_text": (EXTRACT_DIR / f"{r.fixture}.md").read_text(encoding="utf-8")
+        }
+        outputs[r.fixture] = _saved_output(EXTRACT_DIR / f"{r.fixture}.host.json")
     return record("extract", rows, inputs, outputs, run_meta)
 
 
-def record_tailor(
-    rows: list[EvalRow], run_meta: dict, *, upload_private: bool = False
-) -> str | None:
+def record_tailor(rows: list[EvalRow], run_meta: dict) -> str | None:
     dirs = {case_id(d): d for d in case_dirs("tailor")}
     inputs = {}
     outputs = {}
-    withheld = 0
     for row in rows:
-        if row.fixture.startswith(PRIVATE_PREFIX) and not upload_private:
-            inputs[row.fixture] = PRIVATE_SCOPE
-            outputs[row.fixture] = PRIVATE_SCOPE
-            withheld += 1
-        else:
-            case = TailorCase.from_dir(dirs[row.fixture])
-            inputs[row.fixture] = {
-                "sections": case.sections,
-                "keywords": case.keywords,
-                "wiki_pages": case.wiki_pages,
-                "constraints": case.constraints,
-            }
-            outputs[row.fixture] = _saved_output(dirs[row.fixture] / "host.json")
-    _log_withheld(withheld)
+        case = TailorCase.from_dir(dirs[row.fixture])
+        inputs[row.fixture] = {
+            "sections": case.sections,
+            "keywords": case.keywords,
+            "wiki_pages": case.wiki_pages,
+            "constraints": case.constraints,
+        }
+        outputs[row.fixture] = _saved_output(dirs[row.fixture] / "host.json")
     return record("tailor", rows, inputs, outputs, run_meta)

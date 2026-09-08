@@ -65,7 +65,6 @@ uv run python scripts/smoke_profile.py
 
 # Evals (E3 runs in CI; E1/E2 need a host model and are marked `local`)
 uv run pytest -m "not local" evals/                    # E3 + check unit tests (CI)
-uv run python scripts/build_eval_fixtures.py           # private E2/E3 cases from a copy of the real data
 uv run python scripts/run_evals.py                     # E1 + E2 against `claude -p`, writes host outputs
 uv run python scripts/run_evals.py --host codex --model gpt-5.6-terra --eval tailor
 uv run python scripts/run_evals.py --checks-only       # re-check saved outputs, no model call, no LangSmith upload
@@ -85,7 +84,6 @@ uv run pytest -m local evals/                          # E1 + E2 checks over the
 - `LANGSMITH_ENDPOINT`: LangSmith API endpoint. Defaults to `https://api.smith.langchain.com`.
 - `LANGSMITH_API_KEY`: Required for LangSmith tracing; also gates eval experiment recording. The runner logs a WARNING and skips recording when unset.
 - `LANGSMITH_PROJECT`: LangSmith project name. Defaults to `Callback` when tracing is enabled.
-- `CALLBACK_EVALS_DIR`: Where the private eval cases (real resume, wiki, stories) live. Default: `~/.local/share/callback/evals`. Never inside the repo.
 - `XDG_DATA_HOME`: Moves the whole data root (resumes, wiki, checkpoint DBs, compiled profile, applications archive) from `~/.local/share/callback` to `$XDG_DATA_HOME/callback`.
 
 `callback setup-mcp` is noninteractive and only registers the MCP server entry.
@@ -240,26 +238,24 @@ PDF rendering uses HTML + Playwright in `callback/render/html_builder.py`.
 
 Three evals, no framework. `extract_checks.py` (E1) and `tailor_checks.py` (E2)
 are pure functions over a host output and a fixture; `test_compile.py` (E3)
-runs the real `compile_profile` node on a staged copy of a case. Cases live in
-two roots: committed ones (`evals/{extract,tailor,compile}/`: public job
-postings for extract, synthetic Jane Doe data for the rest) and the private root (`CALLBACK_EVALS_DIR`) built from the real data by
-`scripts/build_eval_fixtures.py`. `scripts/run_evals.py` is the only code that
-calls a model: it shells out to `claude -p` or `codex exec`, isolated with
-`--strict-mcp-config` and an empty `--mcp-config`, `--tools ""`,
-`--setting-sources ""`, and a scratch working directory for Claude (`--bare`
-is avoided because it disables keychain auth), and `--ignore-user-config` for
-Codex (so `$CODEX_HOME/config.toml` — and any MCP servers or instructions it
-configures — can't leak into the run); it saves the reply next to the fixture
-(`<board>.host.json`, `<case>/host.json`), runs the checks, prints one table,
-and records the run as a LangSmith experiment named `<commit>-<host>-<model>`
-when `LANGSMITH_API_KEY` is set. CI never calls a model; tests that read host
-outputs are marked `local`.
+runs the real `compile_profile` node on a staged copy of a case. Every fixture
+is committed under `evals/{extract,tailor,compile}/`: public job postings for
+extract, and two invented profiles — Jane Doe and the larger Morgan Reyes —
+covering tailor and compile. Nothing here is personal data.
+`scripts/run_evals.py` is the only code that calls a model: it shells out to
+`claude -p` or `codex exec`, isolated with `--strict-mcp-config` and an empty
+`--mcp-config`, `--tools ""`, `--setting-sources ""`, and a scratch working
+directory for Claude (`--bare` is avoided because it disables keychain auth),
+and `--ignore-user-config` for Codex (so `$CODEX_HOME/config.toml` — and any
+MCP servers or instructions it configures — can't leak into the run); it saves
+the reply next to the fixture (`<board>.host.json`, `<case>/host.json`), runs
+the checks, prints one table, and records the run as a LangSmith experiment
+named `<commit>-<host>-<model>` when `LANGSMITH_API_KEY` is set. CI never
+calls a model; tests that read host outputs are marked `local`.
 
-With `LANGSMITH_API_KEY` set, the runner uploads public fixture inputs (JD
-text, the synthetic resume, and wiki pages) to LangSmith. For a private
-fixture it uploads only the fixture name and the check results unless
-`--upload-private-inputs` is passed, in which case the real sections, wiki
-pages, and keywords go up too.
+With `LANGSMITH_API_KEY` set, the runner uploads every fixture's inputs (JD
+text, sections, keywords, wiki pages) and outputs to LangSmith — all of it is
+committed and public, so there is nothing to withhold.
 
 ### Module map
 

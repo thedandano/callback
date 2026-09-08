@@ -373,11 +373,6 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--no-langsmith", action="store_true", help="do not record a LangSmith experiment"
     )
-    parser.add_argument(
-        "--upload-private-inputs",
-        action="store_true",
-        help="upload full private-fixture inputs to LangSmith too (default: metrics only)",
-    )
     return parser.parse_args(argv)
 
 
@@ -421,7 +416,7 @@ def _record_experiment(
     if args.no_langsmith:
         return
     try:
-        record_fn(rows, run_meta, upload_private=args.upload_private_inputs)
+        record_fn(rows, run_meta)
     except LangSmithError as exc:
         logger.warning(
             "%s: LangSmith recording failed (%s); local results kept; experiment not recorded",

@@ -226,7 +226,7 @@ def test_format_table_lists_first_failure():
         EvalRow("extract", "ashby", [Check("valid_jd_data", True)]),
         EvalRow(
             "tailor",
-            "public:jane-doe-backend",
+            "jane-doe-backend",
             [Check("valid_output", True), Check("grounded", False, "ungrounded: ['70%']")],
         ),
         EvalRow(
@@ -247,10 +247,10 @@ def test_format_table_lists_first_failure():
     actual = format_table(rows)
 
     expected = (
-        "eval     fixture                  result  first failing check / note\n"
-        "extract  ashby                    PASS    \n"
-        "tailor   public:jane-doe-backend  FAIL    grounded: ungrounded: ['70%']\n"
-        "extract  greenhouse               SKIP    not evaluated: only 3 golden terms are "
+        "eval     fixture           result  first failing check / note\n"
+        "extract  ashby             PASS    \n"
+        "tailor   jane-doe-backend  FAIL    grounded: ungrounded: ['70%']\n"
+        "extract  greenhouse        SKIP    not evaluated: only 3 golden terms are "
         "still in the JD (content drift)"
     )
     assert actual == expected
@@ -429,7 +429,7 @@ def test_run_tailor_writes_host_file_and_checks(tmp_path, monkeypatch):
         "host_file": json.loads((case_dir / "host.json").read_text(encoding="utf-8")),
     }
     expected = {
-        "rows": [("tailor", "private:jane", True)],
+        "rows": [("tailor", "jane", True)],
         "host_file": {
             "host": "claude",
             "model": "default",

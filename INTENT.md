@@ -231,20 +231,16 @@ Mechanics, kept minimal on purpose:
 - A run prints one table: eval, fixture, pass/fail, and the first failing check. No
   dashboards, no history store. Diff the committed host outputs in git to see drift.
 
-Done (M6): E3 runs in CI on the committed Jane Doe case and locally on the real
-14 stories. E1 has six boards (reddit adds OR-groups and no labeled sections).
-E2 has two committed synthetic cases (one `no_coverage`) plus one private case per
-board. The runner records LangSmith experiments named `<commit>-<host>-<model>`.
-A keyword-stuffed tailoring output fails E2 (`evals/test_tailor_checks.py::test_keyword_stuffed_output_fails`).
-Personal data stays out of git (private root `CALLBACK_EVALS_DIR`).
-Proof run: commit ea2990d, host claude, default model, via `uv run python scripts/run_evals.py --checks-only --no-langsmith`.
-E1 is 3 of 6. Apple is SKIP: only 4 of 14 golden terms are still in the JD, so it reads as content drift and is not scored.
-Qualcomm fails because the host classified every term as preferred, leaving required empty, and JDData validation rejects that.
-Cedar fails because the host flattened its four OR-groups into flat required and preferred lists, so none of the groups match.
-E2 is 2 of 8. Both synthetic cases, jane-doe-backend and jane-doe-no-coverage, pass.
-All six private cases fail: apple used a banned verb (orchestrated); ashby, cedar, and qualcomm each added a skill with no
-dated bullet behind it; greenhouse and reddit each added a skill that is not in the resume or wiki at all.
-E3 is 6 of 6 on the committed Jane Doe case.
+Done (M6): E3 runs in CI on the committed Jane Doe and Morgan Reyes cases. E1
+has six boards (reddit adds OR-groups and no labeled sections). E2 has two
+Jane Doe cases (one `no_coverage`) plus one Morgan Reyes case per board,
+covering all six boards. The runner records LangSmith experiments named
+`<commit>-<host>-<model>`. A keyword-stuffed tailoring output fails E2
+(`evals/test_tailor_checks.py::test_keyword_stuffed_output_fails`). All
+fixtures are invented and committed; no personal data is involved.
+Proof-run numbers are being regenerated against the committed fixture set
+(the private cases they used to quote are gone); the controller fills these
+in after the next `scripts/run_evals.py` run.
 
 ### M7 — Token diet (one day)
 
