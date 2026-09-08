@@ -58,6 +58,14 @@ uv run pyright
 uv run python scripts/smoke_apply.py
 uv run python scripts/smoke_profile.py
 
+# Evals (E3 runs in CI; E1/E2 need a host model and are marked `local`)
+uv run pytest -m "not local" evals/                    # E3 + check unit tests (CI)
+uv run python scripts/run_evals.py                     # E1 + E2 against `claude -p`, writes host outputs
+uv run python scripts/run_evals.py --host codex --model gpt-5.6-terra --eval tailor
+uv run python scripts/run_evals.py --checks-only       # re-check saved outputs, no model call, no LangSmith upload
+uv run pytest -m local evals/                          # E1 + E2 checks over the saved host outputs
+# baseline 2026-09-07, claude default model: E1 2/6 (PASS cedar/reddit), E2 1/8 (see INTENT §M6)
+
 ```
 
 ## Env Vars
@@ -69,7 +77,7 @@ uv run python scripts/smoke_profile.py
 - `CALLBACK_TRACE_BACKEND`: Optional tracing backend. Set to `langsmith` to enable LangSmith tracing.
 - `LANGSMITH_TRACING`: Must be `true` when `CALLBACK_TRACE_BACKEND=langsmith`.
 - `LANGSMITH_ENDPOINT`: LangSmith API endpoint. Defaults to `https://api.smith.langchain.com`.
-- `LANGSMITH_API_KEY`: Required for LangSmith tracing.
+- `LANGSMITH_API_KEY`: Required for LangSmith tracing; also gates eval experiment recording. The runner logs a WARNING and skips recording when unset.
 - `LANGSMITH_PROJECT`: LangSmith project name. Defaults to `Callback` when tracing is enabled.
 
 `setup-mcp` only registers the MCP server and stays noninteractive for install
@@ -182,6 +190,29 @@ skim survival, not a guarantee — do not oversell the number in report copy.
 
 The apply graph's `render` node uses HTML + Playwright via `callback.render.html_builder`.
 
+### Evals (`evals/`)
+
+Three evals, no framework. `extract_checks.py` (E1) and `tailor_checks.py` (E2)
+are pure functions over a host output and a fixture; `test_compile.py` (E3)
+runs the real `compile_profile` node on a staged copy of a case. Every fixture
+is committed under `evals/{extract,tailor,compile}/`: public job postings for
+extract, and two invented profiles — Jane Doe and the larger Morgan Reyes —
+covering tailor and compile. Nothing here is personal data.
+`scripts/run_evals.py` is the only code that calls a model: it shells out to
+`claude -p` or `codex exec`, isolated with `--strict-mcp-config` and an empty
+`--mcp-config`, `--tools ""`, `--setting-sources ""`, and a scratch working
+directory for Claude (`--bare` is avoided because it disables keychain auth),
+and `--ignore-user-config` for Codex (so `$CODEX_HOME/config.toml` — and any
+MCP servers or instructions it configures — can't leak into the run); it saves
+the reply next to the fixture (`<board>.host.json`, `<case>/host.json`), runs
+the checks, prints one table, and records the run as a LangSmith experiment
+named `<commit>-<host>-<model>` when `LANGSMITH_API_KEY` is set. CI never
+calls a model; tests that read host outputs are marked `local`.
+
+With `LANGSMITH_API_KEY` set, the runner uploads every fixture's inputs (JD
+text, sections, keywords, wiki pages) and outputs to LangSmith — all of it is
+committed and public, so there is nothing to withhold.
+
 ### Module map
 
 | Module               | Role |
@@ -199,6 +230,7 @@ The apply graph's `render` node uses HTML + Playwright via `callback.render.html
 | `wikirenderer.py`    | Renders `index.md` |
 | `paths.py`           | Every data directory and the atomic writers |
 | `observability.py`   | Trace config port and LangSmith adapter |
+| `evals/`             | Eval checks, fixtures, runner; see Evals |
 
 ## Change Discipline
 

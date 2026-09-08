@@ -105,7 +105,7 @@ Known weight (works, but costs more than it earns):
 Ordered by dependency and payoff. Each milestone is one PR to `main` and leaves the
 suite green. Estimates are for one person.
 
-Order: M1 → M2 → M3 → M4 → M2.5 (done) → M6 → M7 → M5. M6 (evals) was planned before M3; M3 and
+Order: M2.5 (done) → M6 (done) → M7 → M5. M6 (evals) was planned before M3; M3 and
 M4 shipped first because the fetcher swap was blocking daily use. M7 still waits for M6 so the
 token diet is measured against something.
 
@@ -225,13 +225,29 @@ Mechanics, kept minimal on purpose:
   commits or two models can be compared side by side without a local diff.
 - Fixtures are real: at least 5 JDs across two boards for E1 (one with OR-groups, one
   with no labeled sections), at least 3 tailoring cases for E2 (one where the honest
-  answer is `no_coverage`), and the user's own 14 stories for E3.
+  answer is `no_coverage`), and the user's own 14 stories for E3. The real resume,
+  wiki, and stories live in the private root; git holds a synthetic Jane Doe set so
+  CI is green without personal data (user ruling 2026-09-06).
 - A run prints one table: eval, fixture, pass/fail, and the first failing check. No
   dashboards, no history store. Diff the committed host outputs in git to see drift.
 
-Done when: `uv run pytest evals/` passes for E3 in CI; `uv run python scripts/run_evals.py`
-followed by `uv run pytest -m local evals/` passes for E1 and E2 on the chosen host
-model; a deliberately keyword-stuffed tailoring output fails E2.
+Done (M6): E3 runs in CI on the committed Jane Doe and Morgan Reyes cases. E1
+has six boards (reddit adds OR-groups and no labeled sections). E2 has two
+Jane Doe cases (one `no_coverage`) plus one Morgan Reyes case per board,
+covering all six boards. The runner records LangSmith experiments named
+`<commit>-<host>-<model>`. A keyword-stuffed tailoring output fails E2
+(`evals/test_tailor_checks.py::test_keyword_stuffed_output_fails`). All
+fixtures are invented and committed; no personal data is involved.
+Proof run: commit a8e71b6, host claude, default model, over the committed fixture set only (no personal data).
+E1 is 2 of 6. Cedar and reddit pass. Apple returns three terms that are not in the posting, two of them
+apostrophe variants and one invented. Ashby and greenhouse fail precision at 0.57 and 0.55 by padding the
+list with filler like "cloud" and "tooling". Qualcomm leaves required empty, which submit_keywords rejects too.
+E2 is 1 of 8. jane-doe-no-coverage passes. Every other case has the host adding a skill that is either absent
+from the resume and wiki (Event Streaming, System Architecture, API design, Git) or present with no dated
+bullet behind it. morgan-reyes-ashby fails because the host tailored a profile that meets 1 of 18 required
+items instead of declaring no coverage.
+E3 is 9 of 9 on the committed morgan-reyes and jane-doe cases.
+The failures are the host breaking the tailoring rules, not eval defects; M7 is measured against these numbers.
 
 ### M7 — Token diet (one day)
 

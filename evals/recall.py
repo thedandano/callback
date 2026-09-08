@@ -19,18 +19,18 @@ def golden_terms(golden: dict) -> list[str]:
     return sorted(set(terms))
 
 
-def _present(term: str, haystack: str) -> bool:
+def term_present(term: str, haystack: str) -> bool:
     return re.search(_BOUNDARY.format(re.escape(term.lower())), haystack) is not None
 
 
 def recall(text: str, golden: dict) -> dict:
     haystack = text.lower()
     terms = golden_terms(golden)
-    missing = [t for t in terms if not _present(t, haystack)]
+    missing = [t for t in terms if not term_present(t, haystack)]
     title = golden.get("title", "")
     return {
         "found": len(terms) - len(missing),
         "total": len(terms),
         "missing": missing,
-        "title_found": _present(title.lower(), haystack) if title else None,
+        "title_found": term_present(title.lower(), haystack) if title else None,
     }

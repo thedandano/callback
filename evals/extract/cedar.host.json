@@ -1,0 +1,77 @@
+{
+  "host": "claude",
+  "model": "default",
+  "commit": "a8e71b6",
+  "ran_at": "2026-09-08T05:40:10.414517+00:00",
+  "raw": "{\"title\":\"Senior Software Engineer\",\"company\":\"Cedar\",\"required\":[\"production systems\",\"TypeScript\",\"Node.js\",\"PostgreSQL\",\"relational data modeling\",\"cloud infrastructure\",\"APIs\",\"data pipelines\",\"system architecture\",\"performance\"],\"required_any\":[[\"AWS\",\"GCP\"]],\"preferred\":[\"Next.js\",\"React\",\"zoning codes\",\"building codes\",\"permitting\"],\"preferred_any\":[[\"distributed systems\",\"developer platforms\",\"applied ML\"],[\"AEC (architecture, engineering, construction) software\",\"BIM tools\",\"CAD systems\"],[\"geometric modeling\",\"computational geometry\",\"parametric design\"],[\"knowledge graphs\",\"rule engines\",\"constraint-solving systems\"],[\"Revit\",\"IFC\"]],\"location\":\"San Diego, CA\",\"seniority\":\"senior\",\"required_years\":3,\"key_responsibilities\":[\"Design and build core platform services, APIs, and internal tools\",\"Own systems end-to-end: architecture, implementation, reliability, and iteration\",\"Translate complex domain logic (zoning, design constraints, workflows) into robust software abstractions\",\"Leverage AI tools to increase development velocity and iterate quickly on new and existing features\",\"Improve performance, scalability, and developer velocity\",\"Partner with architects and product teams to operationalize domain expertise into software\",\"Evaluate and adopt the latest AI development tools, and translate what works into standards and practices for a growing team\",\"Ship continuously in a fast-moving product environment\"],\"pay_range_min\":160000,\"pay_range_max\":230000}",
+  "output": {
+    "title": "Senior Software Engineer",
+    "company": "Cedar",
+    "required": [
+      "production systems",
+      "TypeScript",
+      "Node.js",
+      "PostgreSQL",
+      "relational data modeling",
+      "cloud infrastructure",
+      "APIs",
+      "data pipelines",
+      "system architecture",
+      "performance"
+    ],
+    "required_any": [
+      [
+        "AWS",
+        "GCP"
+      ]
+    ],
+    "preferred": [
+      "Next.js",
+      "React",
+      "zoning codes",
+      "building codes",
+      "permitting"
+    ],
+    "preferred_any": [
+      [
+        "distributed systems",
+        "developer platforms",
+        "applied ML"
+      ],
+      [
+        "AEC (architecture, engineering, construction) software",
+        "BIM tools",
+        "CAD systems"
+      ],
+      [
+        "geometric modeling",
+        "computational geometry",
+        "parametric design"
+      ],
+      [
+        "knowledge graphs",
+        "rule engines",
+        "constraint-solving systems"
+      ],
+      [
+        "Revit",
+        "IFC"
+      ]
+    ],
+    "location": "San Diego, CA",
+    "seniority": "senior",
+    "required_years": 3,
+    "key_responsibilities": [
+      "Design and build core platform services, APIs, and internal tools",
+      "Own systems end-to-end: architecture, implementation, reliability, and iteration",
+      "Translate complex domain logic (zoning, design constraints, workflows) into robust software abstractions",
+      "Leverage AI tools to increase development velocity and iterate quickly on new and existing features",
+      "Improve performance, scalability, and developer velocity",
+      "Partner with architects and product teams to operationalize domain expertise into software",
+      "Evaluate and adopt the latest AI development tools, and translate what works into standards and practices for a growing team",
+      "Ship continuously in a fast-moving product environment"
+    ],
+    "pay_range_min": 160000,
+    "pay_range_max": 230000
+  }
+}

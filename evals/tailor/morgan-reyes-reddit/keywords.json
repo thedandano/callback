@@ -1,0 +1,46 @@
+{
+  "title": "Software Engineer, Content Platform",
+  "company": "Reddit",
+  "required": [
+    "BS in Computer Science",
+    "well-tested code",
+    "communication skills",
+    "cross-functional collaboration"
+  ],
+  "preferred": [
+    "platform services",
+    "API design"
+  ],
+  "required_any": [
+    [
+      "Golang",
+      "Python",
+      "C++",
+      "Java"
+    ],
+    [
+      "Cassandra",
+      "Postgres",
+      "Redis"
+    ],
+    [
+      "Kubernetes",
+      "gRPC",
+      "AWS",
+      "GCP"
+    ]
+  ],
+  "preferred_any": [],
+  "location": "Remote - United States",
+  "seniority": "mid",
+  "required_years": 3.0,
+  "team": "Content Platform (Infrastructure)",
+  "key_responsibilities": [
+    "Design, write, and deliver software in Go and Python",
+    "system level improvements and complex code modifications",
+    "on-call responsibilities and monitoring/alerting",
+    "cross-functional collaboration with product teams"
+  ],
+  "pay_range_min": 164200.0,
+  "pay_range_max": 229900.0
+}

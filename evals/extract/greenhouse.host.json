@@ -1,0 +1,46 @@
+{
+  "host": "claude",
+  "model": "default",
+  "commit": "a8e71b6",
+  "ran_at": "2026-09-08T05:40:18.712617+00:00",
+  "raw": "{\"title\":\"Software Engineer, Customer Studio Backend\",\"company\":\"Hightouch\",\"required\":[\"backend\",\"distributed systems\",\"architecture\",\"scalability\",\"maintainability\",\"reliability\",\"product specs\",\"SQL\",\"data warehouses\",\"optimizing queries\",\"pre-computed state\",\"analytics\",\"experimentation\",\"real-time audience computation\",\"syncing\",\"CDC\",\"Generative AI\",\"no-code\",\"data processing\",\"System Design\"],\"location\":\"Remote\",\"seniority\":\"senior\",\"team\":\"Customer Studio\",\"key_responsibilities\":[\"Push the limits of data warehouse speed, performance, and interactivity through general and warehouse-specific optimizations\",\"Help customers build segments and decide what data to sync, and facilitate experimentation to downstream tools including tracking performance of different audiences\",\"Explore real-time audience computation and syncing as warehouses adopt technologies like CDC\",\"Use generative AI to enhance user workflows for acting on data\",\"Architect backend and distributed systems with holistic thinking about scalability, maintainability, and reliability\",\"Write and engage with product specs\"],\"pay_range_min\":180000,\"pay_range_max\":400000}",
+  "output": {
+    "title": "Software Engineer, Customer Studio Backend",
+    "company": "Hightouch",
+    "required": [
+      "backend",
+      "distributed systems",
+      "architecture",
+      "scalability",
+      "maintainability",
+      "reliability",
+      "product specs",
+      "SQL",
+      "data warehouses",
+      "optimizing queries",
+      "pre-computed state",
+      "analytics",
+      "experimentation",
+      "real-time audience computation",
+      "syncing",
+      "CDC",
+      "Generative AI",
+      "no-code",
+      "data processing",
+      "System Design"
+    ],
+    "location": "Remote",
+    "seniority": "senior",
+    "team": "Customer Studio",
+    "key_responsibilities": [
+      "Push the limits of data warehouse speed, performance, and interactivity through general and warehouse-specific optimizations",
+      "Help customers build segments and decide what data to sync, and facilitate experimentation to downstream tools including tracking performance of different audiences",
+      "Explore real-time audience computation and syncing as warehouses adopt technologies like CDC",
+      "Use generative AI to enhance user workflows for acting on data",
+      "Architect backend and distributed systems with holistic thinking about scalability, maintainability, and reliability",
+      "Write and engage with product specs"
+    ],
+    "pay_range_min": 180000,
+    "pay_range_max": 400000
+  }
+}

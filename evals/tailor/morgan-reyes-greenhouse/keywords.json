@@ -1,0 +1,35 @@
+{
+  "title": "Software Engineer, Customer Studio Backend",
+  "company": "Hightouch",
+  "required": [
+    "backend",
+    "distributed systems",
+    "data warehouse",
+    "query optimization",
+    "SQL",
+    "real-time audience syncing",
+    "CDC",
+    "generative AI",
+    "system design",
+    "architecture",
+    "scalability",
+    "maintainability",
+    "reliability",
+    "product specs"
+  ],
+  "preferred": [],
+  "required_any": [],
+  "preferred_any": [],
+  "location": "Remote (North America)",
+  "seniority": "senior",
+  "required_years": 0.0,
+  "team": "Customer Studio",
+  "key_responsibilities": [
+    "Data Warehouse Performance: optimize queries, store pre-computed state, warehouse-specific improvements",
+    "Analytics and Experimentation: build segments, decide what data to sync, track audience performance",
+    "Real-time Audience Syncing: real-time audience computation and syncing using CDC as warehouses adopt real-time technologies",
+    "Generative AI: use generative AI to enhance user workflows around acting on data"
+  ],
+  "pay_range_min": 180000.0,
+  "pay_range_max": 400000.0
+}

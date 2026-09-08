@@ -1,0 +1,68 @@
+{
+  "title": "Senior Software Engineer",
+  "company": "Cedar",
+  "required": [
+    "production systems",
+    "TypeScript",
+    "Node.js",
+    "PostgreSQL",
+    "relational data modeling",
+    "APIs",
+    "data pipelines",
+    "system architecture"
+  ],
+  "preferred": [
+    "Next.js",
+    "React",
+    "zoning codes",
+    "building codes",
+    "permitting",
+    "regulatory or compliance data"
+  ],
+  "required_any": [
+    [
+      "AWS",
+      "GCP"
+    ]
+  ],
+  "preferred_any": [
+    [
+      "distributed systems",
+      "developer platforms",
+      "applied ML"
+    ],
+    [
+      "AEC software",
+      "BIM tools",
+      "CAD systems"
+    ],
+    [
+      "geometric modeling",
+      "computational geometry",
+      "parametric design"
+    ],
+    [
+      "knowledge graphs",
+      "rule engines",
+      "constraint-solving systems"
+    ],
+    [
+      "Revit",
+      "IFC",
+      "building information modeling formats"
+    ]
+  ],
+  "location": null,
+  "seniority": "senior",
+  "required_years": 3.0,
+  "team": null,
+  "key_responsibilities": [
+    "Design and build core platform services, APIs, and internal tools",
+    "Own systems end-to-end: architecture, implementation, reliability, and iteration",
+    "Translate complex domain logic (zoning, design constraints, workflows) into robust software abstractions",
+    "Leverage AI tools to increase development velocity",
+    "Improve performance, scalability, and developer velocity"
+  ],
+  "pay_range_min": null,
+  "pay_range_max": null
+}

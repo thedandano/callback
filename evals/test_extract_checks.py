@@ -1,0 +1,234 @@
+"""E1 checks: precision/recall against the golden, substring discipline, exact scalars."""
+
+from __future__ import annotations
+
+import json
+
+from evals.checks import Check
+from evals.extract_checks import PrecisionRecall, precision_recall, run_checks
+
+JD = (
+    "Senior Backend Engineer at Northwind. Requirements: Python, FastAPI, PostgreSQL, "
+    "and 4+ years building services on AWS or GCP. Nice to have: Redis, Terraform."
+)
+GOLDEN = {
+    "title": "Senior Backend Engineer",
+    "company": "Northwind",
+    "required": ["Python", "FastAPI", "PostgreSQL"],
+    "preferred": ["Redis", "Terraform"],
+    "required_any": [["AWS", "GCP"]],
+    "preferred_any": [],
+    "required_years": 4.0,
+}
+
+
+def _host(**overrides) -> str:
+    return json.dumps({**GOLDEN, **overrides})
+
+
+def _names(checks: list[Check]) -> dict[str, bool]:
+    return {c.name: c.passed for c in checks}
+
+
+def test_golden_as_host_output_passes_every_check():
+    actual = _names(run_checks(_host(), GOLDEN, JD))
+
+    expected = {
+        "valid_jd_data": True,
+        "term_recall": True,
+        "term_precision": True,
+        "groups_match": True,
+        "terms_are_jd_substrings": True,
+        "required_years_exact": True,
+        "title_exact": True,
+    }
+    assert actual == expected
+
+
+def test_invalid_json_is_the_only_check():
+    checks = run_checks("not json", GOLDEN, JD)
+
+    actual = [(c.name, c.passed) for c in checks]
+
+    expected = [("valid_jd_data", False)]
+    assert actual == expected
+
+
+def test_precision_recall_ignores_golden_terms_absent_from_jd():
+    golden_terms = ["Python", "Kubernetes"]  # Kubernetes drifted off the page
+
+    actual = precision_recall(["Python"], golden_terms, JD)
+
+    expected = PrecisionRecall(precision=1.0, recall=1.0, missing=[], extra=[])
+    assert actual == expected
+
+
+def test_precision_recall_reports_missing_and_extra():
+    actual = precision_recall(["python", "Docker"], ["Python", "FastAPI"], JD)
+
+    expected = PrecisionRecall(precision=0.5, recall=0.5, missing=["FastAPI"], extra=["Docker"])
+    assert actual == expected
+
+
+def test_duplicate_golden_terms_do_not_break_recall():
+    actual = precision_recall([], ["Python", "python"], "we use python")
+
+    expected = PrecisionRecall(precision=1.0, recall=0.0, missing=["Python"], extra=[])
+    assert actual == expected
+
+
+def test_paraphrase_alone_is_caught_by_substring_check():
+    """A rewritten term ("Postgres" for "PostgreSQL") no longer sinks recall/precision on its
+    own (GOLDEN has 7 terms present, well past the thin-golden guard) - only the substring
+    check, which demands the host's own term literally be in the JD, catches it."""
+    checks = run_checks(_host(required=["Python", "FastAPI", "Postgres"]), GOLDEN, JD)
+
+    actual = [c for c in checks if not c.passed]
+
+    expected = [Check("terms_are_jd_substrings", False, "not in JD: ['Postgres']")]
+    assert actual == expected
+
+
+def test_groups_compare_as_sets_regardless_of_order():
+    checks = run_checks(_host(required_any=[["GCP", "AWS"]]), GOLDEN, JD)
+
+    actual = [c for c in checks if c.name == "groups_match"]
+
+    expected = [Check("groups_match", True, "")]
+    assert actual == expected
+
+
+def test_unmatched_golden_group_fails_groups_match():
+    checks = run_checks(_host(required_any=[]), GOLDEN, JD)
+
+    actual = [c for c in checks if c.name == "groups_match"]
+
+    expected = [Check("groups_match", False, "unmatched golden groups: [['aws', 'gcp']]")]
+    assert actual == expected
+
+
+def test_partial_member_overlap_matches_group():
+    golden = {**GOLDEN, "required_any": [["AWS", "GCP", "Azure"]]}
+    jd = JD + " Azure experience is a bonus."
+    host_json = _host(required_any=[["AWS", "GCP"]])
+
+    checks = run_checks(host_json, golden, jd)
+
+    actual = [c for c in checks if c.name == "groups_match"]
+
+    expected = [Check("groups_match", True, "")]
+    assert actual == expected
+
+
+def test_extra_host_group_is_a_note():
+    golden = {**GOLDEN, "required_any": []}
+    jd = JD + " Kafka and Kinesis experience preferred."
+    host_json = _host(required_any=[["Kafka", "Kinesis"]])
+
+    checks = run_checks(host_json, golden, jd)
+
+    actual = [c for c in checks if c.name == "groups_match"]
+
+    expected = [Check("groups_match", True, "extra host groups: [['kafka', 'kinesis']]")]
+    assert actual == expected
+
+
+def test_hyphenated_golden_group_is_not_treated_as_drift():
+    """A dash-flattened golden group ("arm cortex m") must not be tested for presence against
+    the JD text - only the raw member ("ARM Cortex-M") appears there, so a naive presence
+    check on the normalized form would wrongly read this as content drift and skip it."""
+    golden = {**GOLDEN, "required_any": [["ARM Cortex-M", "RTOS"]]}
+    jd = JD + " Experience with ARM Cortex-M and RTOS required."
+    host_json = _host(required_any=[])
+
+    checks = run_checks(host_json, golden, jd)
+
+    actual = [c for c in checks if c.name == "groups_match"]
+
+    expected = [Check("groups_match", False, "unmatched golden groups: [['arm cortex m', 'rtos']]")]
+    assert actual == expected
+
+
+def test_drifted_golden_group_is_skipped():
+    golden = {**GOLDEN, "required_any": [["Kubernetes", "Docker Swarm"]]}
+    host_json = _host(required_any=[])
+
+    checks = run_checks(host_json, golden, JD)
+
+    actual = [c for c in checks if c.name == "groups_match"]
+
+    expected = [Check("groups_match", True, "")]
+    assert actual == expected
+
+
+def test_wrong_years_and_title_fail_exact_checks():
+    checks = run_checks(_host(required_years=5, title="Backend Engineer"), GOLDEN, JD)
+
+    actual = [c for c in checks if c.name in ("required_years_exact", "title_exact")]
+
+    expected = [
+        Check("required_years_exact", False, "host 5.0 != golden 4.0"),
+        Check("title_exact", False, "host 'Backend Engineer' != golden 'Senior Backend Engineer'"),
+    ]
+    assert actual == expected
+
+
+THIN_GOLDEN = {
+    "title": "Senior Backend Engineer",
+    "company": "Northwind",
+    "required": ["Python", "FastAPI", "Kubernetes"],
+    "preferred": ["Redis", "Terraform"],
+    "required_any": [],
+    "preferred_any": [],
+    "required_years": 4.0,
+}
+
+
+def test_thin_golden_is_not_evaluated():
+    # 5 golden terms total; only Python and FastAPI are still in the JD (2/5 = 0.4 < 0.6)
+    jd = "Senior Backend Engineer at Northwind. Requirements: Python, FastAPI."
+    host_json = json.dumps({**THIN_GOLDEN, "required": ["Python"], "preferred": []})
+
+    checks = run_checks(host_json, THIN_GOLDEN, jd)
+
+    actual = [c for c in checks if c.name in ("term_recall", "term_precision")]
+
+    detail = "not evaluated: only 2 of 5 golden terms are still in the JD (content drift)"
+    expected = [
+        Check("term_recall", True, detail, skipped=True),
+        Check("term_precision", True, detail, skipped=True),
+    ]
+    assert actual == expected
+
+
+def test_golden_with_most_terms_live_is_evaluated_normally():
+    # 5 golden terms total; 4 are still in the JD (4/5 = 0.8 >= 0.6), so the guard does not trip
+    jd = "Senior Backend Engineer at Northwind. Requirements: Python, FastAPI, Redis, Terraform."
+    host_json = json.dumps(
+        {**THIN_GOLDEN, "required": ["Python", "FastAPI"], "preferred": ["Redis", "Terraform"]}
+    )
+
+    checks = run_checks(host_json, THIN_GOLDEN, jd)
+
+    actual = [c for c in checks if c.name in ("term_recall", "term_precision")]
+
+    expected = [Check("term_recall", True, ""), Check("term_precision", True, "")]
+    assert actual == expected
+
+
+def test_union_counts_group_members_and_preferred():
+    golden = {**GOLDEN, "required": ["Python", "FastAPI"]}  # 2 required + 2 preferred + 2 group = 6
+    # host misses one preferred (Terraform) and one group member (GCP), but the group is still
+    # covered - one shared member (AWS) is enough under the coverage rule
+    host_json = _host(required=["Python", "FastAPI"], preferred=["Redis"], required_any=[["AWS"]])
+
+    checks = run_checks(host_json, golden, JD)
+
+    actual = [c for c in checks if c.name in ("term_recall", "term_precision", "groups_match")]
+
+    expected = [
+        Check("term_recall", True, ""),
+        Check("term_precision", True, ""),
+        Check("groups_match", True, ""),
+    ]
+    assert actual == expected
