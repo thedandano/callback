@@ -1,0 +1,47 @@
+{
+  "host": "claude",
+  "model": "default",
+  "commit": "a8e71b6",
+  "ran_at": "2026-09-08T05:44:34.916842+00:00",
+  "raw": "{\"edits\": [{\"section\": \"summary\", \"op\": \"replace\", \"value\": \"Software engineer with six years in Java, Python, and SQL, working from software requirements through unit testing, debugging, integration, and code review. Split a Java and Spring Boot monolith into Kafka-backed microservices across a 40-service fulfillment platform, and rebuilt a nightly PostgreSQL warehouse load with change data capture that cut the window from 6 hours to 45 minutes. B.S. in Computer Science; built a Python retrieval-augmented service that answers engineering questions through an LLM API.\"}, {\"section\": \"experience\", \"op\": \"replace\", \"target\": \"exp-0-b0\", \"value\": \"Split the order-processing monolith into Java and Spring Boot microservices behind Kafka topics, giving each of 6 core services its own deploy pipeline and contract tests in place of a full regression pass, cutting cross-team release conflicts 60% across 40 backend services and routine change lead time from 3 days to under a day.\"}, {\"section\": \"experience\", \"op\": \"replace\", \"target\": \"exp-0-b3\", \"value\": \"Wrote Terraform modules covering the AWS networking, ECS task definitions, and IAM roles for 6 services and 3 databases, reviewing every change through a Git pull-request plan workflow and cutting new-environment setup from 2 days to 2 hours.\"}, {\"section\": \"experience\", \"op\": \"replace\", \"target\": \"exp-1-b1\", \"value\": \"Rewrote the 15 slowest warehouse queries after profiling execution plans in PostgreSQL database management software, applying better join order and targeted indexes that cut average dashboard load time from 12 seconds to 2 seconds for 8 downstream teams.\"}, {\"section\": \"skills\", \"op\": \"add\", \"category\": \"Practices\", \"value\": \"Git\"}, {\"section\": \"skills\", \"op\": \"add\", \"category\": \"Backend & Data\", \"value\": \"Database Management Software\"}], \"no_coverage\": false}",
+  "output": {
+    "edits": [
+      {
+        "section": "summary",
+        "op": "replace",
+        "value": "Software engineer with six years in Java, Python, and SQL, working from software requirements through unit testing, debugging, integration, and code review. Split a Java and Spring Boot monolith into Kafka-backed microservices across a 40-service fulfillment platform, and rebuilt a nightly PostgreSQL warehouse load with change data capture that cut the window from 6 hours to 45 minutes. B.S. in Computer Science; built a Python retrieval-augmented service that answers engineering questions through an LLM API."
+      },
+      {
+        "section": "experience",
+        "op": "replace",
+        "target": "exp-0-b0",
+        "value": "Split the order-processing monolith into Java and Spring Boot microservices behind Kafka topics, giving each of 6 core services its own deploy pipeline and contract tests in place of a full regression pass, cutting cross-team release conflicts 60% across 40 backend services and routine change lead time from 3 days to under a day."
+      },
+      {
+        "section": "experience",
+        "op": "replace",
+        "target": "exp-0-b3",
+        "value": "Wrote Terraform modules covering the AWS networking, ECS task definitions, and IAM roles for 6 services and 3 databases, reviewing every change through a Git pull-request plan workflow and cutting new-environment setup from 2 days to 2 hours."
+      },
+      {
+        "section": "experience",
+        "op": "replace",
+        "target": "exp-1-b1",
+        "value": "Rewrote the 15 slowest warehouse queries after profiling execution plans in PostgreSQL database management software, applying better join order and targeted indexes that cut average dashboard load time from 12 seconds to 2 seconds for 8 downstream teams."
+      },
+      {
+        "section": "skills",
+        "op": "add",
+        "category": "Practices",
+        "value": "Git"
+      },
+      {
+        "section": "skills",
+        "op": "add",
+        "category": "Backend & Data",
+        "value": "Database Management Software"
+      }
+    ],
+    "no_coverage": false
+  }
+}

@@ -238,9 +238,16 @@ covering all six boards. The runner records LangSmith experiments named
 `<commit>-<host>-<model>`. A keyword-stuffed tailoring output fails E2
 (`evals/test_tailor_checks.py::test_keyword_stuffed_output_fails`). All
 fixtures are invented and committed; no personal data is involved.
-Proof-run numbers are being regenerated against the committed fixture set
-(the private cases they used to quote are gone); the controller fills these
-in after the next `scripts/run_evals.py` run.
+Proof run: commit a8e71b6, host claude, default model, over the committed fixture set only (no personal data).
+E1 is 2 of 6. Cedar and reddit pass. Apple returns three terms that are not in the posting, two of them
+apostrophe variants and one invented. Ashby and greenhouse fail precision at 0.57 and 0.55 by padding the
+list with filler like "cloud" and "tooling". Qualcomm leaves required empty, which submit_keywords rejects too.
+E2 is 1 of 8. jane-doe-no-coverage passes. Every other case has the host adding a skill that is either absent
+from the resume and wiki (Event Streaming, System Architecture, API design, Git) or present with no dated
+bullet behind it. morgan-reyes-ashby fails because the host tailored a profile that meets 1 of 18 required
+items instead of declaring no coverage.
+E3 is 9 of 9 on the committed morgan-reyes and jane-doe cases.
+The failures are the host breaking the tailoring rules, not eval defects; M7 is measured against these numbers.
 
 ### M7 — Token diet (one day)
 

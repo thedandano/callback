@@ -1,0 +1,29 @@
+{
+  "host": "claude",
+  "model": "default",
+  "commit": "a8e71b6",
+  "ran_at": "2026-09-08T05:42:20.313012+00:00",
+  "raw": "{\"edits\": [{\"section\": \"summary\", \"op\": \"replace\", \"value\": \"Backend and data engineer with six years of Python and Java work shipping production services and pipelines behind well-tested code and GitHub Actions CI/CD gates. Rebuilt a 200GB nightly warehouse load with Python, SQL, and change data capture, cutting the window from 6 hours to 45 minutes, and tuned a distributed 40-service platform for latency, cutting p95 reads 45%. Built DocQuery, a Python service that answers engineering questions over embedded wiki pages through an LLM API, cutting onboarding-question turnaround for 15 new hires from about 2 days to same day.\"}, {\"section\": \"experience\", \"op\": \"replace\", \"target\": \"exp-1-b2\", \"value\": \"Added a Redis cache with a 5-minute TTL and a write-time invalidation hook in front of the PostgreSQL cart and pricing reads, cutting p95 read latency 45% and database CPU usage 30% during peak shipping weeks.\"}, {\"section\": \"skills\", \"op\": \"add\", \"value\": \"Distributed Systems\", \"category\": \"Backend & Data\"}], \"no_coverage\": false}",
+  "output": {
+    "edits": [
+      {
+        "section": "summary",
+        "op": "replace",
+        "value": "Backend and data engineer with six years of Python and Java work shipping production services and pipelines behind well-tested code and GitHub Actions CI/CD gates. Rebuilt a 200GB nightly warehouse load with Python, SQL, and change data capture, cutting the window from 6 hours to 45 minutes, and tuned a distributed 40-service platform for latency, cutting p95 reads 45%. Built DocQuery, a Python service that answers engineering questions over embedded wiki pages through an LLM API, cutting onboarding-question turnaround for 15 new hires from about 2 days to same day."
+      },
+      {
+        "section": "experience",
+        "op": "replace",
+        "target": "exp-1-b2",
+        "value": "Added a Redis cache with a 5-minute TTL and a write-time invalidation hook in front of the PostgreSQL cart and pricing reads, cutting p95 read latency 45% and database CPU usage 30% during peak shipping weeks."
+      },
+      {
+        "section": "skills",
+        "op": "add",
+        "value": "Distributed Systems",
+        "category": "Backend & Data"
+      }
+    ],
+    "no_coverage": false
+  }
+}

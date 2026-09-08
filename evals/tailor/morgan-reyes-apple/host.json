@@ -1,0 +1,34 @@
+{
+  "host": "claude",
+  "model": "default",
+  "commit": "a8e71b6",
+  "ran_at": "2026-09-08T05:41:58.599168+00:00",
+  "raw": "{\"edits\": [{\"section\": \"summary\", \"op\": \"replace\", \"value\": \"Backend and data engineer with six years building distributed microservices and data pipelines in production. At Northbeam Logistics, led a Java and Spring Boot migration of a 40-service fulfillment platform onto Kafka and PostgreSQL, cutting cross-team release conflicts 60% and shipping-notification lag from 30 seconds to under 2 seconds. At Anchor Data Systems, rebuilt a 200GB nightly warehouse load with Python, SQL, and change data capture, cutting the load window from 6 hours to 45 minutes for 8 downstream teams.\"}, {\"section\": \"experience\", \"op\": \"replace\", \"target\": \"exp-0-context\", \"value\": \"Senior Backend Engineer · Fulfillment Platform · 40 microservices · Java, Spring Boot, Kafka, PostgreSQL, Redis, Docker, AWS\"}, {\"section\": \"experience\", \"op\": \"replace\", \"target\": \"exp-0-b3\", \"value\": \"Migrated 5 downstream services from 30-second PostgreSQL polling to Kafka event streaming with idempotent consumers, cutting shipping-notification lag from 30 seconds to under 2 seconds and database polling load 70%.\"}, {\"section\": \"skills\", \"op\": \"add\", \"category\": \"Backend & Data\", \"value\": \"Event Streaming\"}]}",
+  "output": {
+    "edits": [
+      {
+        "section": "summary",
+        "op": "replace",
+        "value": "Backend and data engineer with six years building distributed microservices and data pipelines in production. At Northbeam Logistics, led a Java and Spring Boot migration of a 40-service fulfillment platform onto Kafka and PostgreSQL, cutting cross-team release conflicts 60% and shipping-notification lag from 30 seconds to under 2 seconds. At Anchor Data Systems, rebuilt a 200GB nightly warehouse load with Python, SQL, and change data capture, cutting the load window from 6 hours to 45 minutes for 8 downstream teams."
+      },
+      {
+        "section": "experience",
+        "op": "replace",
+        "target": "exp-0-context",
+        "value": "Senior Backend Engineer · Fulfillment Platform · 40 microservices · Java, Spring Boot, Kafka, PostgreSQL, Redis, Docker, AWS"
+      },
+      {
+        "section": "experience",
+        "op": "replace",
+        "target": "exp-0-b3",
+        "value": "Migrated 5 downstream services from 30-second PostgreSQL polling to Kafka event streaming with idempotent consumers, cutting shipping-notification lag from 30 seconds to under 2 seconds and database polling load 70%."
+      },
+      {
+        "section": "skills",
+        "op": "add",
+        "category": "Backend & Data",
+        "value": "Event Streaming"
+      }
+    ]
+  }
+}

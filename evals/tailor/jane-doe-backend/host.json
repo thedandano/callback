@@ -1,21 +1,15 @@
 {
   "host": "claude",
   "model": "default",
-  "commit": "ea2990d",
-  "ran_at": "2026-09-07T05:14:18.562063+00:00",
-  "raw": "{\"edits\": [{\"section\": \"summary\", \"op\": \"replace\", \"value\": \"Backend engineer with 5 years building Python and FastAPI services on AWS. Cut checkout p95 latency 40% for 2M monthly orders at Acme Corp while adding Datadog dashboards that dropped on-call pages from 6 to 1 per week. Automated AWS ECS delivery for 12 distributed checkout services with reusable Terraform modules.\"}, {\"section\": \"experience\", \"op\": \"replace\", \"target\": \"exp-0-context\", \"value\": \"Backend Engineer · Checkout Platform · 12 services, 2M orders/month · Python, FastAPI, PostgreSQL, AWS, Terraform, Datadog\"}, {\"section\": \"experience\", \"op\": \"replace\", \"target\": \"exp-0-b0\", \"value\": \"Rebuilt the checkout API on FastAPI with PostgreSQL connection pooling and per-endpoint Datadog dashboards, cutting p95 latency 40% for 2M monthly orders and on-call pages from 6 to 1 per week\"}, {\"section\": \"experience\", \"op\": \"replace\", \"target\": \"exp-0-b2\", \"value\": \"Wrote reusable Terraform modules and GitHub Actions Docker builds for 12 distributed checkout services on AWS ECS, cutting new-service delivery from a week to a single pull request\"}, {\"section\": \"skills\", \"op\": \"add\", \"category\": \"Practices\", \"value\": \"Datadog\"}], \"no_coverage\": false}",
+  "commit": "a8e71b6",
+  "ran_at": "2026-09-08T05:41:08.269320+00:00",
+  "raw": "{\"edits\": [{\"section\": \"summary\", \"op\": \"replace\", \"value\": \"Backend engineer with 5 years building Python and FastAPI services on AWS. Cut checkout p95 latency 40% at Acme Corp for 2M monthly orders and reduced on-call pages from 6 to 1 per week with Datadog dashboards. Ships infrastructure for a 12-service distributed system on AWS ECS with Terraform and Docker.\"}, {\"section\": \"experience\", \"op\": \"replace\", \"target\": \"exp-0-b0\", \"value\": \"Rebuilt the checkout API on FastAPI with PostgreSQL connection pooling and per-endpoint Datadog dashboards, cutting p95 latency 40% for 2M monthly orders and on-call pages from 6 to 1 per week\"}, {\"section\": \"experience\", \"op\": \"replace\", \"target\": \"exp-0-b2\", \"value\": \"Wrote reusable Terraform modules for ECS task definitions across the 12-service distributed system on AWS, with Docker images built in GitHub Actions, so a new service ships in one pull request\"}, {\"section\": \"skills\", \"op\": \"add\", \"value\": \"Datadog\", \"category\": \"Practices\"}, {\"section\": \"skills\", \"op\": \"add\", \"value\": \"Distributed Systems\", \"category\": \"Backend & Data\"}], \"no_coverage\": false}",
   "output": {
     "edits": [
       {
         "section": "summary",
         "op": "replace",
-        "value": "Backend engineer with 5 years building Python and FastAPI services on AWS. Cut checkout p95 latency 40% for 2M monthly orders at Acme Corp while adding Datadog dashboards that dropped on-call pages from 6 to 1 per week. Automated AWS ECS delivery for 12 distributed checkout services with reusable Terraform modules."
-      },
-      {
-        "section": "experience",
-        "op": "replace",
-        "target": "exp-0-context",
-        "value": "Backend Engineer · Checkout Platform · 12 services, 2M orders/month · Python, FastAPI, PostgreSQL, AWS, Terraform, Datadog"
+        "value": "Backend engineer with 5 years building Python and FastAPI services on AWS. Cut checkout p95 latency 40% at Acme Corp for 2M monthly orders and reduced on-call pages from 6 to 1 per week with Datadog dashboards. Ships infrastructure for a 12-service distributed system on AWS ECS with Terraform and Docker."
       },
       {
         "section": "experience",
@@ -27,13 +21,19 @@
         "section": "experience",
         "op": "replace",
         "target": "exp-0-b2",
-        "value": "Wrote reusable Terraform modules and GitHub Actions Docker builds for 12 distributed checkout services on AWS ECS, cutting new-service delivery from a week to a single pull request"
+        "value": "Wrote reusable Terraform modules for ECS task definitions across the 12-service distributed system on AWS, with Docker images built in GitHub Actions, so a new service ships in one pull request"
       },
       {
         "section": "skills",
         "op": "add",
-        "category": "Practices",
-        "value": "Datadog"
+        "value": "Datadog",
+        "category": "Practices"
+      },
+      {
+        "section": "skills",
+        "op": "add",
+        "value": "Distributed Systems",
+        "category": "Backend & Data"
       }
     ],
     "no_coverage": false

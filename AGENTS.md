@@ -69,7 +69,7 @@ uv run python scripts/run_evals.py                     # E1 + E2 against `claude
 uv run python scripts/run_evals.py --host codex --model gpt-5.6-terra --eval tailor
 uv run python scripts/run_evals.py --checks-only       # re-check saved outputs, no model call, no LangSmith upload
 uv run pytest -m local evals/                          # E1 + E2 checks over the saved host outputs
-# baseline 2026-09-06, claude default model: E1 3/6 (SKIP apple, FAIL cedar/qualcomm), E2 2/8 (see INTENT §M6 for why the rest fail)
+# baseline 2026-09-07, claude default model: E1 2/6 (PASS cedar/reddit), E2 1/8 (see INTENT §M6)
 ```
 
 ## Environment
