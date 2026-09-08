@@ -1,0 +1,103 @@
+{
+  "summary": "Backend and data engineer with six years building services and pipelines that keep production systems fast and honest. At Northbeam Logistics, led a Java and Spring Boot microservices migration backed by Kafka and PostgreSQL for a 40-service fulfillment platform. At Anchor Data Systems, rebuilt a nightly data warehouse load with Python, SQL, and change data capture, cutting the load window from 6 hours to 45 minutes. Comfortable owning a service end to end, writing well-tested code, and doing cross-functional work with product and data teams.",
+  "skills": {
+    "flat": [],
+    "categorized": {
+      "Languages": [
+        "Python",
+        "Java",
+        "SQL"
+      ],
+      "Backend & Data": [
+        "Spring Boot",
+        "Kafka",
+        "PostgreSQL",
+        "Redis",
+        "Microservices",
+        "Data Pipelines"
+      ],
+      "Cloud & Infrastructure": [
+        "AWS",
+        "Docker",
+        "Terraform",
+        "GitHub Actions"
+      ],
+      "AI & Emerging": [
+        "LLM API integration",
+        "Retrieval-augmented search"
+      ],
+      "Frontend": [
+        "React",
+        "JavaScript"
+      ],
+      "Practices": [
+        "CI/CD",
+        "Code Review",
+        "Test-Driven Development"
+      ]
+    }
+  },
+  "experience": [
+    {
+      "company": "Northbeam Logistics",
+      "role": "Senior Backend Engineer",
+      "start_date": "2024-01",
+      "end_date": null,
+      "context_line": "Senior Backend Engineer · Fulfillment Platform · 40 microservices · Java, Spring Boot, Kafka, PostgreSQL",
+      "bullets": [
+        "Led the migration of the fulfillment platform's order-processing service from a monolith to a Java and Spring Boot microservices architecture backed by Kafka, cutting cross-team release conflicts 60% across 40 backend services.",
+        "Added Redis-backed caching in front of the PostgreSQL order database, cutting p95 read latency 45% during peak shipping weeks.",
+        "Containerized all 12 backend services with Docker and moved deployment to AWS ECS, cutting new-service onboarding from 3 days to half a day.",
+        "Wrote Terraform modules to provision the AWS infrastructure for a distributed systems footprint of 6 services and 3 databases, cutting new-environment setup from 2 days to 2 hours."
+      ]
+    },
+    {
+      "company": "Anchor Data Systems",
+      "role": "Backend & Data Engineer",
+      "start_date": "2022-01",
+      "end_date": "2023-12",
+      "context_line": "Backend & Data Engineer · Analytics Platform · 200GB nightly · Python, SQL, PostgreSQL",
+      "bullets": [
+        "Rebuilt the nightly data warehouse load in Python and SQL, replacing full-table refreshes with incremental change data capture (CDC) from PostgreSQL and cutting the load window from 6 hours to 45 minutes.",
+        "Rewrote the 15 slowest warehouse queries after profiling execution plans, applying query optimization techniques that cut average dashboard load time from 12 seconds to 2 seconds.",
+        "Set relational data modeling standards for the analytics schema, normalizing 30 ad hoc tables into a documented star schema reviewed in weekly code review sessions with 8 downstream teams.",
+        "Built 6 internal REST APIs for the data pipelines feeding the finance and marketing teams, backed by well-tested code with 90% branch coverage and shipped through a GitHub Actions CI/CD pipeline."
+      ]
+    },
+    {
+      "company": "Fielding Analytics",
+      "role": "Software Engineer",
+      "start_date": "2020-06",
+      "end_date": "2021-12",
+      "context_line": "Software Engineer · Client Reporting Team · 25 client dashboards · Python, React, JavaScript",
+      "bullets": [
+        "Partnered on cross-functional work with the sales and support teams to replace 12 manual spreadsheet reports with a self-serve dashboard built in React and JavaScript.",
+        "Wrote well-tested code for the Python ETL powering the dashboard, covering 85% of branches with pytest and cutting reporting bugs escalated by support 50% quarter over quarter, following test-driven development practices throughout."
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "name": "DocQuery",
+      "description": "Personal project: retrieval-augmented question answering over internal engineering docs",
+      "bullets": [
+        "Built a Python service that embeds internal wiki pages in a Postgres vector extension and answers engineering questions through an LLM API, cutting onboarding-question turnaround for 15 new hires from about 2 days to the same day."
+      ]
+    }
+  ],
+  "education": [
+    {
+      "institution": "Front Range State University",
+      "degree": "B.S.",
+      "field": "Computer Science",
+      "graduation_date": "2020"
+    }
+  ],
+  "contact": {
+    "name": "Morgan Reyes",
+    "email": "morgan.reyes@example.com",
+    "location": "Denver, CO"
+  },
+  "certifications": [],
+  "awards": []
+}
