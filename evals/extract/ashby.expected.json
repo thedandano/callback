@@ -7,11 +7,6 @@
     "ML models from research or prototype stage into production at scale",
     "PyTorch",
     "ML pipelines",
-    "training orchestration",
-    "evaluation harnesses",
-    "model packaging",
-    "deployment",
-    "CI/CD for models",
     "serving and inference optimization",
     "latency",
     "throughput",
@@ -28,18 +23,16 @@
     "regression detection across model versions",
     "on-premise GPU clusters",
     "workload orchestration",
-    "inference optimization techniques",
-    "quantization",
-    "distillation",
-    "compilation",
-    "runtime tuning"
+    "inference optimization techniques"
   ],
   "required_any": [
-    ["cloud", "bare metal"]
+    ["cloud", "bare metal"],
+    ["training orchestration", "evaluation harnesses", "model packaging", "deployment", "CI/CD for models"]
   ],
   "preferred_any": [
     ["speech", "audio"],
-    ["internal platforms", "developer-facing tooling"]
+    ["internal platforms", "developer-facing tooling"],
+    ["quantization", "distillation", "compilation", "runtime tuning"]
   ],
   "location": "Remote, USA",
   "seniority": "senior",

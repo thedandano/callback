@@ -13,9 +13,17 @@ with a note) rather than trusted.
 
 OR-groups are checked for coverage, not set equality: every expected group
 with at least one member still present in the JD text must be matched by some
-host group that shares a normalized member with it. A host group with no
-expected counterpart is allowed and only surfaces as a note in the check
-detail.
+host group that shares a normalized member with it.
+
+Separately, every host group - not only ones with no expected counterpart -
+is checked for collapsing two or more terms the expected data lists as
+independent required/preferred requirements into a single "any one will do"
+group; this fails even when the same group also shares a member with a real
+expected group, since that overlap doesn't excuse folding in unrelated
+independent terms. That is score inflation the required_coverage/
+preferred_coverage math can't see (one OR-group is one denominator entry no
+matter how many members it has). A host group that avoids both problems is
+allowed and only surfaces as a note in the check detail.
 """
 
 from __future__ import annotations
@@ -99,6 +107,18 @@ def _present_expected_groups(
     return present
 
 
+def _flat_expected_terms_norm(expected: dict) -> set[str]:
+    return {_norm(t) for t in expected.get("required", []) + expected.get("preferred", [])}
+
+
+def _is_overgrouped(host_group: tuple[str, ...], flat_expected_norm: set[str]) -> bool:
+    """True when the host folded 2+ distinct terms the expected data lists as independent
+    required/preferred requirements into one OR-group - claiming only one is needed when the
+    posting actually asked for both. A set intersection (not a per-member sum) so a repeated
+    member ("Redis", "Redis") can't double-count as two distinct collapsed requirements."""
+    return len(set(host_group) & flat_expected_norm) >= 2
+
+
 def _groups_check(host: dict, expected: dict, jd_text: str) -> Check:
     host_groups = _group_set(host.get("required_any", [])) | _group_set(
         host.get("preferred_any", [])
@@ -108,6 +128,18 @@ def _groups_check(host: dict, expected: dict, jd_text: str) -> Check:
     missing = sorted(list(g) for g in present_expected if not _group_matched(g, host_groups))
     if missing:
         return Check("groups_match", False, f"unmatched expected groups: {missing}")
+
+    # Checked against every host group, not just ones with no expected counterpart: a group
+    # that shares one member with a real expected group ("AWS" from AWS/GCP) can still smuggle
+    # in two unrelated independent terms ("Redis", "Terraform") alongside it.
+    flat_expected_norm = _flat_expected_terms_norm(expected)
+    overgrouped = sorted(list(hg) for hg in host_groups if _is_overgrouped(hg, flat_expected_norm))
+    if overgrouped:
+        return Check(
+            "groups_match",
+            False,
+            f"host collapsed independent required/preferred terms into an OR-group: {overgrouped}",
+        )
     extras = sorted(list(hg) for hg in host_groups if not _group_matched(hg, present_expected))
     return Check("groups_match", True, f"extra host groups: {extras}" if extras else "")
 

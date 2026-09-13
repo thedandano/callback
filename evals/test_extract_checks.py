@@ -151,6 +151,75 @@ def test_hyphenated_expected_group_is_not_treated_as_drift():
     assert actual == expected
 
 
+def test_host_group_collapsing_two_independent_required_terms_fails():
+    """The host claimed "Redis or Terraform" (only one needed) when EXPECTED lists both as
+    separate, independent preferred requirements - that inflates preferred_coverage the same
+    way an invented OR-group would, and the union-based term checks alone can't catch it."""
+    checks = run_checks(_host(preferred_any=[["Redis", "Terraform"]], preferred=[]), EXPECTED, JD)
+
+    actual = [c for c in checks if c.name == "groups_match"]
+
+    expected = [
+        Check(
+            "groups_match",
+            False,
+            "host collapsed independent required/preferred terms into an OR-group: "
+            "[['redis', 'terraform']]",
+        )
+    ]
+    assert actual == expected
+
+
+def test_host_group_with_only_one_known_member_is_still_a_note():
+    """Only one of the group's members ("Redis") is a term EXPECTED lists separately - that is
+    not evidence of collapsing two known-independent requirements, so it stays a permitted
+    extra group, same as one built entirely from unknown terms."""
+    case = {**EXPECTED, "required_any": []}
+    host_json = _host(required_any=[], preferred_any=[["Redis", "Kinesis"]], preferred=["Redis"])
+
+    checks = run_checks(host_json, case, JD + " Kinesis experience preferred.")
+
+    actual = [c for c in checks if c.name == "groups_match"]
+
+    expected = [Check("groups_match", True, "extra host groups: [['kinesis', 'redis']]")]
+    assert actual == expected
+
+
+def test_host_group_sharing_a_real_group_member_still_fails_on_collapsed_terms():
+    """The host's group shares "AWS" with the real required_any=[["AWS","GCP"]] group, so it
+    is not an unmatched-expected-group failure - but it also smuggles in Redis and Terraform,
+    two independent preferred requirements, riding along on that legitimate overlap. Only
+    checking groups with no expected counterpart would let this through."""
+    host_json = _host(required_any=[["AWS", "Redis", "Terraform"]], preferred=[])
+    checks = run_checks(host_json, EXPECTED, JD)
+
+    actual = [c for c in checks if c.name == "groups_match"]
+
+    expected = [
+        Check(
+            "groups_match",
+            False,
+            "host collapsed independent required/preferred terms into an OR-group: "
+            "[['aws', 'redis', 'terraform']]",
+        )
+    ]
+    assert actual == expected
+
+
+def test_repeated_group_member_does_not_double_count_as_overgrouped():
+    """A host group with a repeated member ("Redis" twice) only names ONE distinct known term -
+    a naive per-member sum would count it as two and wrongly fail this as collapsed-terms."""
+    case = {**EXPECTED, "required_any": []}
+    host_json = _host(required_any=[], preferred_any=[["Redis", "Redis"]], preferred=["Redis"])
+
+    checks = run_checks(host_json, case, JD)
+
+    actual = [c for c in checks if c.name == "groups_match"]
+
+    expected = [Check("groups_match", True, "extra host groups: [['redis', 'redis']]")]
+    assert actual == expected
+
+
 def test_drifted_expected_group_is_skipped():
     case = {**EXPECTED, "required_any": [["Kubernetes", "Docker Swarm"]]}
     host_json = _host(required_any=[])
