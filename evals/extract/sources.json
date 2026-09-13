@@ -39,7 +39,7 @@
       "missing": [],
       "title_found": true
     },
-    "note": "Rebuilt 2026-09-13: expected data followed EXTRACTION_PROTOCOL's atomic-term rule (was storing whole clauses like \"speech, audio, or other real-time/streaming ML domains\"), and dropped \"collaborative builder mindset\" (didn't match the JD's literal \"collaborative, builder mindset\", and reads as a soft-skill descriptor rather than a named keyword under protocol rule 6)."
+    "note": "Rebuilt 2026-09-13: expected data followed EXTRACTION_PROTOCOL's atomic-term rule (was storing whole clauses like \"speech, audio, or other real-time/streaming ML domains\"), and dropped \"collaborative builder mindset\" (didn't match the JD's literal \"collaborative, builder mindset\", and reads as a soft-skill descriptor rather than a named keyword under protocol rule 6). Re-audited 2026-09-13 (M8) against the sharpened rule 2: \"training orchestration, evaluation harnesses, model packaging, deployment, or CI/CD for models\" (line 50) and \"quantization, distillation, compilation, or runtime tuning\" (line 59) were flat terms naming an explicit \"or\" disjunction; both moved into required_any/preferred_any groups."
   },
   "cedar": {
     "jd_url": "https://careers.cedar.build/38511",

@@ -15,7 +15,11 @@ OR-groups are checked for coverage, not set equality: every expected group
 with at least one member still present in the JD text must be matched by some
 host group that shares a normalized member with it. A host group with no
 expected counterpart is allowed and only surfaces as a note in the check
-detail.
+detail - unless it collapses two or more terms the expected data lists as
+separate required/preferred requirements into a single "any one will do"
+group, which fails: that is score inflation the required_coverage/
+preferred_coverage math can't see (one OR-group is one denominator entry no
+matter how many members it has).
 """
 
 from __future__ import annotations
@@ -99,6 +103,17 @@ def _present_expected_groups(
     return present
 
 
+def _flat_expected_terms_norm(expected: dict) -> set[str]:
+    return {_norm(t) for t in expected.get("required", []) + expected.get("preferred", [])}
+
+
+def _is_overgrouped(host_group: tuple[str, ...], flat_expected_norm: set[str]) -> bool:
+    """True when the host folded 2+ terms the expected data lists as independent
+    required/preferred requirements into one OR-group - claiming only one is needed
+    when the posting actually asked for both."""
+    return sum(1 for member in host_group if member in flat_expected_norm) >= 2
+
+
 def _groups_check(host: dict, expected: dict, jd_text: str) -> Check:
     host_groups = _group_set(host.get("required_any", [])) | _group_set(
         host.get("preferred_any", [])
@@ -108,8 +123,18 @@ def _groups_check(host: dict, expected: dict, jd_text: str) -> Check:
     missing = sorted(list(g) for g in present_expected if not _group_matched(g, host_groups))
     if missing:
         return Check("groups_match", False, f"unmatched expected groups: {missing}")
-    extras = sorted(list(hg) for hg in host_groups if not _group_matched(hg, present_expected))
-    return Check("groups_match", True, f"extra host groups: {extras}" if extras else "")
+
+    flat_expected_norm = _flat_expected_terms_norm(expected)
+    extras = [hg for hg in host_groups if not _group_matched(hg, present_expected)]
+    overgrouped = sorted(list(hg) for hg in extras if _is_overgrouped(hg, flat_expected_norm))
+    if overgrouped:
+        return Check(
+            "groups_match",
+            False,
+            f"host collapsed independent required/preferred terms into an OR-group: {overgrouped}",
+        )
+    unknown = sorted(list(hg) for hg in extras if not _is_overgrouped(hg, flat_expected_norm))
+    return Check("groups_match", True, f"extra host groups: {unknown}" if unknown else "")
 
 
 def _substring_check(host: dict, jd_text: str) -> Check:
