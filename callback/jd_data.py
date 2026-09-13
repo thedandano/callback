@@ -7,12 +7,16 @@ from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 EXTRACTION_PROTOCOL = """Extract keywords from jd_text using this exact protocol:
 
 1. Find sections labeled "Required", "Requirements", "Must Have", "Basic Qualifications", or similar. Extract every technical skill, tool, framework, platform, methodology, and credential as an ATOMIC term, never a whole sentence or clause - a requirement bullet is often a full sentence, so pull out only the individual skills/tools/tech/methodologies/credentials named inside it. Copy the EXACT string from the JD - do NOT paraphrase, generalize, or substitute synonyms (e.g. if JD says "k8s", use "k8s", not "Kubernetes").
-2. Enumerable disjunctions - "one or more of", "any of", or otherwise interchangeable alternatives where only one is needed (e.g. "Java, C++, or Go") - go into a required_any GROUP: a list of the 2+ named alternatives, appended to the required_any list of groups. Do NOT dump these into preferred. For "X or some other Y" / "X or equivalent" phrasing that names only ONE concrete alternative, extract just X as a normal atomic required term - do NOT create a one-member group for it (a one-member group is scoring-identical to a scalar).
-3. Find sections labeled "Preferred", "Nice to Have", "Bonus", "Preferred Qualifications", or similar. Extract genuine nice-to-haves the same way, as atomic terms. Enumerable disjunctions inside these sections (the same trigger as step 2) go into a preferred_any GROUP, appended to the preferred_any list of groups - the required_any rule applied on the preferred side.
-4. If no labeled sections exist, extract all technical nouns from responsibilities and description paragraphs as atomic terms.
-5. Include ALL explicitly stated terms - do not filter by perceived importance.
-6. A keyword is a NAMED technology, tool, framework, platform, language, credential, or named methodology or domain. Bare activity words a reader could guess from the job title alone are NOT keywords - e.g. "training", "evaluating", "tooling", "cloud", "analytics", "data processing", "software engineering fundamentals".
-7. Do NOT deduplicate across required/preferred/required_any - keep each term in whichever section it appears.
+2. A disjunction - two or more NAMED alternatives where satisfying ANY ONE fulfills the whole requirement - goes into a required_any GROUP: a list of the named alternatives, appended to the required_any list of groups. Do NOT dump these into preferred. A disjunction must actually mean "any one is enough" - decide that from what the requirement is asking for, not from the connector word alone:
+   - "X or Y" is a disjunction (exactly two alternatives is still a group, not two separate flat terms).
+   - A slash is a disjunction ONLY between two independently-named alternatives of the same kind ("AWS/GCP" -> ["AWS","GCP"]). A slash that is itself one established compound term or abbreviation is NOT a disjunction - keep it as one atomic term ("CI/CD", "TCP/IP", "I/O", "A/B testing" never get split).
+   - "such as X, Y, Z" / "like X, Y, Z" is a disjunction ONLY when the requirement names a single role or category that any one item satisfies (e.g. "a programming language such as C, C++, Java" - proficiency in just one language is enough). When the sentence instead plausibly wants several of the named items together as a toolset or stack (e.g. "security tools such as Snyk, SonarQube, and Dependabot"), it is NOT a disjunction - extract the named items as separate flat atomic terms instead.
+   - "one or more of X, Y, Z" is always a disjunction.
+   The opposite case: a list joined by "and", where the posting expects ALL of the named items together, is NOT a disjunction - keep those as separate flat atomic terms, one per item. For "X or some other Y" / "X or equivalent" phrasing that names only ONE concrete alternative, extract just X as a normal atomic required term - do NOT create a one-member group for it (a one-member group is scoring-identical to a scalar).
+3. Find sections labeled "Preferred", "Nice to Have", "Bonus", "Preferred Qualifications", or similar. Extract genuine nice-to-haves the same way, as atomic terms. Disjunctions inside these sections (the same signals as step 2) go into a preferred_any GROUP, appended to the preferred_any list of groups - the required_any rule applied on the preferred side.
+4. If no labeled sections exist, extract all technical nouns from responsibilities and description paragraphs as atomic terms. Do NOT mine keywords from: the interview process or hiring-steps section, benefits/compensation/equity text, EEO/legal/accommodation boilerplate, staffing-agency notices, or company awards/marketing copy - these describe the process or the company, not the job's requirements.
+5. A keyword is a NAMED technology, tool, framework, platform, language, credential, or named methodology or domain, explicitly stated in an eligible JD section (per rule 4's exclusions above) - include every one that meets this definition, do not filter by perceived importance. Bare activity words a reader could guess from the job title alone are NOT keywords - e.g. "training", "evaluating", "tooling", "cloud", "analytics", "data processing", "software engineering fundamentals".
+6. Do NOT deduplicate across required/preferred/required_any - keep each term in whichever section it appears.
 
 Encode as compact JSON (no extra whitespace):
 {"title":"<exact job title>","company":"<exact company name>","required":["<term1>","<term2>",...],"required_any":[["<altA>","<altB>",...],...],"preferred":["<term1>",...],"preferred_any":[["<altA>","<altB>",...],...],"location":"<city or Remote>","seniority":"junior|mid|senior|lead|director","required_years":<number>,"team":"<team name>","key_responsibilities":["<responsibility1>",...],"pay_range_min":<number>,"pay_range_max":<number>}
@@ -23,7 +27,13 @@ Examples:
   -> {"title":"Software Engineer","company":"Acme Corp","required":["Go","Kubernetes","PostgreSQL","REST APIs"],"preferred":["GraphQL","Terraform"]}
 
   JD says: "Must have experience building distributed systems in Java, C++, or Go. 5+ years backend. Nice to have: familiarity with Datadog, Grafana, or Prometheus."
-  -> {"title":"Software Engineer","company":"Acme Corp","required":["distributed systems","backend"],"required_any":[["Java","C++","Go"]],"preferred_any":[["Datadog","Grafana","Prometheus"]],"required_years":5}"""  # noqa: E501
+  -> {"title":"Software Engineer","company":"Acme Corp","required":["distributed systems","backend"],"required_any":[["Java","C++","Go"]],"preferred_any":[["Datadog","Grafana","Prometheus"]],"required_years":5}
+
+  JD says: "Experience with cloud infrastructure (AWS or GCP). Nice to have: exposure to Kubernetes and Terraform."
+  -> {"title":"Software Engineer","company":"Acme Corp","required_any":[["AWS","GCP"]],"preferred":["Kubernetes","Terraform"]}
+
+  JD says: "Experience with CI/CD pipelines and AWS/GCP infrastructure. Nice to have: familiarity with security tools such as Snyk, SonarQube, and Dependabot."
+  -> {"title":"Software Engineer","company":"Acme Corp","required":["CI/CD pipelines"],"required_any":[["AWS","GCP"]],"preferred":["Snyk","SonarQube","Dependabot"]}"""  # noqa: E501
 
 Seniority = Literal["junior", "mid", "senior", "lead", "director"]
 SUPPORTED_SENIORITIES = {"junior", "mid", "senior", "lead", "director", "unspecified"}
