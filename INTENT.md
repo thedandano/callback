@@ -207,7 +207,7 @@ host LLM. One is Python. Each gets an eval that fails loudly when the work is wr
 
 | Eval | Who does the work | Fixture in | Checks (all deterministic) |
 |------|-------------------|------------|----------------------------|
-| E1 keyword extraction | host LLM, via `EXTRACTION_PROTOCOL` | `evals/extract/<jd>.md` + `<jd>.expected.json` | precision and recall over the flat union of every term (`required` + `preferred` + every OR-group member) against the expected JDData, with a content-drift skip when too few expected terms are still on the page; OR-groups checked for coverage, not set equality; terms must be exact JD substrings (no paraphrase); `required_years` and `title` exact |
+| E1 keyword extraction | host LLM, via `EXTRACTION_PROTOCOL` | `evals/extract/<jd>.md` + `<jd>.expected.json` | precision and recall over the flat union of every term (`required` + `preferred` + every OR-group member) against the expected JDData, with a content-drift skip when too few expected terms are still on the page; OR-groups checked for coverage, not set equality, and separately checked for collapsing two or more terms the expected data lists as independent required/preferred requirements into one "any one will do" group (score inflation the scorer's own OR-group-as-one-denominator math can't see); terms must be exact JD substrings (no paraphrase); `required_years` and `title` exact |
 | E2 tailoring | host LLM, via `_TAILOR_INSTRUCTIONS` and the `tailor-resume` skill | `evals/tailor/<case>/` with sections, wiki pages, keywords, and a `constraints.json` | every added skill appears in a dated bullet; every edit's nouns and numbers are grounded in the source resume or the supplied wiki pages (substring or fuzzy match, threshold in `constraints.json`); no banned verbs or phrases; `score_final.total >= score_initial.total`; no edits rejected by `apply_edit` |
 | E3 compile | Python (`compile_profile`) | `evals/compile/stories/*.md` + `expected/index.md` + `expected/compiled_profile.json` | byte-identical `index.md`; identical `skills_index` and `orphaned_skills`; a story with a hand-edited body round-trips unchanged |
 
@@ -248,6 +248,18 @@ bullet behind it. morgan-reyes-ashby fails because the host tailored a profile t
 items instead of declaring no coverage.
 E3 is 9 of 9 on the committed morgan-reyes and jane-doe cases.
 The failures are the host breaking the tailoring rules, not eval defects; M7 is measured against these numbers.
+Round 2 (plan `problem-the-model-keeps-hashed-mccarthy.md`, M7-M9, commit db847a0..): rebuilt the four
+broken E1 answer keys, sharpened `EXTRACTION_PROTOCOL`'s OR-group rule (a mechanical trigger list instead of
+a judgment call, a section-scope boundary for unlabeled postings, a compound-term carve-out so slashes like
+"CI/CD" don't get split), and closed the eval blind spot above. Proof run, claude default model, host output
+committed alongside the fixtures: E1 is 3 of 6 (cedar/qualcomm/reddit pass). Remaining failures are genuine
+model-judgment gaps, not fixture defects: apple over-applied the slash-disjunction signal to two compound
+job-function names that aren't real alternatives ("personalization / recommendation / ranking algorithms",
+"notification / message-delivery systems"); ashby paraphrased or dropped over a dozen required/preferred
+terms and one OR-group in this run - the same protocol scored ashby's OR-groups correctly in the M8 proof
+run, so this is sample-to-sample variance, not a regression; greenhouse still under-extracts from unlabeled
+prose. Comparison run on Codex `gpt-5.6-terra`, same fixtures and rubric: E1 is 2 of 6 (qualcomm/reddit
+pass) - consistently weaker at forming OR-groups from "such as ... etc." and slash phrasing.
 
 ### M7 — Token diet (one day)
 

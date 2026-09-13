@@ -25,7 +25,7 @@
       "missing": [],
       "title_found": true
     },
-    "note": "Original golden was from the 2026-07-07 application against a since-reworded posting (Kubernetes, Docker, Spring no longer on the page). Rebuilt 2026-09-13 directly from the committed 2026-09-04 fetch, so recall is exact by construction."
+    "note": "Original golden was from the 2026-07-07 application against a since-reworded posting (Kubernetes, Docker, Spring no longer on the page). Rebuilt 2026-09-13 directly from the committed 2026-09-04 fetch, so recall is exact by construction. Re-audited 2026-09-13 (M9) against the sharpened rule 2: line 18's \"pub/sub, async, or stream processing at scale\" is a literal \"X, Y, or Z\" disjunction, missed in the M8 audit pass - moved into required_any. Left line 20 (\"personalization / recommendation / ranking algorithms\") and line 21 (\"notification / message-delivery systems\") as flat terms: these slashes name a compound job-function/domain, not interchangeable alternatives, so rule 2's slash carve-out applies - a fresh host run grouped them anyway, which is a real model over-application of the slash signal, not an answer-key defect."
   },
   "ashby": {
     "jd_url": "https://jobs.ashbyhq.com/Deepgram/94ae2781-a85f-493a-86c1-ff85a9289355",

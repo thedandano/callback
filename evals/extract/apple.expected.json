@@ -6,9 +6,6 @@
     "Java",
     "event-driven",
     "streaming systems",
-    "pub/sub",
-    "async",
-    "stream processing",
     "data pipelines",
     "big-data framework",
     "Apache Spark",
@@ -41,6 +38,7 @@
   ],
   "required_any": [
     ["Kafka", "Kinesis", "Pulsar"],
+    ["pub/sub", "async", "stream processing"],
     ["push", "email", "SMS", "in-app"],
     ["PostgreSQL", "Cassandra", "DynamoDB", "MySQL"],
     ["CS", "CE", "EE"]
