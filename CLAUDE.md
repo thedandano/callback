@@ -65,6 +65,11 @@ uv run python scripts/run_evals.py --host codex --model gpt-5.6-terra --eval tai
 uv run python scripts/run_evals.py --checks-only       # re-check saved outputs, no model call, no LangSmith upload
 uv run pytest -m local evals/                          # E1 + E2 checks over the saved host outputs
 # baseline 2026-09-07, claude default model: E1 2/6 (PASS cedar/reddit), E2 1/8 (see INTENT §M6)
+# updated 2026-09-13, claude default model: E1 4/6 (PASS apple/cedar/qualcomm/reddit) after
+# fixing 4 broken answer keys and a fetch bug (see plan problem-the-model-keeps-hashed-mccarthy.md).
+# Remaining E1 failures are genuine model-judgment calls, not fixture defects: ashby left one
+# "X or Y" bullet as two flat preferred terms instead of an OR-group; greenhouse described part
+# of the JD as key_responsibilities prose instead of atomic required keywords.
 
 ```
 

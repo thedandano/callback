@@ -207,7 +207,7 @@ host LLM. One is Python. Each gets an eval that fails loudly when the work is wr
 
 | Eval | Who does the work | Fixture in | Checks (all deterministic) |
 |------|-------------------|------------|----------------------------|
-| E1 keyword extraction | host LLM, via `EXTRACTION_PROTOCOL` | `evals/extract/<jd>.md` + `<jd>.expected.json` | precision and recall of `required`, `preferred`, and OR-groups against the expected JDData; terms must be exact JD substrings (no paraphrase); `required_years` and `title` exact |
+| E1 keyword extraction | host LLM, via `EXTRACTION_PROTOCOL` | `evals/extract/<jd>.md` + `<jd>.expected.json` | precision and recall over the flat union of every term (`required` + `preferred` + every OR-group member) against the expected JDData, with a content-drift skip when too few expected terms are still on the page; OR-groups checked for coverage, not set equality; terms must be exact JD substrings (no paraphrase); `required_years` and `title` exact |
 | E2 tailoring | host LLM, via `_TAILOR_INSTRUCTIONS` and the `tailor-resume` skill | `evals/tailor/<case>/` with sections, wiki pages, keywords, and a `constraints.json` | every added skill appears in a dated bullet; every edit's nouns and numbers are grounded in the source resume or the supplied wiki pages (substring or fuzzy match, threshold in `constraints.json`); no banned verbs or phrases; `score_final.total >= score_initial.total`; no edits rejected by `apply_edit` |
 | E3 compile | Python (`compile_profile`) | `evals/compile/stories/*.md` + `expected/index.md` + `expected/compiled_profile.json` | byte-identical `index.md`; identical `skills_index` and `orphaned_skills`; a story with a hand-edited body round-trips unchanged |
 
