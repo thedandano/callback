@@ -22,7 +22,7 @@ from callback.apply_nodes import _sections_to_text
 from callback.profilecompiler import _token_sort_ratio
 from callback.section_map import SectionMap, apply_edit
 from evals.checks import Check
-from evals.recall import golden_terms, term_present
+from evals.recall import all_terms, term_present
 
 BANNED_TERMS = (
     "spearheaded",
@@ -189,7 +189,7 @@ def _introduced_keywords_in_source_check(case: TailorCase, edits: list[dict]) ->
     keywords on purpose: the host only has an incentive to insert those, and grounding
     every lowercase word would false-positive on ordinary prose."""
     source_text = _source_text(case)
-    terms = golden_terms(case.keywords)
+    terms = all_terms(case.keywords)
     introduced: set[str] = set()
     for edit in edits:
         value = edit.get("value")

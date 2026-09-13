@@ -25,9 +25,9 @@ def test_host_extraction_passes_checks(board):
     if not host_path.exists():
         pytest.skip(f"{host_path} missing; run scripts/run_evals.py --eval extract")
     host = json.loads(host_path.read_text(encoding="utf-8"))
-    golden = json.loads((EXTRACT_DIR / f"{board}.golden.json").read_text(encoding="utf-8"))
+    expected_jd = json.loads((EXTRACT_DIR / f"{board}.expected.json").read_text(encoding="utf-8"))
     jd_text = (EXTRACT_DIR / f"{board}.md").read_text(encoding="utf-8")
-    checks = run_checks(json.dumps(host["output"]), golden, jd_text)
+    checks = run_checks(json.dumps(host["output"]), expected_jd, jd_text)
 
     actual = first_failure(checks)
 

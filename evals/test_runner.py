@@ -237,7 +237,7 @@ def test_format_table_lists_first_failure():
                 Check(
                     "term_recall",
                     True,
-                    "not evaluated: only 3 golden terms are still in the JD (content drift)",
+                    "not evaluated: only 3 expected terms are still in the JD (content drift)",
                     skipped=True,
                 ),
             ],
@@ -250,7 +250,7 @@ def test_format_table_lists_first_failure():
         "eval     fixture           result  first failing check / note\n"
         "extract  ashby             PASS    \n"
         "tailor   jane-doe-backend  FAIL    grounded: ungrounded: ['70%']\n"
-        "extract  greenhouse        SKIP    not evaluated: only 3 golden terms are "
+        "extract  greenhouse        SKIP    not evaluated: only 3 expected terms are "
         "still in the JD (content drift)"
     )
     assert actual == expected
@@ -260,17 +260,17 @@ def test_run_extract_writes_host_file_and_checks(tmp_path, monkeypatch):
     extract_dir = tmp_path / "extract"
     extract_dir.mkdir()
     jd = "Engineer at Acme. Requirements: Python, Go."
-    golden = {
+    fixture_jd = {
         "title": "Engineer",
         "required": ["Python", "Go"],
         "preferred": [],
         "required_years": 0.0,
     }
     (extract_dir / "acme.md").write_text(jd, encoding="utf-8")
-    (extract_dir / "acme.golden.json").write_text(json.dumps(golden), encoding="utf-8")
+    (extract_dir / "acme.expected.json").write_text(json.dumps(fixture_jd), encoding="utf-8")
     monkeypatch.setattr("evals.runner.EXTRACT_DIR", extract_dir)
     monkeypatch.setattr("evals.runner._now", lambda: "2026-09-06T00:00:00+00:00")
-    reply = json.dumps({"result": json.dumps(golden)})
+    reply = json.dumps({"result": json.dumps(fixture_jd)})
 
     def fake_run(cmd, **kwargs):
         return subprocess.CompletedProcess(cmd, 0, stdout=reply, stderr="")
@@ -288,8 +288,8 @@ def test_run_extract_writes_host_file_and_checks(tmp_path, monkeypatch):
             "model": "default",
             "commit": "abc1234",
             "ran_at": "2026-09-06T00:00:00+00:00",
-            "raw": json.dumps(golden),
-            "output": golden,
+            "raw": json.dumps(fixture_jd),
+            "output": fixture_jd,
         },
     }
     assert actual == expected
@@ -298,15 +298,22 @@ def test_run_extract_writes_host_file_and_checks(tmp_path, monkeypatch):
 def test_run_extract_continues_after_host_failure(tmp_path, monkeypatch, caplog):
     extract_dir = tmp_path / "extract"
     extract_dir.mkdir()
-    golden = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    fixture_jd = {
+        "title": "Engineer",
+        "required": ["Python"],
+        "preferred": [],
+        "required_years": 0.0,
+    }
     for board in ("a", "b"):
         (extract_dir / f"{board}.md").write_text(
             "Engineer. Requirements: Python.", encoding="utf-8"
         )
-        (extract_dir / f"{board}.golden.json").write_text(json.dumps(golden), encoding="utf-8")
+        (extract_dir / f"{board}.expected.json").write_text(
+            json.dumps(fixture_jd), encoding="utf-8"
+        )
     monkeypatch.setattr("evals.runner.EXTRACT_DIR", extract_dir)
     monkeypatch.setattr("evals.runner._now", lambda: "2026-09-06T00:00:00+00:00")
-    reply = json.dumps({"result": json.dumps(golden)})
+    reply = json.dumps({"result": json.dumps(fixture_jd)})
     calls = {"n": 0}
 
     def fake_run(cmd, **kwargs):
@@ -330,9 +337,14 @@ def test_host_call_failure_discards_a_stale_host_file(tmp_path, monkeypatch):
     unnoticed stale output would let LangSmith/--checks-only replay it as if it were current."""
     extract_dir = tmp_path / "extract"
     extract_dir.mkdir()
-    golden = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    fixture_jd = {
+        "title": "Engineer",
+        "required": ["Python"],
+        "preferred": [],
+        "required_years": 0.0,
+    }
     (extract_dir / "acme.md").write_text("Engineer. Requirements: Python.", encoding="utf-8")
-    (extract_dir / "acme.golden.json").write_text(json.dumps(golden), encoding="utf-8")
+    (extract_dir / "acme.expected.json").write_text(json.dumps(fixture_jd), encoding="utf-8")
     (extract_dir / "acme.host.json").write_text(
         json.dumps(
             {
@@ -369,9 +381,14 @@ def test_host_call_failure_discards_a_stale_host_file(tmp_path, monkeypatch):
 def test_run_extract_checks_only_reads_existing_output(tmp_path, monkeypatch):
     extract_dir = tmp_path / "extract"
     extract_dir.mkdir()
-    golden = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    fixture_jd = {
+        "title": "Engineer",
+        "required": ["Python"],
+        "preferred": [],
+        "required_years": 0.0,
+    }
     (extract_dir / "acme.md").write_text("Engineer. Requirements: Python.", encoding="utf-8")
-    (extract_dir / "acme.golden.json").write_text(json.dumps(golden), encoding="utf-8")
+    (extract_dir / "acme.expected.json").write_text(json.dumps(fixture_jd), encoding="utf-8")
     (extract_dir / "acme.host.json").write_text(
         json.dumps({"output": {"title": "Engineer", "required": ["Python"]}})
     )
@@ -392,7 +409,9 @@ def test_run_extract_checks_only_without_output_is_a_failed_row(tmp_path, monkey
     extract_dir = tmp_path / "extract"
     extract_dir.mkdir()
     (extract_dir / "acme.md").write_text("x", encoding="utf-8")
-    (extract_dir / "acme.golden.json").write_text(json.dumps({"required": ["x"]}), encoding="utf-8")
+    (extract_dir / "acme.expected.json").write_text(
+        json.dumps({"required": ["x"]}), encoding="utf-8"
+    )
     monkeypatch.setattr("evals.runner.EXTRACT_DIR", extract_dir)
 
     rows = run_extract("claude", None, ["acme"], checks_only=True, run=None, commit="abc1234")
@@ -442,12 +461,12 @@ def test_run_tailor_writes_host_file_and_checks(tmp_path, monkeypatch):
     assert actual == expected
 
 
-def _write_extract_fixture(extract_dir: Path, board: str, golden: dict) -> None:
+def _write_extract_fixture(extract_dir: Path, board: str, expected: dict) -> None:
     extract_dir.mkdir(exist_ok=True)
     (extract_dir / f"{board}.md").write_text("Engineer. Requirements: Python.", encoding="utf-8")
-    (extract_dir / f"{board}.golden.json").write_text(json.dumps(golden), encoding="utf-8")
+    (extract_dir / f"{board}.expected.json").write_text(json.dumps(expected), encoding="utf-8")
     (extract_dir / f"{board}.host.json").write_text(
-        json.dumps({"output": golden}), encoding="utf-8"
+        json.dumps({"output": expected}), encoding="utf-8"
     )
     sources = (
         json.loads((extract_dir / "sources.json").read_text(encoding="utf-8"))
@@ -461,8 +480,13 @@ def _write_extract_fixture(extract_dir: Path, board: str, golden: dict) -> None:
 
 def test_main_fails_when_a_case_filter_matches_nothing(tmp_path, monkeypatch, capsys):
     extract_dir = tmp_path / "extract"
-    golden = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
-    _write_extract_fixture(extract_dir, "acme", golden)
+    fixture_jd = {
+        "title": "Engineer",
+        "required": ["Python"],
+        "preferred": [],
+        "required_years": 0.0,
+    }
+    _write_extract_fixture(extract_dir, "acme", fixture_jd)
     monkeypatch.setattr("evals.runner.EXTRACT_DIR", extract_dir)
     monkeypatch.setattr("evals.runner._commit", lambda: "abc1234")
 
@@ -475,8 +499,8 @@ def test_main_fails_when_a_case_filter_matches_nothing(tmp_path, monkeypatch, ca
 
 def test_checks_only_never_records_a_langsmith_experiment(tmp_path, monkeypatch, caplog):
     extract_dir = tmp_path / "extract"
-    golden = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
-    _write_extract_fixture(extract_dir, "acme", golden)
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    _write_extract_fixture(extract_dir, "acme", expected)
     monkeypatch.setattr("evals.runner.EXTRACT_DIR", extract_dir)
     monkeypatch.setattr("evals.runner._commit", lambda: "abc1234")
 
@@ -494,9 +518,9 @@ def test_checks_only_never_records_a_langsmith_experiment(tmp_path, monkeypatch,
 
 def test_langsmith_failure_is_logged_and_local_results_still_print(tmp_path, monkeypatch, caplog):
     extract_dir = tmp_path / "extract"
-    golden = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
-    _write_extract_fixture(extract_dir, "acme", golden)
-    reply = json.dumps({"result": json.dumps(golden)})
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    _write_extract_fixture(extract_dir, "acme", expected)
+    reply = json.dumps({"result": json.dumps(expected)})
     monkeypatch.setattr("evals.runner.EXTRACT_DIR", extract_dir)
     monkeypatch.setattr("evals.runner._commit", lambda: "abc1234")
     monkeypatch.setattr(

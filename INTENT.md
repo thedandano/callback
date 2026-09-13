@@ -154,7 +154,7 @@ no regex reads story metadata in `callback/`. `accomplishments.json` keeps
 
 Shipped 2026-09-04: W1.
 Measured after the swap: server import ≈ 879 ms warm (was ≈ 1,420 ms); 126 runtime packages (was 147). Fixtures: evals/extract/.
-The Ashby fixture is the Deepgram posting (the other archived Ashby URL now 404s); Apple's golden is 4/14 by content drift (posting reworded after the July application), recorded in evals/extract/sources.json.
+The Ashby fixture is the Deepgram posting (the other archived Ashby URL now 404s); Apple's expected data is 4/14 by content drift (posting reworded after the July application), recorded in evals/extract/sources.json.
 
 Measured 2026-09-03 on five archived JD URLs: Playwright plus trafilatura matched
 crawl4ai's keyword recall on every live page (within one term), returned 1.5x to 37x
@@ -180,7 +180,7 @@ Spec:
 
 Done when: crawl4ai is out of `pyproject.toml`; the five measured URLs (Qualcomm, Apple,
 Ashby, Cedar, Greenhouse) are E1 fetch fixtures with their archived keywords as the
-recall golden; `scripts/smoke_apply.py` passes on three of them; server import drops
+recall expected data; `scripts/smoke_apply.py` passes on three of them; server import drops
 from ≈ 1,420 ms to ≈ 880 ms warm (the 1.5 s target was measured cold).
 
 Out of scope: LinkedIn login walls and Cloudflare challenge pages. Those remain
@@ -207,9 +207,9 @@ host LLM. One is Python. Each gets an eval that fails loudly when the work is wr
 
 | Eval | Who does the work | Fixture in | Checks (all deterministic) |
 |------|-------------------|------------|----------------------------|
-| E1 keyword extraction | host LLM, via `EXTRACTION_PROTOCOL` | `evals/extract/<jd>.md` + `<jd>.golden.json` | precision and recall of `required`, `preferred`, and OR-groups against the golden JDData; terms must be exact JD substrings (no paraphrase); `required_years` and `title` exact |
+| E1 keyword extraction | host LLM, via `EXTRACTION_PROTOCOL` | `evals/extract/<jd>.md` + `<jd>.expected.json` | precision and recall of `required`, `preferred`, and OR-groups against the expected JDData; terms must be exact JD substrings (no paraphrase); `required_years` and `title` exact |
 | E2 tailoring | host LLM, via `_TAILOR_INSTRUCTIONS` and the `tailor-resume` skill | `evals/tailor/<case>/` with sections, wiki pages, keywords, and a `constraints.json` | every added skill appears in a dated bullet; every edit's nouns and numbers are grounded in the source resume or the supplied wiki pages (substring or fuzzy match, threshold in `constraints.json`); no banned verbs or phrases; `score_final.total >= score_initial.total`; no edits rejected by `apply_edit` |
-| E3 compile | Python (`compile_profile`) | `evals/compile/stories/*.md` + `golden/index.md` + `golden/compiled_profile.json` | byte-identical `index.md`; identical `skills_index` and `orphaned_skills`; a story with a hand-edited body round-trips unchanged |
+| E3 compile | Python (`compile_profile`) | `evals/compile/stories/*.md` + `expected/index.md` + `expected/compiled_profile.json` | byte-identical `index.md`; identical `skills_index` and `orphaned_skills`; a story with a hand-edited body round-trips unchanged |
 
 Mechanics, kept minimal on purpose:
 

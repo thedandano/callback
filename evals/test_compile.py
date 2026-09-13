@@ -37,14 +37,16 @@ def test_index_is_byte_identical(staged):
 
     actual = (wiki / "index.md").read_bytes()
 
-    expected = (case_dir / "golden" / "index.md").read_bytes()
+    expected = (case_dir / "expected" / "index.md").read_bytes()
     assert actual == expected
 
 
-def test_skills_index_and_orphans_match_golden(staged):
+def test_skills_index_and_orphans_match_expected(staged):
     case_dir, wiki = staged
     profile = compile_case(_data_root(wiki))
-    golden = json.loads((case_dir / "golden" / "compiled_profile.json").read_text(encoding="utf-8"))
+    expected_profile = json.loads(
+        (case_dir / "expected" / "compiled_profile.json").read_text(encoding="utf-8")
+    )
 
     actual = {
         "skills_index": profile["skills_index"],
@@ -52,8 +54,8 @@ def test_skills_index_and_orphans_match_golden(staged):
     }
 
     expected = {
-        "skills_index": golden["skills_index"],
-        "orphaned_skills": golden["orphaned_skills"],
+        "skills_index": expected_profile["skills_index"],
+        "orphaned_skills": expected_profile["orphaned_skills"],
     }
     assert actual == expected
 

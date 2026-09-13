@@ -88,7 +88,7 @@ def test_record_upserts_examples_and_evaluates(monkeypatch):
         EvalRow(
             "extract",
             "ashby",
-            [Check("valid_jd_data", True), Check("title_exact", False, "host 'a' != golden 'b'")],
+            [Check("valid_jd_data", True), Check("title_exact", False, "host 'a' != expected 'b'")],
         ),
         EvalRow("extract", "cedar", [Check("valid_jd_data", True)]),
     ]
@@ -117,7 +117,7 @@ def test_record_upserts_examples_and_evaluates(monkeypatch):
             "eval": {
                 "results": [
                     {"key": "valid_jd_data", "score": 1, "comment": ""},
-                    {"key": "title_exact", "score": 0, "comment": "host 'a' != golden 'b'"},
+                    {"key": "title_exact", "score": 0, "comment": "host 'a' != expected 'b'"},
                 ]
             },
             "prefix": "abc1234-claude-default",

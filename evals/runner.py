@@ -69,7 +69,7 @@ class EvalRow:
 
     @property
     def status(self) -> str:
-        """FAIL if any check failed, else SKIP if any check was skipped (thin-golden guard,
+        """FAIL if any check failed, else SKIP if any check was skipped (thin-expected guard,
         drifted content, etc.), else PASS."""
         if not self.passed:
             return "FAIL"
@@ -83,7 +83,7 @@ class EvalRow:
 
     @property
     def note(self) -> str | None:
-        """The detail of the first passed check that has one, e.g. a thin-golden skip notice."""
+        """The detail of the first passed check that has one, e.g. a thin-expected skip notice."""
         for check in self.checks:
             if check.passed and check.detail:
                 return check.detail
@@ -298,7 +298,7 @@ def run_extract(
     rows = []
     for board in boards:
         jd_text = (EXTRACT_DIR / f"{board}.md").read_text(encoding="utf-8")
-        golden = json.loads((EXTRACT_DIR / f"{board}.golden.json").read_text(encoding="utf-8"))
+        expected = json.loads((EXTRACT_DIR / f"{board}.expected.json").read_text(encoding="utf-8"))
         path = EXTRACT_DIR / f"{board}.host.json"
         output, gate = _host_output(
             path,
@@ -310,7 +310,7 @@ def run_extract(
             run=run,
             commit=commit,
         )
-        checks = [gate] if gate else extract_run_checks(json.dumps(output), golden, jd_text)
+        checks = [gate] if gate else extract_run_checks(json.dumps(output), expected, jd_text)
         rows.append(EvalRow("extract", board, checks))
         logger.info("extract %s: %s", board, "PASS" if rows[-1].passed else rows[-1].first_failure)
     return rows

@@ -24,9 +24,9 @@ LIVE_RECALL_TOLERANCE = 1
 @pytest.mark.parametrize("board", sorted(SOURCES))
 def test_fixture_recall_matches_recorded(board):
     text = (EXTRACT_DIR / f"{board}.md").read_text(encoding="utf-8")
-    golden = json.loads((EXTRACT_DIR / f"{board}.golden.json").read_text())
+    expected_jd = json.loads((EXTRACT_DIR / f"{board}.expected.json").read_text())
 
-    actual = recall(text, golden)
+    actual = recall(text, expected_jd)
     expected = SOURCES[board]["recall"]
     assert actual == expected
 
@@ -36,10 +36,10 @@ def test_fixture_recall_matches_recorded(board):
 def test_live_fetch_recall_within_tolerance(board):
     from callback.jd_fetcher import fetch_url_to_markdown
 
-    golden = json.loads((EXTRACT_DIR / f"{board}.golden.json").read_text())
+    expected_jd = json.loads((EXTRACT_DIR / f"{board}.expected.json").read_text())
     text = asyncio.run(fetch_url_to_markdown(SOURCES[board]["jd_url"]))
 
-    live = recall(text, golden)
+    live = recall(text, expected_jd)
     recorded = SOURCES[board]["recall"]
     actual = {
         "within_tolerance": live["found"] >= recorded["found"] - LIVE_RECALL_TOLERANCE,
