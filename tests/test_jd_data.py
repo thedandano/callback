@@ -169,6 +169,10 @@ class TestExtractionProtocol:
     def test_contains_preferred_any_disjunction_guidance(self):
         assert "preferred_any GROUP" in EXTRACTION_PROTOCOL
 
+    def test_contains_keyword_definition_guidance(self):
+        assert "NAMED technology, tool, framework" in EXTRACTION_PROTOCOL
+        assert "are NOT keywords" in EXTRACTION_PROTOCOL
+
 
 class TestRequiredAny:
     def test_required_any_parses_and_round_trips(self):
