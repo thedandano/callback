@@ -99,8 +99,15 @@ class JDData(BaseModel):
         cleaned["preferred"] = _clean_strings(cleaned.get("preferred", []), "preferred")
         cleaned["required_any"] = _clean_groups(cleaned.get("required_any", []), "required_any")
         cleaned["preferred_any"] = _clean_groups(cleaned.get("preferred_any", []), "preferred_any")
-        if not cleaned["required"] and not cleaned["required_any"]:
-            raise JDDataError("invalid_jd", "required or required_any must be non-empty")
+        if not any(
+            (
+                cleaned["required"],
+                cleaned["required_any"],
+                cleaned["preferred"],
+                cleaned["preferred_any"],
+            )
+        ):
+            raise JDDataError("invalid_jd", "no keywords extracted")
         seniority = cleaned["seniority"]
         if not isinstance(seniority, str) or seniority not in SUPPORTED_SENIORITIES:
             raise JDDataError("invalid_jd", f"unsupported seniority: {seniority!r}")

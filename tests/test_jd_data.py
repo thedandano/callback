@@ -205,7 +205,7 @@ class TestRequiredAny:
         assert jd.model_dump()["required_any"] == [["Java", "Go"]]
         assert jd.model_dump()["required"] == []
 
-    def test_empty_required_and_empty_required_any_raises(self):
+    def test_all_four_keyword_buckets_empty_raises(self):
         with pytest.raises(JDDataError) as exc_info:
             JDData(title="T", company="C", required=[], required_any=[])
 
@@ -255,11 +255,15 @@ class TestPreferredAny:
 
         assert jd.model_dump()["preferred_any"] == [["Datadog"], ["Grafana", "Prometheus"]]
 
-    def test_preferred_any_alone_does_not_satisfy_required_guard(self):
-        with pytest.raises(JDDataError) as exc_info:
-            JDData(title="T", company="C", required=[], preferred_any=[["Datadog", "Grafana"]])
+    def test_preferred_any_alone_satisfies_the_keyword_guard(self):
+        """A posting with an empty Minimum Qualifications section (real example: a
+        Qualcomm req whose page ships the heading with no bullets under it) has
+        nothing for 'required', but genuinely extracted preferred_any is still a
+        valid result - not every posting states hard requirements."""
+        jd = JDData(title="T", company="C", required=[], preferred_any=[["Datadog", "Grafana"]])
 
-        assert exc_info.value.code == "invalid_jd"
+        assert jd.model_dump()["preferred_any"] == [["Datadog", "Grafana"]]
+        assert jd.model_dump()["required"] == []
 
     def test_group_that_is_not_a_list_raises(self):
         with pytest.raises(JDDataError) as exc_info:

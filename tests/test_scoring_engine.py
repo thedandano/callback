@@ -128,11 +128,11 @@ class TestRunScore:
             _run_score("   \n  ", {"required": ["Python"]})
 
     def test_raises_on_empty_keywords(self):
-        with pytest.raises(ValueError, match="non-empty 'required' or 'required_any'"):
+        with pytest.raises(ValueError, match="at least one non-empty bucket"):
             _run_score("some text", {})
 
     def test_raises_on_none_required(self):
-        with pytest.raises(ValueError, match="non-empty 'required' or 'required_any'"):
+        with pytest.raises(ValueError, match="at least one non-empty bucket"):
             _run_score("some text", {"required": None})
 
     def test_coverage_full_match(self):
@@ -233,11 +233,11 @@ class TestRunScore:
     def test_no_required_keywords_raises_rather_than_scoring_zero(self):
         """A JD with zero required keywords (and no OR-groups) is rejected upstream.
 
-        _run_score's own guard (non-empty 'required' or 'required_any') means
+        _run_score's own guard (at least one non-empty bucket) means
         req_total == 0 can never reach the coverage calculation, so
         required_coverage can never silently come back as 0.0 for this case.
         """
-        with pytest.raises(ValueError, match="non-empty 'required' or 'required_any'"):
+        with pytest.raises(ValueError, match="at least one non-empty bucket"):
             _run_score(
                 "some text",
                 {"required": [], "required_any": [], "preferred": [], "required_years": 0.0},
