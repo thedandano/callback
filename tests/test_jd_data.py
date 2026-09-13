@@ -176,6 +176,19 @@ class TestExtractionProtocol:
         assert "Do NOT mine keywords from" in EXTRACTION_PROTOCOL
         assert "interview process" in EXTRACTION_PROTOCOL
 
+    def test_contains_compound_slash_carve_out(self):
+        assert '"CI/CD", "TCP/IP", "I/O", "A/B testing" never get split' in EXTRACTION_PROTOCOL
+
+    def test_contains_such_as_toolset_carve_out(self):
+        assert "it is NOT a disjunction - extract the named items as separate flat" in (
+            EXTRACTION_PROTOCOL
+        )
+
+    def test_include_every_term_is_scoped_to_eligible_sections(self):
+        assert "explicitly stated in an eligible JD section (per rule 4's exclusions" in (
+            EXTRACTION_PROTOCOL
+        )
+
     def test_contains_keyword_definition_guidance(self):
         assert "NAMED technology, tool, framework" in EXTRACTION_PROTOCOL
         assert "are NOT keywords" in EXTRACTION_PROTOCOL
