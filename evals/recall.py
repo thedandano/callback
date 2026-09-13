@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import re
 
+from callback.scorer import fold_quotes
+
 _BOUNDARY = r"(?<![a-z0-9+#]){}(?![a-z0-9+#])"
 
 
@@ -20,6 +22,10 @@ def all_terms(jd_data: dict) -> list[str]:
 
 
 def term_present(term: str, haystack: str) -> bool:
+    """Boundary-aware substring check. Quotes are folded (not dashes - presence checks
+    need the raw hyphenated form, since a normalized member would never match the JD's
+    literal spelling and would wrongly read as content drift)."""
+    term, haystack = fold_quotes(term), fold_quotes(haystack)
     return re.search(_BOUNDARY.format(re.escape(term.lower())), haystack) is not None
 
 

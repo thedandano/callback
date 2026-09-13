@@ -48,3 +48,12 @@ def test_recall_title_found_false_when_absent():
 
     expected = {"found": 1, "total": 1, "missing": [], "title_found": False}
     assert actual == expected
+
+
+def test_recall_folds_curly_apostrophe_in_term_against_straight_quote_jd():
+    expected_jd = {"required": ["Bachelor’s degree"]}
+
+    actual = recall("Requires a Bachelor's degree in CS.", expected_jd)
+
+    expected = {"found": 1, "total": 1, "missing": [], "title_found": None}
+    assert actual == expected
