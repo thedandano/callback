@@ -6,7 +6,7 @@
     "production-quality, well-tested ML code",
     "ML models from research or prototype stage into production at scale",
     "PyTorch",
-    "ML pipelines and tooling",
+    "ML pipelines",
     "training orchestration",
     "evaluation harnesses",
     "model packaging",
@@ -18,25 +18,29 @@
     "batching",
     "resource efficiency",
     "distributed systems",
-    "GPU compute",
-    "collaborative builder mindset"
+    "GPU compute"
   ],
   "preferred": [
     "research-to-production handoff",
-    "speech, audio, or other real-time/streaming ML domains",
-    "automated model evaluation and release-gating systems",
+    "real-time/streaming ML",
+    "automated model evaluation",
+    "release-gating systems",
     "regression detection across model versions",
-    "hybrid infrastructure spanning on-premise GPU clusters and cloud",
+    "on-premise GPU clusters",
     "workload orchestration",
     "inference optimization techniques",
     "quantization",
     "distillation",
     "compilation",
-    "runtime tuning",
-    "building internal platforms or developer-facing tooling"
+    "runtime tuning"
   ],
-  "required_any": [],
-  "preferred_any": [],
+  "required_any": [
+    ["cloud", "bare metal"]
+  ],
+  "preferred_any": [
+    ["speech", "audio"],
+    ["internal platforms", "developer-facing tooling"]
+  ],
   "location": "Remote, USA",
   "seniority": "senior",
   "required_years": 0.0,

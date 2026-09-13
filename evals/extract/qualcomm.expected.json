@@ -1,24 +1,15 @@
 {
   "title": "Software Engineer - Edge AI/Gen AI",
   "company": "Qualcomm Technologies, Inc.",
-  "required": [
-    "Bachelor's degree in Engineering, Information Systems, Computer Science, or related field"
-  ],
-  "preferred": [
-    "C",
-    "C++",
-    "Java",
-    "Python",
-    "Database Management Software",
-    "API",
-    "Git",
-    "Perforce",
-    "Source Code Management System"
-  ],
+  "required": [],
+  "preferred": ["Database Management Software", "API"],
   "required_any": [],
-  "preferred_any": [],
-  "location": "San Diego, California, United States of America",
-  "seniority": "mid",
+  "preferred_any": [
+    ["C", "C++", "Java", "Python"],
+    ["Git", "Perforce", "Source Code Management System"]
+  ],
+  "location": null,
+  "seniority": "junior",
   "required_years": 0.0,
   "team": "Engineering Group > Software Engineering",
   "key_responsibilities": [
@@ -34,6 +25,6 @@
     "issue triage",
     "technical documentation"
   ],
-  "pay_range_min": 94200.0,
-  "pay_range_max": 141200.0
+  "pay_range_min": null,
+  "pay_range_max": null
 }
