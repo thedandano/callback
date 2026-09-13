@@ -70,6 +70,17 @@ uv run pytest -m local evals/                          # E1 + E2 checks over the
 # Remaining E1 failures are genuine model-judgment calls, not fixture defects: ashby left one
 # "X or Y" bullet as two flat preferred terms instead of an OR-group; greenhouse described part
 # of the JD as key_responsibilities prose instead of atomic required keywords.
+# updated 2026-09-13 (round 2), claude default model: E1 3/6 (PASS cedar/qualcomm/reddit) after
+# sharpening the OR-group protocol rule and closing an eval blind spot that let a model inflate
+# keyword coverage by collapsing independent terms into one OR-group (see the same plan, M7-M9).
+# Remaining failures, all genuine model-judgment gaps: apple over-applied the slash-disjunction
+# signal to two compound job-function names ("personalization / recommendation / ranking",
+# "notification / message-delivery systems") that aren't real either-or alternatives; ashby
+# paraphrased and dropped several required terms/one OR-group in this run (see the sample-to-
+# sample variance note below); greenhouse still under-extracts from unlabeled prose. Sampling
+# variance is real and material here - the same protocol scored ashby 4/6-worthy on one run and
+# missed 16 terms on the next; a single live run is one data point, not a verdict. Comparison run
+# on Codex gpt-5.6-terra: E1 2/6 (PASS qualcomm/reddit) on the same fixtures and rubric.
 
 ```
 
