@@ -1,0 +1,93 @@
+{
+  "host": "claude",
+  "model": "default",
+  "commit": "885d601",
+  "ran_at": "2026-09-13T03:24:52.743152+00:00",
+  "raw": "{\"title\":\"Software Engineer - Universal Media\",\"company\":\"Apple\",\"required\":[\"microservices\",\"Java\",\"event-driven\",\"streaming systems\",\"pub/sub\",\"stream processing\",\"data pipelines\",\"Apache Spark\",\"algorithms\",\"data structures\",\"SQL\",\"NoSQL\",\"Redis\",\"Bachelor’s degree\"],\"required_any\":[[\"Kafka\",\"Kinesis\",\"Pulsar\"],[\"personalization\",\"recommendation\",\"ranking\"],[\"notification\",\"message-delivery\"],[\"push\",\"email\",\"SMS\",\"in-app\"],[\"PostgreSQL\",\"Cassandra\",\"DynamoDB\",\"MySQL\"],[\"CS\",\"CE\",\"EE\"]],\"preferred\":[\"Feature stores\",\"online/offline serving\",\"model monitoring\",\"A/B experimentation\",\"rate-limiting\",\"dedup\",\"delivery-guarantee\",\"CI/CD\",\"Master’s degree\"],\"preferred_any\":[[\"AWS\",\"GCP\",\"Azure\"],[\"Flink\",\"Beam\",\"Spark Structured Streaming\"]],\"required_years\":5,\"team\":\"Universal Media Engineering\",\"key_responsibilities\":[\"Partner with data scientists to productionize and deploy personalization algorithms\",\"Design and build data pipelines to generate and process large-scale datasets for personalization and user targeting\",\"Develop and maintain systems for delivering timely, personalized notifications across multiple channels\",\"Monitor and optimize production systems for latency, throughput, and reliability\",\"Collaborate cross-functionally to translate business requirements into technical solutions\",\"Contribute to code reviews, technical design discussions, and engineering best practices\"]}",
+  "output": {
+    "title": "Software Engineer - Universal Media",
+    "company": "Apple",
+    "required": [
+      "microservices",
+      "Java",
+      "event-driven",
+      "streaming systems",
+      "pub/sub",
+      "stream processing",
+      "data pipelines",
+      "Apache Spark",
+      "algorithms",
+      "data structures",
+      "SQL",
+      "NoSQL",
+      "Redis",
+      "Bachelor’s degree"
+    ],
+    "required_any": [
+      [
+        "Kafka",
+        "Kinesis",
+        "Pulsar"
+      ],
+      [
+        "personalization",
+        "recommendation",
+        "ranking"
+      ],
+      [
+        "notification",
+        "message-delivery"
+      ],
+      [
+        "push",
+        "email",
+        "SMS",
+        "in-app"
+      ],
+      [
+        "PostgreSQL",
+        "Cassandra",
+        "DynamoDB",
+        "MySQL"
+      ],
+      [
+        "CS",
+        "CE",
+        "EE"
+      ]
+    ],
+    "preferred": [
+      "Feature stores",
+      "online/offline serving",
+      "model monitoring",
+      "A/B experimentation",
+      "rate-limiting",
+      "dedup",
+      "delivery-guarantee",
+      "CI/CD",
+      "Master’s degree"
+    ],
+    "preferred_any": [
+      [
+        "AWS",
+        "GCP",
+        "Azure"
+      ],
+      [
+        "Flink",
+        "Beam",
+        "Spark Structured Streaming"
+      ]
+    ],
+    "required_years": 5,
+    "team": "Universal Media Engineering",
+    "key_responsibilities": [
+      "Partner with data scientists to productionize and deploy personalization algorithms",
+      "Design and build data pipelines to generate and process large-scale datasets for personalization and user targeting",
+      "Develop and maintain systems for delivering timely, personalized notifications across multiple channels",
+      "Monitor and optimize production systems for latency, throughput, and reliability",
+      "Collaborate cross-functionally to translate business requirements into technical solutions",
+      "Contribute to code reviews, technical design discussions, and engineering best practices"
+    ]
+  }
+}

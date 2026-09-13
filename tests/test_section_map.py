@@ -202,6 +202,26 @@ def test_experience_bullet_out_of_bounds_j() -> None:
     )
 
 
+def test_non_string_target_rejected() -> None:
+    sm = SectionMap(
+        experience=[ExperienceEntry(company="Acme", role="Engineer", bullets=["Bullet"])]
+    )
+    result = apply_edit(
+        sm, {"section": "experience", "op": "replace", "target": None, "value": "x"}
+    )
+    assert result == EditResult(
+        applied=False, rejection_reason="target must be a string, got NoneType"
+    )
+
+
+def test_experience_edit_missing_target_rejected() -> None:
+    sm = SectionMap(
+        experience=[ExperienceEntry(company="Acme", role="Engineer", bullets=["Bullet"])]
+    )
+    result = apply_edit(sm, {"section": "experience", "op": "replace", "value": "x"})
+    assert result == EditResult(applied=False, rejection_reason="experience edit requires a target")
+
+
 def test_experience_context_line_set() -> None:
     sm = SectionMap(experience=[ExperienceEntry(company="Acme", role="Engineer", bullets=[])])
     result = apply_edit(
@@ -216,6 +236,12 @@ def test_experience_context_line_set() -> None:
     expected_result = EditResult(applied=True)
     assert result == expected_result
     assert sm.experience[0].context_line == "Led the payments platform"
+
+
+def test_project_edit_missing_target_rejected() -> None:
+    sm = SectionMap(projects=[ProjectEntry(name="MyProject", bullets=[])])
+    result = apply_edit(sm, {"section": "projects", "op": "replace", "value": "x"})
+    assert result == EditResult(applied=False, rejection_reason="project edit requires a target")
 
 
 def test_project_desc_replace() -> None:

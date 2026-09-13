@@ -56,6 +56,30 @@ def test_score_initial_raises_on_missing_keywords(tmp_path):
         score_initial(state)
 
 
+def test_score_initial_succeeds_with_only_preferred_keywords(tmp_path):
+    """A posting with no stated hard requirements (real example: a Qualcomm req whose
+    Minimum Qualifications section ships empty) has nothing for 'required', but
+    genuinely extracted preferred/preferred_any is still scoreable."""
+    state = ApplyState(
+        session_id="s1",
+        parsed_initial="Experienced with Python and Git",
+        keywords={
+            "required": [],
+            "required_any": [],
+            "preferred": ["Python"],
+            "preferred_any": [["Git", "Perforce"]],
+            "required_years": 0.0,
+        },
+    )
+    result = score_initial(state)
+    actual = {
+        "required_coverage": result["score_initial"]["required_coverage"],
+        "preferred_coverage": result["score_initial"]["preferred_coverage"],
+    }
+    expected = {"required_coverage": None, "preferred_coverage": 100.0}
+    assert actual == expected
+
+
 def test_render_produces_pdf_from_tailored_resume(tmp_path, monkeypatch):
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
     state = ApplyState(

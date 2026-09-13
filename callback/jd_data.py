@@ -11,7 +11,8 @@ EXTRACTION_PROTOCOL = """Extract keywords from jd_text using this exact protocol
 3. Find sections labeled "Preferred", "Nice to Have", "Bonus", "Preferred Qualifications", or similar. Extract genuine nice-to-haves the same way, as atomic terms. Enumerable disjunctions inside these sections (the same trigger as step 2) go into a preferred_any GROUP, appended to the preferred_any list of groups - the required_any rule applied on the preferred side.
 4. If no labeled sections exist, extract all technical nouns from responsibilities and description paragraphs as atomic terms.
 5. Include ALL explicitly stated terms - do not filter by perceived importance.
-6. Do NOT deduplicate across required/preferred/required_any - keep each term in whichever section it appears.
+6. A keyword is a NAMED technology, tool, framework, platform, language, credential, or named methodology or domain. Bare activity words a reader could guess from the job title alone are NOT keywords - e.g. "training", "evaluating", "tooling", "cloud", "analytics", "data processing", "software engineering fundamentals".
+7. Do NOT deduplicate across required/preferred/required_any - keep each term in whichever section it appears.
 
 Encode as compact JSON (no extra whitespace):
 {"title":"<exact job title>","company":"<exact company name>","required":["<term1>","<term2>",...],"required_any":[["<altA>","<altB>",...],...],"preferred":["<term1>",...],"preferred_any":[["<altA>","<altB>",...],...],"location":"<city or Remote>","seniority":"junior|mid|senior|lead|director","required_years":<number>,"team":"<team name>","key_responsibilities":["<responsibility1>",...],"pay_range_min":<number>,"pay_range_max":<number>}
@@ -98,8 +99,15 @@ class JDData(BaseModel):
         cleaned["preferred"] = _clean_strings(cleaned.get("preferred", []), "preferred")
         cleaned["required_any"] = _clean_groups(cleaned.get("required_any", []), "required_any")
         cleaned["preferred_any"] = _clean_groups(cleaned.get("preferred_any", []), "preferred_any")
-        if not cleaned["required"] and not cleaned["required_any"]:
-            raise JDDataError("invalid_jd", "required or required_any must be non-empty")
+        if not any(
+            (
+                cleaned["required"],
+                cleaned["required_any"],
+                cleaned["preferred"],
+                cleaned["preferred_any"],
+            )
+        ):
+            raise JDDataError("invalid_jd", "no keywords extracted")
         seniority = cleaned["seniority"]
         if not isinstance(seniority, str) or seniority not in SUPPORTED_SENIORITIES:
             raise JDDataError("invalid_jd", f"unsupported seniority: {seniority!r}")

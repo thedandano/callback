@@ -1,0 +1,35 @@
+{
+  "host": "claude",
+  "model": "default",
+  "commit": "885d601",
+  "ran_at": "2026-09-13T03:25:31.668641+00:00",
+  "raw": "{\"title\":\"Software Engineer, Customer Studio Backend\",\"company\":\"Hightouch\",\"required\":[\"backend\",\"distributed systems\",\"SQL\",\"data warehouses\",\"CDC\",\"generative AI\",\"Composable CDP\",\"no-code\",\"System Design\"],\"location\":\"Remote\",\"seniority\":\"senior\",\"team\":\"Customer Studio\",\"key_responsibilities\":[\"Optimize data warehouse performance, including query optimization, pre-computed state, and warehouse-specific improvements\",\"Build analytics and experimentation features for segment building and tracking audience performance in downstream tools\",\"Explore real-time audience computation and syncing using technologies like CDC\",\"Apply generative AI to make user workflows for acting on data more seamless\",\"Architect backend and distributed systems with attention to scalability, maintainability, and reliability\",\"Write and engage with product specs\"],\"pay_range_min\":180000,\"pay_range_max\":400000}",
+  "output": {
+    "title": "Software Engineer, Customer Studio Backend",
+    "company": "Hightouch",
+    "required": [
+      "backend",
+      "distributed systems",
+      "SQL",
+      "data warehouses",
+      "CDC",
+      "generative AI",
+      "Composable CDP",
+      "no-code",
+      "System Design"
+    ],
+    "location": "Remote",
+    "seniority": "senior",
+    "team": "Customer Studio",
+    "key_responsibilities": [
+      "Optimize data warehouse performance, including query optimization, pre-computed state, and warehouse-specific improvements",
+      "Build analytics and experimentation features for segment building and tracking audience performance in downstream tools",
+      "Explore real-time audience computation and syncing using technologies like CDC",
+      "Apply generative AI to make user workflows for acting on data more seamless",
+      "Architect backend and distributed systems with attention to scalability, maintainability, and reliability",
+      "Write and engage with product specs"
+    ],
+    "pay_range_min": 180000,
+    "pay_range_max": 400000
+  }
+}

@@ -554,6 +554,14 @@ class TestMatcherNormalization:
         result = scorer.score("Experience\nTuned Redis and Jenkins", ["Redis", "Jenkins"], [])
         assert result.keywords.req_matched == ["Redis", "Jenkins"]
 
+    def test_curly_apostrophe_keyword_matches_straight_apostrophe_resume(self):
+        result = scorer.score("Experience\nHolds a Bachelor's degree", ["Bachelor’s degree"], [])
+        assert result.keywords.req_matched == ["Bachelor’s degree"]
+
+    def test_straight_apostrophe_keyword_matches_curly_apostrophe_resume(self):
+        result = scorer.score("Experience\nHolds a Bachelor’s degree", ["Bachelor's degree"], [])
+        assert result.keywords.req_matched == ["Bachelor's degree"]
+
 
 class TestPassThresholdConfig:
     def test_custom_pass_threshold_is_honored(self):

@@ -13,6 +13,7 @@ import json
 import logging
 import multiprocessing
 import os
+import re
 import time
 from collections.abc import Callable, Iterator
 from multiprocessing.connection import Connection
@@ -157,6 +158,31 @@ def extract_markdown(extracted: str, body_text: str, url: str) -> str:
     return result
 
 
+_SECTION_MARKER_RE = re.compile(r"^(?:#{1,6}\s+\S.*|\*\*[^*\n]+:\*\*)\s*$")
+
+
+def find_empty_sections(markdown: str) -> list[str]:
+    """Return the label of every section marker (a markdown heading, or a bold
+    "**Label:**" line - the pattern job boards use for Minimum/Preferred Qualifications
+    when they skip real headings) that is followed only by blank lines before the next
+    marker or the end of the document.
+
+    Catches a page that rendered its section labels but not their bodies (e.g. a
+    JS-rendered board where one section populated within the fetch window and another
+    did not) - the JD then looks complete enough to pass fetch_thin's character-count
+    guard while silently missing a whole section's requirements.
+    """
+    lines = markdown.splitlines()
+    marker_idx = [i for i, line in enumerate(lines) if _SECTION_MARKER_RE.match(line.strip())]
+    empty_labels = []
+    for pos, idx in enumerate(marker_idx):
+        next_idx = marker_idx[pos + 1] if pos + 1 < len(marker_idx) else len(lines)
+        body = lines[idx + 1 : next_idx]
+        if not any(line.strip() for line in body):
+            empty_labels.append(lines[idx].strip())
+    return empty_labels
+
+
 def cap_jd_text(text: str, url: str) -> str:
     """Hard-cap the JD at MAX_JD_CHARS, cutting at the last newline when one exists."""
     if len(text) <= MAX_JD_CHARS:
@@ -250,7 +276,11 @@ async def _fetch_url_to_markdown_unbounded(url: str, deadline: float) -> str:
     remaining = deadline - time.monotonic()
     extracted = await asyncio.to_thread(run_killable, _extract_worker, html, remaining)
     markdown = extract_markdown(extracted, body_text, url)
-    return cap_jd_text(_with_title(markdown, title), url)
+    result = cap_jd_text(_with_title(markdown, title), url)
+    empty_sections = find_empty_sections(result)
+    if empty_sections:
+        _log("fetch_truncated", url=url, empty_sections=empty_sections)
+    return result
 
 
 async def fetch_url_to_markdown(url: str) -> str:
