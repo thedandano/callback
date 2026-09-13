@@ -169,6 +169,13 @@ class TestExtractionProtocol:
     def test_contains_preferred_any_disjunction_guidance(self):
         assert "preferred_any GROUP" in EXTRACTION_PROTOCOL
 
+    def test_contains_two_member_group_guidance(self):
+        assert "exactly two alternatives is still a group" in EXTRACTION_PROTOCOL
+
+    def test_contains_section_scope_boundary(self):
+        assert "Do NOT mine keywords from" in EXTRACTION_PROTOCOL
+        assert "interview process" in EXTRACTION_PROTOCOL
+
     def test_contains_keyword_definition_guidance(self):
         assert "NAMED technology, tool, framework" in EXTRACTION_PROTOCOL
         assert "are NOT keywords" in EXTRACTION_PROTOCOL
