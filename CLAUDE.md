@@ -81,6 +81,19 @@ uv run pytest -m local evals/                          # E1 + E2 checks over the
 # variance is real and material here - the same protocol scored ashby 4/6-worthy on one run and
 # missed 16 terms on the next; a single live run is one data point, not a verdict. Comparison run
 # on Codex gpt-5.6-terra: E1 2/6 (PASS qualcomm/reddit) on the same fixtures and rubric.
+# updated 2026-09-15 (round 3), claude default model: E1 2/6 (PASS qualcomm/reddit) after three
+# small protocol fixes: an "(e.g., X, Y, Z)" disjunction signal, a generalizable slash test
+# ("would just ONE alone satisfy this?") replacing a fixed compound-term carve-out list, and a
+# worked example for unlabeled bolded-header prose (see the plan, M10-M11). This run is a stark
+# illustration of the variance already flagged above: cedar - which had passed in EVERY prior
+# run across all three rounds - failed by dumping all 5 preferred_any groups as flat terms, and
+# apple's atomization broke down wholesale (whole clauses kept intact instead of split). Root-
+# caused before recording: re-ran cedar against the UNCHANGED pre-round-3 protocol and got the
+# identical failure, twice - so this is not a regression from the round-3 wording, it's the same
+# live model producing a much lower-quality extraction on this occasion. Treat any single E1
+# number as noisy; the checks themselves (verified via the guard test and unit tests) are the
+# reliable part. Comparison run on Codex gpt-5.6-terra: E1 3/6 (PASS greenhouse/qualcomm/reddit) -
+# its best result yet, and the first time either model has passed greenhouse.
 
 ```
 

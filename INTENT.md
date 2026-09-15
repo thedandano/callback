@@ -260,6 +260,20 @@ terms and one OR-group in this run - the same protocol scored ashby's OR-groups 
 run, so this is sample-to-sample variance, not a regression; greenhouse still under-extracts from unlabeled
 prose. Comparison run on Codex `gpt-5.6-terra`, same fixtures and rubric: E1 is 2 of 6 (qualcomm/reddit
 pass) - consistently weaker at forming OR-groups from "such as ... etc." and slash phrasing.
+Round 3 (same plan, M10-M11, commit ad0a8d2..): three small protocol wording fixes after rejecting two
+bigger options with evidence (a deterministic pre-scan hint list - ~38% precision, structurally blind to
+signal-less "e.g." groups; a full protocol restructure - uncertain payoff, forces a full re-audit). Added
+an "(e.g., X, Y, Z)" disjunction signal, replaced the fixed slash carve-out list with a generalizable test
+("would just ONE alone satisfy this requirement?"), and added a worked example for unlabeled bolded-header
+prose. Proof run, claude default model: E1 is 2 of 6 (qualcomm/reddit pass) - a stark instance of the
+variance flagged in round 2: cedar, which had passed every prior run across all three rounds, failed by
+dumping all 5 preferred_any groups as flat terms, and apple's atomization collapsed wholesale. Root-caused
+before recording: re-ran cedar against the unchanged pre-round-3 protocol and got the identical failure
+twice, confirming this is model variance, not a round-3 regression. Comparison run on Codex `gpt-5.6-terra`:
+E1 is 3 of 6 (greenhouse/qualcomm/reddit pass) - its best result yet, and the first time either model has
+passed greenhouse. Takeaway carried forward: a single E1 run is noisy enough that its exact number
+shouldn't be over-read; the checks themselves (backed by the guard test and unit tests) are the reliable
+part of this eval, not any one live sample.
 
 ### M7 — Token diet (one day)
 
