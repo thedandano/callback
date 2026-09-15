@@ -176,13 +176,20 @@ class TestExtractionProtocol:
         assert "Do NOT mine keywords from" in EXTRACTION_PROTOCOL
         assert "interview process" in EXTRACTION_PROTOCOL
 
-    def test_contains_compound_slash_carve_out(self):
-        assert '"CI/CD", "TCP/IP", "I/O", "A/B testing" never get split' in EXTRACTION_PROTOCOL
+    def test_contains_slash_disjunction_test(self):
+        assert "could a candidate have JUST ONE of the slash-joined words" in EXTRACTION_PROTOCOL
+        assert '"CI/CD", "I/O", and a compound job-function name' in EXTRACTION_PROTOCOL
 
     def test_contains_such_as_toolset_carve_out(self):
         assert "it is NOT a disjunction - extract the named items as separate flat" in (
             EXTRACTION_PROTOCOL
         )
+
+    def test_contains_eg_disjunction_signal(self):
+        assert '"(e.g., X, Y, Z)" is a disjunction ONLY when' in EXTRACTION_PROTOCOL
+
+    def test_contains_unlabeled_bolded_header_example(self):
+        assert "no labeled Required/Preferred sections - rule 4 applies" in EXTRACTION_PROTOCOL
 
     def test_include_every_term_is_scoped_to_eligible_sections(self):
         assert "explicitly stated in an eligible JD section (per rule 4's exclusions" in (
