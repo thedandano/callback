@@ -275,6 +275,21 @@ passed greenhouse. Takeaway carried forward: a single E1 run is noisy enough tha
 shouldn't be over-read; the checks themselves (backed by the guard test and unit tests) are the reliable
 part of this eval, not any one live sample.
 
+M12 (commit range starting after the round-3 baseline): a manual review of all 6 fixtures via an HTML
+audit artifact (protocol + JD + answer key + notes, one tab per fixture) surfaced one real gap missed by
+every prior audit pass: a stated requirement illustrated by exactly ONE example via "(e.g., X)" was being
+treated as two separate requirements - apple's "a big-data framework (e.g., Apache Spark)" pulled in
+"Apache Spark" as its own required term, when the JD only asks for *a* big-data framework. Added a
+rule-2-scoped clause to `EXTRACTION_PROTOCOL` distinguishing this from rule 4's unlabeled-prose extraction,
+where a named example is still a real signal worth keeping (greenhouse's "technologies like CDC" stays,
+since it's description prose, not a stated requirement bullet). Dropped "Apache Spark" from apple's answer
+key; verified the fix in a fresh live run's raw host output (the model no longer emits it). Proof run: E1
+still 2 of 6 (qualcomm/reddit) - ashby and cedar failed this time on the same documented sampling variance
+(under-atomization: "SQL & NoSQL datastores" kept whole instead of split, cedar's required_any groups
+collapsed), not new gaps. The reviewer also flagged that ashby's answer key itself contains non-atomic
+clause fragments inherited from the M8 rebuild (e.g. "ML models from research or prototype stage into
+production at scale") - logged as a follow-up answer-key audit, not fixed in this pass.
+
 ### M7 — Token diet (one day)
 
 Measured 2026-09-03 against the real profile and the last 285 applications. The host

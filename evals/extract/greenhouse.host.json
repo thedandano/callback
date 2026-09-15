@@ -1,15 +1,14 @@
 {
   "host": "claude",
   "model": "default",
-  "commit": "ad0a8d2",
-  "ran_at": "2026-09-15T04:51:26.056051+00:00",
-  "raw": "{\"title\":\"Software Engineer, Customer Studio Backend\",\"company\":\"Hightouch\",\"required\":[\"backend\",\"distributed systems\",\"query optimization\",\"pre-computed state\",\"CDC\",\"Generative AI\"],\"location\":\"Remote\",\"seniority\":\"senior\",\"team\":\"Customer Studio\",\"key_responsibilities\":[\"Push the limits of what data warehouses can handle in terms of speed, performance, and interactivity\",\"Help customers build segments and decide what data to sync, and facilitate experimentation to downstream tools\",\"Build real-time audience computation and syncing as warehouses adopt technologies like CDC\",\"Enhance user workflows with generative AI\"],\"pay_range_min\":180000,\"pay_range_max\":400000}",
+  "commit": "020b287",
+  "ran_at": "2026-09-15T18:08:57.636561+00:00",
+  "raw": "{\"title\":\"Software Engineer, Customer Studio Backend\",\"company\":\"Hightouch\",\"required\":[\"SQL\",\"query optimization\",\"pre-computed state\",\"CDC\",\"Generative AI\"],\"location\":\"Remote\",\"seniority\":\"senior\",\"team\":\"Customer Studio\",\"key_responsibilities\":[\"Optimize data warehouse query speed and performance\",\"Build analytics and experimentation capabilities for customer audiences\",\"Enable real-time audience computation and syncing\",\"Enhance user workflows with generative AI\"],\"pay_range_min\":180000,\"pay_range_max\":400000}",
   "output": {
     "title": "Software Engineer, Customer Studio Backend",
     "company": "Hightouch",
     "required": [
-      "backend",
-      "distributed systems",
+      "SQL",
       "query optimization",
       "pre-computed state",
       "CDC",
@@ -19,9 +18,9 @@
     "seniority": "senior",
     "team": "Customer Studio",
     "key_responsibilities": [
-      "Push the limits of what data warehouses can handle in terms of speed, performance, and interactivity",
-      "Help customers build segments and decide what data to sync, and facilitate experimentation to downstream tools",
-      "Build real-time audience computation and syncing as warehouses adopt technologies like CDC",
+      "Optimize data warehouse query speed and performance",
+      "Build analytics and experimentation capabilities for customer audiences",
+      "Enable real-time audience computation and syncing",
       "Enhance user workflows with generative AI"
     ],
     "pay_range_min": 180000,

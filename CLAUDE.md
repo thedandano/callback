@@ -94,6 +94,19 @@ uv run pytest -m local evals/                          # E1 + E2 checks over the
 # number as noisy; the checks themselves (verified via the guard test and unit tests) are the
 # reliable part. Comparison run on Codex gpt-5.6-terra: E1 3/6 (PASS greenhouse/qualcomm/reddit) -
 # its best result yet, and the first time either model has passed greenhouse.
+# updated 2026-09-15 (M12), claude default model: E1 2/6 (PASS qualcomm/reddit) after a manual
+# review of all 6 fixtures in an HTML audit tool surfaced one real gap: a stated requirement
+# illustrated by exactly ONE example via "(e.g., X)" was being treated as two requirements (apple's
+# "a big-data framework (e.g., Apache Spark)" pulled in "Apache Spark" as its own required term).
+# Added a rule-2-scoped clause distinguishing this from rule 4's unlabeled-prose extraction (where
+# a named example, e.g. greenhouse's "technologies like CDC", is still a real signal worth keeping)
+# and dropped "Apache Spark" from apple's answer key. Verified fixed in this run's raw host output.
+# This run's failures are the same documented sampling variance, not new gaps: ashby and cedar
+# under-atomized (broad phrases like "SQL & NoSQL datastores" instead of split terms, all 3
+# required_any groups collapsed for cedar); apple and greenhouse still under-extract for reasons
+# already on file. Reviewer also flagged ashby's answer key itself contains non-atomic clause
+# fragments (e.g. "ML models from research or prototype stage into production at scale") inherited
+# from the M8 rebuild - logged as a follow-up answer-key audit, not fixed here.
 
 ```
 
