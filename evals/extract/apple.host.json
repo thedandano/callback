@@ -1,25 +1,18 @@
 {
   "host": "claude",
   "model": "default",
-  "commit": "47c8627",
-  "ran_at": "2026-09-13T04:46:33.316260+00:00",
-  "raw": "{\"title\":\"Software Engineer - Universal Media\",\"company\":\"Apple\",\"required\":[\"distributed microservices\",\"Java\",\"event-driven\",\"streaming systems\",\"data pipelines\",\"Apache Spark\",\"algorithms\",\"data structures\",\"SQL\",\"NoSQL\",\"Redis\",\"Bachelor’s degree\"],\"required_any\":[[\"Kafka\",\"Kinesis\",\"Pulsar\"],[\"pub/sub\",\"async\",\"stream processing\"],[\"personalization\",\"recommendation\",\"ranking\"],[\"notification\",\"message-delivery systems\"],[\"push\",\"email\",\"SMS\",\"in-app\"],[\"PostgreSQL\",\"Cassandra\",\"DynamoDB\",\"MySQL\"],[\"CS\",\"CE\",\"EE\"]],\"preferred\":[\"Feature stores\",\"online/offline serving\",\"model monitoring\",\"A/B experimentation\",\"Multi-channel delivery\",\"rate-limiting\",\"dedup\",\"delivery-guarantee design\",\"CI/CD\",\"Master’s degree\"],\"preferred_any\":[[\"AWS\",\"GCP\",\"Azure\"],[\"Flink\",\"Beam\",\"Spark Structured Streaming\"]],\"required_years\":5,\"team\":\"Universal Media Engineering\",\"key_responsibilities\":[\"Partner with data scientists to productionize and deploy personalization algorithms, ensuring models are scalable, reliable, and performant in production environments\",\"Design and build data pipelines to generate and process large-scale datasets used for personalization and user targeting initiatives\",\"Develop and maintain systems for delivering timely, personalized notifications to users across multiple channels\",\"Monitor and optimize production systems for latency, throughput, and reliability, implementing improvements as usage scales\",\"Collaborate cross-functionally with data scientists, product managers, and other engineers to translate business requirements into robust technical solutions\",\"Contribute to code reviews, technical design discussions, and engineering best practices to raise the overall quality and health of the codebase\"]}",
+  "commit": "ad0a8d2",
+  "ran_at": "2026-09-15T04:50:55.286597+00:00",
+  "raw": "{\"title\":\"Software Engineer - Universal Media\",\"company\":\"Apple\",\"required\":[\"distributed microservices\",\"Java\",\"object-oriented language\",\"algorithms and data structures\",\"Redis\"],\"required_any\":[[\"Kafka\",\"Kinesis\",\"Pulsar\"],[\"Apache Spark\"],[\"PostgreSQL\",\"Cassandra\",\"DynamoDB\",\"MySQL\"]],\"preferred\":[\"Feature stores\",\"online/offline serving\",\"model monitoring\",\"A/B experimentation\",\"rate-limiting\",\"dedup\",\"delivery-guarantee design\",\"CI/CD\"],\"preferred_any\":[[\"AWS\",\"GCP\",\"Azure\"],[\"Flink\",\"Beam\",\"Spark Structured Streaming\"]],\"location\":\"\",\"seniority\":\"mid\",\"required_years\":5,\"team\":\"Universal Media Engineering\",\"key_responsibilities\":[\"Partner with data scientists to productionize and deploy personalization algorithms, ensuring models are scalable, reliable, and performant in production environments.\",\"Design and build data pipelines to generate and process large-scale datasets used for personalization and user targeting initiatives.\",\"Develop and maintain systems for delivering timely, personalized notifications to users across multiple channels.\",\"Monitor and optimize production systems for latency, throughput, and reliability, implementing improvements as usage scales.\",\"Collaborate cross-functionally with data scientists, product managers, and other engineers to translate business requirements into robust technical solutions.\",\"Contribute to code reviews, technical design discussions, and engineering best practices to raise the overall quality and health of the codebase.\"]}",
   "output": {
     "title": "Software Engineer - Universal Media",
     "company": "Apple",
     "required": [
       "distributed microservices",
       "Java",
-      "event-driven",
-      "streaming systems",
-      "data pipelines",
-      "Apache Spark",
-      "algorithms",
-      "data structures",
-      "SQL",
-      "NoSQL",
-      "Redis",
-      "Bachelor’s degree"
+      "object-oriented language",
+      "algorithms and data structures",
+      "Redis"
     ],
     "required_any": [
       [
@@ -28,35 +21,13 @@
         "Pulsar"
       ],
       [
-        "pub/sub",
-        "async",
-        "stream processing"
-      ],
-      [
-        "personalization",
-        "recommendation",
-        "ranking"
-      ],
-      [
-        "notification",
-        "message-delivery systems"
-      ],
-      [
-        "push",
-        "email",
-        "SMS",
-        "in-app"
+        "Apache Spark"
       ],
       [
         "PostgreSQL",
         "Cassandra",
         "DynamoDB",
         "MySQL"
-      ],
-      [
-        "CS",
-        "CE",
-        "EE"
       ]
     ],
     "preferred": [
@@ -64,12 +35,10 @@
       "online/offline serving",
       "model monitoring",
       "A/B experimentation",
-      "Multi-channel delivery",
       "rate-limiting",
       "dedup",
       "delivery-guarantee design",
-      "CI/CD",
-      "Master’s degree"
+      "CI/CD"
     ],
     "preferred_any": [
       [
@@ -83,15 +52,17 @@
         "Spark Structured Streaming"
       ]
     ],
+    "location": "",
+    "seniority": "mid",
     "required_years": 5,
     "team": "Universal Media Engineering",
     "key_responsibilities": [
-      "Partner with data scientists to productionize and deploy personalization algorithms, ensuring models are scalable, reliable, and performant in production environments",
-      "Design and build data pipelines to generate and process large-scale datasets used for personalization and user targeting initiatives",
-      "Develop and maintain systems for delivering timely, personalized notifications to users across multiple channels",
-      "Monitor and optimize production systems for latency, throughput, and reliability, implementing improvements as usage scales",
-      "Collaborate cross-functionally with data scientists, product managers, and other engineers to translate business requirements into robust technical solutions",
-      "Contribute to code reviews, technical design discussions, and engineering best practices to raise the overall quality and health of the codebase"
+      "Partner with data scientists to productionize and deploy personalization algorithms, ensuring models are scalable, reliable, and performant in production environments.",
+      "Design and build data pipelines to generate and process large-scale datasets used for personalization and user targeting initiatives.",
+      "Develop and maintain systems for delivering timely, personalized notifications to users across multiple channels.",
+      "Monitor and optimize production systems for latency, throughput, and reliability, implementing improvements as usage scales.",
+      "Collaborate cross-functionally with data scientists, product managers, and other engineers to translate business requirements into robust technical solutions.",
+      "Contribute to code reviews, technical design discussions, and engineering best practices to raise the overall quality and health of the codebase."
     ]
   }
 }

@@ -1,65 +1,52 @@
 {
   "host": "claude",
   "model": "default",
-  "commit": "47c8627",
-  "ran_at": "2026-09-13T04:46:52.140011+00:00",
-  "raw": "{\"title\":\"Applied ML Engineer\",\"company\":\"Deepgram\",\"required\":[\"Python\",\"deep learning\",\"PyTorch\",\"ML pipelines\",\"inference optimization\",\"distributed systems\",\"GPU compute\"],\"required_any\":[[\"training orchestration\",\"evaluation harnesses\",\"model packaging\",\"CI/CD\"]],\"preferred\":[\"automated model evaluation\",\"release-gating\",\"regression detection\",\"hybrid infrastructure\",\"on-premise GPU clusters\",\"workload orchestration\",\"inference optimization\",\"internal platforms\"],\"preferred_any\":[[\"speech\",\"audio\",\"real-time/streaming ML\"],[\"quantization\",\"distillation\",\"compilation\",\"runtime tuning\"]],\"location\":\"Remote\",\"seniority\":\"senior\",\"team\":\"Engineering\",\"key_responsibilities\":[\"Own the research-to-production pipeline, turning research checkpoints into deployed, monitored, scaled production models\",\"Partner with research scientists to productionize new models into robust, reproducible, well-tested workflows\",\"Build tooling and abstractions for moving models through training, evaluation, packaging, and deployment\",\"Design and own model release gates including automated evaluation, regression detection, and quality/latency/throughput checks\",\"Optimize models and serving for production: efficient inference, batching, memory and latency tuning, and profiling\",\"Strengthen the build and delivery layer for models across GPU compute and cloud environments\",\"Establish benchmarking and validation from model development through production\",\"Instrument production model behavior and feed insights back to research\"],\"pay_range_min\":150000,\"pay_range_max\":220000}",
+  "commit": "ad0a8d2",
+  "ran_at": "2026-09-15T04:50:59.027373+00:00",
+  "raw": "{\"title\":\"Applied ML Engineer\",\"company\":\"Deepgram\",\"required\":[\"Python\",\"production-quality, well-tested ML code\",\"PyTorch\",\"ML pipelines\",\"training orchestration\",\"evaluation harnesses\",\"model packaging\",\"deployment\",\"CI/CD for models\",\"serving\",\"inference optimization\",\"latency\",\"throughput\",\"batching\",\"resource efficiency\",\"distributed systems\",\"GPU compute\"],\"preferred\":[\"research-to-production handoff\",\"speech\",\"audio\",\"real-time/streaming ML domains\",\"automated model evaluation\",\"release-gating systems\",\"regression detection across model versions\",\"hybrid infrastructure\",\"on-premise GPU clusters\",\"cloud\",\"workload orchestration\",\"quantization\",\"distillation\",\"compilation\",\"runtime tuning\",\"internal platforms\",\"developer-facing tooling\"],\"location\":\"Remote\",\"seniority\":\"senior\",\"pay_range_min\":150000,\"pay_range_max\":220000}",
   "output": {
     "title": "Applied ML Engineer",
     "company": "Deepgram",
     "required": [
       "Python",
-      "deep learning",
+      "production-quality, well-tested ML code",
       "PyTorch",
       "ML pipelines",
+      "training orchestration",
+      "evaluation harnesses",
+      "model packaging",
+      "deployment",
+      "CI/CD for models",
+      "serving",
       "inference optimization",
+      "latency",
+      "throughput",
+      "batching",
+      "resource efficiency",
       "distributed systems",
       "GPU compute"
     ],
-    "required_any": [
-      [
-        "training orchestration",
-        "evaluation harnesses",
-        "model packaging",
-        "CI/CD"
-      ]
-    ],
     "preferred": [
+      "research-to-production handoff",
+      "speech",
+      "audio",
+      "real-time/streaming ML domains",
       "automated model evaluation",
-      "release-gating",
-      "regression detection",
+      "release-gating systems",
+      "regression detection across model versions",
       "hybrid infrastructure",
       "on-premise GPU clusters",
+      "cloud",
       "workload orchestration",
-      "inference optimization",
-      "internal platforms"
-    ],
-    "preferred_any": [
-      [
-        "speech",
-        "audio",
-        "real-time/streaming ML"
-      ],
-      [
-        "quantization",
-        "distillation",
-        "compilation",
-        "runtime tuning"
-      ]
+      "quantization",
+      "distillation",
+      "compilation",
+      "runtime tuning",
+      "internal platforms",
+      "developer-facing tooling"
     ],
     "location": "Remote",
     "seniority": "senior",
-    "team": "Engineering",
-    "key_responsibilities": [
-      "Own the research-to-production pipeline, turning research checkpoints into deployed, monitored, scaled production models",
-      "Partner with research scientists to productionize new models into robust, reproducible, well-tested workflows",
-      "Build tooling and abstractions for moving models through training, evaluation, packaging, and deployment",
-      "Design and own model release gates including automated evaluation, regression detection, and quality/latency/throughput checks",
-      "Optimize models and serving for production: efficient inference, batching, memory and latency tuning, and profiling",
-      "Strengthen the build and delivery layer for models across GPU compute and cloud environments",
-      "Establish benchmarking and validation from model development through production",
-      "Instrument production model behavior and feed insights back to research"
-    ],
     "pay_range_min": 150000,
     "pay_range_max": 220000
   }
