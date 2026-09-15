@@ -200,6 +200,10 @@ class TestExtractionProtocol:
         assert "NAMED technology, tool, framework" in EXTRACTION_PROTOCOL
         assert "are NOT keywords" in EXTRACTION_PROTOCOL
 
+    def test_contains_single_example_illustration_guidance(self):
+        assert "is NOT asking for that specific X" in EXTRACTION_PROTOCOL
+        assert "does NOT apply to rule 4's unlabeled-prose extraction" in EXTRACTION_PROTOCOL
+
 
 class TestRequiredAny:
     def test_required_any_parses_and_round_trips(self):
