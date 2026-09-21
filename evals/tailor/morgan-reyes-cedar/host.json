@@ -1,0 +1,35 @@
+{
+  "host": "claude",
+  "model": "default",
+  "commit": "a8e71b6",
+  "ran_at": "2026-09-08T05:42:40.484215+00:00",
+  "raw": "{\"edits\": [{\"section\": \"summary\", \"op\": \"replace\", \"value\": \"Backend and data engineer with six years building production systems, APIs, and data pipelines and owning them end to end. At Northbeam Logistics, designed the system architecture that split a fulfillment monolith into Java and Spring Boot microservices behind Kafka on AWS, cutting cross-team release conflicts 60% across 40 backend services. At Anchor Data Systems, rebuilt a nightly PostgreSQL warehouse load with Python, SQL, and change data capture, cutting the load window from 6 hours to 45 minutes.\"}, {\"section\": \"experience\", \"op\": \"replace\", \"target\": \"exp-0-b0\", \"value\": \"Designed the system architecture that split the fulfillment platform's order-processing monolith into Java and Spring Boot microservices behind Kafka topics, giving each of the 6 core services its own deploy pipeline and contract tests and cutting cross-team release conflicts 60% across 40 backend services.\"}, {\"section\": \"experience\", \"op\": \"replace\", \"target\": \"exp-0-context\", \"value\": \"Senior Backend Engineer · Fulfillment Platform · 40 microservices, 6 core services on AWS · Java, Spring Boot, Kafka, PostgreSQL, Terraform\"}, {\"section\": \"skills\", \"op\": \"add\", \"value\": \"System Architecture\", \"category\": \"Backend & Data\"}], \"no_coverage\": false}",
+  "output": {
+    "edits": [
+      {
+        "section": "summary",
+        "op": "replace",
+        "value": "Backend and data engineer with six years building production systems, APIs, and data pipelines and owning them end to end. At Northbeam Logistics, designed the system architecture that split a fulfillment monolith into Java and Spring Boot microservices behind Kafka on AWS, cutting cross-team release conflicts 60% across 40 backend services. At Anchor Data Systems, rebuilt a nightly PostgreSQL warehouse load with Python, SQL, and change data capture, cutting the load window from 6 hours to 45 minutes."
+      },
+      {
+        "section": "experience",
+        "op": "replace",
+        "target": "exp-0-b0",
+        "value": "Designed the system architecture that split the fulfillment platform's order-processing monolith into Java and Spring Boot microservices behind Kafka topics, giving each of the 6 core services its own deploy pipeline and contract tests and cutting cross-team release conflicts 60% across 40 backend services."
+      },
+      {
+        "section": "experience",
+        "op": "replace",
+        "target": "exp-0-context",
+        "value": "Senior Backend Engineer · Fulfillment Platform · 40 microservices, 6 core services on AWS · Java, Spring Boot, Kafka, PostgreSQL, Terraform"
+      },
+      {
+        "section": "skills",
+        "op": "add",
+        "value": "System Architecture",
+        "category": "Backend & Data"
+      }
+    ],
+    "no_coverage": false
+  }
+}

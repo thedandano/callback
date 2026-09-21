@@ -1,0 +1,41 @@
+{
+  "host": "claude",
+  "model": "default",
+  "commit": "a8e71b6",
+  "ran_at": "2026-09-08T05:41:08.269320+00:00",
+  "raw": "{\"edits\": [{\"section\": \"summary\", \"op\": \"replace\", \"value\": \"Backend engineer with 5 years building Python and FastAPI services on AWS. Cut checkout p95 latency 40% at Acme Corp for 2M monthly orders and reduced on-call pages from 6 to 1 per week with Datadog dashboards. Ships infrastructure for a 12-service distributed system on AWS ECS with Terraform and Docker.\"}, {\"section\": \"experience\", \"op\": \"replace\", \"target\": \"exp-0-b0\", \"value\": \"Rebuilt the checkout API on FastAPI with PostgreSQL connection pooling and per-endpoint Datadog dashboards, cutting p95 latency 40% for 2M monthly orders and on-call pages from 6 to 1 per week\"}, {\"section\": \"experience\", \"op\": \"replace\", \"target\": \"exp-0-b2\", \"value\": \"Wrote reusable Terraform modules for ECS task definitions across the 12-service distributed system on AWS, with Docker images built in GitHub Actions, so a new service ships in one pull request\"}, {\"section\": \"skills\", \"op\": \"add\", \"value\": \"Datadog\", \"category\": \"Practices\"}, {\"section\": \"skills\", \"op\": \"add\", \"value\": \"Distributed Systems\", \"category\": \"Backend & Data\"}], \"no_coverage\": false}",
+  "output": {
+    "edits": [
+      {
+        "section": "summary",
+        "op": "replace",
+        "value": "Backend engineer with 5 years building Python and FastAPI services on AWS. Cut checkout p95 latency 40% at Acme Corp for 2M monthly orders and reduced on-call pages from 6 to 1 per week with Datadog dashboards. Ships infrastructure for a 12-service distributed system on AWS ECS with Terraform and Docker."
+      },
+      {
+        "section": "experience",
+        "op": "replace",
+        "target": "exp-0-b0",
+        "value": "Rebuilt the checkout API on FastAPI with PostgreSQL connection pooling and per-endpoint Datadog dashboards, cutting p95 latency 40% for 2M monthly orders and on-call pages from 6 to 1 per week"
+      },
+      {
+        "section": "experience",
+        "op": "replace",
+        "target": "exp-0-b2",
+        "value": "Wrote reusable Terraform modules for ECS task definitions across the 12-service distributed system on AWS, with Docker images built in GitHub Actions, so a new service ships in one pull request"
+      },
+      {
+        "section": "skills",
+        "op": "add",
+        "value": "Datadog",
+        "category": "Practices"
+      },
+      {
+        "section": "skills",
+        "op": "add",
+        "value": "Distributed Systems",
+        "category": "Backend & Data"
+      }
+    ],
+    "no_coverage": false
+  }
+}

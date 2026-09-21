@@ -1,0 +1,47 @@
+{
+  "host": "claude",
+  "model": "default",
+  "commit": "a8e71b6",
+  "ran_at": "2026-09-08T05:45:15.366610+00:00",
+  "raw": "{\"edits\": [{\"section\": \"summary\", \"op\": \"replace\", \"value\": \"Backend and data engineer with six years building platform services and data pipelines, with a B.S. in Computer Science. At Northbeam Logistics, led a Java and Spring Boot microservices migration backed by Kafka and PostgreSQL across a 40-service fulfillment platform, cutting cross-team release conflicts 60%. At Anchor Data Systems, designed 6 internal REST APIs and rebuilt a nightly warehouse load with Python, SQL, and change data capture that cut the load window from 6 hours to 45 minutes, working in cross-functional collaboration with finance, marketing, and product teams.\"}, {\"section\": \"experience\", \"op\": \"replace\", \"target\": \"exp-0-context\", \"value\": \"Senior Backend Engineer · Fulfillment Platform Services · 40 microservices · Java, Spring Boot, Kafka, PostgreSQL\"}, {\"section\": \"experience\", \"op\": \"replace\", \"target\": \"exp-1-b2\", \"value\": \"Set relational data modeling standards for the analytics schema, normalizing 30 ad hoc tables into a documented star schema and communicating every schema change to 8 downstream teams in weekly code review sessions, with zero silent schema breaks in the 18 months after rollout.\"}, {\"section\": \"experience\", \"op\": \"replace\", \"target\": \"exp-1-b3\", \"value\": \"Designed 6 internal REST APIs for the data pipelines feeding finance and marketing, applying consistent API design across a shared routing layer with well-tested code at 90% branch coverage shipped through a GitHub Actions CI/CD pipeline, cutting reporting bugs escalated to support 50% quarter over quarter.\"}, {\"section\": \"experience\", \"op\": \"replace\", \"target\": \"exp-2-b0\", \"value\": \"Drove cross-functional collaboration with the sales and support teams to scope and build a self-serve dashboard in React and JavaScript, replacing 12 recurring spreadsheet requests and freeing roughly a sprint of engineering time a month.\"}, {\"section\": \"skills\", \"op\": \"add\", \"value\": \"API design\", \"category\": \"Backend & Data\"}], \"no_coverage\": false}",
+  "output": {
+    "edits": [
+      {
+        "section": "summary",
+        "op": "replace",
+        "value": "Backend and data engineer with six years building platform services and data pipelines, with a B.S. in Computer Science. At Northbeam Logistics, led a Java and Spring Boot microservices migration backed by Kafka and PostgreSQL across a 40-service fulfillment platform, cutting cross-team release conflicts 60%. At Anchor Data Systems, designed 6 internal REST APIs and rebuilt a nightly warehouse load with Python, SQL, and change data capture that cut the load window from 6 hours to 45 minutes, working in cross-functional collaboration with finance, marketing, and product teams."
+      },
+      {
+        "section": "experience",
+        "op": "replace",
+        "target": "exp-0-context",
+        "value": "Senior Backend Engineer · Fulfillment Platform Services · 40 microservices · Java, Spring Boot, Kafka, PostgreSQL"
+      },
+      {
+        "section": "experience",
+        "op": "replace",
+        "target": "exp-1-b2",
+        "value": "Set relational data modeling standards for the analytics schema, normalizing 30 ad hoc tables into a documented star schema and communicating every schema change to 8 downstream teams in weekly code review sessions, with zero silent schema breaks in the 18 months after rollout."
+      },
+      {
+        "section": "experience",
+        "op": "replace",
+        "target": "exp-1-b3",
+        "value": "Designed 6 internal REST APIs for the data pipelines feeding finance and marketing, applying consistent API design across a shared routing layer with well-tested code at 90% branch coverage shipped through a GitHub Actions CI/CD pipeline, cutting reporting bugs escalated to support 50% quarter over quarter."
+      },
+      {
+        "section": "experience",
+        "op": "replace",
+        "target": "exp-2-b0",
+        "value": "Drove cross-functional collaboration with the sales and support teams to scope and build a self-serve dashboard in React and JavaScript, replacing 12 recurring spreadsheet requests and freeing roughly a sprint of engineering time a month."
+      },
+      {
+        "section": "skills",
+        "op": "add",
+        "value": "API design",
+        "category": "Backend & Data"
+      }
+    ],
+    "no_coverage": false
+  }
+}
