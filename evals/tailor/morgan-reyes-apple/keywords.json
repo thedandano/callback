@@ -1,0 +1,36 @@
+{
+  "title": "Software Engineer - Universal Media",
+  "company": "Apple",
+  "required": [
+    "5+ years of experience building resilient, high-scale, distributed microservices in production environments",
+    "Java or some other object oriented programming language",
+    "Spring Framework/Spring Boot",
+    "Docker",
+    "Kubernetes",
+    "SQL & NoSQL databases (Cassandra, PostgreSQL, DynamoDB, MySQL)",
+    "messaging systems (Kafka/RabbitMQ)",
+    "Solr/Elasticsearch",
+    "Redis",
+    "algorithms and data structures"
+  ],
+  "preferred": [
+    "stream processing and data processing tools and best-practices",
+    "CI/CD",
+    "Cloud Environments",
+    "Bachelor's degree in CS/CE/EE or a related technical field, or equivalent industry experience"
+  ],
+  "location": "San Diego, California",
+  "seniority": "mid",
+  "required_years": 5.0,
+  "team": "Universal Media Engineering (ASE Video)",
+  "key_responsibilities": [
+    "Partner with data scientists to productionize and deploy personalization algorithms, ensuring models are scalable, reliable, and performant in production environments",
+    "Design and build data pipelines to generate and process large-scale datasets used for personalization and user targeting initiatives",
+    "Develop and maintain systems for delivering timely, personalized notifications to users across multiple channels",
+    "Monitor and optimize production systems for latency, throughput, and reliability, implementing improvements as usage scales",
+    "Collaborate cross-functionally with data scientists, product managers, and other engineers to translate business requirements into robust technical solutions",
+    "Contribute to code reviews, technical design discussions, and engineering best practices to raise the overall quality and health of the codebase"
+  ],
+  "pay_range_min": 142300.0,
+  "pay_range_max": 263300.0
+}
