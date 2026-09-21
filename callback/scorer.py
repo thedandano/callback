@@ -207,10 +207,25 @@ def score(
 _DASH_RE = re.compile(r"[-‐–—­‑​]")
 _SLASH_WS_RE = re.compile(r"\s*/\s*")
 _WS_RE = re.compile(r"\s+")
+_SINGLE_QUOTE_RE = re.compile(r"[’‘‚‛′]")
+_DOUBLE_QUOTE_RE = re.compile(r"[“”„‟″]")
+
+
+def fold_quotes(text: str) -> str:
+    """Fold curly/smart quotes and primes to their ASCII equivalents.
+
+    NFKC does not do this (it normalizes compatibility forms, not distinct
+    Unicode characters like U+2019 vs U+0027), so a JD's "Bachelor's" and a
+    resume's "Bachelor's" would otherwise never match once either side picks
+    up a typographer's apostrophe.
+    """
+    text = _SINGLE_QUOTE_RE.sub("'", text)
+    return _DOUBLE_QUOTE_RE.sub('"', text)
 
 
 def normalize_for_match(text: str) -> str:
     text = unicodedata.normalize("NFKC", text)
+    text = fold_quotes(text)
     text = _DASH_RE.sub(" ", text)
     text = _SLASH_WS_RE.sub("/", text)
     return _WS_RE.sub(" ", text).strip()

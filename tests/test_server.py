@@ -477,7 +477,7 @@ def test_submit_keywords_rejects_empty_jd_json():
         "error": {
             "stage": "submit_keywords",
             "code": "invalid_jd",
-            "message": "required or required_any must be non-empty",
+            "message": "no keywords extracted",
             "retriable": True,
         },
         "session_id": session_id,

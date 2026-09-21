@@ -222,6 +222,51 @@ def test_with_title_skips_blank():
     assert markdown == "Body text about the role."
 
 
+# --- find_empty_sections -----------------------------------------------------
+
+
+def test_find_empty_sections_detects_a_bold_label_with_no_body():
+    """The qualcomm.md shape: a JS-rendered board where one section's bullets never
+    rendered within the fetch window, leaving its bold label with nothing under it."""
+    markdown = "**Minimum Qualifications:**\n\n**Preferred Qualifications:**\n\n- C, C++, Java\n"
+
+    empty = jd_fetcher.find_empty_sections(markdown)
+
+    assert empty == ["**Minimum Qualifications:**"]
+
+
+def test_find_empty_sections_ignores_a_section_with_real_content():
+    markdown = "**Requirements:**\n\n- Python\n- Kubernetes\n\n**Preferred:**\n\n- Go\n"
+
+    empty = jd_fetcher.find_empty_sections(markdown)
+
+    assert empty == []
+
+
+def test_find_empty_sections_detects_atx_headings_too():
+    markdown = "## Requirements\n\n## Responsibilities\n\nDesign and ship services.\n"
+
+    empty = jd_fetcher.find_empty_sections(markdown)
+
+    assert empty == ["## Requirements"]
+
+
+def test_find_empty_sections_detects_a_trailing_empty_section():
+    markdown = "**Requirements:**\n\n- Python\n\n**Preferred:**\n"
+
+    empty = jd_fetcher.find_empty_sections(markdown)
+
+    assert empty == ["**Preferred:**"]
+
+
+def test_find_empty_sections_returns_nothing_for_plain_prose():
+    markdown = "We are looking for a backend engineer with distributed systems experience.\n"
+
+    empty = jd_fetcher.find_empty_sections(markdown)
+
+    assert empty == []
+
+
 # --- fetch_url_to_markdown (Playwright wiring, browser faked) ----------------
 
 
@@ -345,6 +390,27 @@ def test_fetch_url_to_markdown_wires_playwright_and_extracts(monkeypatch):
         "stopped": True,
     }
     assert actual == expected
+
+
+def test_fetch_url_to_markdown_logs_a_truncated_section(monkeypatch, caplog):
+    caplog.set_level("INFO", logger="callback.jd_fetcher")
+    _fake_playwright(monkeypatch)
+    monkeypatch.setattr(
+        jd_fetcher,
+        "extract_markdown",
+        lambda *_: "**Minimum Qualifications:**\n\n**Preferred Qualifications:**\n\n- Python\n",
+    )
+
+    asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
+
+    events = [e for e in _events(caplog) if e["event"] == "fetch_truncated"]
+    assert events == [
+        {
+            "event": "fetch_truncated",
+            "url": "https://example.com/job",
+            "empty_sections": ["**Minimum Qualifications:**"],
+        }
+    ]
 
 
 def test_fetch_url_to_markdown_applies_cap(monkeypatch):
