@@ -1,0 +1,11 @@
+{
+  "title": "Embedded Firmware Engineer",
+  "company": "Contoso Devices",
+  "required": ["C", "RTOS", "ARM Cortex-M", "I2C", "SPI", "JTAG", "bare-metal drivers"],
+  "preferred": ["Rust", "Zephyr", "Bluetooth Low Energy"],
+  "required_any": [],
+  "preferred_any": [],
+  "location": "Austin, TX",
+  "seniority": "mid",
+  "required_years": 3.0
+}

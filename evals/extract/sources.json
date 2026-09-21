@@ -1,0 +1,89 @@
+{
+  "qualcomm": {
+    "jd_url": "https://careers.qualcomm.com/careers/job/446720282038?hl=en-US&utm_source=linkedin&domain=qualcomm.com&source=APPLICANT_SOURCE-6-2",
+    "archived_session": "934b4d18-a3cf-4c4a-b385-98f2658dcba5",
+    "fetched_at": "2026-09-05T03:03:59+00:00",
+    "fetched_chars": 5261,
+    "fetched_tokens_est": 1315,
+    "recall": {
+      "found": 9,
+      "total": 9,
+      "missing": [],
+      "title_found": true
+    },
+    "note": "Minimum Qualifications ships empty on Qualcomm's own live posting (verified 2026-09-13, byte-identical live re-fetch) - not a jd_fetch bug. The original golden's \"Bachelor's degree...\" requirement was fabricated (never in the page); rebuilt expected data reflects only what the posting actually states, entirely in preferred/preferred_any. The required-or-required_any validation rule in jd_data.py is relaxed to any-of-four-buckets so a posting with no stated hard requirements is still representable."
+  },
+  "apple": {
+    "jd_url": "https://jobs.apple.com/en-us/details/200670706/software-engineer-universal-media",
+    "archived_session": "0ce0fbd3-8642-49b4-9e34-9c74eaf01c27",
+    "fetched_at": "2026-09-05T02:55:10+00:00",
+    "fetched_chars": 5227,
+    "fetched_tokens_est": 1306,
+    "recall": {
+      "found": 53,
+      "total": 53,
+      "missing": [],
+      "title_found": true
+    },
+    "note": "Original golden was from the 2026-07-07 application against a since-reworded posting (Kubernetes, Docker, Spring no longer on the page). Rebuilt 2026-09-13 directly from the committed 2026-09-04 fetch, so recall is exact by construction. Re-audited 2026-09-13 (M9) against the sharpened rule 2: line 18's \"pub/sub, async, or stream processing at scale\" is a literal \"X, Y, or Z\" disjunction, missed in the M8 audit pass - moved into required_any. Left line 20 (\"personalization / recommendation / ranking algorithms\") and line 21 (\"notification / message-delivery systems\") as flat terms: these slashes name a compound job-function/domain, not interchangeable alternatives, so rule 2's slash carve-out applies - a fresh host run grouped them anyway, which is a real model over-application of the slash signal, not an answer-key defect. Re-audited 2026-09-15 (M12) against a new single-example-illustration rule: line 19's \"a big-data framework (e.g., Apache Spark)\" is a stated requirement illustrated by exactly one example, not a disjunction or a second requirement - dropped \"Apache Spark\" from required, keeping only \"big-data framework\"."
+  },
+  "ashby": {
+    "jd_url": "https://jobs.ashbyhq.com/Deepgram/94ae2781-a85f-493a-86c1-ff85a9289355",
+    "archived_session": "44d1011d-aeb2-48df-8caa-d47d712e2de7",
+    "fetched_at": "2026-09-05T02:55:13+00:00",
+    "fetched_chars": 8209,
+    "fetched_tokens_est": 2052,
+    "recall": {
+      "found": 35,
+      "total": 35,
+      "missing": [],
+      "title_found": true
+    },
+    "note": "Rebuilt 2026-09-13: expected data followed EXTRACTION_PROTOCOL's atomic-term rule (was storing whole clauses like \"speech, audio, or other real-time/streaming ML domains\"), and dropped \"collaborative builder mindset\" (didn't match the JD's literal \"collaborative, builder mindset\", and reads as a soft-skill descriptor rather than a named keyword under protocol rule 6). Re-audited 2026-09-13 (M8) against the sharpened rule 2: \"training orchestration, evaluation harnesses, model packaging, deployment, or CI/CD for models\" (line 50) and \"quantization, distillation, compilation, or runtime tuning\" (line 59) were flat terms naming an explicit \"or\" disjunction; both moved into required_any/preferred_any groups."
+  },
+  "cedar": {
+    "jd_url": "https://careers.cedar.build/38511",
+    "archived_session": "1bdef50c-d41f-4189-9b71-0ed76754db0a",
+    "fetched_at": "2026-09-05T02:55:17+00:00",
+    "fetched_chars": 4023,
+    "fetched_tokens_est": 1005,
+    "recall": {
+      "found": 30,
+      "total": 31,
+      "missing": [
+        "AEC software"
+      ],
+      "title_found": true
+    }
+  },
+  "greenhouse": {
+    "jd_url": "https://job-boards.greenhouse.io/hightouch/jobs/5983811004",
+    "archived_session": "00ad1551-849c-4cbe-8078-68c94290a517",
+    "fetched_at": "2026-09-05T02:55:20+00:00",
+    "fetched_chars": 5483,
+    "fetched_tokens_est": 1370,
+    "recall": {
+      "found": 14,
+      "total": 14,
+      "missing": [],
+      "title_found": true
+    },
+    "note": "Rebuilt 2026-09-13: \"query optimization\" was a paraphrase of the JD's literal \"optimizing queries\" (fixed), \"system design\" was mined from the Interview Process section rather than the responsibilities (dropped), and \"pre-computed state\" was added from the responsibilities bullet it was originally missing from."
+  },
+  "reddit": {
+    "jd_url": "https://job-boards.greenhouse.io/reddit/jobs/8139781",
+    "archived_session": "3708a476-d507-4a2a-9257-4bd0af43d4ce",
+    "note": "No labeled Requirements/Preferred sections; three required_any groups. Golden from the 2026-08-23 application. Golden hand-corrected 2026-09-06: AWS/GCP split into two alternatives.",
+    "fetched_at": "2026-09-07T04:25:13+00:00",
+    "fetched_chars": 5876,
+    "fetched_tokens_est": 1469,
+    "recall": {
+      "found": 16,
+      "total": 17,
+      "missing": [
+        "cross-functional collaboration"
+      ],
+      "title_found": true
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "host": "claude",
+  "model": "default",
+  "commit": "020b287",
+  "ran_at": "2026-09-15T18:08:57.636561+00:00",
+  "raw": "{\"title\":\"Software Engineer, Customer Studio Backend\",\"company\":\"Hightouch\",\"required\":[\"SQL\",\"query optimization\",\"pre-computed state\",\"CDC\",\"Generative AI\"],\"location\":\"Remote\",\"seniority\":\"senior\",\"team\":\"Customer Studio\",\"key_responsibilities\":[\"Optimize data warehouse query speed and performance\",\"Build analytics and experimentation capabilities for customer audiences\",\"Enable real-time audience computation and syncing\",\"Enhance user workflows with generative AI\"],\"pay_range_min\":180000,\"pay_range_max\":400000}",
+  "output": {
+    "title": "Software Engineer, Customer Studio Backend",
+    "company": "Hightouch",
+    "required": [
+      "SQL",
+      "query optimization",
+      "pre-computed state",
+      "CDC",
+      "Generative AI"
+    ],
+    "location": "Remote",
+    "seniority": "senior",
+    "team": "Customer Studio",
+    "key_responsibilities": [
+      "Optimize data warehouse query speed and performance",
+      "Build analytics and experimentation capabilities for customer audiences",
+      "Enable real-time audience computation and syncing",
+      "Enhance user workflows with generative AI"
+    ],
+    "pay_range_min": 180000,
+    "pay_range_max": 400000
+  }
+}
