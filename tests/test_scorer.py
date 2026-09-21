@@ -13,6 +13,7 @@ from callback.scorer import (
     _score_ats,
     normalize_for_match,
     score,
+    terms_absent_from,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -576,3 +577,11 @@ class TestPassThresholdConfig:
         from callback import scorer as scorer_mod
 
         assert scorer_mod.DEFAULT_SCORING_CONFIG.pass_threshold == 70.0
+
+
+def test_terms_absent_from_uses_the_scorers_matching_rules():
+    posting = "Build Python and real-time Kubernetes services, plus a Bachelor\u2019s degree."
+
+    assert terms_absent_from(
+        ["python", "real time", "Bachelor's", "service", "Redis", "Go"], posting
+    ) == ["Redis", "Go"]

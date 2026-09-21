@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from callback.jd_data import keyword_terms, parse_jd_json
 from callback.section_map import (
     ContactInfo,
     ExperienceEntry,
@@ -105,6 +106,11 @@ def _make_section_map_and_write(
     return section_map
 
 
+def _posting_naming(jd_json_str: str) -> str:
+    """A posting that asks for every keyword in jd_json_str, as submit_keywords requires."""
+    return "Requirements: " + ", ".join(keyword_terms(parse_jd_json(jd_json_str)))
+
+
 def _run_to_tailor(
     tmp_path, jd_json_str: str, resume_label: str = "test_resume", monkeypatch=None
 ) -> str:
@@ -119,7 +125,7 @@ def _run_to_tailor(
     else:
         os.environ["CALLBACK_APPS_DIR"] = apps_dir
     with patch("callback.server.list_resumes", return_value=[resume_label]):
-        loaded = json.loads(load_jd(jd_raw_text="Sample JD"))
+        loaded = json.loads(load_jd(jd_raw_text=_posting_naming(jd_json_str)))
     session_id = loaded["session_id"]
     submit_keywords(session_id=session_id, jd_json=jd_json_str)
     return session_id
@@ -370,7 +376,7 @@ def test_submit_tailor_no_coverage_retry_clears_stale_render_outputs(tmp_path, m
     expected_archive = {
         "session_id": session_id,
         "jd_url": None,
-        "jd_text": "Sample JD",
+        "jd_text": _posting_naming(jd_json),
         "keywords": {
             "title": "SWE",
             "company": "Co",

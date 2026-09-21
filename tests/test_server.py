@@ -586,7 +586,7 @@ def test_submit_keywords_reports_checkpoint_value_error_as_invalid_session():
     session_id = loaded["session_id"]
 
     class FakeSnapshot:
-        values = {"resume_label": "resume"}
+        values = {"resume_label": "resume", "jd_text": "Python engineer needed"}
         next = ("keywords_accept",)
 
     class FakeGraph:
@@ -839,7 +839,14 @@ story_type: SBI
     )
 
     with patch("callback.server.list_resumes", return_value=[resume_label]):
-        loaded = json.loads(load_jd(jd_raw_text="GenAI engineer needed"))
+        loaded = json.loads(
+            load_jd(
+                jd_raw_text=(
+                    "GenAI engineer needed. Requirements: Python, RAG, LLMs, ChatML. "
+                    "Preferred: MCP."
+                )
+            )
+        )
         result = json.loads(submit_keywords(session_id=loaded["session_id"], jd_json=jd_json))
 
     candidates = result["data"]["project_candidates"]
@@ -937,7 +944,13 @@ story_type: SBI
     )
 
     with patch("callback.server.list_resumes", return_value=[resume_label]):
-        loaded = json.loads(load_jd(jd_raw_text="GenAI engineer needed"))
+        loaded = json.loads(
+            load_jd(
+                jd_raw_text=(
+                    "GenAI engineer needed. Requirements: Python, RAG, ChatML. Preferred: AWS."
+                )
+            )
+        )
         result = json.loads(submit_keywords(session_id=loaded["session_id"], jd_json=jd_json))
 
     layout = result["data"]["project_layout_recommendation"]
@@ -1040,7 +1053,9 @@ story_type: SBI
     )
 
     with patch("callback.server.list_resumes", return_value=[resume_label]):
-        loaded = json.loads(load_jd(jd_raw_text="GenAI engineer needed"))
+        loaded = json.loads(
+            load_jd(jd_raw_text="GenAI engineer needed. Requirements: Python, RAG, ChatML.")
+        )
         result = json.loads(submit_keywords(session_id=loaded["session_id"], jd_json=jd_json))
 
     layout = result["data"]["project_layout_recommendation"]
@@ -2065,3 +2080,36 @@ def test_rank_project_candidates_skips_an_undecodable_page(tmp_path, monkeypatch
     }
     expected = {"names": ["Good"], "warned": True}
     assert actual == expected
+
+
+def test_submit_keywords_rejects_terms_missing_from_the_posting_and_accepts_a_corrected_retry():
+    from callback.server import load_jd, submit_keywords
+
+    with patch("callback.server.list_resumes", return_value=["resume"]):
+        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+    session_id = loaded["session_id"]
+    invented = json.dumps({"title": "Engineer", "required": ["Python", "Kubernetes", "Redis"]})
+
+    rejected = json.loads(submit_keywords(session_id=session_id, jd_json=invented))
+
+    assert rejected == {
+        "status": "error",
+        "error": {
+            "stage": "submit_keywords",
+            "code": "terms_not_in_jd",
+            "message": (
+                "these keywords do not appear in the job posting: ['Kubernetes', 'Redis']. "
+                "Copy each keyword exactly as the posting words it, or remove it, then call "
+                "submit_keywords again."
+            ),
+            "retriable": True,
+        },
+        "session_id": session_id,
+    }
+
+    retried = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+
+    assert {"status": retried["status"], "keywords": retried["data"]["keywords"]} == {
+        "status": "ok",
+        "keywords": EXPECTED_PARTIAL_KEYWORDS,
+    }

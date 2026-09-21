@@ -48,7 +48,7 @@ from callback.apply_graph import (
     make_config as make_apply_config,
 )
 from callback.apply_nodes import _detect_uncovered_skills
-from callback.jd_data import EXTRACTION_PROTOCOL, JDDataError, parse_jd_json
+from callback.jd_data import EXTRACTION_PROTOCOL, JDDataError, keyword_terms, parse_jd_json
 from callback.jd_fetcher import JDFetchError
 from callback.observability import invoke_graph_without_native_tracing, trace_tool
 from callback.preferences import SearchPreferences
@@ -57,6 +57,7 @@ from callback.profile_graph import make_config as make_profile_config
 from callback.repository.preferences import PreferencesStore
 from callback.repository.resumes import list_resumes
 from callback.repository.stories import label_line_field, tags_from_meta
+from callback.scorer import terms_absent_from
 from callback.section_map import SectionMap, SkillsSection, apply_edit
 from callback.state import ApplyState, CreatedStory, ProfileState
 from callback.wiki import WikiPageError, WikiPageIdError, WikiStore, split_frontmatter
@@ -901,6 +902,31 @@ def submit_keywords(session_id: str, jd_json: str) -> str:
     return _submit_keywords_impl(session_id, jd_json)
 
 
+def _keywords_not_in_jd_error(graph, config, keywords: dict, session_id: str) -> str | None:
+    """Return a retriable error naming every keyword the job posting does not contain."""
+    jd_text = graph.get_state(config).values.get("jd_text") or ""
+    absent = terms_absent_from(keyword_terms(keywords), jd_text)
+    if not absent:
+        return None
+    return _err(
+        stage="submit_keywords",
+        code="terms_not_in_jd",
+        message=(
+            f"these keywords do not appear in the job posting: {absent}. Copy each keyword "
+            "exactly as the posting words it, or remove it, then call submit_keywords again."
+        ),
+        session_id=session_id,
+        retriable=True,
+    )
+
+
+def _submit_keywords_precheck(graph, config, keywords: dict, session_id: str) -> str | None:
+    """Return the first error that stops submit_keywords: a bad session, or invented keywords."""
+    return _submit_keywords_state_error(graph, config, session_id) or _keywords_not_in_jd_error(
+        graph, config, keywords, session_id
+    )
+
+
 def _submit_keywords_invoke(
     graph, config, keywords: dict, session_id: str
 ) -> tuple[dict, None] | tuple[None, str]:
@@ -938,9 +964,9 @@ def _submit_keywords_impl(session_id: str, jd_json: str) -> str:
 
     graph = get_apply_graph()
     config = make_apply_config(session_id, tool_name="submit_keywords")
-    state_error = _submit_keywords_state_error(graph, config, session_id)
-    if state_error is not None:
-        return state_error
+    precheck_error = _submit_keywords_precheck(graph, config, keywords, session_id)
+    if precheck_error is not None:
+        return precheck_error
 
     state, invoke_error = _submit_keywords_invoke(graph, config, keywords, session_id)
     if invoke_error is not None:
