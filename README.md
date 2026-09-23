@@ -58,13 +58,13 @@ Restart your session afterward.
 ### Hermes
 
 ```
-hermes plugins install thedandano/callback --no-deps
+hermes plugins install thedandano/callback
 hermes plugins enable callback
 ```
 
 Start a new session afterward.
 
-Two things about that first command. `--no-deps` is required: Hermes reads `pyproject.toml` and tries to install callback's Python packages into its own environment, where `crawl4ai` collides with a package Hermes already pins. They aren't needed there, because the server runs as a separate process under `uvx` with its own packages. Hermes also stops the install for any repo outside its curated catalog and prints a scan report first. Read it, then re-run with `--force` to continue.
+Hermes stops the install for any repo outside its curated catalog and prints a scan report first. Read it, then re-run with `--force` to continue.
 
 ### Other Agent Plugins clients
 

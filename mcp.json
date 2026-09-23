@@ -5,8 +5,6 @@
       "type": "stdio",
       "command": "uvx",
       "args": [
-        "-p",
-        "3.13",
         "--from",
         "git+https://github.com/thedandano/callback",
         "callback",
