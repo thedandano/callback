@@ -1,0 +1,17 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "callback": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "-p",
+        "3.13",
+        "--from",
+        "git+https://github.com/thedandano/callback",
+        "callback",
+        "serve"
+      ]
+    }
+  }
+}
