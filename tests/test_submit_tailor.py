@@ -179,6 +179,238 @@ def test_submit_tailor_applies_valid_edits_and_rescores(tmp_path, monkeypatch):
     assert result["workflow"]["required_input"] == {}
 
 
+def test_submit_tailor_can_be_retried_after_render_failure(tmp_path, monkeypatch):
+    """A render failure leaves the session at the tailor interrupt for a retry."""
+    import callback.apply_nodes
+    from callback.server import submit_tailor
+
+    resume_label = "test_resume"
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    _make_section_map_and_write(resume_label)
+
+    jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python", "Kubernetes"]})
+    session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
+
+    edits = [
+        {"section": "summary", "op": "replace", "value": "Python + Kubernetes engineer."},
+        {"section": "skills", "op": "add", "value": "Kubernetes"},
+        {
+            "section": "experience",
+            "op": "replace",
+            "target": "exp-0-b0",
+            "value": "Deployed Kubernetes clusters serving 1M RPS",
+        },
+    ]
+
+    calls = {"n": 0}
+    real_render = callback.apply_nodes.render_resume
+
+    def flaky_render(tailored, output_path):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return {"success": False, "error": "chromium crashed"}
+        return real_render(tailored, output_path)
+
+    monkeypatch.setattr("callback.apply_nodes.render_resume", flaky_render)
+
+    first = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    assert first == {
+        "status": "error",
+        "error": {
+            "stage": "submit_tailor",
+            "code": "pipeline_error",
+            "message": "render: chromium crashed",
+            "retriable": True,
+        },
+        "session_id": session_id,
+    }
+
+    second = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    actual = {
+        "status": second["status"],
+        "pdf_exists": Path(second["data"]["pdf_path"]).exists(),
+    }
+    assert actual == {"status": "ok", "pdf_exists": True}
+
+
+def test_submit_tailor_no_coverage_retry_clears_stale_render_outputs(tmp_path, monkeypatch):
+    """A no_coverage retry after a rendered-then-failed edits attempt must not leak
+    the abandoned attempt's pdf_path into the no_coverage envelope."""
+    from callback.server import submit_tailor
+
+    resume_label = "stale_leak_resume"
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    _make_section_map_and_write(resume_label)
+
+    jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python", "Kubernetes"]})
+    session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
+
+    edits = [
+        {"section": "summary", "op": "replace", "value": "Python + Kubernetes engineer."},
+    ]
+
+    # render succeeds and sets pdf_path, but parse_final fails (empty extracted text)
+    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", lambda path: "")
+
+    first = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    assert first == {
+        "status": "error",
+        "error": {
+            "stage": "submit_tailor",
+            "code": "pipeline_error",
+            "message": "parse_final: PDF extracted to empty text",
+            "retriable": True,
+        },
+        "session_id": session_id,
+    }
+
+    second = json.loads(submit_tailor(session_id=session_id, edits=[], no_coverage=True))
+    actual_report = second["data"]["report"]
+    expected_report = {
+        "before": {
+            "total": 59.01960784313725,
+            "keyword_match": 27.5,
+            "required_coverage": 50.0,
+            "preferred_coverage": None,
+            "experience_fit": None,
+            "impact_evidence": 6.0,
+            "ats_format": 6.666666666666666,
+            "readability": 10.0,
+        },
+        "after": {
+            "total": 59.01960784313725,
+            "keyword_match": 27.5,
+            "required_coverage": 50.0,
+            "preferred_coverage": None,
+            "experience_fit": None,
+            "impact_evidence": 6.0,
+            "ats_format": 6.666666666666666,
+            "readability": 10.0,
+        },
+        "delta": {
+            "total": 0.0,
+            "keyword_match": 0.0,
+            "required_coverage": 0.0,
+            "preferred_coverage": None,
+            "experience_fit": None,
+            "impact_evidence": 0.0,
+            "ats_format": 0.0,
+            "readability": 0.0,
+        },
+        "format_gap_chars": -258,
+        "no_coverage": True,
+        "uncovered_skills": [],
+        "experience_evaluated": False,
+        "notes": [
+            "Experience fit not evaluated (JD states no years requirement or resume dates "
+            "are unavailable); total is renormalized over the remaining dimensions.",
+            "ATS format: 'Education' header not found in rendered PDF "
+            "(closeable_by=source_pdf). Tailoring cannot fix this.",
+        ],
+        "warnings": [],
+    }
+    assert actual_report == expected_report
+
+    actual = {
+        "status": second["status"],
+        "pdf_path": second["data"]["pdf_path"],
+        "uncovered_skills": second["data"]["uncovered_skills"],
+        "tailor_diagnostics": second["data"]["tailor_diagnostics"],
+        "outcome": second["data"]["outcome"],
+    }
+    assert actual == {
+        "status": "ok",
+        "pdf_path": None,
+        "uncovered_skills": [],
+        "tailor_diagnostics": [],
+        "outcome": {"no_coverage": True, "reason": "no wiki stories cover required keywords"},
+    }
+
+    archive = json.loads(Path(second["data"]["archive_path"]).read_text())
+    timestamp = archive.pop("timestamp")
+    assert isinstance(timestamp, str)
+    expected_scores = {
+        "total": 59.01960784313725,
+        "keyword_match": 27.5,
+        "required_coverage": 50.0,
+        "preferred_coverage": None,
+        "experience_fit": None,
+        "experience_evaluated": False,
+        "impact_evidence": 6.0,
+        "ats_format": 6.666666666666666,
+        "readability": 10.0,
+        "req_matched": ["Python"],
+        "req_unmatched": ["Kubernetes"],
+        "req_group_unmatched": [],
+        "pref_matched": [],
+        "pref_unmatched": [],
+        "pref_group_unmatched": [],
+        "ats_diagnostics": [
+            {
+                "expected": "Experience",
+                "observed": "Experience",
+                "matched": True,
+                "closeable_by": "source_pdf",
+            },
+            {
+                "expected": "Education",
+                "observed": None,
+                "matched": False,
+                "closeable_by": "source_pdf",
+            },
+            {
+                "expected": "Skills",
+                "observed": "Skills",
+                "matched": True,
+                "closeable_by": "source_pdf",
+            },
+        ],
+        "scoring_engine_version": "v2",
+    }
+    expected_archive = {
+        "session_id": session_id,
+        "jd_url": None,
+        "jd_text": "Sample JD",
+        "keywords": {
+            "title": "SWE",
+            "company": "Co",
+            "required": ["Python", "Kubernetes"],
+            "preferred": [],
+            "required_any": [],
+            "preferred_any": [],
+            "location": None,
+            "seniority": "unspecified",
+            "required_years": 0.0,
+            "team": None,
+            "key_responsibilities": [],
+            "pay_range_min": None,
+            "pay_range_max": None,
+        },
+        "tailored_resume_text": "",
+        "pdf_path": None,
+        "render_page_count": None,
+        "render_warnings": [],
+        "scores": {
+            "initial": expected_scores,
+            "final": expected_scores,
+            "delta": {
+                "total": 0.0,
+                "keyword_match": 0.0,
+                "required_coverage": 0.0,
+                "preferred_coverage": None,
+                "experience_fit": None,
+                "impact_evidence": 0.0,
+                "ats_format": 0.0,
+                "readability": 0.0,
+            },
+            "scoring_engine_version": "v2",
+        },
+        "uncovered_skills": [],
+        "outcome": {"no_coverage": True, "reason": "no wiki stories cover required keywords"},
+    }
+    assert archive == expected_archive
+
+
 def test_submit_tailor_replaces_project_entry(tmp_path, monkeypatch):
     from callback.server import submit_tailor
 
@@ -678,6 +910,9 @@ def test_submit_tailor_rejects_unwritable_output_dir(tmp_path, monkeypatch):
 
 
 def test_submit_tailor_returns_envelope_when_extractor_raises(tmp_path, monkeypatch):
+    """parse_final catches a raising extractor and lands the session back at
+    the tailor interrupt with a retriable pipeline_error, instead of stranding
+    the thread at parse_final behind an unexpected_error."""
     from callback.server import submit_tailor
 
     resume_label = "test_resume"
@@ -697,10 +932,60 @@ def test_submit_tailor_returns_envelope_when_extractor_raises(tmp_path, monkeypa
         "status": "error",
         "error": {
             "stage": "submit_tailor",
-            "code": "unexpected_error",
-            "message": "unexpected submit_tailor failure; inspect callback logs",
-            "retriable": False,
+            "code": "pipeline_error",
+            "message": "parse_final: extract failed: extractor: PDF yielded no text",
+            "retriable": True,
         },
         "session_id": session_id,
     }
     assert result == expected
+
+
+def test_submit_tailor_can_be_retried_after_finalize_archive_write_failure(tmp_path, monkeypatch):
+    """A finalize OSError leaves the session at the tailor interrupt for a retry."""
+    import builtins
+
+    import callback.apply_nodes as apply_nodes_module
+    from callback.server import submit_tailor
+
+    resume_label = "test_resume"
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    _make_section_map_and_write(resume_label)
+
+    jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python", "Kubernetes"]})
+    session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
+
+    edits = [
+        {"section": "summary", "op": "replace", "value": "Python + Kubernetes engineer."},
+    ]
+
+    real_open = builtins.open
+    calls = {"n": 0}
+
+    def flaky_open(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise OSError("disk full")
+        return real_open(*args, **kwargs)
+
+    monkeypatch.setattr(apply_nodes_module, "open", flaky_open, raising=False)
+
+    first = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    assert first == {
+        "status": "error",
+        "error": {
+            "stage": "submit_tailor",
+            "code": "pipeline_error",
+            "message": "finalize: cannot write archive: disk full",
+            "retriable": True,
+        },
+        "session_id": session_id,
+    }
+
+    second = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    actual = {
+        "status": second["status"],
+        "pdf_exists": Path(second["data"]["pdf_path"]).exists(),
+        "archive_exists": Path(second["data"]["archive_path"]).exists(),
+    }
+    assert actual == {"status": "ok", "pdf_exists": True, "archive_exists": True}

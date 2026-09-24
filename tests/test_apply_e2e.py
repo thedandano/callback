@@ -120,9 +120,9 @@ def _inject_tailored_sections_and_invoke(session_id: str, tailored_sections: dic
 
     Returns (graph, config) after the graph has run to completion.
     """
-    from callback.apply_graph import build_apply_graph, make_config
+    from callback.apply_graph import get_apply_graph, make_config
 
-    graph = build_apply_graph()
+    graph = get_apply_graph()
     config = make_config(session_id)
     graph.update_state(config, {"tailored_sections": tailored_sections})
     graph.invoke(None, config)
@@ -142,10 +142,10 @@ class TestApplyGraphE2E:
 
     def test_tailor_produces_tailored_resume_object(self, setup_e2e_session):
         """Injecting tailored_sections at tailor interrupt produces TailoredResume."""
-        from callback.apply_graph import build_apply_graph, make_config
+        from callback.apply_graph import get_apply_graph, make_config
 
         session_id = setup_e2e_session
-        graph = build_apply_graph()
+        graph = get_apply_graph()
         config = make_config(session_id)
         snapshot = graph.get_state(config)
 
@@ -192,10 +192,10 @@ class TestApplyGraphE2E:
 
     def test_m1_scenario_tailored_resume_has_name(self, setup_e2e_session):
         """M1 scenario: tailored resume object populated after tailor node."""
-        from callback.apply_graph import build_apply_graph, make_config
+        from callback.apply_graph import get_apply_graph, make_config
 
         session_id = setup_e2e_session
-        graph = build_apply_graph()
+        graph = get_apply_graph()
         config = make_config(session_id)
 
         # Inject tailored_sections and advance through the graph

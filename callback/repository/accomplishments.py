@@ -38,7 +38,14 @@ class AccomplishmentsStore:
         os.replace(tmp_path, file_path)
 
     def save_story(self, story: CreatedStory) -> CreatedStory:
+        """Persist a story. Saving a story identical to one already stored returns
+        the stored one instead of appending a duplicate, so a retry after a
+        failure that happened after the write is safe."""
         data = self._load()
+        content = story.model_dump(exclude={"id"})
+        for record in data["created_stories"]:
+            if {k: v for k, v in record.items() if k != "id"} == content:
+                return CreatedStory.model_validate(record)
         story_id = f"story-{len(data['created_stories']) + 1:03d}"
         story_with_id = story.model_copy(update={"id": story_id})
         data["created_stories"].append(story_with_id.model_dump())

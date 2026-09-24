@@ -137,8 +137,8 @@ handoff metadata.
 | `submit_tailor` | apply | Applies host edits, resumes the graph, and finalizes the PDF/report artifacts. |
 | `get_wiki_pages` | apply | Reads wiki pages for the active resume label. |
 | `onboard_user` | profile | Starts profile intake and registers the resume plus optional source files. |
-| `compile_profile` | profile | Recompiles the profile from stored stories and host tags. |
-| `create_story` | profile | Persists a behavioral story for a skill. |
+| `compile_profile` | profile | Resumes the profile graph thread (or starts a new one) and returns the recompiled profile with orphaned skills. |
+| `create_story` | profile | Persists a behavioral story and returns orphaned skills; recompiles the profile in the same call. |
 | `check_update` | utility | Returns current version, latest release tag, and update status. |
 
 All tools return JSON envelopes via `_ok` / `_err`:
@@ -170,28 +170,28 @@ jd_fetch -> keywords_accept -> parse_initial -> score_initial -> tailor -> rende
 
 `submit_tailor` resumes at `tailor`.
 
+Errors in `tailor`, `render`, `parse_final`, or `finalize` route back to the `tailor` interrupt; `submit_tailor` returns `pipeline_error` with `retriable: true` and may be called again with the same session to retry.
+
 Checkpointer DB: `~/.local/share/callback/apply-sessions.db`.
 State schema: `ApplyState` in `state.py` (single Pydantic model - entire graph state).
 Keyword extraction is host-owned: `load_jd` returns the JD markdown and extraction protocol, then `submit_keywords` stores only validated JDData submitted by the host.
 
 ### Profile graph (`profile_graph.py`, `profile_nodes.py`)
 
-Cyclic, with interrupts after `onboard`, `compile_profile`, and `create_story`:
+Cyclic, with interrupts after `onboard` and before `create_story`:
 
 ```text
-check_profile -> onboard -> compile_profile -> check_orphans
-      |            ^             |
-      |            |             v
-      +---------- check_orphans <- create_story
+check_profile ──(resume_path or no profile)──▶ onboard ─▶ compile_profile ─▶ check_orphans
+              ├─(story pending in intake)────▶ create_story ─▶ compile_profile ─┘   │
+              └─(otherwise)──────────────────▶ compile_profile ─────────────────┘   │
+                                                                                     ▼
+                              create_story ◀──(orphans)── check_orphans ──(none)──▶ END
 ```
+
+Interrupts: after `onboard`; before `create_story`. `compile_profile` and `create_story` accept an optional `session_id` to resume the thread; without one they start a new thread that `check_profile` routes to the right node.
 
 Checkpointer DB: `~/.local/share/callback/profile-sessions.db`.
 State schema: `ProfileState` in `state.py`.
-
-Current profile MCP behavior:
-- `onboard_user` enters the profile graph.
-- `compile_profile` and `create_story` still call node functions directly.
-- Preserve the graph-state-injection intent when extending these tools.
 
 ### JD Fetching (`jd_fetcher.py`)
 
@@ -224,9 +224,9 @@ PDF rendering uses HTML + Playwright in `callback/render/html_builder.py`.
 | Module | Role |
 |---|---|
 | `server.py` | FastMCP tool definitions, envelope helpers, structured JSON logging |
-| `apply_graph.py` | `build_apply_graph()` - linear apply pipeline with host handoff interrupts |
+| `apply_graph.py` | `get_apply_graph()` cached accessor; linear apply pipeline with host handoff interrupts and error routing |
 | `apply_nodes.py` | Apply nodes (`jd_fetch`, `keywords_accept`, `parse_initial`, `score_initial`, `tailor`, `render`, `parse_final`, `score_final`, `report`, `finalize`) |
-| `profile_graph.py` | `build_profile_graph()` - cyclic profile graph with router edges and interrupts |
+| `profile_graph.py` | `get_profile_graph()` cached accessor; cyclic profile graph with router edges and interrupts |
 | `profile_nodes.py` | Profile nodes (`check_profile`, `onboard`, `compile_profile`, `check_orphans`, `create_story`) |
 | `state.py` | `ApplyState`, `ProfileState`, and related profile data models |
 | `scorer.py` | Deterministic ATS scorer |
