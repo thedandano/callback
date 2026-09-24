@@ -81,3 +81,17 @@ If this runs clean, LangGraph can replace the Go FSM. Build this first.
 ## Interview narrative
 
 "I designed a Go MCP server to learn the protocol and FSM design mechanically. Once I understood the architecture, I rebuilt the orchestration layer in Python on LangGraph — because that's where the eval tooling, observability, and hiring market live. The Go pdfrender and survival diff stay as subprocess tools where fpdf remains the right fit. The MCP tool surface is unchanged, so Claude can still drive it exactly as before."
+
+---
+
+## 2026-09-03 — Roadmap decisions from the repo audit
+
+Source: `INTENT.md` open decisions Q1 to Q5, resolved in one session.
+
+| # | Decision | Why |
+|---|----------|-----|
+| Q1 | Keep the profile graph and make it real; wiki markdown becomes the source of truth (OKF v0.1), JSON becomes a rebuilt cache | The profile is the only evidence tailoring may use; a graph that nothing routes through weakens the portfolio claim |
+| Q2 | Replace crawl4ai with Playwright + trafilatura | Equal keyword recall on five archived JDs, 1.5x to 37x fewer tokens, 87 fewer packages; the one bot-check failure was the headless user-agent string, not stealth mode |
+| Q3 | Drop `setup-mcp`; plugin install is the only install path | More harnesses adopt plugins; two overlapping installers is dead weight |
+| Q4 | Delete the build-version stamp; develop with `claude --plugin-dir .` and launch the server from `${CLAUDE_PLUGIN_ROOT}` | Server and skills must come from one checkout; `uvx --from git+…` let an installed plugin run skills from the cache and the server from `main` |
+| Q5 | Evals exist first to catch our own regressions, later to qualify a cheaper model; fixtures in git, history in LangSmith experiments | Same runner, same checks; only the model flag changes when the second purpose arrives |

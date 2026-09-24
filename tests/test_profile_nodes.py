@@ -4,7 +4,10 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 import callback.extractor as ext
+import callback.repository.resumes as resumes_module
 import callback.wiki as wiki_module
 from callback.profile_nodes import (
     check_orphans,
@@ -15,7 +18,13 @@ from callback.profile_nodes import (
 )
 from callback.profilecompiler import save_compiled_profile
 from callback.repository.accomplishments import AccomplishmentsStore
-from callback.repository.resumes import list_resumes, save_resume
+from callback.repository.resumes import (
+    data_dir,
+    get_resume,
+    list_resumes,
+    replace_resume,
+    save_resume,
+)
 from callback.state import (
     CompiledProfile,
     CreatedStory,
@@ -231,6 +240,23 @@ class TestCreateStory:
         }
 
 
+class TestOnboardValidatesBeforeClearing:
+    def test_onboard_keeps_old_resume_when_replacement_is_missing(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+
+        existing_resume = _make_resume_file(tmp_path)
+        save_resume("existing_label", str(existing_resume))
+
+        missing_path = str(tmp_path / "does_not_exist.pdf")
+        state = _make_state(resume_path=missing_path)
+
+        with pytest.raises(FileNotFoundError):
+            onboard(state)
+
+        assert list_resumes() == ["existing_label"]
+
+
 class TestOnboardIdempotency:
     def test_re_onboard_replaces_resume(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
@@ -271,3 +297,38 @@ Rust, Go
         onboard(state2)
 
         assert list_resumes() == ["primary"]
+
+
+class TestReplaceResume:
+    def test_replace_resume_with_registered_file_as_source_keeps_it(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+
+        source = tmp_path / "resume.txt"
+        source.write_text("original content", encoding="utf-8")
+        save_resume("primary", str(source))
+
+        replace_resume("primary", get_resume("primary"))
+
+        assert list_resumes() == ["primary"]
+        assert Path(get_resume("primary")).read_text(encoding="utf-8") == "original content"
+
+    def test_replace_resume_keeps_old_when_copy_fails(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+
+        source = tmp_path / "resume.txt"
+        source.write_text("original content", encoding="utf-8")
+        save_resume("primary", str(source))
+
+        replacement = tmp_path / "replacement.txt"
+        replacement.write_text("new content", encoding="utf-8")
+
+        def _raise_disk_full(*args, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(resumes_module.shutil, "copy2", _raise_disk_full)
+
+        with pytest.raises(OSError, match="disk full"):
+            replace_resume("primary", str(replacement))
+
+        assert list_resumes() == ["primary"]
+        assert list(data_dir().glob("*.staging")) == []

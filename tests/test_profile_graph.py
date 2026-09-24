@@ -10,7 +10,7 @@ from pathlib import Path
 import callback.wiki as wiki_module
 from callback.profile_graph import build_profile_graph, make_config
 from callback.profilecompiler import save_compiled_profile
-from callback.repository.resumes import save_resume
+from callback.repository.resumes import list_resumes, save_resume
 from callback.state import CompiledProfile, OrphanedSkill, ProfileState
 
 # ---------------------------------------------------------------------------
@@ -87,6 +87,44 @@ class TestCheckProfileRouter:
         assert {k: result.get(k) for k in ("profile_exists", "intake")} == {
             "profile_exists": True,
             "intake": None,
+        }
+
+    def test_reonboard_with_existing_profile_replaces_resume(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        _save_profile_with_resumes(tmp_path)
+        new_resume = tmp_path / "new.txt"
+        new_resume.write_text("John Roe\njohn@example.com\n\nSkills\nRust\n", encoding="utf-8")
+        graph = _tmp_graph(tmp_path)
+        config = make_config("s-reonboard-1")
+
+        result = graph.invoke(_make_state("s-reonboard-1", resume_path=str(new_resume)), config)
+
+        actual = {
+            "resume_label": result.get("resume_label"),
+            "intake_status": (result.get("intake") or {}).get("status"),
+            "registered": list_resumes(),
+        }
+        expected = {
+            "resume_label": "primary",
+            "intake_status": "onboarded",
+            "registered": ["primary"],
+        }
+        assert actual == expected
+
+    def test_reonboard_with_orphans_does_not_enter_create_story(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        _save_profile_with_resumes(tmp_path, orphans=["Rust"])
+        new_resume = _resume_txt(tmp_path)
+        graph = _tmp_graph(tmp_path)
+        config = make_config("s-reonboard-2")
+
+        result = graph.invoke(_make_state("s-reonboard-2", resume_path=str(new_resume)), config)
+
+        assert {k: result.get(k) for k in ("current_story_target", "compiled_profile")} == {
+            "current_story_target": None,
+            "compiled_profile": None,
         }
 
 
