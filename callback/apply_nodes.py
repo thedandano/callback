@@ -16,9 +16,7 @@ Implements the 10 nodes of the linear apply pipeline:
 import asyncio
 import json
 import logging
-import os
 import re
-import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
@@ -26,27 +24,18 @@ from time import perf_counter
 from pydantic import ValidationError
 
 from callback import extractor as resume_extractor
-from callback import scorer
+from callback import paths, scorer
 from callback.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError, fetch_url_to_markdown
 from callback.observability import trace_node
 from callback.render import render_resume
 from callback.repository.resumes import ResumeNotFoundError, get_resume
+from callback.scorer import normalize_for_match
 from callback.section_map import SectionMap
 from callback.state import ApplyState, TailoredResume
 from callback.wiki import WikiStore
 
 logger = logging.getLogger(__name__)
 jd_fetcher_logger = logging.getLogger("callback.jd_fetcher")
-_DASH_RE = re.compile(r"[-‐–—\u00ad\u2011\u200b]")
-_WS_RE = re.compile(r"\s+")
-
-
-# Module-level constant for applications directory, overridable by env var
-def _get_apps_dir() -> Path:
-    env_path = os.getenv("CALLBACK_APPS_DIR")
-    if env_path:
-        return Path(env_path)
-    return Path.home() / ".local" / "share" / "callback" / "applications"
 
 
 def _resume_filename_part(value: str | None, fallback: str) -> str:
@@ -59,12 +48,6 @@ def _resume_pdf_filename(candidate_name: str | None, company_name: str | None) -
     candidate = _resume_filename_part(candidate_name, "Candidate")
     company = _resume_filename_part(company_name, "Company")
     return f"{candidate}_{company}_Resume.pdf"
-
-
-def _normalize_for_match(text: str) -> str:
-    normalized = unicodedata.normalize("NFKC", text)
-    normalized = _DASH_RE.sub(" ", normalized)
-    return _WS_RE.sub(" ", normalized).strip()
 
 
 def _log_enter(node: str, state: ApplyState) -> None:
@@ -484,9 +467,7 @@ def tailor(state: ApplyState) -> dict:
 
 def _detect_uncovered_skills(section_map: SectionMap) -> list[str]:
     """Return skills added to skills section but absent from all experience bullets."""
-    all_skills = list(section_map.skills.flat)
-    for items in section_map.skills.categorized.values():
-        all_skills.extend(items)
+    all_skills = section_map.skills.all_skills()
 
     bullet_text = " ".join(b for exp in section_map.experience for b in exp.bullets)
 
@@ -511,7 +492,7 @@ def render(state: ApplyState) -> dict:
     if state.tailored is None:
         return {"error": "render: state.tailored is None — tailor node must run first"}
 
-    base_dir = Path(state.output_dir) if state.output_dir else _get_apps_dir()
+    base_dir = Path(state.output_dir) if state.output_dir else paths.apps_dir()
     try:
         base_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
@@ -603,7 +584,7 @@ def _compute_tailor_diagnostics(
                 "value": value,
                 "applied_to_map": True,
                 "present_in_rendered_text": present,
-                "suggested_alternatives": [] if present else [_normalize_for_match(value)],
+                "suggested_alternatives": [] if present else [normalize_for_match(value)],
             }
         )
     return result
@@ -690,11 +671,11 @@ def finalize(state: ApplyState) -> dict:
     """Archive the complete application record.
 
     Writes a JSON archive to apps_dir/<session_id>.json containing all
-    required fields per spec. Sets finalized=True.
+    required fields per spec.
     """
     _log_enter("finalize", state)
 
-    apps_dir = _get_apps_dir()
+    apps_dir = paths.apps_dir()
     try:
         apps_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
@@ -743,4 +724,4 @@ def finalize(state: ApplyState) -> dict:
         )
         return {"error": f"finalize: cannot write archive: {exc}"}
 
-    return {"finalized": True, "finalized_at": finalized_at}
+    return {"finalized_at": finalized_at}

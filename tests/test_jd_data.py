@@ -1,8 +1,7 @@
 import json
-from dataclasses import is_dataclass
 
 import pytest
-from dataclass_wizard import JSONWizard
+from pydantic import BaseModel
 
 from callback.jd_data import EXTRACTION_PROTOCOL, JDData, JDDataError, parse_jd_json
 
@@ -60,11 +59,8 @@ PARTIAL_JD_JSON = """
 
 
 class TestJDDataModel:
-    def test_jddata_is_dataclass(self):
-        assert is_dataclass(JDData)
-
-    def test_jddata_uses_json_wizard(self):
-        assert issubclass(JDData, JSONWizard)
+    def test_jddata_is_pydantic_model(self):
+        assert issubclass(JDData, BaseModel)
 
     def test_full_jddata_preserves_all_fields(self):
         model = JDData(**FULL_JD)
@@ -272,3 +268,14 @@ class TestPreferredAny:
             JDData(title="T", company="C", required=["Python"], preferred_any=[["Datadog", 42]])  # type: ignore[list-item]
 
         assert exc_info.value.code == "invalid_jd"
+
+
+def test_non_string_seniority_is_rejected_as_invalid_jd():
+    payload = '{"required": ["Go"], "seniority": ["senior"]}'
+    actual = None
+    try:
+        parse_jd_json(payload)
+    except JDDataError as exc:
+        actual = {"code": exc.code, "mentions_seniority": "seniority" in str(exc)}
+    expected = {"code": "invalid_jd", "mentions_seniority": True}
+    assert actual == expected

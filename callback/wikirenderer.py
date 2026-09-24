@@ -1,8 +1,6 @@
 from callback.state import CompiledProfile, CreatedStory
 from callback.wiki import WikiStore, company_slug
 
-_WIKI_STORE = WikiStore()
-
 
 def _experience_page_content(story: CreatedStory) -> str:
     skills_line = ", ".join(sorted(story.skills)) if story.skills else ""
@@ -48,13 +46,17 @@ def _index_content(profile: CompiledProfile) -> str:
     return "\n".join(lines) + "\n"
 
 
-class WikiRenderer:
-    def __init__(self, store: WikiStore | None = None) -> None:
-        self._store = store or _WIKI_STORE
+def render_experience_page(resume_label: str, story: CreatedStory) -> None:
+    WikiStore().write_experience_page(
+        resume_label, company_slug(story.id), _experience_page_content(story)
+    )
 
-    def render_experience_page(self, resume_label: str, story: CreatedStory) -> None:
-        slug = company_slug(story.id)
-        self._store.write_experience_page(resume_label, slug, _experience_page_content(story))
 
-    def render_index(self, resume_label: str, profile: CompiledProfile) -> None:
-        self._store.write_index(resume_label, _index_content(profile))
+def render_index(resume_label: str, profile: CompiledProfile) -> None:
+    WikiStore().write_index(resume_label, _index_content(profile))
+
+
+def render_wiki(resume_label: str, profile: CompiledProfile) -> None:
+    for story in profile.stories:
+        render_experience_page(resume_label, story)
+    render_index(resume_label, profile)

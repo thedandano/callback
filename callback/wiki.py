@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-BASE_DIR = Path.home() / ".local" / "share" / "callback" / "profile-wiki"
+from callback import paths
 
 
 class WikiPageIdError(ValueError):
@@ -24,7 +24,7 @@ def company_slug(company_name: str) -> str:
 
 class WikiStore:
     def wiki_root(self, resume_label: str) -> Path:
-        return BASE_DIR / resume_label
+        return paths.wiki_dir() / resume_label
 
     def write_index(self, resume_label: str, content: str) -> None:
         root = self.wiki_root(resume_label)
@@ -52,10 +52,6 @@ class WikiStore:
         p = self._page_path(resume_label, page_id)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
-
-    def read_index(self, resume_label: str) -> str | None:
-        p = self.wiki_root(resume_label) / "index.md"
-        return p.read_text(encoding="utf-8") if p.exists() else None
 
     def is_valid_page_id(self, resume_label: str, page_id: str) -> bool:
         """Return True when page_id resolves under the wiki root, False otherwise."""

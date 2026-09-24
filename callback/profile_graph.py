@@ -20,10 +20,13 @@ import functools
 import sqlite3
 from pathlib import Path
 
-from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, StateGraph
 
+# langgraph re-exports langchain_core's RunnableConfig but leaves it out of __all__.
+from langgraph.types import RunnableConfig  # pyright: ignore[reportPrivateImportUsage]
+
+from callback import paths
 from callback.observability import build_graph_config
 from callback.profile_nodes import (
     check_orphans,
@@ -33,8 +36,6 @@ from callback.profile_nodes import (
     onboard,
 )
 from callback.state import ProfileState
-
-DB_PATH = Path.home() / ".local" / "share" / "callback" / "profile-sessions.db"
 
 
 def make_config(
@@ -73,7 +74,7 @@ def _route_check_orphans(state: ProfileState) -> str:
     return "create_story" if state.orphaned_skills else "end"
 
 
-def build_profile_graph(db_path: Path = DB_PATH):
+def build_profile_graph(db_path: Path | None = None):
     """Build the profile graph with checkpointing.
 
     Constructs the state graph with five nodes (check_profile, onboard,
@@ -82,12 +83,13 @@ def build_profile_graph(db_path: Path = DB_PATH):
 
     Args:
         db_path: Path to the SQLite checkpointer DB.
-                 Defaults to ~/.local/share/callback/profile-sessions.db
+                 Defaults to callback.paths.profile_db_path()
 
     Returns:
         Compiled LangGraph StateGraph for ProfileState with an interrupt
         after onboard and an interrupt before create_story.
     """
+    db_path = db_path if db_path is not None else paths.profile_db_path()
     # Initialize checkpointer with SQLite backend
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path), check_same_thread=False)

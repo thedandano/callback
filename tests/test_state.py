@@ -32,7 +32,6 @@ class TestApplyStateBasic:
         assert state.pdf_path is None
         assert state.report is None
         assert state.uncovered_skills is None
-        assert state.finalized is None
         assert state.error is None
         assert state.no_coverage is None
 
@@ -69,7 +68,6 @@ class TestApplyStateBasic:
             "render_warnings",
             "report",
             "uncovered_skills",
-            "finalized",
             "finalized_at",
             "error",
             "no_coverage",
@@ -165,13 +163,6 @@ class TestApplyStateBasic:
         state = ApplyState(session_id="s", uncovered_skills=skills)
         assert state.uncovered_skills == skills
 
-    def test_field_types_finalized(self):
-        """finalized field accepts bool or None."""
-        state_true = ApplyState(session_id="s", finalized=True)
-        assert state_true.finalized is True
-        state_false = ApplyState(session_id="s", finalized=False)
-        assert state_false.finalized is False
-
     def test_field_types_error(self):
         """error field accepts str or None."""
         state = ApplyState(session_id="s", error="Some error message")
@@ -189,13 +180,11 @@ class TestApplyStateBasic:
             jd_url="https://example.com",
             keywords={"title": "Engineer"},
             resume_label="backend",
-            finalized=False,
         )
         assert state.session_id == "s1"
         assert state.jd_url == "https://example.com"
         assert state.keywords is not None and state.keywords["title"] == "Engineer"
         assert state.resume_label == "backend"
-        assert state.finalized is False
 
 
 class TestProfileStateBasic:
@@ -210,7 +199,6 @@ class TestProfileStateBasic:
         assert state.compiled_profile is None
         assert state.orphaned_skills is None
         assert state.current_story_target is None
-        assert state.error is None
 
     def test_rejects_missing_session_id(self):
         """ProfileState raises ValidationError when session_id is missing."""
@@ -229,13 +217,11 @@ class TestProfileStateBasic:
             "resume_label",
             "resume_path",
             "sections",
-            "wiki_path",
             "intake",
             "compiled_profile",
             "host_tags",
             "orphaned_skills",
             "current_story_target",
-            "error",
         }
         assert set(fields.keys()) == required_fields
 
@@ -268,11 +254,6 @@ class TestProfileStateBasic:
         """current_story_target field accepts str or None."""
         state = ProfileState(session_id="s", current_story_target="Kubernetes")
         assert state.current_story_target == "Kubernetes"
-
-    def test_field_types_error(self):
-        """error field accepts str or None."""
-        state = ProfileState(session_id="s", error="Error message")
-        assert state.error == "Error message"
 
     def test_multiple_fields_together(self):
         """ProfileState accepts multiple fields set simultaneously."""
