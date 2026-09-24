@@ -97,7 +97,7 @@ def _validate_experience_target(entries: list[ExperienceEntry], target: str) -> 
         return None
     if target:
         return f"invalid experience target format: {target}"
-    return None
+    return "experience edit requires a target"
 
 
 def _validate_project_target(
@@ -117,7 +117,7 @@ def _validate_project_target(
         return _validate_project_bullet_target(projects, int(m.group(1)), int(m.group(2)))
     if target:
         return f"invalid project target format: {target}"
-    return None
+    return "project edit requires a target"
 
 
 def _validate_project_append_target(edit: dict[str, Any], op: str) -> str | None:
@@ -176,6 +176,8 @@ def validate_edit_target(section_map: SectionMap, edit: dict[str, Any]) -> str |
     if section not in _EDITABLE:
         return f"non-editable section: {section}"
     target = edit.get("target", "")
+    if not isinstance(target, str):
+        return f"target must be a string, got {type(target).__name__}"
     if section == "experience":
         return _validate_experience_target(section_map.experience, target)
     if section == "projects":
