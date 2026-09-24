@@ -28,6 +28,7 @@ from callback import paths, scorer
 from callback.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError, fetch_url_to_markdown
 from callback.observability import trace_node
 from callback.render import render_resume
+from callback.repository import stories
 from callback.repository.resumes import ResumeNotFoundError, get_resume
 from callback.scorer import normalize_for_match
 from callback.section_map import SectionMap
@@ -234,6 +235,9 @@ def parse_initial(state: ApplyState) -> dict:
     if state.resume_label is None:
         return {"parsed_initial": "<noop:parse:no-source>"}
 
+    # The apply path may be the first thing run after an upgrade; legacy story
+    # pages must carry frontmatter before submit_keywords ranks them.
+    stories.migrate_legacy_stories(state.resume_label)
     sections_json, wiki_index, sections_text = _load_wiki_sections(state.resume_label)
     base: dict = {}
     if sections_json:

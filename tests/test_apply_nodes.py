@@ -1,5 +1,6 @@
 """Tests for real parse_initial and score_initial node implementations."""
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,8 +15,10 @@ from callback.apply_nodes import (
     score_initial,
     tailor,
 )
+from callback.repository import stories
 from callback.section_map import ExperienceEntry
-from callback.state import ApplyState, TailoredResume
+from callback.state import ApplyState, CreatedStory, TailoredResume
+from callback.wiki import WikiStore
 
 
 def test_parse_initial_falls_back_to_text_extraction(tmp_path):
@@ -299,3 +302,33 @@ class TestCandidateExperienceYears:
     def test_all_unparseable_returns_none(self):
         experience = [ExperienceEntry(company="A", role="Eng", start_date="??", end_date=None)]
         assert _candidate_experience_years(experience) is None
+
+
+def test_parse_initial_migrates_legacy_stories_before_reading_the_wiki(tmp_path, monkeypatch):
+
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.repository.stories.list_resumes", lambda: ["primary"])
+    data_dir = tmp_path / "callback"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    legacy = {
+        "id": "story-001",
+        "primary_skill": "Python",
+        "skills": ["Python"],
+        "story_type": "SBI",
+        "job_title": "Project",
+        "situation": "s",
+        "behavior": "b",
+        "impact": "i",
+    }
+    (data_dir / "accomplishments.json").write_text(
+        json.dumps({"schema_version": "1", "onboard_text": "", "created_stories": [legacy]})
+    )
+    WikiStore().write_page("primary", "experience/story-001.md", "# Python — Sbi\n\nold render\n")
+
+    parse_initial(ApplyState(session_id="s", resume_label="primary"))
+
+    listed, warnings = stories.list_stories("primary")
+    actual = {"stories": listed, "warnings": warnings}
+    expected = {"stories": [CreatedStory(**legacy)], "warnings": []}
+    assert actual == expected

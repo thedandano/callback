@@ -144,6 +144,15 @@ check_profile ──(resume_path or no profile)──▶ onboard ─▶ compile_
 
 Interrupts: after `onboard`; before `create_story`. `compile_profile` and `create_story` accept an optional `session_id` to resume the thread; without one they start a new thread that `check_profile` routes to the right node.
 
+`create_story` writes one page, `experience/story-NNN.md`, with YAML frontmatter
+(`type`, `title`, `job_title`, `tags`, `story_type`, `timestamp`) and a body of
+`# title` then `**Situation:**` / `**Behavior:**` / `**Impact:**` paragraphs.
+`compile_profile` reads every story page and rewrites only `index.md` and
+`compiled_profile.json` — once the one-time migration has run it never touches a story file, so hand edits to a
+story's body survive `compile_profile`. `accomplishments.json` holds only
+`onboard_text`; migration of any legacy stories out of the JSON and onto pages
+runs automatically at the start of the first `onboard` or `compile_profile`.
+
 Checkpointer DB: `~/.local/share/callback/profile-sessions.db` (or `$XDG_DATA_HOME/callback/profile-sessions.db` if `XDG_DATA_HOME` is set).
 State schema: `ProfileState` in `state.py`.
 
@@ -185,6 +194,9 @@ The apply graph's `render` node uses HTML + Playwright via `callback.render.html
 | `state.py`           | `ApplyState`, `ProfileState` — Pydantic schemas for each graph |
 | `scorer.py`          | Deterministic ATS scorer (no I/O, no LLM) |
 | `extractor.py`       | Resume text extraction (PDF via pdfplumber, DOCX via python-docx, TXT) |
+| `repository/`        | Resume, onboard text, and story-page persistence |
+| `repository/stories.py` | Story pages: read, write, migrate legacy JSON stories to OKF pages |
+| `wikirenderer.py`    | Renders `index.md` |
 | `paths.py`           | Every data directory and the atomic writers |
 | `observability.py`   | Trace config port and LangSmith adapter |
 

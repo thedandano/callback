@@ -1,11 +1,30 @@
 import pytest
 
-from callback.wiki import WikiPageIdError, WikiStore, company_slug
+from callback.wiki import (
+    WikiPageError,
+    WikiPageIdError,
+    WikiStore,
+    company_slug,
+    join_frontmatter,
+    split_frontmatter,
+)
 
 
 def store(tmp_path, monkeypatch):
     monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path)
     return WikiStore()
+
+
+def test_write_page_is_atomic_no_tmp_leftovers(tmp_path, monkeypatch):
+    s = store(tmp_path, monkeypatch)
+    s.write_page("my-resume", "experience/story-001.md", "content")
+    exp_dir = tmp_path / "my-resume" / "experience"
+    actual = {
+        "files": sorted(p.name for p in exp_dir.iterdir()),
+        "content": (exp_dir / "story-001.md").read_text(encoding="utf-8"),
+    }
+    expected = {"files": ["story-001.md"], "content": "content"}
+    assert actual == expected
 
 
 def test_write_read_index_round_trip(tmp_path, monkeypatch):
@@ -105,3 +124,45 @@ def test_read_pages_rejects_embedded_nul(tmp_path, monkeypatch):
 def test_is_valid_page_id_rejects_embedded_nul(tmp_path, monkeypatch):
     s = store(tmp_path, monkeypatch)
     assert s.is_valid_page_id("r", "a\x00b.md") is False
+
+
+def test_split_frontmatter_returns_meta_and_body():
+    page = "---\ntype: project\ntags:\n- Python\n- AWS\n---\n# Title\n\n**Situation:** x\n"
+    actual = split_frontmatter(page)
+    expected = ({"type": "project", "tags": ["Python", "AWS"]}, "# Title\n\n**Situation:** x\n")
+    assert actual == expected
+
+
+def test_split_frontmatter_without_fence_returns_empty_meta_and_whole_content():
+    actual = split_frontmatter("# Just markdown\n")
+    expected = ({}, "# Just markdown\n")
+    assert actual == expected
+
+
+def test_split_frontmatter_rejects_unterminated_fence():
+    with pytest.raises(WikiPageError) as exc_info:
+        split_frontmatter("---\ntype: story\n# no closing fence\n")
+    assert "closing" in str(exc_info.value)
+
+
+def test_split_frontmatter_rejects_non_mapping_yaml():
+    with pytest.raises(WikiPageError) as exc_info:
+        split_frontmatter("---\n- just\n- a list\n---\nbody\n")
+    assert "mapping" in str(exc_info.value)
+
+
+def test_split_frontmatter_normalizes_crlf_before_the_fence_test():
+    lf_page = "---\ntype: project\ntags:\n- Python\n---\n# Title\n\n**Situation:** x\n"
+    crlf_page = lf_page.replace("\n", "\r\n")
+    assert split_frontmatter(crlf_page) == split_frontmatter(lf_page)
+
+
+def test_join_then_split_round_trips_and_keeps_key_order():
+    meta = {"type": "story", "title": "REST APIs", "tags": ["Node.js", "C++"], "n": 3}
+    page = join_frontmatter(meta, "# REST APIs\n\nbody\n")
+    actual = {
+        "page_starts": page.startswith("---\ntype: story\ntitle: REST APIs\n"),
+        "round": split_frontmatter(page),
+    }
+    expected = {"page_starts": True, "round": (meta, "# REST APIs\n\nbody\n")}
+    assert actual == expected

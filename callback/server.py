@@ -56,9 +56,10 @@ from callback.profile_graph import get_profile_graph, story_pending
 from callback.profile_graph import make_config as make_profile_config
 from callback.repository.preferences import PreferencesStore
 from callback.repository.resumes import list_resumes
+from callback.repository.stories import label_line_field, tags_from_meta
 from callback.section_map import SectionMap, SkillsSection, apply_edit
-from callback.state import ApplyState, ProfileState
-from callback.wiki import WikiPageIdError, WikiStore
+from callback.state import ApplyState, CreatedStory, ProfileState
+from callback.wiki import WikiPageError, WikiPageIdError, WikiStore, split_frontmatter
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 _LOG_FORMAT = "%(message)s"  # messages are already JSON strings
@@ -234,30 +235,69 @@ def _matched_keywords(keywords: list[str], text: str) -> list[str]:
     return [keyword for keyword in keywords if _keyword_matches_text(keyword, text)]
 
 
-def _project_story_name(content: str) -> str:
-    first_line = next(
-        (line.removeprefix("#").strip() for line in content.splitlines() if line.startswith("#")),
-        "",
-    )
-    return re.sub(r"\s+—\s+Sbi$", "", first_line)
+def _read_project_page(resume_label: str, page_id: str) -> str | None:
+    """One page's text, or None (logged) when the file cannot be read or decoded."""
+    try:
+        return WikiStore().read_pages(resume_label, [page_id])[page_id]
+    except (UnicodeDecodeError, OSError) as exc:
+        _log(
+            "WARNING",
+            {
+                "tool": "submit_keywords",
+                "event": "story_page_unreadable",
+                "page_id": page_id,
+                "reason": f"{type(exc).__name__}: {exc}",
+            },
+        )
+        return None
 
 
-def _project_story_skills(content: str) -> list[str]:
-    match = re.search(r"^Skills:\s*(.+)$", content, re.MULTILINE)
-    if not match:
-        return []
-    return [skill.strip() for skill in match.group(1).split(",") if skill.strip()]
-
-
-def _is_project_story(content: str) -> bool:
-    return bool(re.search(r"^\*\*Job Title:\*\*\s*Project\s*$", content, re.MULTILINE))
+def _project_page_meta(page_id: str, content: str) -> dict | None:
+    """Frontmatter of a project page; None (logged) for non-projects and unreadable pages."""
+    try:
+        meta, _ = split_frontmatter(content)
+    except WikiPageError as exc:
+        _log(
+            "WARNING",
+            {
+                "tool": "submit_keywords",
+                "event": "story_page_unreadable",
+                "page_id": page_id,
+                "reason": str(exc),
+            },
+        )
+        return None
+    if not meta:
+        _log(
+            "WARNING",
+            {
+                "tool": "submit_keywords",
+                "event": "story_page_without_frontmatter",
+                "page_id": page_id,
+            },
+        )
+        return None
+    if meta.get("type") != "project":
+        return None
+    try:
+        meta["tags"] = tags_from_meta(meta)
+    except WikiPageError as exc:
+        _log(
+            "WARNING",
+            {
+                "tool": "submit_keywords",
+                "event": "story_page_unreadable",
+                "page_id": page_id,
+                "reason": str(exc),
+            },
+        )
+        return None
+    return meta
 
 
 def _evidence_preview(content: str) -> str:
     lines = [
-        line.strip()
-        for line in content.splitlines()
-        if line.strip() and not line.startswith("#") and not line.startswith("**Job Title:**")
+        line.strip() for line in content.splitlines() if line.strip() and not line.startswith("#")
     ]
     return re.sub(r"\s+", " ", " ".join(lines))[:240]
 
@@ -300,32 +340,47 @@ def _valid_project_page_ids(resume_label: str, page_ids: list[str]) -> list[str]
     return valid_ids
 
 
+def _candidate(
+    page_id: str,
+    meta: dict,
+    body: str,
+    required: list[str],
+    preferred: list[str],
+) -> dict:
+    skills = [str(tag) for tag in (meta.get("tags") or [])]
+    title = str(meta.get("title") or "")
+    # Headings are dropped: the frontmatter title is the authoritative name, and a
+    # stale H1 left behind by a hand edit must not keep matching the old skill.
+    paragraphs = "\n".join(line for line in body.splitlines() if not line.startswith("#"))
+    match_text = f"{title}\n{paragraphs}\n{', '.join(skills)}"
+    return {
+        "page_id": page_id,
+        "name": str(meta.get("title") or ""),
+        "skills": skills,
+        "score": _project_score(required, preferred, match_text),
+        "required_matched": _matched_keywords(required, match_text),
+        "preferred_matched": _matched_keywords(preferred, match_text),
+        "evidence_preview": _evidence_preview(body),
+    }
+
+
 def _rank_project_candidates(resume_label: str, keywords: dict, wiki_index: str) -> list[dict]:
     required = keywords.get("required") or []
     preferred = keywords.get("preferred") or []
     page_ids = _valid_project_page_ids(resume_label, _project_page_ids(wiki_index))
-    pages = WikiStore().read_pages(resume_label, page_ids)
     candidates: list[dict] = []
     for page_id in page_ids:
-        content = pages.get(page_id) or ""
-        if not _is_project_story(content):
+        content = _read_project_page(resume_label, page_id)
+        if content is None:
             continue
-        required_matched = _matched_keywords(required, content)
-        preferred_matched = _matched_keywords(preferred, content)
-        score = _project_score(required, preferred, content)
-        if score == 0:
+        meta = _project_page_meta(page_id, content)
+        if meta is None:
             continue
-        candidates.append(
-            {
-                "page_id": page_id,
-                "name": _project_story_name(content),
-                "skills": _project_story_skills(content),
-                "score": score,
-                "required_matched": required_matched,
-                "preferred_matched": preferred_matched,
-                "evidence_preview": _evidence_preview(content),
-            }
-        )
+        _, body = split_frontmatter(content)
+        candidate = _candidate(page_id, meta, body, required, preferred)
+        if candidate["score"] == 0:
+            continue
+        candidates.append(candidate)
     return sorted(
         candidates,
         key=lambda candidate: (
@@ -1369,7 +1424,7 @@ def _profile_failure_error(graph, config, session_id: str, stage: str) -> str:
     if pending == ("compile_profile",):
         return _compile_failed_after_save_error(stage, session_id)
     if pending == ("create_story",) and story_pending(intake):
-        # The node may have written accomplishments.json before the checkpoint
+        # The node may have written the story's wiki page before the checkpoint
         # write failed. save_story ignores an identical story, so retrying is safe.
         return _err(
             stage,
@@ -1608,6 +1663,16 @@ def create_story(
         "behavior": behavior,
         "impact": impact,
     }
+    field = label_line_field(CreatedStory(id="", **intake))
+    if field is not None:
+        return _err(
+            "create_story",
+            "invalid_story",
+            f"{field} contains a line starting with **Situation:**, **Behavior:**, or "
+            "**Impact:**; those mark paragraph boundaries in the story page, rephrase it",
+            session_id,
+            retriable=False,
+        )
     return _create_story_impl(session_id, intake, resumed=resumed)
 
 
