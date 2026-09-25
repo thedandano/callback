@@ -28,7 +28,7 @@ Logs default to `~/.local/state/callback/server.log`.
 # Install deps
 uv sync
 
-# Install Playwright Chromium for Crawl4AI URL fetching
+# Install Playwright Chromium for URL fetching and PDF rendering
 callback install-browsers
 
 # Run the MCP server (stdio)
@@ -69,10 +69,8 @@ uv run python scripts/smoke_profile.py
 - `LOG_LEVEL`: Server log level.
 - `CALLBACK_LOG_PATH`: Override the server log file path.
 - `CALLBACK_APPS_DIR`: Override where application PDFs and JSON archives are written.
-- `CALLBACK_FETCH_PAGE_TIMEOUT_MS`: Crawl4AI per-page timeout in milliseconds.
-- `CALLBACK_FETCH_WAIT_UNTIL`: Crawl4AI wait strategy.
-- `CALLBACK_FETCH_OUTER_TIMEOUT_S`: Outer fetch timeout in seconds.
-- `CALLBACK_FETCH_MAGIC`: Enable or disable Crawl4AI stealth mode.
+- `CALLBACK_FETCH_PAGE_TIMEOUT_MS`: Override the Playwright page-load timeout in milliseconds. Default: `30000`.
+- `CALLBACK_FETCH_OUTER_TIMEOUT_S`: Override the outer fetch timeout in seconds. Default: `35`.
 - `CALLBACK_TRACE_BACKEND`: Optional tracing backend. Set to `langsmith` to enable the LangSmith adapter.
 - `LANGSMITH_TRACING`: Must be `true` when `CALLBACK_TRACE_BACKEND=langsmith`.
 - `LANGSMITH_ENDPOINT`: LangSmith API endpoint. Defaults to `https://api.smith.langchain.com`.
@@ -195,11 +193,11 @@ State schema: `ProfileState` in `state.py`.
 
 ### JD Fetching (`jd_fetcher.py`)
 
-URL fetching uses Crawl4AI. The fetch surface is controlled by:
+URL fetching uses Playwright plus trafilatura. The fetch surface is controlled by:
 - `CALLBACK_FETCH_PAGE_TIMEOUT_MS`
-- `CALLBACK_FETCH_WAIT_UNTIL`
 - `CALLBACK_FETCH_OUTER_TIMEOUT_S`
-- `CALLBACK_FETCH_MAGIC`
+
+`jd_fetch` loads the page with Playwright (Chrome user agent, `domcontentloaded` plus a 2.5 s settle), extracts markdown with trafilatura, falls back to body text when the extraction is thin (and rejects a page that is still under 1,200 characters as `fetch_thin`), and caps `jd_text` at 16,000 characters (about 4,000 tokens), logging `fetch_oversized`. A non-2xx status raises and is logged as `fetch_status`.
 
 Do not add a silent fallback path if URL fetch fails.
 
@@ -231,7 +229,7 @@ PDF rendering uses HTML + Playwright in `callback/render/html_builder.py`.
 | `state.py` | `ApplyState`, `ProfileState`, and related profile data models |
 | `scorer.py` | Deterministic ATS scorer |
 | `jd_data.py` | JD JSON schema, extraction protocol, and validators |
-| `jd_fetcher.py` | Crawl4AI job-description fetcher |
+| `jd_fetcher.py` | Playwright + trafilatura job-description fetcher |
 | `extractor.py` | Resume text extraction (PDF, DOCX, TXT, Markdown/plain text) |
 | `section_map.py` | Resume section editing helpers |
 | `wiki.py` | Wiki storage for resume-linked behavioral stories |
