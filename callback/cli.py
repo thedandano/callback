@@ -10,7 +10,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 import tomllib
 from collections.abc import Callable, Mapping, Sequence
@@ -19,9 +18,8 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import typer
-from rich.console import Console
-from rich.table import Table
 
+from callback import paths
 from callback.observability import (
     DEFAULT_LANGSMITH_ENDPOINT,
     DEFAULT_LANGSMITH_PROJECT,
@@ -34,8 +32,6 @@ config_app = typer.Typer(no_args_is_help=True)
 env_app = typer.Typer(no_args_is_help=True)
 app.add_typer(config_app, name="config")
 config_app.add_typer(env_app, name="env")
-console = Console(soft_wrap=True)
-error_console = Console(stderr=True, soft_wrap=True)
 
 SERVER_NAME = "callback"
 SERVER_COMMAND = "callback"
@@ -44,8 +40,6 @@ PROJECT_LOG_SERVER_ARGS = ["serve", "--project-logs"]
 DEFAULT_LOG_PATH = Path("~/.local/state/callback/server.log").expanduser()
 DEFAULT_CLAUDE_CONFIG = Path("~/.claude.json").expanduser()
 DEFAULT_CODEX_CONFIG = Path("~/.codex/config.toml").expanduser()
-_DATA_DIR = Path("~/.local/share/callback").expanduser()
-_STATE_DIR = Path("~/.local/state/callback").expanduser()
 ENV_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 SECRET_ENV_MARKERS = ("KEY", "TOKEN", "SECRET", "PASSWORD")
 LANGSMITH_ENV_DEFAULTS = {
@@ -120,14 +114,6 @@ def _write_startup_log_event(log_path: Path, line: str) -> None:
         handle.write(line + "\n")
 
 
-def _write_text_atomic(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as tmp:
-        tmp.write(content)
-        tmp_path = Path(tmp.name)
-    tmp_path.replace(path)
-
-
 def _read_json_config(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -158,18 +144,32 @@ def configure_claude(path: Path, command: str | None = None) -> None:
         raise ConfigError(f'{path} key "mcpServers" must be an object')
     env = _coerce_env(servers.get(SERVER_NAME))
     servers[SERVER_NAME] = mcp_server_config(command, env=env)
-    _write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
+    paths.write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
 
 
 def _read_toml_config(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
+    text = path.read_text(encoding="utf-8")
     try:
-        with path.open("rb") as handle:
-            loaded = tomllib.load(handle)
+        loaded = tomllib.loads(text)
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"{path} is not valid TOML: {exc}") from exc
     return dict(loaded)
+
+
+def _warn_if_comments(path: Path) -> None:
+    """Say so on stderr before a rewrite drops full-line comments; tomllib cannot keep them."""
+    # ponytail: full-line comments only; an inline `# …` after a value is not detected.
+    if not path.exists():
+        return
+    text = path.read_text(encoding="utf-8")
+    if any(line.lstrip().startswith("#") for line in text.splitlines()):
+        typer.echo(
+            f"warning: {path} contains comments; callback rewrites this file "
+            "and comments are not preserved",
+            err=True,
+        )
 
 
 _BARE_TOML_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -193,17 +193,36 @@ def _toml_value(value: object) -> str:
     raise ConfigError(f"cannot serialize TOML value of type {type(value).__name__}")
 
 
+def _is_table_array(value: object) -> bool:
+    return (
+        isinstance(value, list) and bool(value) and all(isinstance(item, Mapping) for item in value)
+    )
+
+
+def _table_array_lines(
+    table_name: str, items: list[Any], prefix: tuple[str, ...], key: str
+) -> list[str]:
+    lines: list[str] = []
+    for item in items:
+        lines.append(f"[[{table_name}]]")
+        lines.extend(_toml_lines(item, (*prefix, key)))
+        lines.append("")
+    return lines
+
+
 def _toml_lines(config: Mapping[str, Any], prefix: tuple[str, ...] = ()) -> list[str]:
     scalar_lines: list[str] = []
     table_lines: list[str] = []
 
     for key in sorted(config):
         value = config[key]
+        table_name = ".".join(_toml_key(part) for part in (*prefix, key))
         if isinstance(value, Mapping):
-            table_name = ".".join(_toml_key(part) for part in (*prefix, key))
             table_lines.append(f"[{table_name}]")
             table_lines.extend(_toml_lines(value, (*prefix, key)))
             table_lines.append("")
+        elif _is_table_array(value):
+            table_lines.extend(_table_array_lines(table_name, value, prefix, key))
         else:
             scalar_lines.append(f"{_toml_key(key)} = {_toml_value(value)}")
 
@@ -221,13 +240,14 @@ def _dump_toml(config: Mapping[str, Any]) -> str:
 
 def configure_codex(path: Path, command: str | None = None) -> None:
     """Write the Codex MCP server entry, preserving parseable config keys."""
+    _warn_if_comments(path)
     config = _read_toml_config(path)
     servers = config.setdefault("mcp_servers", {})
     if not isinstance(servers, dict):
         raise ConfigError(f'{path} key "mcp_servers" must be a table')
     env = _coerce_env(servers.get(SERVER_NAME))
     servers[SERVER_NAME] = mcp_server_config(command, env=env)
-    _write_text_atomic(path, _dump_toml(config))
+    paths.write_text_atomic(path, _dump_toml(config))
 
 
 def _target_names(target: str) -> tuple[str, ...]:
@@ -313,28 +333,30 @@ def _set_claude_env(path: Path, env_updates: Mapping[str, str]) -> None:
     config = _read_json_config(path)
     env = _ensure_claude_server(config, path)
     env.update(env_updates)
-    _write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
+    paths.write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
 
 
 def _set_codex_env(path: Path, env_updates: Mapping[str, str]) -> None:
+    _warn_if_comments(path)
     config = _read_toml_config(path)
     env = _ensure_codex_server(config, path)
     env.update(env_updates)
-    _write_text_atomic(path, _dump_toml(config))
+    paths.write_text_atomic(path, _dump_toml(config))
 
 
 def _unset_claude_env(path: Path, key: str) -> None:
     config = _read_json_config(path)
     env = _ensure_claude_server(config, path)
     env.pop(key, None)
-    _write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
+    paths.write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
 
 
 def _unset_codex_env(path: Path, key: str) -> None:
+    _warn_if_comments(path)
     config = _read_toml_config(path)
     env = _ensure_codex_server(config, path)
     env.pop(key, None)
-    _write_text_atomic(path, _dump_toml(config))
+    paths.write_text_atomic(path, _dump_toml(config))
 
 
 def _read_claude_env(path: Path) -> dict[str, str]:
@@ -424,36 +446,35 @@ def _status_cell(
     return _display_env_value(env_key, env[env_key], show_secrets=show_secrets)
 
 
-def _build_config_status_table(
+def _build_config_status_text(
     targets: tuple[str, ...],
     envs: Mapping[str, Mapping[str, str]],
     *,
     show_secrets: bool,
-) -> Table:
-    table = Table(title="callback MCP env status")
-    table.add_column("env var")
-    table.add_column("Claude")
-    table.add_column("Codex")
-    table.add_column("status")
-
+) -> str:
+    header = ("env var", "Claude", "Codex", "status")
     env_keys = sorted({env_key for env in envs.values() for env_key in env})
-    if not env_keys:
-        table.add_row(
-            "(none)",
-            _status_cell("claude", None, targets, envs, show_secrets=show_secrets),
-            _status_cell("codex", None, targets, envs, show_secrets=show_secrets),
-            "unset",
-        )
-        return table
-
-    for env_key in env_keys:
-        table.add_row(
+    rows = [
+        (
             env_key,
             _status_cell("claude", env_key, targets, envs, show_secrets=show_secrets),
             _status_cell("codex", env_key, targets, envs, show_secrets=show_secrets),
             _status_for_env_key(env_key, targets, envs),
         )
-    return table
+        for env_key in env_keys
+    ] or [
+        (
+            "(none)",
+            _status_cell("claude", None, targets, envs, show_secrets=show_secrets),
+            _status_cell("codex", None, targets, envs, show_secrets=show_secrets),
+            "unset",
+        )
+    ]
+    widths = [max(len(row[i]) for row in (header, *rows)) for i in range(len(header))]
+    lines = ["callback MCP env status"]
+    for row in (header, *rows):
+        lines.append("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)).rstrip())
+    return "\n".join(lines)
 
 
 def _env_value_enabled(value: str | None) -> bool:
@@ -574,17 +595,18 @@ def _remove_server_from_claude(path: Path) -> None:
     servers = config.get("mcpServers")
     if isinstance(servers, dict):
         servers.pop(SERVER_NAME, None)
-    _write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
+    paths.write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
 
 
 def _remove_server_from_codex(path: Path) -> None:
     if not path.exists():
         return
+    _warn_if_comments(path)
     config = _read_toml_config(path)
     servers = config.get("mcp_servers")
     if isinstance(servers, dict):
         servers.pop(SERVER_NAME, None)
-    _write_text_atomic(path, _dump_toml(config))
+    paths.write_text_atomic(path, _dump_toml(config))
 
 
 @app.command()
@@ -614,7 +636,7 @@ def serve(
     try:
         _write_startup_log_event(resolved_log_path, startup_event)
     except OSError as exc:
-        error_console.print(
+        typer.echo(
             json.dumps(
                 {
                     "event": "cli_serve_log_unavailable",
@@ -623,7 +645,8 @@ def serve(
                     "path": str(resolved_log_path),
                     "error": str(exc),
                 }
-            )
+            ),
+            err=True,
         )
 
     from callback.server import configure_logging, run
@@ -659,25 +682,26 @@ def setup_mcp(
         _validate_claude_config(claude_path)
         _validate_codex_config(codex_path)
         if not skip_browsers:
-            console.print("Installing Playwright Chromium for callback...")
+            typer.echo("Installing Playwright Chromium for callback...")
             browser_install_returncode = _install_browsers()
             if browser_install_returncode != 0:
-                error_console.print(
+                typer.echo(
                     "setup-mcp failed: browser install failed; "
-                    "run `callback install-browsers` for details"
+                    "run `callback install-browsers` for details",
+                    err=True,
                 )
                 raise typer.Exit(browser_install_returncode)
         configure_claude(claude_path, command)
         configure_codex(codex_path, command)
     except ConfigError as exc:
-        error_console.print(f"setup-mcp failed: {exc}")
+        typer.echo(f"setup-mcp failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
-    console.print(f"Updated Claude config: {claude_path}")
-    console.print(f"Updated Codex config: {codex_path}")
-    console.print("Next: run `callback config langsmith` to enable LangSmith tracing.")
-    console.print("Then restart your MCP host so Claude or Codex reloads the config.")
-    console.print("Use `callback logs --follow` to watch server logs.")
+    typer.echo(f"Updated Claude config: {claude_path}")
+    typer.echo(f"Updated Codex config: {codex_path}")
+    typer.echo("Next: run `callback config langsmith` to enable LangSmith tracing.")
+    typer.echo("Then restart your MCP host so Claude or Codex reloads the config.")
+    typer.echo("Use `callback logs --follow` to watch server logs.")
 
 
 @config_app.command("langsmith")
@@ -731,12 +755,12 @@ def config_langsmith(
             codex_path=codex_config or DEFAULT_CODEX_CONFIG,
         )
     except ConfigError as exc:
-        error_console.print(f"config langsmith failed: {exc}")
+        typer.echo(f"config langsmith failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
-    console.print(f"Updated LangSmith env for: {', '.join(targets)}")
-    console.print("Restart your MCP host so it reloads the new environment.")
-    console.print("Use `callback logs --follow` to inspect startup or tracing warnings.")
+    typer.echo(f"Updated LangSmith env for: {', '.join(targets)}")
+    typer.echo("Restart your MCP host so it reloads the new environment.")
+    typer.echo("Use `callback logs --follow` to inspect startup or tracing warnings.")
 
 
 @config_app.command("status")
@@ -761,13 +785,15 @@ def config_status(
     """Show callback MCP env status for Claude and Codex."""
     try:
         targets = _target_names(target)
-        paths = _config_paths(claude_config=claude_config, codex_config=codex_config)
-        envs = _read_config_envs(targets, paths)
+        config_paths_by_target = _config_paths(
+            claude_config=claude_config, codex_config=codex_config
+        )
+        envs = _read_config_envs(targets, config_paths_by_target)
     except ConfigError as exc:
-        error_console.print(f"config status failed: {exc}")
+        typer.echo(f"config status failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
-    console.print(_build_config_status_table(targets, envs, show_secrets=show_secrets))
+    typer.echo(_build_config_status_text(targets, envs, show_secrets=show_secrets))
 
 
 @env_app.command("set")
@@ -798,11 +824,11 @@ def config_env_set(
             codex_path=codex_config or DEFAULT_CODEX_CONFIG,
         )
     except ConfigError as exc:
-        error_console.print(f"config env set failed: {exc}")
+        typer.echo(f"config env set failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
-    console.print(f"Set {env_key} for: {', '.join(targets)}")
-    console.print("Restart your MCP host so it reloads the new environment.")
+    typer.echo(f"Set {env_key} for: {', '.join(targets)}")
+    typer.echo("Restart your MCP host so it reloads the new environment.")
 
 
 @env_app.command("unset")
@@ -832,11 +858,11 @@ def config_env_unset(
             codex_path=codex_config or DEFAULT_CODEX_CONFIG,
         )
     except ConfigError as exc:
-        error_console.print(f"config env unset failed: {exc}")
+        typer.echo(f"config env unset failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
-    console.print(f"Unset {env_key} for: {', '.join(targets)}")
-    console.print("Restart your MCP host so it reloads the new environment.")
+    typer.echo(f"Unset {env_key} for: {', '.join(targets)}")
+    typer.echo("Restart your MCP host so it reloads the new environment.")
 
 
 @env_app.command("list")
@@ -861,23 +887,25 @@ def config_env_list(
     """List callback MCP environment variables."""
     try:
         targets = _target_names(target)
-        paths = _config_paths(claude_config=claude_config, codex_config=codex_config)
+        config_paths_by_target = _config_paths(
+            claude_config=claude_config, codex_config=codex_config
+        )
         readers = _config_env_readers()
         printed = False
         for target_name in targets:
-            env = readers[target_name](paths[target_name])
-            console.print(f"[{target_name}]", markup=False)
+            env = readers[target_name](config_paths_by_target[target_name])
+            typer.echo(f"[{target_name}]")
             if not env:
-                console.print("(none)")
+                typer.echo("(none)")
                 continue
             printed = True
             for env_key in sorted(env):
                 value = _display_env_value(env_key, env[env_key], show_secrets=show_secrets)
-                console.print(f"{env_key}={value}")
+                typer.echo(f"{env_key}={value}")
         if not printed:
             return
     except ConfigError as exc:
-        error_console.print(f"config env list failed: {exc}")
+        typer.echo(f"config env list failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
 
@@ -904,7 +932,7 @@ def trace_check(
     try:
         targets = _trace_check_target_names(target)
     except TraceCheckError as exc:
-        error_console.print(f"trace-check failed: {exc}")
+        typer.echo(f"trace-check failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
     failures = 0
@@ -922,10 +950,10 @@ def trace_check(
             )
         except (ConfigError, TraceCheckError) as exc:
             failures += 1
-            error_console.print(f"{target_name}: failed: {_redact_text(str(exc), env)}")
+            typer.echo(f"{target_name}: failed: {_redact_text(str(exc), env)}", err=True)
             continue
 
-        console.print(f"{target_name}: ok (project: {project})")
+        typer.echo(f"{target_name}: ok (project: {project})")
 
     if failures:
         raise typer.Exit(1)
@@ -958,19 +986,19 @@ def logs(
         project_logs=project_logs,
     )
     if not resolved_log_path.exists():
-        error_console.print(f"Log file not found: {resolved_log_path}")
+        typer.echo(f"Log file not found: {resolved_log_path}", err=True)
         raise typer.Exit(1)
 
     with resolved_log_path.open(encoding="utf-8") as handle:
         entries = handle.readlines()
         for line in entries[-lines:]:
-            console.print(line.rstrip("\n"))
+            typer.echo(line.rstrip("\n"))
 
         if follow:
             while True:
                 line = handle.readline()
                 if line:
-                    console.print(line.rstrip("\n"))
+                    typer.echo(line.rstrip("\n"))
                 else:
                     time.sleep(0.5)
 
@@ -995,16 +1023,14 @@ def uninstall(
         _remove_server_from_claude(claude_path)
         _remove_server_from_codex(codex_path)
     except ConfigError as exc:
-        error_console.print(f"uninstall failed: {exc}")
+        typer.echo(f"uninstall failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
     if purge:
-        import shutil
-
-        for directory in (_DATA_DIR, _STATE_DIR):
+        for directory in (paths.data_dir(), paths.state_dir()):
             if directory.exists():
                 shutil.rmtree(directory)
-                console.print(f"Deleted: {directory}")
+                typer.echo(f"Deleted: {directory}")
 
 
 @app.command()
@@ -1033,9 +1059,9 @@ def _display_version() -> str:
 def version() -> None:
     """Print the installed callback build version."""
     try:
-        console.print(_display_version())
+        typer.echo(_display_version())
     except importlib.metadata.PackageNotFoundError as exc:
-        error_console.print("callback is not installed as a package")
+        typer.echo("callback is not installed as a package", err=True)
         raise typer.Exit(1) from exc
 
 
@@ -1043,12 +1069,13 @@ def _maybe_install_browsers(*, skip_browsers: bool, print_only: bool) -> None:
     """Install Playwright Chromium unless skipped or in print-only mode."""
     if skip_browsers or print_only:
         return
-    console.print("Installing Playwright Chromium for callback...")
+    typer.echo("Installing Playwright Chromium for callback...")
     returncode = _install_browsers()
     if returncode != 0:
-        error_console.print(
+        typer.echo(
             "setup-plugin failed: browser install failed; "
-            "run `callback install-browsers` for details"
+            "run `callback install-browsers` for details",
+            err=True,
         )
         raise typer.Exit(returncode)
 
@@ -1078,7 +1105,7 @@ def setup_plugin(
     try:
         targets = resolve_targets(target)
     except ValueError as exc:
-        error_console.print(f"setup-plugin failed: {exc}")
+        typer.echo(f"setup-plugin failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
     _maybe_install_browsers(skip_browsers=skip_browsers, print_only=print_only)
@@ -1086,14 +1113,14 @@ def setup_plugin(
     try:
         commands = install(targets, source=source, print_only=print_only)
     except PluginInstallError as exc:
-        error_console.print(f"setup-plugin failed: {exc}")
+        typer.echo(f"setup-plugin failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
     prefix = "Would run:" if print_only else "Ran:"
     for cmd in commands:
-        console.print(f"{prefix} {cmd}")
+        typer.echo(f"{prefix} {cmd}")
 
-    console.print(
+    typer.echo(
         "Restart the session or run /reload-plugins to load MCP servers. "
         "Note: claude and codex must be on PATH."
     )

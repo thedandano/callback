@@ -10,7 +10,6 @@ from pathlib import Path
 import pytest
 
 import callback.server as server_module
-import callback.wiki as wiki_module
 from callback.profile_graph import build_profile_graph
 from callback.server import compile_profile, create_story, onboard_user
 
@@ -43,7 +42,7 @@ class TestProfileToolsEndToEnd:
         # to compile_profile because a resume is registered on disk — profile state
         # (stories, compiled profile) lives in the stores, not the thread.
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
         db_path = tmp_path / "profile-sessions.db"
         monkeypatch.setattr(
             server_module, "get_profile_graph", lambda: build_profile_graph(db_path=db_path)
@@ -151,7 +150,7 @@ class TestProfileToolsEndToEnd:
 
     def test_onboard_then_compile_then_create_story_with_session_id(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
         db_path = tmp_path / "profile-sessions.db"
         monkeypatch.setattr(
             server_module, "get_profile_graph", lambda: build_profile_graph(db_path=db_path)

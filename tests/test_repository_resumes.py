@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
+from callback import paths
 from callback.repository.resumes import (
     ResumeNotFoundError,
     clear_resumes,
-    data_dir,
     get_resume,
     list_resumes,
     save_resume,
@@ -80,7 +80,7 @@ class TestGetMissingRaises:
     def test_get_resume_after_dir_created_raises(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
 
-        data_dir().mkdir(parents=True, exist_ok=True)
+        paths.inputs_dir().mkdir(parents=True, exist_ok=True)
 
         with pytest.raises(ResumeNotFoundError, match="Resume 'missing' not found"):
             get_resume("missing")
@@ -104,7 +104,7 @@ class TestXDGOverride:
         xdg_custom = tmp_path / "my_xdg"
         monkeypatch.setenv("XDG_DATA_HOME", str(xdg_custom))
 
-        result = data_dir()
+        result = paths.inputs_dir()
 
         assert result == xdg_custom / "callback" / "inputs"
 

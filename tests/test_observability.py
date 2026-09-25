@@ -916,13 +916,11 @@ def test_sanitize_node_inputs_profile_state_no_story_or_tag_content_leaks():
             "resume_label": None,
             "resume_path": None,
             "sections": None,
-            "wiki_path": None,
             "intake": {"keys": ["situation"]},
             "compiled_profile": {"keys": ["stories"]},
             "host_tags": {"len": 1},
             "orphaned_skills": None,
             "current_story_target": None,
-            "error": None,
         },
     }
     assert "secret" not in repr(result)

@@ -127,5 +127,5 @@ Set `job_title` per the confirmed plan (step 3), not by guesswork. `create_story
 - Never carry a `job_title`/grouping label across sections; derive it from the entry's own section.
 - Always confirm the section structure and grouping with the user before compiling.
 - Treat profile setup as preparation only. Do not tailor a resume in this skill.
-- If multiple resumes are registered later, tell tailoring workflows to pass `resume_label`.
+- One resume is registered at a time; `onboard_user` replaces it. `load_jd` takes no resume argument.
 - Keep the user-facing summary simple: what was registered, what is missing, and what to do next.

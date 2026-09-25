@@ -130,7 +130,7 @@ def test_submit_tailor_applies_valid_edits_and_rescores(tmp_path, monkeypatch):
     from callback.server import submit_tailor
 
     resume_label = "test_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python", "Kubernetes"]})
@@ -185,7 +185,7 @@ def test_submit_tailor_can_be_retried_after_render_failure(tmp_path, monkeypatch
     from callback.server import submit_tailor
 
     resume_label = "test_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python", "Kubernetes"]})
@@ -239,7 +239,7 @@ def test_submit_tailor_no_coverage_retry_clears_stale_render_outputs(tmp_path, m
     from callback.server import submit_tailor
 
     resume_label = "stale_leak_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python", "Kubernetes"]})
@@ -415,7 +415,7 @@ def test_submit_tailor_replaces_project_entry(tmp_path, monkeypatch):
     from callback.server import submit_tailor
 
     resume_label = "project_replace_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     section_map = SectionMap(
         contact=ContactInfo(name="Jane Dev"),
         summary="Python engineer",
@@ -478,7 +478,7 @@ def test_submit_tailor_removes_weak_bullet_and_adds_second_project(tmp_path, mon
     from callback.server import submit_tailor
 
     resume_label = "project_add_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     section_map = SectionMap(
         contact=ContactInfo(name="Jane Dev"),
         summary="Python engineer",
@@ -551,7 +551,7 @@ def test_submit_tailor_rejects_out_of_bounds_target(tmp_path, monkeypatch):
     from callback.server import submit_tailor
 
     resume_label = "oob_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     section_map = SectionMap(
         contact=ContactInfo(name="Jane Dev"),
         summary="Engineer",
@@ -604,7 +604,7 @@ def test_submit_tailor_flags_uncovered_skill(tmp_path, monkeypatch):
     from callback.server import submit_tailor
 
     resume_label = "uncovered_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     section_map = SectionMap(
         contact=ContactInfo(name="Jane Dev"),
         summary="Engineer",
@@ -640,7 +640,7 @@ def test_submit_tailor_does_not_flag_covered_skill(tmp_path, monkeypatch):
     from callback.server import submit_tailor
 
     resume_label = "covered_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     section_map = SectionMap(
         contact=ContactInfo(name="Jane Dev"),
         summary="Engineer",
@@ -679,7 +679,7 @@ def test_submit_tailor_project_bullet_replacement_can_match_required_keyword(tmp
     from callback.server import submit_tailor
 
     resume_label = "project_keyword_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     rendered = {}
 
     def fake_render_resume(tailored, output_path):
@@ -751,7 +751,7 @@ def test_submit_tailor_redirects_pdf_to_output_dir(tmp_path, monkeypatch):
     from callback.server import submit_tailor
 
     resume_label = "redirect_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
@@ -788,7 +788,7 @@ def test_submit_tailor_no_coverage_accepts_output_dir_without_error(tmp_path, mo
     from callback.server import submit_tailor
 
     resume_label = "no_cov_redirect_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
@@ -819,7 +819,7 @@ def test_submit_tailor_rejects_relative_output_dir(tmp_path, monkeypatch):
     from callback.server import submit_tailor
 
     resume_label = "rel_dir_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
@@ -851,7 +851,7 @@ def test_submit_tailor_without_output_dir_writes_to_apps_dir(tmp_path, monkeypat
     from callback.server import submit_tailor
 
     resume_label = "default_dir_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
@@ -875,7 +875,7 @@ def test_submit_tailor_rejects_unwritable_output_dir(tmp_path, monkeypatch):
     from callback.server import submit_tailor
 
     resume_label = "bad_dir_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
@@ -916,7 +916,7 @@ def test_submit_tailor_returns_envelope_when_extractor_raises(tmp_path, monkeypa
     from callback.server import submit_tailor
 
     resume_label = "test_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
     session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
@@ -949,7 +949,7 @@ def test_submit_tailor_can_be_retried_after_finalize_archive_write_failure(tmp_p
     from callback.server import submit_tailor
 
     resume_label = "test_resume"
-    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python", "Kubernetes"]})

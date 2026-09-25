@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from callback.apply_nodes import _get_apps_dir  # noqa: E402
+from callback import paths  # noqa: E402
 from callback.jd_fetcher import CHARS_PER_TOKEN, fetch_url_to_markdown  # noqa: E402
 from evals.recall import recall  # noqa: E402
 
@@ -32,7 +32,7 @@ def _golden_keywords(board: str, source: dict) -> dict:
     golden_path = EXTRACT_DIR / f"{board}.golden.json"
     if golden_path.exists():
         return json.loads(golden_path.read_text(encoding="utf-8"))
-    archive = _get_apps_dir() / f"{source['archived_session']}.json"
+    archive = paths.apps_dir() / f"{source['archived_session']}.json"
     golden = json.loads(archive.read_text())["keywords"]
     golden_path.write_text(
         json.dumps(golden, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"

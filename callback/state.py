@@ -37,7 +37,6 @@ class TailoredResume(BaseModel):
     skills_raw: str | None = None
     experience_raw: str | None = None
     projects_raw: str | None = None
-    volunteer_raw: str | None = None
     education_raw: str | None = None
     candidate_experience_years: float | None = None
     max_pages: int = 1
@@ -67,7 +66,6 @@ class ApplyState(BaseModel):
     render_warnings: list[dict] | None = Field(default=None)
     report: dict | None = Field(default=None)
     uncovered_skills: list | None = Field(default=None)
-    finalized: bool | None = Field(default=None)
     finalized_at: str | None = Field(default=None)
     error: str | None = Field(default=None)
     no_coverage: bool | None = Field(default=None)
@@ -83,10 +81,8 @@ class ProfileState(BaseModel):
     resume_label: str | None = Field(default=None)
     resume_path: str | None = Field(default=None)
     sections: dict | None = Field(default=None)
-    wiki_path: str | None = Field(default=None)
     intake: dict | None = Field(default=None)
     compiled_profile: dict | None = Field(default=None)
     host_tags: list[str] | None = Field(default=None)
     orphaned_skills: list | None = Field(default=None)
     current_story_target: str | None = Field(default=None)
-    error: str | None = Field(default=None)
