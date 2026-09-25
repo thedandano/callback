@@ -105,7 +105,7 @@ Known weight (works, but costs more than it earns):
 Ordered by dependency and payoff. Each milestone is one PR to `main` and leaves the
 suite green. Estimates are for one person.
 
-Order: M1 → M2 → M3 → M4 → M2.5 (done) → M6 → M7 → M5. M6 (evals) was planned before M3; M3 and
+Order: M2.5 (done) → M6 (done) → M7 → M5. M6 (evals) was planned before M3; M3 and
 M4 shipped first because the fetcher swap was blocking daily use. M7 still waits for M6 so the
 token diet is measured against something.
 
@@ -154,7 +154,7 @@ no regex reads story metadata in `callback/`. `accomplishments.json` keeps
 
 Shipped 2026-09-04: W1.
 Measured after the swap: server import ≈ 879 ms warm (was ≈ 1,420 ms); 126 runtime packages (was 147). Fixtures: evals/extract/.
-The Ashby fixture is the Deepgram posting (the other archived Ashby URL now 404s); Apple's golden is 4/14 by content drift (posting reworded after the July application), recorded in evals/extract/sources.json.
+The Ashby fixture is the Deepgram posting (the other archived Ashby URL now 404s); Apple's expected data is 4/14 by content drift (posting reworded after the July application), recorded in evals/extract/sources.json.
 
 Measured 2026-09-03 on five archived JD URLs: Playwright plus trafilatura matched
 crawl4ai's keyword recall on every live page (within one term), returned 1.5x to 37x
@@ -180,7 +180,7 @@ Spec:
 
 Done when: crawl4ai is out of `pyproject.toml`; the five measured URLs (Qualcomm, Apple,
 Ashby, Cedar, Greenhouse) are E1 fetch fixtures with their archived keywords as the
-recall golden; `scripts/smoke_apply.py` passes on three of them; server import drops
+recall expected data; `scripts/smoke_apply.py` passes on three of them; server import drops
 from ≈ 1,420 ms to ≈ 880 ms warm (the 1.5 s target was measured cold).
 
 Out of scope: LinkedIn login walls and Cloudflare challenge pages. Those remain
@@ -207,9 +207,9 @@ host LLM. One is Python. Each gets an eval that fails loudly when the work is wr
 
 | Eval | Who does the work | Fixture in | Checks (all deterministic) |
 |------|-------------------|------------|----------------------------|
-| E1 keyword extraction | host LLM, via `EXTRACTION_PROTOCOL` | `evals/extract/<jd>.md` + `<jd>.golden.json` | precision and recall of `required`, `preferred`, and OR-groups against the golden JDData; terms must be exact JD substrings (no paraphrase); `required_years` and `title` exact |
+| E1 keyword extraction | host LLM, via `EXTRACTION_PROTOCOL` | `evals/extract/<jd>.md` + `<jd>.expected.json` | precision and recall over the flat union of every term (`required` + `preferred` + every OR-group member) against the expected JDData, with a content-drift skip when too few expected terms are still on the page; OR-groups checked for coverage, not set equality, and separately checked for collapsing two or more terms the expected data lists as independent required/preferred requirements into one "any one will do" group (score inflation the scorer's own OR-group-as-one-denominator math can't see); terms must be exact JD substrings (no paraphrase); `required_years` and `title` exact |
 | E2 tailoring | host LLM, via `_TAILOR_INSTRUCTIONS` and the `tailor-resume` skill | `evals/tailor/<case>/` with sections, wiki pages, keywords, and a `constraints.json` | every added skill appears in a dated bullet; every edit's nouns and numbers are grounded in the source resume or the supplied wiki pages (substring or fuzzy match, threshold in `constraints.json`); no banned verbs or phrases; `score_final.total >= score_initial.total`; no edits rejected by `apply_edit` |
-| E3 compile | Python (`compile_profile`) | `evals/compile/stories/*.md` + `golden/index.md` + `golden/compiled_profile.json` | byte-identical `index.md`; identical `skills_index` and `orphaned_skills`; a story with a hand-edited body round-trips unchanged |
+| E3 compile | Python (`compile_profile`) | `evals/compile/stories/*.md` + `expected/index.md` + `expected/compiled_profile.json` | byte-identical `index.md`; identical `skills_index` and `orphaned_skills`; a story with a hand-edited body round-trips unchanged |
 
 Mechanics, kept minimal on purpose:
 
@@ -225,13 +225,55 @@ Mechanics, kept minimal on purpose:
   commits or two models can be compared side by side without a local diff.
 - Fixtures are real: at least 5 JDs across two boards for E1 (one with OR-groups, one
   with no labeled sections), at least 3 tailoring cases for E2 (one where the honest
-  answer is `no_coverage`), and the user's own 14 stories for E3.
+  answer is `no_coverage`), and the user's own 14 stories for E3. The real resume,
+  wiki, and stories live in the private root; git holds a synthetic Jane Doe set so
+  CI is green without personal data (user ruling 2026-09-06).
 - A run prints one table: eval, fixture, pass/fail, and the first failing check. No
   dashboards, no history store. Diff the committed host outputs in git to see drift.
 
-Done when: `uv run pytest evals/` passes for E3 in CI; `uv run python scripts/run_evals.py`
-followed by `uv run pytest -m local evals/` passes for E1 and E2 on the chosen host
-model; a deliberately keyword-stuffed tailoring output fails E2.
+Done (M6): E3 runs in CI on the committed Jane Doe and Morgan Reyes cases. E1
+has six boards (reddit adds OR-groups and no labeled sections). E2 has two
+Jane Doe cases (one `no_coverage`) plus one Morgan Reyes case per board,
+covering all six boards. The runner records LangSmith experiments named
+`<commit>-<host>-<model>`. A keyword-stuffed tailoring output fails E2
+(`evals/test_tailor_checks.py::test_keyword_stuffed_output_fails`). All
+fixtures are invented and committed; no personal data is involved.
+Proof run: commit a8e71b6, host claude, default model, over the committed fixture set only (no personal data).
+E1 is 2 of 6. Cedar and reddit pass. Apple returns three terms that are not in the posting, two of them
+apostrophe variants and one invented. Ashby and greenhouse fail precision at 0.57 and 0.55 by padding the
+list with filler like "cloud" and "tooling". Qualcomm leaves required empty, which submit_keywords rejects too.
+E2 is 1 of 8. jane-doe-no-coverage passes. Every other case has the host adding a skill that is either absent
+from the resume and wiki (Event Streaming, System Architecture, API design, Git) or present with no dated
+bullet behind it. morgan-reyes-ashby fails because the host tailored a profile that meets 1 of 18 required
+items instead of declaring no coverage.
+E3 is 9 of 9 on the committed morgan-reyes and jane-doe cases.
+The failures are the host breaking the tailoring rules, not eval defects; M7 is measured against these numbers.
+Round 2 (plan `problem-the-model-keeps-hashed-mccarthy.md`, M7-M9, commit db847a0..): rebuilt the four
+broken E1 answer keys, sharpened `EXTRACTION_PROTOCOL`'s OR-group rule (a mechanical trigger list instead of
+a judgment call, a section-scope boundary for unlabeled postings, a compound-term carve-out so slashes like
+"CI/CD" don't get split), and closed the eval blind spot above. Proof run, claude default model, host output
+committed alongside the fixtures: E1 is 3 of 6 (cedar/qualcomm/reddit pass). Remaining failures are genuine
+model-judgment gaps, not fixture defects: apple over-applied the slash-disjunction signal to two compound
+job-function names that aren't real alternatives ("personalization / recommendation / ranking algorithms",
+"notification / message-delivery systems"); ashby paraphrased or dropped over a dozen required/preferred
+terms and one OR-group in this run - the same protocol scored ashby's OR-groups correctly in the M8 proof
+run, so this is sample-to-sample variance, not a regression; greenhouse still under-extracts from unlabeled
+prose. Comparison run on Codex `gpt-5.6-terra`, same fixtures and rubric: E1 is 2 of 6 (qualcomm/reddit
+pass) - consistently weaker at forming OR-groups from "such as ... etc." and slash phrasing.
+Round 3 (same plan, M10-M11, commit ad0a8d2..): three small protocol wording fixes after rejecting two
+bigger options with evidence (a deterministic pre-scan hint list - ~38% precision, structurally blind to
+signal-less "e.g." groups; a full protocol restructure - uncertain payoff, forces a full re-audit). Added
+an "(e.g., X, Y, Z)" disjunction signal, replaced the fixed slash carve-out list with a generalizable test
+("would just ONE alone satisfy this requirement?"), and added a worked example for unlabeled bolded-header
+prose. Proof run, claude default model: E1 is 2 of 6 (qualcomm/reddit pass) - a stark instance of the
+variance flagged in round 2: cedar, which had passed every prior run across all three rounds, failed by
+dumping all 5 preferred_any groups as flat terms, and apple's atomization collapsed wholesale. Root-caused
+before recording: re-ran cedar against the unchanged pre-round-3 protocol and got the identical failure
+twice, confirming this is model variance, not a round-3 regression. Comparison run on Codex `gpt-5.6-terra`:
+E1 is 3 of 6 (greenhouse/qualcomm/reddit pass) - its best result yet, and the first time either model has
+passed greenhouse. Takeaway carried forward: a single E1 run is noisy enough that its exact number
+shouldn't be over-read; the checks themselves (backed by the guard test and unit tests) are the reliable
+part of this eval, not any one live sample.
 
 M12 (commit range starting after the round-3 baseline): a manual review of all 6 fixtures via an HTML
 audit artifact (protocol + JD + answer key + notes, one tab per fixture) surfaced one real gap missed by

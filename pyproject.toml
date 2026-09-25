@@ -52,8 +52,11 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM", "C90"]
 max-complexity = 7
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "evals"]
 markers = [
     "integration: marks tests as integration",
     "local: marks tests that require local-only tools or filesystem paths",
+]
+filterwarnings = [
+    "ignore:ast.Str is deprecated:DeprecationWarning:langsmith",
 ]
