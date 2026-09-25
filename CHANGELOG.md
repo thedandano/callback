@@ -16,6 +16,24 @@
 - Existing users must re-run `onboard_user` after upgrading to the HTML renderer + extractor fixes. Older `sections.json` files may contain corrupted contact fields (for example duplicated email or incorrect location).
 - A host that emits `required_any` or `preferred_any` against an OLD callback server is silently degraded: `dataclass_wizard` drops the unknown key, so the group is ignored (not matched, not reported). Upgrade the server before relying on either.
 
+## [1.5.0](https://github.com/thedandano/callback/compare/v1.4.1...v1.5.0) (2026-09-25)
+
+
+### Features
+
+* eval tooling, curly-quote scoring fix, and CI cleanup (M6) ([#101](https://github.com/thedandano/callback/issues/101)) ([839eefa](https://github.com/thedandano/callback/commit/839eefa6c8ef8e256e2c0afa2afcfeb9ab52d6bf))
+* **evals:** add extract, tailor, and compile evals ([#91](https://github.com/thedandano/callback/issues/91)) ([316f5b0](https://github.com/thedandano/callback/commit/316f5b0b9da005df0ff6dc7f301580714e6007c6))
+* harden the profile-onboarding trust boundary (M1) ([#95](https://github.com/thedandano/callback/issues/95)) ([33bb284](https://github.com/thedandano/callback/commit/33bb2843f2e40596fb5586f6a08ae0f9a37c17f6))
+* make the apply and profile graphs honest (M2) ([#96](https://github.com/thedandano/callback/issues/96)) ([551ff78](https://github.com/thedandano/callback/commit/551ff7838151c1d358fb6d1a9f4211e8572f69c3))
+* profile wiki story pages are the source of truth (OKF frontmatter, M2.5) ([#99](https://github.com/thedandano/callback/issues/99)) ([81b4417](https://github.com/thedandano/callback/commit/81b44171c26ccf451c649cbe8986941c38d994ca))
+* replace the fetcher with Playwright + trafilatura (M3) ([#97](https://github.com/thedandano/callback/issues/97)) ([716c966](https://github.com/thedandano/callback/commit/716c9664d35c552881127eaaf6b4971f51aae053))
+* shed weight — 11 runtime deps, paths.py owns data directory (M4) ([#98](https://github.com/thedandano/callback/issues/98)) ([e5454d3](https://github.com/thedandano/callback/commit/e5454d3634e39022200c30dcb77c529af625496b))
+
+
+### Bug Fixes
+
+* JD extraction protocol edge cases and section-map edit validation (M5) ([#100](https://github.com/thedandano/callback/issues/100)) ([25b8294](https://github.com/thedandano/callback/commit/25b8294edc29b4f9fcda23fe571cc84ed1e3b07a))
+
 ## [1.4.1](https://github.com/thedandano/callback/compare/v1.4.0...v1.4.1) (2026-08-25)
 
 
