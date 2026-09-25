@@ -55,6 +55,21 @@ codex plugin add callback@callback
 
 Restart your session afterward.
 
+### Hermes
+
+```
+hermes plugins install thedandano/callback
+hermes plugins enable callback
+```
+
+Start a new session afterward.
+
+Hermes stops the install for any repo outside its curated catalog and prints a scan report first. Read it, then re-run with `--force` to continue.
+
+### Other Agent Plugins clients
+
+callback ships a root `plugin.json` and `mcp.json` in the [Agent Plugins 1.0](https://agent-plugins.org) format, which is how Hermes finds it above. Any client that reads that standard picks up the six skills and the MCP server from those two files, with no client-specific manifest. Codex prefers them over `.codex-plugin/` when both are present.
+
 ### Cursor, Claude Desktop, or any other MCP client
 
 Paste this into the client's MCP config. `uvx` fetches, builds, and runs the server straight from GitHub, so there's nothing to install first.

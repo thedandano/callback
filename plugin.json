@@ -1,0 +1,20 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "callback",
+  "version": "1.4.1",
+  "description": "Job application MCP workflows for profile onboarding, resume tailoring, lead scanning, and application review.",
+  "author": {
+    "name": "thedandano",
+    "url": "https://github.com/thedandano"
+  },
+  "homepage": "https://github.com/thedandano/callback",
+  "repository": "https://github.com/thedandano/callback",
+  "license": "MIT",
+  "keywords": [
+    "jobs",
+    "resume",
+    "ats",
+    "mcp",
+    "career"
+  ]
+}
