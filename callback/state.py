@@ -86,6 +86,7 @@ class ProfileState(BaseModel):
     wiki_path: str | None = Field(default=None)
     intake: dict | None = Field(default=None)
     compiled_profile: dict | None = Field(default=None)
+    host_tags: list[str] | None = Field(default=None)
     orphaned_skills: list | None = Field(default=None)
     current_story_target: str | None = Field(default=None)
     error: str | None = Field(default=None)

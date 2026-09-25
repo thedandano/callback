@@ -101,8 +101,8 @@ tool/node spans for LangSmith demos.
 | `submit_tailor`  | apply    | Applies host edits, renders the tailored PDF, scores final output, and returns artifact paths/report data. Optional `output_dir` redirects the final PDF into a caller directory (e.g. a sandbox). |
 | `get_wiki_pages` | apply    | Returns selected profile wiki pages for host tailoring evidence. |
 | `onboard_user`   | profile  | Enters the profile graph (interrupts after `onboard`).      |
-| `compile_profile`| profile  | Currently calls `profile_nodes.compile_profile` directly.   |
-| `create_story`   | profile  | Currently calls `profile_nodes.create_story` directly.      |
+| `compile_profile`| profile  | Resumes the profile graph thread (or starts a new one) and returns the recompiled profile with orphaned skills. |
+| `create_story`   | profile  | Persists a behavioral story and returns orphaned skills; recompiles the profile in the same call.      |
 | `check_update`   | utility  | Returns current version, latest release tag, and update status. |
 
 All tools return JSON envelopes via `_ok` / `_err`:
@@ -124,30 +124,28 @@ jd_fetch → keywords_accept → parse_initial → score_initial → tailor → 
         → parse_final → score_final → report → finalize → END
 ```
 
+Errors in `tailor`, `render`, `parse_final`, or `finalize` route back to the `tailor` interrupt; `submit_tailor` returns `pipeline_error` with `retriable: true` and may be called again with the same session to retry.
+
 Checkpointer DB: `~/.local/share/callback/apply-sessions.db`.
 State schema: `ApplyState` in `state.py` (single Pydantic model — entire graph state).
 Keyword extraction is host-owned: `callback` returns the JD markdown and extraction protocol, then stores only validated JDData submitted by the host.
 
 ### Profile graph (`profile_graph.py`, `profile_nodes.py`)
 
-Cyclic, with interrupts after `onboard`, `compile_profile`, and `create_story`:
+Cyclic, with interrupts after `onboard` and before `create_story`:
 
 ```
-check_profile ──(no profile)──▶ onboard ─▶ compile_profile ─▶ check_orphans
-              └─(exists)──────────────────────────────────────▶ check_orphans
-                                                                 │
-                              create_story ◀─(orphans exist)─────┤
-                                    └─▶ compile_profile (cycle)  │
-                                                                 ▼
-                                                  END (no orphans)
+check_profile ──(resume_path or no profile)──▶ onboard ─▶ compile_profile ─▶ check_orphans
+              ├─(story pending in intake)────▶ create_story ─▶ compile_profile ─┘   │
+              └─(otherwise)──────────────────▶ compile_profile ─────────────────┘   │
+                                                                                     ▼
+                              create_story ◀──(orphans)── check_orphans ──(none)──▶ END
 ```
+
+Interrupts: after `onboard`; before `create_story`. `compile_profile` and `create_story` accept an optional `session_id` to resume the thread; without one they start a new thread that `check_profile` routes to the right node.
 
 Checkpointer DB: `~/.local/share/callback/profile-sessions.db`.
 State schema: `ProfileState` in `state.py`.
-
-**Note:** `onboard_user` enters the profile graph. `compile_profile` and
-`create_story` still invoke profile nodes directly (skeleton state). Preserve
-the graph-state-injection intent when extending those tools.
 
 ### Scoring (`scorer.py`)
 
@@ -180,9 +178,9 @@ The apply graph's `render` node uses HTML + Playwright via `callback.render.html
 | Module               | Role |
 |----------------------|------|
 | `server.py`          | FastMCP tool definitions; envelope helpers (`_ok`/`_err`); structured stderr JSON logging |
-| `apply_graph.py`     | `build_apply_graph()` — linear apply pipeline with host handoff interrupts |
+| `apply_graph.py`     | `get_apply_graph()` cached accessor; linear apply pipeline with host handoff interrupts and error routing |
 | `apply_nodes.py`     | 10 apply nodes (`jd_fetch`, `keywords_accept`, `parse_initial`, `score_initial`, `tailor`, `render`, `parse_final`, `score_final`, `report`, `finalize`) |
-| `profile_graph.py`   | `build_profile_graph()` — cyclic profile graph with router edges and interrupts |
+| `profile_graph.py`   | `get_profile_graph()` cached accessor; cyclic profile graph with router edges and interrupts |
 | `profile_nodes.py`   | Profile nodes (`check_profile`, `onboard`, `compile_profile`, `check_orphans`, `create_story`) |
 | `state.py`           | `ApplyState`, `ProfileState` — Pydantic schemas for each graph |
 | `scorer.py`          | Deterministic ATS scorer (no I/O, no LLM) |

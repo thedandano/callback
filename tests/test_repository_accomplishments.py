@@ -64,6 +64,17 @@ class TestSequentialIDs:
 
         assert (saved1.id, saved2.id) == ("story-001", "story-002")
 
+    def test_identical_story_is_not_saved_twice(self, tmp_path):
+        """A retry after a failure that happened after the write must not duplicate."""
+        store = AccomplishmentsStore(base_dir=tmp_path)
+
+        saved1 = store.save_story(_make_story(primary_skill="Python"))
+        saved2 = store.save_story(_make_story(primary_skill="Python"))
+
+        actual = {"ids": (saved1.id, saved2.id), "stored": len(store.list_stories())}
+        expected = {"ids": ("story-001", "story-001"), "stored": 1}
+        assert actual == expected
+
 
 class TestListAll:
     """Test listing all stories."""

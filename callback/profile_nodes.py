@@ -35,12 +35,20 @@ def _persist_onboard_text(intake: dict) -> None:
         AccomplishmentsStore().save_onboard_text(onboard_text)
 
 
+def _registered_label(state_label: str | None) -> str:
+    """Resolve the resume label to use for reading/writing wiki content.
+
+    Uses the state's resume_label when set, else the first registered resume,
+    else falls back to "default" (no resumes registered at all).
+    """
+    if state_label:
+        return state_label
+    registered = list_resumes()
+    return registered[0] if registered else "default"
+
+
 def _resume_skills(label: str) -> list[str]:
     """Return all skills from sections.json for the given resume label."""
-    if label == "default":
-        registered = list_resumes()
-        if registered:
-            label = registered[0]
     pages = WikiStore().read_pages(label, ["sections.json"])
     sections_json = pages.get("sections.json", "")
     if not sections_json:
@@ -64,13 +72,12 @@ def _render_wiki(label: str, profile) -> None:
 
 @trace_node("profile", "check_profile")
 def check_profile(state: ProfileState) -> dict:
+    """A profile exists once a resume is registered — compiling (which creates the
+    compiled profile) happens downstream, and check_orphans already tolerates a
+    missing compiled profile.
+    """
     _log_enter("check_profile", state)
-    try:
-        load_compiled_profile()
-        has_resumes = len(list_resumes()) > 0
-        return {"profile_exists": has_resumes}
-    except ProfileMissingError:
-        return {"profile_exists": False}
+    return {"profile_exists": len(list_resumes()) > 0}
 
 
 @trace_node("profile", "onboard")
@@ -106,12 +113,8 @@ def onboard(state: ProfileState) -> dict:
 def compile_profile(state: ProfileState) -> dict:
     _log_enter("compile_profile", state)
     stories = AccomplishmentsStore().list_stories()
-    host_tags = (
-        state.compiled_profile.get("host_tags", [])
-        if isinstance(state.compiled_profile, dict)
-        else []
-    )
-    label = state.resume_label or "default"
+    host_tags = list(state.host_tags or [])
+    label = _registered_label(state.resume_label)
     resume_skills = _resume_skills(label)
     all_tags = list(dict.fromkeys(host_tags + resume_skills))
     profile, warnings = ProfileCompiler().compile(stories, all_tags)
@@ -128,9 +131,25 @@ def compile_profile(state: ProfileState) -> dict:
     }
 
 
+def _active_orphans_from_state(compiled_profile: dict) -> list[str] | None:
+    """Derive active orphans from the thread's own compiled_profile state, if usable.
+
+    Returns None when compiled_profile isn't the expected shape, so the caller
+    falls back to the disk-loaded profile (a new thread that skipped compile).
+    """
+    orphaned = compiled_profile.get("orphaned_skills")
+    if not isinstance(orphaned, list):
+        return None
+    return [o["skill"] for o in orphaned if isinstance(o, dict) and not o.get("deferred")]
+
+
 @trace_node("profile", "check_orphans")
 def check_orphans(state: ProfileState) -> dict:
     _log_enter("check_orphans", state)
+    if isinstance(state.compiled_profile, dict):
+        active = _active_orphans_from_state(state.compiled_profile)
+        if active is not None:
+            return {"orphaned_skills": active}
     try:
         profile = load_compiled_profile()
         active = [o.skill for o in profile.orphaned_skills if not o.deferred]

@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import callback.wiki as wiki_module
-from callback.profile_graph import build_profile_graph, make_config
+from callback.profile_graph import _route_check_profile, build_profile_graph, make_config
 from callback.profilecompiler import save_compiled_profile
 from callback.repository.resumes import list_resumes, save_resume
 from callback.state import CompiledProfile, OrphanedSkill, ProfileState
@@ -21,6 +21,12 @@ from callback.state import CompiledProfile, OrphanedSkill, ProfileState
 def _tmp_graph(tmp_path):
     db_path = tmp_path / "profile-sessions.db"
     return build_profile_graph(db_path=db_path)
+
+
+def test_get_profile_graph_returns_the_same_instance():
+    from callback.profile_graph import get_profile_graph
+
+    assert get_profile_graph() is get_profile_graph()
 
 
 def _make_state(session_id: str, **kwargs) -> ProfileState:
@@ -75,20 +81,6 @@ class TestCheckProfileRouter:
 
         assert result.get("intake") == {"status": "no_resume"}
 
-    def test_routes_to_check_orphans_when_profile_and_resume_exist(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
-        _save_profile_with_resumes(tmp_path)
-        graph = _tmp_graph(tmp_path)
-        config = make_config("s-router-2")
-
-        result = graph.invoke(_make_state("s-router-2"), config)
-
-        assert {k: result.get(k) for k in ("profile_exists", "intake")} == {
-            "profile_exists": True,
-            "intake": None,
-        }
-
     def test_reonboard_with_existing_profile_replaces_resume(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
         monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
@@ -127,6 +119,22 @@ class TestCheckProfileRouter:
             "compiled_profile": None,
         }
 
+    def test_routes_to_compile_profile_when_profile_exists_and_no_resume_path(self):
+        state = ProfileState(session_id="s", profile_exists=True)
+        assert _route_check_profile(state) == "compile_profile"
+
+    def test_routes_to_create_story_when_story_pending(self):
+        state = ProfileState(session_id="s", profile_exists=True, intake={"primary_skill": "Rust"})
+        assert _route_check_profile(state) == "create_story"
+
+    def test_saved_story_is_not_pending(self):
+        state = ProfileState(
+            session_id="s",
+            profile_exists=True,
+            intake={"primary_skill": "Rust", "story_id": "story-001"},
+        )
+        assert _route_check_profile(state) == "compile_profile"
+
 
 # ---------------------------------------------------------------------------
 # check_orphans routing
@@ -147,24 +155,20 @@ class TestCheckOrphansRouter:
         assert result.get("current_story_target") is None
 
     def test_routes_to_create_story_when_orphans_exist(self, tmp_path, monkeypatch):
+        # compile_profile recomputes orphans from state.host_tags (not from the
+        # profile seeded on disk), so seed the orphan there. With the graph now
+        # pausing before create_story (rather than after), the observable signal
+        # is the pending interrupt, not a current_story_target set by a node that
+        # hasn't run yet.
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
         monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
-        _save_profile_with_resumes(tmp_path, orphans=["Rust"])
+        _save_profile_with_resumes(tmp_path)
         graph = _tmp_graph(tmp_path)
         config = make_config("s-orphan-2")
-        intake = {
-            "primary_skill": "Rust",
-            "skills": ["Rust"],
-            "story_type": "STAR",
-            "job_title": "Systems Engineer",
-            "situation": "S",
-            "behavior": "B",
-            "impact": "I",
-        }
 
-        result = graph.invoke(_make_state("s-orphan-2", intake=intake), config)
+        graph.invoke(_make_state("s-orphan-2", host_tags=["Rust"]), config)
 
-        assert result.get("current_story_target") == "Rust"
+        assert graph.get_state(config).next == ("create_story",)
 
 
 # ---------------------------------------------------------------------------
@@ -201,11 +205,44 @@ class TestInterruptAfterOnboard:
 # ---------------------------------------------------------------------------
 
 
-class TestInterruptAfterCreateStory:
-    def test_graph_pauses_after_create_story_when_orphan_exists(self, tmp_path, monkeypatch):
+class TestCompileFlowsIntoCheckOrphans:
+    def test_compile_profile_runs_through_to_check_orphans(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
         monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
-        _save_profile_with_resumes(tmp_path, orphans=["Rust"])
+        _save_profile_with_resumes(tmp_path)
+        graph = _tmp_graph(tmp_path)
+        config = make_config("s-cp-1")
+
+        result = graph.invoke(_make_state("s-cp-1"), config)
+
+        assert {
+            "has_compiled_profile": result.get("compiled_profile") is not None,
+            "orphaned_skills": result.get("orphaned_skills"),
+            "next": graph.get_state(config).next,
+        } == {"has_compiled_profile": True, "orphaned_skills": [], "next": ()}
+
+    def test_orphans_pause_before_create_story(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        _save_profile_with_resumes(tmp_path)
+        graph = _tmp_graph(tmp_path)
+        config = make_config("s-cp-2")
+
+        graph.invoke(_make_state("s-cp-2", host_tags=["Rust"]), config)
+
+        assert graph.get_state(config).next == ("create_story",)
+
+
+# ---------------------------------------------------------------------------
+# create_story interrupt
+# ---------------------------------------------------------------------------
+
+
+class TestCreateStoryInterrupt:
+    def test_pending_story_on_new_thread_pauses_before_create_story(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        _save_profile_with_resumes(tmp_path)
         graph = _tmp_graph(tmp_path)
         config = make_config("s-create-1")
         intake = {
@@ -218,45 +255,39 @@ class TestInterruptAfterCreateStory:
             "impact": "I",
         }
 
-        result = graph.invoke(_make_state("s-create-1", intake=intake), config)
+        graph.invoke(_make_state("s-create-1", intake=intake), config)
 
-        assert {k: result.get(k) for k in ("current_story_target", "compiled_profile")} == {
-            "current_story_target": "Rust",
-            "compiled_profile": None,
-        }
+        assert graph.get_state(config).next == ("create_story",)
 
-
-# ---------------------------------------------------------------------------
-# compile_profile interrupt
-# ---------------------------------------------------------------------------
-
-
-class TestInterruptAfterCompileProfile:
-    def test_graph_pauses_after_compile_profile(self, tmp_path, monkeypatch):
+    def test_resuming_runs_create_story_then_compile_then_check_orphans(
+        self, tmp_path, monkeypatch
+    ):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
         monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
+        _save_profile_with_resumes(tmp_path)
         graph = _tmp_graph(tmp_path)
-        config = make_config("s-cp-1")
+        config = make_config("s-create-2")
+        intake = {
+            "primary_skill": "Rust",
+            "skills": ["Rust"],
+            "story_type": "STAR",
+            "job_title": "Systems Engineer",
+            "situation": "S",
+            "behavior": "B",
+            "impact": "I",
+        }
+        graph.invoke(_make_state("s-create-2", intake=intake), config)
 
-        graph.invoke(_make_state("s-cp-1"), config)
         result = graph.invoke(None, config)
 
         assert {
+            "story_saved": bool((result.get("intake") or {}).get("story_id")),
             "has_compiled_profile": result.get("compiled_profile") is not None,
             "orphaned_skills": result.get("orphaned_skills"),
+            "next": graph.get_state(config).next,
         } == {
+            "story_saved": True,
             "has_compiled_profile": True,
-            "orphaned_skills": None,
+            "orphaned_skills": [],
+            "next": (),
         }
-
-    def test_graph_reaches_check_orphans_after_compile_profile_resume(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr(wiki_module, "BASE_DIR", tmp_path / "profile-wiki")
-        graph = _tmp_graph(tmp_path)
-        config = make_config("s-cp-2")
-
-        graph.invoke(_make_state("s-cp-2"), config)
-        graph.invoke(None, config)
-        result = graph.invoke(None, config)
-
-        assert result.get("orphaned_skills") == []

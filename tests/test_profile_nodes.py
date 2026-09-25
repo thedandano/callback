@@ -104,6 +104,15 @@ class TestCheckProfile:
 
         assert result == {"profile_exists": False}
 
+    def test_check_profile_true_with_resume_but_no_compiled_profile(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        resume_file = _make_resume_file(tmp_path)
+        save_resume("jane_doe", str(resume_file))
+
+        result = check_profile(_make_state())
+
+        assert result == {"profile_exists": True}
+
 
 class TestOnboard:
     def test_no_resume_path_returns_no_resume_status(self, tmp_path, monkeypatch):
@@ -217,6 +226,47 @@ class TestCheckOrphans:
         result = check_orphans(_make_state())
 
         assert result == {"orphaned_skills": ["Rust"]}
+
+    def test_uses_thread_state_compiled_profile_over_disk(self, tmp_path, monkeypatch):
+        """A concurrent session's disk compile must not swap in different orphans."""
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        disk_profile = CompiledProfile(
+            schema_version="1",
+            skills_index=["Terraform"],
+            stories=[],
+            orphaned_skills=[OrphanedSkill(skill="Terraform", deferred=False)],
+            compiled_at=datetime.now(UTC).isoformat(),
+        )
+        save_compiled_profile(disk_profile, base_dir=tmp_path / "callback")
+
+        state = _make_state(
+            compiled_profile={
+                "orphaned_skills": [
+                    {"skill": "Rust", "deferred": False},
+                    {"skill": "Go", "deferred": True},
+                ]
+            }
+        )
+        result = check_orphans(state)
+
+        assert result == {"orphaned_skills": ["Rust"]}
+
+    def test_falls_back_to_disk_when_thread_state_has_no_compiled_profile(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        disk_profile = CompiledProfile(
+            schema_version="1",
+            skills_index=["Terraform"],
+            stories=[],
+            orphaned_skills=[OrphanedSkill(skill="Terraform", deferred=False)],
+            compiled_at=datetime.now(UTC).isoformat(),
+        )
+        save_compiled_profile(disk_profile, base_dir=tmp_path / "callback")
+
+        result = check_orphans(_make_state(compiled_profile=None))
+
+        assert result == {"orphaned_skills": ["Terraform"]}
 
 
 class TestCreateStory:
