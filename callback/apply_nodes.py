@@ -70,8 +70,10 @@ def _run_score(
 ) -> dict:
     if not text or not text.strip():
         raise ValueError("_run_score: text must not be empty")
-    if not keywords or (not keywords.get("required") and not keywords.get("required_any")):
-        raise ValueError("_run_score: keywords must have non-empty 'required' or 'required_any'")
+    if not keywords or not any(
+        keywords.get(field) for field in ("required", "required_any", "preferred", "preferred_any")
+    ):
+        raise ValueError("_run_score: keywords must have at least one non-empty bucket")
     r = scorer.score(
         text,
         keywords.get("required", []),
@@ -83,11 +85,12 @@ def _run_score(
         cfg=scorer.DEFAULT_SCORING_CONFIG,
         closeable_by=closeable_by,  # type: ignore[arg-type]
     )
+    required_present = bool(keywords.get("required") or keywords.get("required_any"))
     preferred_present = bool(keywords.get("preferred") or keywords.get("preferred_any"))
     return {
         "total": r.breakdown.total(),
         "keyword_match": r.breakdown.keyword_match,
-        "required_coverage": round(r.keywords.req_pct * 100, 1),
+        "required_coverage": round(r.keywords.req_pct * 100, 1) if required_present else None,
         "preferred_coverage": round(r.keywords.pref_pct * 100, 1) if preferred_present else None,
         "experience_fit": r.breakdown.experience_fit,
         "experience_evaluated": r.breakdown.experience_fit is not None,

@@ -169,6 +169,41 @@ class TestExtractionProtocol:
     def test_contains_preferred_any_disjunction_guidance(self):
         assert "preferred_any GROUP" in EXTRACTION_PROTOCOL
 
+    def test_contains_two_member_group_guidance(self):
+        assert "exactly two alternatives is still a group" in EXTRACTION_PROTOCOL
+
+    def test_contains_section_scope_boundary(self):
+        assert "Do NOT mine keywords from" in EXTRACTION_PROTOCOL
+        assert "interview process" in EXTRACTION_PROTOCOL
+
+    def test_contains_slash_disjunction_test(self):
+        assert "could a candidate have JUST ONE of the slash-joined words" in EXTRACTION_PROTOCOL
+        assert '"CI/CD", "I/O", and a compound job-function name' in EXTRACTION_PROTOCOL
+
+    def test_contains_such_as_toolset_carve_out(self):
+        assert "it is NOT a disjunction - extract the named items as separate flat" in (
+            EXTRACTION_PROTOCOL
+        )
+
+    def test_contains_eg_disjunction_signal(self):
+        assert '"(e.g., X, Y, Z)" is a disjunction ONLY when' in EXTRACTION_PROTOCOL
+
+    def test_contains_unlabeled_bolded_header_example(self):
+        assert "no labeled Required/Preferred sections - rule 4 applies" in EXTRACTION_PROTOCOL
+
+    def test_include_every_term_is_scoped_to_eligible_sections(self):
+        assert "explicitly stated in an eligible JD section (per rule 4's exclusions" in (
+            EXTRACTION_PROTOCOL
+        )
+
+    def test_contains_keyword_definition_guidance(self):
+        assert "NAMED technology, tool, framework" in EXTRACTION_PROTOCOL
+        assert "are NOT keywords" in EXTRACTION_PROTOCOL
+
+    def test_contains_single_example_illustration_guidance(self):
+        assert "is NOT asking for that specific X" in EXTRACTION_PROTOCOL
+        assert "does NOT apply to rule 4's unlabeled-prose extraction" in EXTRACTION_PROTOCOL
+
 
 class TestRequiredAny:
     def test_required_any_parses_and_round_trips(self):
@@ -201,7 +236,7 @@ class TestRequiredAny:
         assert jd.model_dump()["required_any"] == [["Java", "Go"]]
         assert jd.model_dump()["required"] == []
 
-    def test_empty_required_and_empty_required_any_raises(self):
+    def test_all_four_keyword_buckets_empty_raises(self):
         with pytest.raises(JDDataError) as exc_info:
             JDData(title="T", company="C", required=[], required_any=[])
 
@@ -251,11 +286,15 @@ class TestPreferredAny:
 
         assert jd.model_dump()["preferred_any"] == [["Datadog"], ["Grafana", "Prometheus"]]
 
-    def test_preferred_any_alone_does_not_satisfy_required_guard(self):
-        with pytest.raises(JDDataError) as exc_info:
-            JDData(title="T", company="C", required=[], preferred_any=[["Datadog", "Grafana"]])
+    def test_preferred_any_alone_satisfies_the_keyword_guard(self):
+        """A posting with an empty Minimum Qualifications section (real example: a
+        Qualcomm req whose page ships the heading with no bullets under it) has
+        nothing for 'required', but genuinely extracted preferred_any is still a
+        valid result - not every posting states hard requirements."""
+        jd = JDData(title="T", company="C", required=[], preferred_any=[["Datadog", "Grafana"]])
 
-        assert exc_info.value.code == "invalid_jd"
+        assert jd.model_dump()["preferred_any"] == [["Datadog", "Grafana"]]
+        assert jd.model_dump()["required"] == []
 
     def test_group_that_is_not_a_list_raises(self):
         with pytest.raises(JDDataError) as exc_info:
