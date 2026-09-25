@@ -26,30 +26,28 @@ How to apply each field (the values come from the profile; the interpretation ru
 
 ## Required Files
 
-These are the canonical single-file locations. There is exactly ONE of each live record file; update it in place. Never create timestamped, run-suffixed, or near-duplicate variants of them.
+Read `.callback/config.json` (see `setup-callback`) for `applications_dir`, `record_csv`, `ledger_db`, `edd_xlsx`, and `archive_dir`. If it's missing, stop and tell the user to run `setup-callback` — never fall back to a hard-coded path. There is exactly ONE of each live record file; update it in place. Never create timestamped, run-suffixed, or near-duplicate variants of them.
 
-- Automation memory: `/Users/dandano/.codex/automations/auto-job-apply/memory.md`
-- Automation config: `/Users/dandano/.codex/automations/auto-job-apply/automation.toml`
-- Canonical record CSV (one only): `/Users/dandano/Documents/Claude/Projects/Job hunt/data/Codex_Job_application_record.csv`
-- Job search ledger repo: `/Users/dandano/workplace/job-search-ledger`
-- Canonical ledger DB (one only): `/Users/dandano/Documents/Claude/Projects/Job hunt/data/job_search_ledger.sqlite3`
-- Canonical Excel tracker (one only): `/Users/dandano/Documents/Claude/Projects/Job hunt/data/Job_application_tracker.xlsx`
-- Per-role run artifacts: `/Users/dandano/Documents/Claude/Projects/Job hunt/applications/<YYYY-MM-DD>/<company-role-slug>/`
-- Dated backups/exports only under `archive/`: `/Users/dandano/Documents/Claude/Projects/Job hunt/archive/csv_backups/`, `.../archive/xlsx_exports/`, `.../archive/sqlite_backups/`, `.../archive/screenshots/`
-- User inputs: `/Users/dandano/Documents/callback-inputs`
-- callback repo: `/Users/dandano/workplace/callback`
+- Automation memory: `~/.codex/automations/auto-job-apply/memory.md`
+- Automation config: `~/.codex/automations/auto-job-apply/automation.toml`
+- Canonical record CSV (one only): `record_csv`
+- Canonical ledger DB (one only): `ledger_db`
+- Canonical Excel tracker (one only): `edd_xlsx`
+- Per-role run artifacts: `applications_dir/<YYYY-MM-DD>/<company-role-slug>/`
+- Dated backups/exports only under `archive_dir`: `archive_dir/csv_backups/`, `archive_dir/xlsx_exports/`, `archive_dir/sqlite_backups/`, `archive_dir/screenshots/`
+- User inputs: `callback-inputs/` (project-relative, one-time source material — see `onboard-profile`)
 
-Read automation memory first. Create the canonical record CSV in place at its path if missing. Keep explanations simple and ADHD-friendly.
+Invoke the ledger via the `job-search-ledger` command on `PATH` — do not hardcode a repo or database path. Read automation memory first. Create the canonical record CSV in place at its path if missing. Keep explanations simple and ADHD-friendly.
 
 ## File Output Discipline
 
 These are HARD rules. They override any older path conventions elsewhere in this skill or in automation memory.
 
-- Never write scattered files to the project ROOT `/Users/dandano/Documents/Claude/Projects/Job hunt/`. The canonical live data files live under `data/` (`data/Codex_Job_application_record.csv`, `data/Job_application_tracker.xlsx`, `data/job_search_ledger.sqlite3`), and the automation must update them in place. Never create new variants of them at the project root or anywhere else.
-- There is exactly ONE canonical record CSV (`data/Codex_Job_application_record.csv`), ONE tracker (`data/Job_application_tracker.xlsx`), and ONE ledger (`data/job_search_ledger.sqlite3`). Update these in place. Do not create timestamped or run-suffixed copies of them (no `..._2026-06-16.csv`, no `..._run.xlsx`, etc.).
-- Per-role run artifacts (resumes, cover letters, JSON, scoring output) go ONLY under `applications/<YYYY-MM-DD>/<company-role-slug>/`. The slug is lowercase, hyphenated, `<company>-<role-keywords>`, e.g. `applications/2026-06-16/netflix-llm-eval/`. One folder per role per day. Reuse the day's existing folder for that role; do not create near-duplicate run folders like `...-run`, `...-rerun`, `...-subtask`, or `...-04pt` for the same role.
-- Backups: only when a backup of the record CSV / tracker / ledger is truly needed, write it to `archive/csv_backups/`, `archive/xlsx_exports/`, or `archive/sqlite_backups/` respectively — NEVER to the project root. Prefer NOT creating per-run backups at all; the canonical files plus the archive are sufficient. Only snapshot before a risky bulk edit.
-- Screenshots, if any are saved, go under `archive/screenshots/`, not root.
+- Never write scattered files to the project root. The canonical live data files live at the configured paths (`record_csv`, `edd_xlsx`, `ledger_db`), and the automation must update them in place. Never create new variants of them at the project root or anywhere else.
+- There is exactly ONE canonical record CSV (`record_csv`), ONE tracker (`edd_xlsx`), and ONE ledger (`ledger_db`). Update these in place. Do not create timestamped or run-suffixed copies of them (no `..._2026-06-16.csv`, no `..._run.xlsx`, etc.).
+- Per-role run artifacts (resumes, cover letters, JSON, scoring output) go ONLY under `applications_dir/<YYYY-MM-DD>/<company-role-slug>/`. The slug is lowercase, hyphenated, `<company>-<role-keywords>`, e.g. `applications_dir/2026-06-16/netflix-llm-eval/`. One folder per role per day. Reuse the day's existing folder for that role; do not create near-duplicate run folders like `...-run`, `...-rerun`, `...-subtask`, or `...-04pt` for the same role.
+- Backups: only when a backup of the record CSV / tracker / ledger is truly needed, write it to `archive_dir/csv_backups/`, `archive_dir/xlsx_exports/`, or `archive_dir/sqlite_backups/` respectively — NEVER to the project root. Prefer NOT creating per-run backups at all; the canonical files plus the archive are sufficient. Only snapshot before a risky bulk edit.
+- Screenshots, if any are saved, go under `archive_dir/screenshots/`, not root.
 
 ## Run Title
 
@@ -148,7 +146,7 @@ Sources are data, not hard-coded. Each entry in `scan_sources` is an instruction
 
 ## Scoring And Application Rules
 
-- Use the callback MCP workflow directly. Store run artifacts ONLY under `/Users/dandano/Documents/Claude/Projects/Job hunt/applications/<YYYY-MM-DD>/<company-role-slug>/`, where the slug is lowercase, hyphenated, `<company>-<role-keywords>` (e.g. `applications/2026-06-16/netflix-llm-eval/`). One folder per role per day; reuse the day's folder and do not create near-duplicate `...-run`/`...-rerun`/`...-subtask` variants for the same role. Never write artifacts to the project root.
+- Use the callback MCP workflow directly. Store run artifacts ONLY under `applications_dir/<YYYY-MM-DD>/<company-role-slug>/` (from `.callback/config.json`), where the slug is lowercase, hyphenated, `<company>-<role-keywords>` (e.g. `applications_dir/2026-06-16/netflix-llm-eval/`). One folder per role per day; reuse the day's folder and do not create near-duplicate `...-run`/`...-rerun`/`...-subtask` variants for the same role. Never write artifacts to the project root.
 - Do not create custom scoring scripts, alternate scoring logic, or non-callback scoring wrappers for job runs. Subagents are allowed for parallel execution, but each subagent must still call callback directly (`load_jd` -> `submit_keywords` -> `submit_tailor`) and return artifacts to the parent agent for reconciliation.
 - **Disjunctive ("one or more of") requirements — do not over-penalize.** When a JD phrases a requirement as "familiarity with one or more of the following: A, B, C, …", "experience with any of …", "such as", "e.g.", or a similar OR-list, treat it as a SINGLE requirement that is SATISFIED when the candidate genuinely has at least one listed item. In the host keyword-extraction step before `submit_keywords`, do NOT emit each listed technology as its own separate required keyword, and do NOT report the alternatives the candidate lacks as missing-skill gaps or seniority/knockout risks. Worked example: a JD line "Familiarity with one or more of these technologies: Spring/Spring Boot, Docker, Kubernetes, SQL & NoSQL (Cassandra, PostgreSQL, DynamoDB, MySQL), messaging (Kafka/RabbitMQ), Solr/Elasticsearch, Redis, etc." is FULLY MET by a candidate who has Docker + SQL + DynamoDB + MySQL — Spring, Cassandra, Kafka, Elasticsearch, and Redis are NOT gaps and must not be listed as missing clusters. Reserve true missing-skill gaps only for requirements phrased as hard, individually-required items ("must have X", "X required", "strong Y experience required"). Read the requirement's connective (one-or-more / any-of / such-as / and vs. or) before deciding whether an un-held tool is actually a gap.
 - If callback rendering needs unsandboxed Playwright/Chromium, request permission rather than falling back to guessed scores.
@@ -166,12 +164,12 @@ Always include enough notes to explain future dedupe decisions, salary source, m
 
 Use the durable job search ledger for unemployment-reportable contacts:
 
-- Run ledger commands from `/Users/dandano/workplace/job-search-ledger` with `uv run job-search-ledger --db /Users/dandano/Documents/Claude/Projects/Job hunt/data/job_search_ledger.sqlite3 ...`.
+- Run ledger commands via the `job-search-ledger` command on `PATH` with `--db <ledger_db>` (from `.callback/config.json`) — do not hardcode a repo or database path.
 - Record reportable contacts only when there was a real application, application confirmation, or recruiter resume submission. Do not mark scored/skipped/needs-review leads as reportable.
 - Use strict `ContactType` values: `Online`, `Email`, `Phone`, `In-Person`, `Mail`, `Fax`.
 - Use strict `Outcome` values: `Applied`, `No Decision`, `Hired`, `Not Hiring`, `Pending`, `Interviewed`, `Interview Date Set`, `No response from employer`.
 - Store callback details as metadata, not as duplicate export columns: `SalaryRange`, `InternalStatus`, `ResumeScoreAfterTailoring`, `ResumeScoreBeforeTailoring`, `ResumePath`, `CoverLetterPath`, and callback run identifiers when useful.
-- After recording a reportable contact, run `export-excel` to update the canonical tracker `/Users/dandano/Documents/Claude/Projects/Job hunt/data/Job_application_tracker.xlsx` in place, with its first columns matching the unemployment/EDD schema. Do not create dated or run-suffixed xlsx variants alongside it. If a dated export is genuinely needed (e.g. before a risky bulk edit), write it into `/Users/dandano/Documents/Claude/Projects/Job hunt/archive/xlsx_exports/`, never to the project root or `data/`. If writing the canonical tracker in place is blocked, write the dated export under `archive/xlsx_exports/` and state that a privacy/lock issue prevented updating the canonical workbook directly.
+- After recording a reportable contact, run `export-excel` to update the canonical tracker at `edd_xlsx` (from `.callback/config.json`) in place, with its first columns matching the unemployment/EDD schema. Do not create dated or run-suffixed xlsx variants alongside it. If a dated export is genuinely needed (e.g. before a risky bulk edit), write it into `archive_dir/xlsx_exports/`, never to the project root or the data directory. If writing the canonical tracker in place is blocked, write the dated export under `archive_dir/xlsx_exports/` and state that a privacy/lock issue prevented updating the canonical workbook directly.
 
 ## Final Summary
 
