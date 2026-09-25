@@ -55,6 +55,15 @@ codex plugin add callback@callback
 
 Restart your session afterward.
 
+### Hermes Agent
+
+```
+hermes plugins install thedandano/callback
+hermes plugins enable callback
+```
+
+Portable plugins install disabled by default, so the `enable` step is required. Hermes namespaces the skills by plugin name, e.g. `callback:tailor-resume`.
+
 ### Cursor, Claude Desktop, or any other MCP client
 
 Paste this into the client's MCP config. `uvx` fetches, builds, and runs the server straight from GitHub, so there's nothing to install first.
