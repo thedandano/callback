@@ -3,7 +3,8 @@ import tomllib
 from pathlib import Path
 
 _PYPROJECT = Path(__file__).parents[1] / "pyproject.toml"
-_MAX_RUNTIME_DEPENDENCIES = 11
+# M2.5 added pyyaml for OKF frontmatter; declared rather than imported transitively.
+_MAX_RUNTIME_DEPENDENCIES = 12
 _REMOVED = {"crawl4ai", "dataclass-wizard", "httpx", "rapidfuzz", "pypdf", "rich", "langchain-core"}
 
 

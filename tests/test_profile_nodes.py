@@ -18,6 +18,7 @@ from callback.profile_nodes import (
     onboard,
 )
 from callback.profilecompiler import save_compiled_profile
+from callback.repository import stories
 from callback.repository.accomplishments import AccomplishmentsStore
 from callback.repository.resumes import (
     get_resume,
@@ -162,12 +163,42 @@ class TestOnboard:
 
         onboard(state)
 
-        data = AccomplishmentsStore(base_dir=tmp_path / "callback")._load()
-        assert data == {
-            "schema_version": "1",
-            "onboard_text": "I love building distributed systems.",
-            "created_stories": [],
+        text = AccomplishmentsStore(base_dir=tmp_path / "callback").load_onboard_text()
+        assert text == "I love building distributed systems."
+
+    def test_onboard_migrates_legacy_stories_from_accomplishments_json(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
+
+        legacy_story = {"id": "story-001", **_STORY_FIELDS}
+        accomplishments_dir = tmp_path / "callback"
+        accomplishments_dir.mkdir(parents=True)
+        (accomplishments_dir / "accomplishments.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "1",
+                    "onboard_text": "",
+                    "created_stories": [legacy_story],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        resume_file = _make_resume_file(tmp_path)
+        state = _make_state(resume_path=str(resume_file))
+
+        result = onboard(state)
+
+        page = tmp_path / "profile-wiki" / "primary" / "experience" / "story-001.md"
+        actual = {
+            "intake_stories": result["intake"]["stories"],
+            "page_has_frontmatter": page.is_file() and page.read_text().startswith("---\n"),
         }
+        expected = {
+            "intake_stories": [CreatedStory(**legacy_story).model_dump()],
+            "page_has_frontmatter": True,
+        }
+        assert actual == expected
 
 
 class TestCompileProfile:
@@ -175,29 +206,43 @@ class TestCompileProfile:
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
         monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
 
-        store = AccomplishmentsStore(base_dir=tmp_path / "callback")
-        saved_story = store.save_story(CreatedStory(id="", **_STORY_FIELDS))
+        saved_story = stories.save_story("jane_doe", CreatedStory(id="", **_STORY_FIELDS))
+        page_path = tmp_path / "profile-wiki" / "jane_doe" / "experience" / "story-001.md"
+        page_before = page_path.read_text()
 
         state = _make_state(resume_label="jane_doe")
         result = compile_profile(state)
 
-        assert (tmp_path / "callback" / "compiled_profile.json").exists()
-        assert (tmp_path / "profile-wiki" / "jane_doe" / "index.md").exists()
+        compiled_profile = result["compiled_profile"]
+        compiled_at = compiled_profile.pop("compiled_at")
 
-        actual = result["compiled_profile"]
-        compiled_at = actual.pop("compiled_at")
-        assert isinstance(compiled_at, str) and len(compiled_at) > 0
-
-        assert actual == {
-            "schema_version": "1",
-            "skills_index": sorted(["Python", "Docker"], key=str.lower),
-            "stories": [saved_story.model_dump()],
-            "orphaned_skills": [],
+        actual = {
+            "compiled_at_is_nonempty_str": isinstance(compiled_at, str) and len(compiled_at) > 0,
+            "compiled_profile_json_exists": (
+                tmp_path / "callback" / "compiled_profile.json"
+            ).exists(),
+            "index_md_exists": (tmp_path / "profile-wiki" / "jane_doe" / "index.md").exists(),
+            "story_page_untouched": page_path.read_text() == page_before,
+            "compiled_profile": compiled_profile,
+            "intake": result["intake"],
         }
-        assert result["intake"] == {
-            "skill_coverage_warnings": [],
-            "skills_index": sorted(["Python", "Docker"], key=str.lower),
+        expected = {
+            "compiled_at_is_nonempty_str": True,
+            "compiled_profile_json_exists": True,
+            "index_md_exists": True,
+            "story_page_untouched": True,
+            "compiled_profile": {
+                "schema_version": "1",
+                "skills_index": sorted(["Python", "Docker"], key=str.lower),
+                "stories": [saved_story.model_dump()],
+                "orphaned_skills": [],
+            },
+            "intake": {
+                "skill_coverage_warnings": [],
+                "skills_index": sorted(["Python", "Docker"], key=str.lower),
+            },
         }
+        assert actual == expected
 
 
 class TestResumeSkills:
@@ -296,23 +341,31 @@ class TestCheckOrphans:
 
 class TestCreateStory:
     def test_saves_story_and_returns_story_id(self, tmp_path, monkeypatch):
+        # No resume is registered, so create_story's _registered_label falls back
+        # to "default" — that fallback is what this test exercises.
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
 
         state = _make_state(intake=_STORY_FIELDS)
         result = create_story(state)
 
-        stories = AccomplishmentsStore(base_dir=tmp_path / "callback").list_stories()
         expected_saved = CreatedStory(id="story-001", **_STORY_FIELDS)
-        assert stories == [expected_saved]
-
-        assert result == {
-            "current_story_target": "Python",
-            "intake": {
-                **_STORY_FIELDS,
-                "story_id": "story-001",
-                "needs_compile": True,
+        actual = {
+            "stored": stories.list_stories("default")[0],
+            "result": result,
+        }
+        expected = {
+            "stored": [expected_saved],
+            "result": {
+                "current_story_target": "Python",
+                "intake": {
+                    **_STORY_FIELDS,
+                    "story_id": "story-001",
+                    "needs_compile": True,
+                },
             },
         }
+        assert actual == expected
 
 
 class TestOnboardValidatesBeforeClearing:
@@ -407,3 +460,34 @@ class TestReplaceResume:
 
         assert list_resumes() == ["primary"]
         assert list(paths.inputs_dir().glob("*.staging")) == []
+
+
+class TestCreateStoryMigratesFirst:
+    def test_create_story_does_not_claim_a_legacy_story_id(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.repository.stories.list_resumes", lambda: ["default"])
+        legacy = {"id": "story-001", **{**_STORY_FIELDS, "primary_skill": "Legacy"}}
+        data_dir = tmp_path / "callback"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        (data_dir / "accomplishments.json").write_text(
+            json.dumps({"schema_version": "1", "onboard_text": "", "created_stories": [legacy]})
+        )
+
+        result = create_story(_make_state(intake=_STORY_FIELDS))
+
+        listed, _ = stories.list_stories("default")
+        actual = {
+            "new_id": result["intake"]["story_id"],
+            "ids": [s.id for s in listed],
+            "legacy_skill": listed[0].primary_skill,
+            "json_dropped": "created_stories"
+            not in json.loads((data_dir / "accomplishments.json").read_text()),
+        }
+        expected = {
+            "new_id": "story-002",
+            "ids": ["story-001", "story-002"],
+            "legacy_skill": "Legacy",
+            "json_dropped": True,
+        }
+        assert actual == expected
