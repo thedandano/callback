@@ -4,7 +4,7 @@ import json
 import sqlite3
 import uuid
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from fastmcp import Client
@@ -173,7 +173,6 @@ def test_run_logs_crash_traceback_before_raising():
         captured_payloads.append(payload)
 
     with (
-        patch.object(server, "_write_log_line"),
         patch.object(server.logger, "exception"),
         patch.object(server, "_log"),
         patch.object(server, "_log_exception", side_effect=fake_log_exception),
@@ -351,6 +350,31 @@ def test_configure_logging_writes_server_log(tmp_path):
     assert "test log line" in log_path.read_text(encoding="utf-8")
 
 
+def test_log_writes_one_line_per_event(tmp_path):
+    import logging
+
+    import callback.server as server
+
+    log_path = tmp_path / "server.log"
+    server.configure_logging(log_path)
+    try:
+        server._log("INFO", {"event": "dedupe_probe"})
+        for handler in logging.getLogger().handlers:
+            handler.flush()
+        lines = [
+            line
+            for line in log_path.read_text(encoding="utf-8").splitlines()
+            if "dedupe_probe" in line
+        ]
+        assert len(lines) == 1
+    finally:
+        root = logging.getLogger()
+        for handler in list(root.handlers):
+            if getattr(handler, "_callback_log_path", None) == str(log_path):
+                root.removeHandler(handler)
+                handler.close()
+
+
 def test_load_jd_accepts_url_with_raw_text_fallback():
     from callback.server import load_jd
 
@@ -497,6 +521,94 @@ def test_submit_keywords_rejects_blank_session_with_session_id():
         "session_id": session_id,
     }
 
+    assert result == expected
+
+
+def test_submit_keywords_returns_envelope_when_extractor_raises(tmp_path, monkeypatch):
+    from callback.server import load_jd, submit_keywords
+
+    with patch("callback.server.list_resumes", return_value=["resume"]):
+        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+    session_id = loaded["session_id"]
+
+    def broken_extract(path):
+        raise RuntimeError("extractor: PDF yielded no text")
+
+    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", broken_extract)
+    with patch("callback.apply_nodes.get_resume", return_value=str(tmp_path / "resume.pdf")):
+        result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+
+    expected = {
+        "status": "error",
+        "error": {
+            "stage": "submit_keywords",
+            "code": "unexpected_error",
+            "message": "unexpected submit_keywords failure; inspect callback logs",
+            "retriable": False,
+        },
+        "session_id": session_id,
+    }
+    assert result == expected
+
+
+def test_submit_keywords_reports_extractor_value_error_as_unexpected_error(tmp_path, monkeypatch):
+    from callback.server import load_jd, submit_keywords
+
+    with patch("callback.server.list_resumes", return_value=["resume"]):
+        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+    session_id = loaded["session_id"]
+
+    def broken_extract(path):
+        raise ValueError("extractor: unsupported format '.rtf' — expected .pdf, .docx, or .txt")
+
+    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", broken_extract)
+    with patch("callback.apply_nodes.get_resume", return_value=str(tmp_path / "resume.pdf")):
+        result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+
+    expected = {
+        "status": "error",
+        "error": {
+            "stage": "submit_keywords",
+            "code": "unexpected_error",
+            "message": "unexpected submit_keywords failure; inspect callback logs",
+            "retriable": False,
+        },
+        "session_id": session_id,
+    }
+    assert result == expected
+
+
+def test_submit_keywords_reports_checkpoint_value_error_as_invalid_session():
+    from callback.server import load_jd, submit_keywords
+
+    with patch("callback.server.list_resumes", return_value=["resume"]):
+        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+    session_id = loaded["session_id"]
+
+    class FakeSnapshot:
+        values = {"resume_label": "resume"}
+        next = ("keywords_accept",)
+
+    class FakeGraph:
+        def get_state(self, config):
+            return FakeSnapshot()
+
+        def update_state(self, config, values):
+            raise ValueError("checkpoint missing")
+
+    with patch("callback.server.build_apply_graph", return_value=FakeGraph()):
+        result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+
+    expected = {
+        "status": "error",
+        "error": {
+            "stage": "submit_keywords",
+            "code": "invalid_session",
+            "message": "checkpoint missing",
+            "retriable": False,
+        },
+        "session_id": session_id,
+    }
     assert result == expected
 
 
@@ -1013,6 +1125,149 @@ def test_get_wiki_pages_returns_submit_tailor_workflow(tmp_path, monkeypatch):
     assert actual == expected
 
 
+def test_get_wiki_pages_rejects_page_id_outside_wiki_root(tmp_path, monkeypatch):
+    from callback.server import get_wiki_pages, load_jd, submit_keywords
+    from callback.wiki import WikiStore
+
+    resume_label = "wiki_pages_traversal_resume"
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    sections = {
+        "summary": "Python engineer",
+        "skills": {"flat": ["Python"], "categorized": {}},
+        "experience": [{"company": "ACME", "role": "Engineer", "bullets": ["Built Python"]}],
+        "projects": [],
+        "education": [],
+        "contact": {"name": "Jane Dev"},
+        "certifications": [],
+        "awards": [],
+    }
+    store = WikiStore()
+    store.write_page(resume_label, "sections.json", json.dumps(sections))
+    store.write_index(resume_label, "- experience/acme.md")
+    secret = tmp_path / "secret.txt"
+    secret.write_text("hunter2", encoding="utf-8")
+
+    with patch("callback.server.list_resumes", return_value=[resume_label]):
+        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+    session_id = loaded["session_id"]
+    json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+
+    result = json.loads(get_wiki_pages(session_id=session_id, page_ids=["../../secret.txt"]))
+
+    expected = {
+        "status": "error",
+        "error": {
+            "stage": "get_wiki_pages",
+            "code": "invalid_page_id",
+            "message": "page_id escapes wiki root: '../../secret.txt'",
+            "retriable": True,
+        },
+        "session_id": session_id,
+    }
+    assert result == expected
+
+
+def test_get_wiki_pages_rejects_embedded_nul(tmp_path, monkeypatch):
+    from callback.server import get_wiki_pages, load_jd, submit_keywords
+    from callback.wiki import WikiStore
+
+    resume_label = "wiki_pages_nul_resume"
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    sections = {
+        "summary": "Python engineer",
+        "skills": {"flat": ["Python"], "categorized": {}},
+        "experience": [{"company": "ACME", "role": "Engineer", "bullets": ["Built Python"]}],
+        "projects": [],
+        "education": [],
+        "contact": {"name": "Jane Dev"},
+        "certifications": [],
+        "awards": [],
+    }
+    store = WikiStore()
+    store.write_page(resume_label, "sections.json", json.dumps(sections))
+    store.write_index(resume_label, "- experience/acme.md")
+
+    with patch("callback.server.list_resumes", return_value=[resume_label]):
+        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+    session_id = loaded["session_id"]
+    json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+
+    result = json.loads(get_wiki_pages(session_id=session_id, page_ids=["a\x00b.md"]))
+
+    expected = {
+        "status": "error",
+        "error": {
+            "stage": "get_wiki_pages",
+            "code": "invalid_page_id",
+            "message": "invalid page_id: 'a\\x00b.md'",
+            "retriable": True,
+        },
+        "session_id": session_id,
+    }
+    assert result == expected
+
+
+def test_rank_project_candidates_skips_invalid_index_links(tmp_path, monkeypatch):
+    from callback.server import _rank_project_candidates
+    from callback.wiki import WikiStore
+
+    resume_label = "invalid_link_resume"
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "wiki")
+    store = WikiStore()
+    store.write_page(
+        resume_label,
+        "experience/ok.md",
+        """# Solid Project
+
+**Job Title:** Project
+
+Skills: Python, RAG
+
+**Situation:** Built a thing.
+
+**Behavior:** Built a Python pipeline.
+
+**Impact:** Shipped it.
+""",
+    )
+    wiki_index = "\n".join(
+        [
+            "# Profile Index",
+            "- [Solid Project](experience/ok.md)",
+            "- [Escaped](experience/../../secret.md)",
+        ]
+    )
+    keywords = {"required": ["Python", "RAG"], "preferred": []}
+
+    mock_log = Mock()
+    monkeypatch.setattr("callback.server._log", mock_log)
+
+    candidates = _rank_project_candidates(resume_label, keywords, wiki_index)
+
+    assert candidates == [
+        {
+            "page_id": "experience/ok.md",
+            "name": "Solid Project",
+            "skills": ["Python", "RAG"],
+            "score": 1.0,
+            "required_matched": ["Python", "RAG"],
+            "preferred_matched": [],
+            "evidence_preview": (
+                "Skills: Python, RAG **Situation:** Built a thing. "
+                "**Behavior:** Built a Python pipeline. **Impact:** Shipped it."
+            ),
+        }
+    ]
+    mock_log.assert_called_once_with(
+        "WARNING",
+        {
+            "tool": "submit_keywords",
+            "event": "invalid_wiki_link_skipped",
+            "page_id": "experience/../../secret.md",
+        },
+    )
+
+
 class TestOrphanDetection:
     """Tests for _detect_orphaned_required orphan classification logic."""
 
@@ -1459,6 +1714,39 @@ class TestTailorDiagnostics:
             "all_alternatives_empty": True,
         }
         assert actual == expected
+
+
+def test_onboard_user_returns_envelope_when_extractor_raises(tmp_path, monkeypatch):
+    from callback import server
+    from callback.profile_graph import build_profile_graph
+
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    monkeypatch.setattr("callback.wiki.BASE_DIR", tmp_path / "profile-wiki")
+    db_path = tmp_path / "profile-sessions.db"
+    monkeypatch.setattr(server, "build_profile_graph", lambda: build_profile_graph(db_path=db_path))
+
+    def broken_extract(path):
+        raise ValueError("boom")
+
+    monkeypatch.setattr("callback.profile_nodes.extractor.extract", broken_extract)
+
+    resume = tmp_path / "jane.txt"
+    resume.write_text("Jane Doe\n", encoding="utf-8")
+
+    session_id = "onboard-extractor-raises"
+    result = json.loads(server._onboard_user_impl(session_id, str(resume)))
+
+    expected = {
+        "status": "error",
+        "error": {
+            "stage": "onboard_user",
+            "code": "unexpected_error",
+            "message": "unexpected onboard_user failure; inspect callback logs",
+            "retriable": False,
+        },
+        "session_id": session_id,
+    }
+    assert result == expected
 
 
 # ============================================================================

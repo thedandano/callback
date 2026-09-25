@@ -16,7 +16,7 @@ from callback.profilecompiler import (
     save_compiled_profile,
 )
 from callback.repository.accomplishments import AccomplishmentsStore
-from callback.repository.resumes import clear_resumes, list_resumes, save_resume
+from callback.repository.resumes import list_resumes, replace_resume
 from callback.section_map import SectionMap
 from callback.state import CreatedStory, ProfileState
 from callback.wiki import WikiStore
@@ -80,10 +80,10 @@ def onboard(state: ProfileState) -> dict:
         return {"intake": {"status": "no_resume"}}
 
     label = "primary"
-    clear_resumes()
-    save_resume(label, state.resume_path)
     text = extractor.extract(state.resume_path)
     section_map = extractor.extract_sections(text)
+
+    replace_resume(label, state.resume_path)
 
     intake = state.intake or {}
     _persist_onboard_text(intake)
