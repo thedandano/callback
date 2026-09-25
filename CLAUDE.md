@@ -146,7 +146,7 @@ tool/node spans for LangSmith demos.
 | Tool             | Graph    | Behavior                                                    |
 |------------------|----------|-------------------------------------------------------------|
 | `load_jd`        | apply    | Runs through `jd_fetch`, then returns JD markdown plus extraction instructions. |
-| `submit_keywords`| apply    | Accepts validated host-extracted JDData, runs parse/initial score, and returns score gaps plus tailor handoff guidance. |
+| `submit_keywords`| apply    | Accepts validated host-extracted JDData, runs parse/initial score, and returns score gaps plus tailor handoff guidance. Rejects any keyword the posting does not contain with a retriable `terms_not_in_jd` error naming the terms. |
 | `submit_tailor`  | apply    | Applies host edits, renders the tailored PDF, scores final output, and returns artifact paths/report data. Optional `output_dir` redirects the final PDF into a caller directory (e.g. a sandbox). |
 | `get_wiki_pages` | apply    | Returns selected profile wiki pages for host tailoring evidence. |
 | `onboard_user`   | profile  | Enters the profile graph (interrupts after `onboard`).      |
@@ -160,7 +160,7 @@ All tools return JSON envelopes via `_ok` / `_err`:
 
 ### Agent MCP Playbook
 
-When the user asks to use callback for a job, call `load_jd`, extract JDData as the host, call `submit_keywords`, follow `workflow.next_tool`, and finish with `submit_tailor`. Return `data.pdf_path`, `data.archive_path`, `data.report`, and `data.outcome` to the user. If `workflow.next_tool` is `onboard_user` or `create_story`, collect the missing profile evidence, compile the profile, then restart the job flow with `load_jd`.
+When the user asks to use callback for a job, call `load_jd`, extract JDData as the host, call `submit_keywords` (if it returns `terms_not_in_jd`, reword each named keyword exactly as the posting words it, or drop it, and resubmit), follow `workflow.next_tool`, and finish with `submit_tailor`. Return `data.pdf_path`, `data.archive_path`, `data.report`, and `data.outcome` to the user. If `workflow.next_tool` is `onboard_user` or `create_story`, collect the missing profile evidence, compile the profile, then restart the job flow with `load_jd`.
 
 If you run in a sandboxed filesystem, callback's default output (`~/.local/share/callback/applications/`) is outside your reach. Before calling `submit_tailor`, ask the user for a full output directory inside your sandbox and pass it as `output_dir`; the final PDF (`data.pdf_path`) is then written there directly.
 

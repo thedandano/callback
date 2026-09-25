@@ -3,7 +3,13 @@ import json
 import pytest
 from pydantic import BaseModel
 
-from callback.jd_data import EXTRACTION_PROTOCOL, JDData, JDDataError, parse_jd_json
+from callback.jd_data import (
+    EXTRACTION_PROTOCOL,
+    JDData,
+    JDDataError,
+    keyword_terms,
+    parse_jd_json,
+)
 
 FULL_JD = {
     "title": "Senior Platform Engineer",
@@ -318,3 +324,23 @@ def test_non_string_seniority_is_rejected_as_invalid_jd():
         actual = {"code": exc.code, "mentions_seniority": "seniority" in str(exc)}
     expected = {"code": "invalid_jd", "mentions_seniority": True}
     assert actual == expected
+
+
+def test_keyword_terms_lists_flat_terms_then_group_members_without_duplicates():
+    keywords = {
+        "required": ["Python", "SQL"],
+        "preferred": ["Docker", "Python"],
+        "required_any": [["AWS", "GCP"]],
+        "preferred_any": [["Datadog", "Grafana"], ["SQL", "NoSQL"]],
+    }
+
+    assert keyword_terms(keywords) == [
+        "Python",
+        "SQL",
+        "Docker",
+        "AWS",
+        "GCP",
+        "Datadog",
+        "Grafana",
+        "NoSQL",
+    ]

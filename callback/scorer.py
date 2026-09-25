@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -265,6 +266,12 @@ def _keyword_hit(kw: str, normalized_resume: str) -> bool:
     norm_kw = normalize_for_match(kw)
     # An empty normalized keyword would match anything — never credit it.
     return bool(norm_kw) and bool(_compile_keyword_pattern(norm_kw).search(normalized_resume))
+
+
+def terms_absent_from(terms: Iterable[str], text: str) -> list[str]:
+    """Terms that do not appear in text, judged by the matcher that scores resumes."""
+    normalized = normalize_for_match(text)
+    return [term for term in terms if not _keyword_hit(term, normalized)]
 
 
 def _group_matches(group: list[str], normalized_resume: str) -> bool:

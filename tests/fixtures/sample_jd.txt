@@ -1,5 +1,8 @@
 Software Engineer - Backend
-Required: Python, FastAPI, PostgreSQL
+Required: Python, FastAPI, PostgreSQL, Redis
 Preferred: Docker, Kubernetes
+Cloud: AWS, Azure, or GCP
+Languages: Java, Ruby, or Go
+Monitoring: Datadog or Grafana
 Experience: 3+ years
 Location: Remote

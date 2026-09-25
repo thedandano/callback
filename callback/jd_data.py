@@ -134,3 +134,11 @@ def parse_jd_json(jd_json: str) -> dict:
         return JDData.model_validate_json(jd_json).model_dump()
     except ValidationError as exc:
         raise JDDataError("invalid_jd", f"jd_json parse failed: {exc}") from exc
+
+
+def keyword_terms(keywords: dict) -> list[str]:
+    """Every keyword in a parsed JDData dict: flat terms, then each OR-group member, unique."""
+    terms = [*keywords["required"], *keywords["preferred"]]
+    for group in (*keywords["required_any"], *keywords["preferred_any"]):
+        terms.extend(group)
+    return list(dict.fromkeys(terms))
