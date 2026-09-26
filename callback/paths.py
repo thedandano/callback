@@ -76,6 +76,34 @@ def _resolve_pending_staging(src: Path, dst: Path, staging: Path) -> bool:
     return True
 
 
+def _copy_and_publish_staged(src: Path, dst: Path, staging: Path) -> None:
+    """Copy `src` to `staging`, then atomically rename it to `dst`.
+
+    Cross-filesystem shutil.move copies then unlinks — not atomic, so this
+    stages under a temp name first. The final rename is same-filesystem (both
+    under dst.parent) and atomic, so `dst` itself never holds a truncated
+    file, only ever the complete one or none at all.
+    """
+    try:
+        shutil.move(str(src), str(staging))
+    except OSError as exc:
+        # The copy itself failed partway; src may still exist (safe to retry
+        # from) or the removal at the end of shutil.move failed after a real
+        # copy (also safe: the next attempt's _resolve_pending_staging sees
+        # src still present and redoes the copy). Either way, a partial file
+        # may be sitting in staging — discard it.
+        staging.unlink(missing_ok=True)
+        raise OSError(f"failed to copy legacy file {src} to staging: {exc}") from exc
+    try:
+        staging.replace(dst)
+    except OSError as exc:
+        # The copy into staging fully succeeded (shutil.move already unlinked
+        # src) — staging holds the only complete copy. Leave it in place; the
+        # next attempt's _resolve_pending_staging finishes this same rename
+        # instead of losing the last copy of the data.
+        raise OSError(f"failed to publish migrated file {dst}: {exc}") from exc
+
+
 def move_legacy_file(legacy: Path, target: Path) -> None:
     """Move a legacy file, plus its SQLite -wal/-shm siblings, to a new location.
 
@@ -105,16 +133,7 @@ def move_legacy_file(legacy: Path, target: Path) -> None:
             continue
         if not src.exists():
             continue
-        try:
-            # Cross-filesystem shutil.move copies then unlinks — not atomic, so
-            # stage under a temp name first. The final rename is same-filesystem
-            # (both under target.parent) and atomic, so `dst` itself never holds
-            # a truncated file, only ever the complete one or none at all.
-            shutil.move(str(src), str(staging))
-            staging.replace(dst)
-        except OSError as exc:
-            staging.unlink(missing_ok=True)
-            raise OSError(f"failed to move legacy file {src} to {dst}: {exc}") from exc
+        _copy_and_publish_staged(src, dst, staging)
     logger.info("moved legacy file %s to %s", legacy, target)
 
 

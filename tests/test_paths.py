@@ -282,6 +282,44 @@ def test_move_legacy_file_retry_finishes_a_completed_copy(tmp_path: Path):
     assert actual == expected
 
 
+def test_move_legacy_file_preserves_staging_when_publish_rename_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """If the final rename fails after the copy into staging already succeeded
+    (shutil.move already unlinked `legacy`), staging must survive so a retry can
+    finish the rename — not get deleted, which would lose the only complete copy.
+    """
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy-db-full-content")
+    target = tmp_path / "state" / "apply-sessions.db"
+
+    real_replace = Path.replace
+
+    def _failing_replace(self: Path, dst):
+        if self.name.endswith(".migrating"):
+            raise OSError("simulated failure publishing the migrated file")
+        return real_replace(self, dst)
+
+    monkeypatch.setattr(Path, "replace", _failing_replace)
+
+    with pytest.raises(OSError):
+        paths.move_legacy_file(legacy, target)
+
+    staging = Path(f"{target}.migrating")
+    actual = {
+        "staging_exists": staging.exists(),
+        "staging_content": staging.read_text() if staging.exists() else None,
+        "legacy_exists": legacy.exists(),
+    }
+    expected = {
+        "staging_exists": True,
+        "staging_content": "legacy-db-full-content",
+        "legacy_exists": False,
+    }
+    assert actual == expected
+
+
 def test_write_text_atomic_creates_parents_and_leaves_no_temp_file(tmp_path: Path):
     target = tmp_path / "nested" / "file.txt"
     paths.write_text_atomic(target, "hello\n")
