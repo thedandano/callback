@@ -747,7 +747,7 @@ def test_submit_tailor_project_bullet_replacement_can_match_required_keyword(tmp
 
 
 def test_submit_tailor_redirects_pdf_to_output_dir(tmp_path, monkeypatch):
-    """output_dir redirects the final PDF there; archive stays in apps_dir; no PDF in apps_dir."""
+    """output_dir redirects both the PDF and the JSON archive there; neither lands in apps_dir."""
     from callback.server import submit_tailor
 
     resume_label = "redirect_resume"
@@ -765,21 +765,24 @@ def test_submit_tailor_redirects_pdf_to_output_dir(tmp_path, monkeypatch):
     )
 
     pdf_path = Path(result["data"]["pdf_path"])
+    archive_path = Path(result["data"]["archive_path"])
     actual = {
         "status": result["status"],
         "pdf_in_output_dir": pdf_path.parent == output_dir,
         "pdf_exists": pdf_path.exists(),
         "no_pdf_in_apps_dir": list(apps_dir.glob("*.pdf")) == [],
-        "archive_in_apps_dir": Path(result["data"]["archive_path"]).parent == apps_dir,
-        "archive_exists": Path(result["data"]["archive_path"]).exists(),
+        "archive_in_output_dir": archive_path.parent == output_dir,
+        "archive_exists": archive_path.exists(),
+        "no_archive_in_apps_dir": list(apps_dir.glob("*.json")) == [],
     }
     assert actual == {
         "status": "ok",
         "pdf_in_output_dir": True,
         "pdf_exists": True,
         "no_pdf_in_apps_dir": True,
-        "archive_in_apps_dir": True,
+        "archive_in_output_dir": True,
         "archive_exists": True,
+        "no_archive_in_apps_dir": True,
     }
 
 
