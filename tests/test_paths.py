@@ -179,6 +179,32 @@ def test_move_legacy_file_moves_wal_and_shm_before_the_main_file(
     ]
 
 
+def test_move_legacy_file_never_leaves_a_partial_file_at_the_final_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Cross-filesystem shutil.move copies then unlinks — not atomic. If the copy
+    is interrupted partway, a truncated file can land at the destination name.
+    That must never be the real target name: only a retry-safe staging name,
+    so target.exists() never means "half a database."
+    """
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy-db-full-content")
+    target = tmp_path / "state" / "apply-sessions.db"
+
+    def _interrupted_move(src: str, dst: str) -> None:
+        Path(dst).parent.mkdir(parents=True, exist_ok=True)
+        Path(dst).write_text("truncated")
+        raise OSError("simulated interruption mid-copy")
+
+    monkeypatch.setattr(paths.shutil, "move", _interrupted_move)
+
+    with pytest.raises(OSError):
+        paths.move_legacy_file(legacy, target)
+
+    assert target.exists() is False
+
+
 def test_move_legacy_file_noop_when_legacy_missing(tmp_path: Path):
     legacy = tmp_path / "legacy" / "apply-sessions.db"
     target = tmp_path / "state" / "apply-sessions.db"

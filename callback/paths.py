@@ -72,12 +72,24 @@ def move_legacy_file(legacy: Path, target: Path) -> None:
     # `target` without the WAL that may hold uncommitted data.
     for suffix in ("-wal", "-shm", ""):
         src = Path(f"{legacy}{suffix}")
+        dst = Path(f"{target}{suffix}")
+        staging = Path(f"{dst}.migrating")
+        if staging.exists():
+            # A previous attempt copied this file but was interrupted before
+            # the rename below; finish that rename before doing anything else.
+            staging.replace(dst)
+            continue
         if not src.exists():
             continue
-        dst = Path(f"{target}{suffix}")
         try:
-            shutil.move(str(src), str(dst))
+            # Cross-filesystem shutil.move copies then unlinks — not atomic, so
+            # stage under a temp name first. The final rename is same-filesystem
+            # (both under target.parent) and atomic, so `dst` itself never holds
+            # a truncated file, only ever the complete one or none at all.
+            shutil.move(str(src), str(staging))
+            staging.replace(dst)
         except OSError as exc:
+            staging.unlink(missing_ok=True)
             raise OSError(f"failed to move legacy file {src} to {dst}: {exc}") from exc
     logger.info("moved legacy file %s to %s", legacy, target)
 
