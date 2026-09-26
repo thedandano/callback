@@ -33,12 +33,11 @@ Re-running this step updates the config in place — no duplicates.
 
 Ask for:
 - `resume_path` — PDF, DOCX, or TXT.
-- `skills_path` — optional plain-text skills file.
 - `accomplishments_path` — optional plain-text accomplishments file.
 
 Then:
-1. Call `onboard_user(resume_path=..., skills_path=..., accomplishments_path=...)`.
-2. On success (`next_action: compile_profile`), call `compile_profile()`.
+1. Call `onboard_user(resume_path=..., accomplishments_path=...)`.
+2. On success (`next_action: compile_profile`), call `compile_profile(session_id=...)` with its returned session ID.
 3. Report: registered label, detected sections, warnings, skill coverage gaps, next action.
 
 Never fabricate experience, skills, dates, metrics, or tools.
