@@ -21,3 +21,15 @@ def test_skills_have_no_hardcoded_personal_paths():
                 if needle in line_text:
                     hits.append((str(relative_path), line_number, line_text))
     assert hits == []
+
+
+def test_email_date_preserves_the_source_timestamp():
+    schema = (REPO_ROOT / "skills/auto-job-apply/references/record-schema.md").read_text()
+
+    actual = {
+        "preserves_source_offset": "recorded as-is with the offset from its Date header" in schema,
+        "rejects_time_zone_conversion": "Never convert it to another time zone" in schema,
+    }
+    expected = {"preserves_source_offset": True, "rejects_time_zone_conversion": True}
+
+    assert actual == expected
