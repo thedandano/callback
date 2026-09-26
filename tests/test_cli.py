@@ -253,11 +253,28 @@ def test_logs_defaults_to_home_state_log_even_when_project_log_exists(tmp_path, 
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("callback.cli.DEFAULT_LOG_PATH", state_log)
+    monkeypatch.delenv("CALLBACK_LOG_PATH", raising=False)
 
     result = runner.invoke(app, ["logs", "--lines", "1"])
 
     assert result.exit_code == 0
     assert result.stdout.splitlines() == ["state-tail"]
+
+
+def test_logs_honors_callback_log_path_from_settings(tmp_path, monkeypatch):
+    """`logs` must consult the same CALLBACK_LOG_PATH `serve` honors — otherwise
+    `callback logs --follow` tails the wrong file (or reports one missing)
+    whenever the configured path differs from the default.
+    """
+    configured_path = tmp_path / "configured" / "server.log"
+    configured_path.parent.mkdir()
+    configured_path.write_text("configured\nlog\n", encoding="utf-8")
+    monkeypatch.setenv("CALLBACK_LOG_PATH", str(configured_path))
+
+    result = runner.invoke(app, ["logs"])
+
+    assert result.exit_code == 0
+    assert result.stdout.splitlines() == ["configured", "log"]
 
 
 def test_logs_project_logs_flag_uses_project_log(tmp_path, monkeypatch):

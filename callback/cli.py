@@ -99,11 +99,13 @@ def _resolve_log_path(
     """Resolve the audit log path for commands that read or write server logs."""
     if log_path is not None:
         return log_path.expanduser()
-
-    project_log_path = _project_log_path()
     if project_logs:
-        return project_log_path
-
+        return _project_log_path()
+    if configured := os.environ.get("CALLBACK_LOG_PATH"):
+        # Settings (env.json, or the parent shell) already chose a path and
+        # no CLI flag overrides it — honor it instead of silently falling
+        # back to the default. Shared by every caller (serve, logs, ...).
+        return Path(configured).expanduser()
     return DEFAULT_LOG_PATH
 
 
@@ -421,14 +423,7 @@ def serve(
     ] = False,
 ) -> None:
     """Start the callback MCP server."""
-    already_configured = os.environ.get("CALLBACK_LOG_PATH")
-    if log_path is None and not project_logs and already_configured:
-        # Settings (env.json, or the parent shell) already chose a path and
-        # neither CLI flag overrides it — honor it instead of silently
-        # replacing it with the default.
-        resolved_log_path = Path(already_configured).expanduser()
-    else:
-        resolved_log_path = _resolve_log_path(log_path, project_logs=project_logs)
+    resolved_log_path = _resolve_log_path(log_path, project_logs=project_logs)
     os.environ["CALLBACK_LOG_PATH"] = str(resolved_log_path)
     startup_event = json.dumps(
         {

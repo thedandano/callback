@@ -7,7 +7,7 @@ The package SHALL expose an installed console script named `callback` via `pypro
 - **WHEN** the package is installed with `uv tool install .`
 - **THEN** the `callback` command is available on PATH
 - **AND** invoking `callback --help` exits 0
-- **AND** the help output lists `serve`, `setup-mcp`, `install-browsers`, `uninstall`, `update`, `logs`, `trace-check`, `config`, and `version`
+- **AND** the help output lists `serve`, `install-browsers`, `uninstall`, `update`, `logs`, `trace-check`, `config`, and `version`
 
 ### Requirement: CLI serve command starts MCP server
 The `callback serve` command SHALL call `_ensure_browsers()` before starting the server. All other behaviour from the existing requirement remains unchanged.
@@ -21,7 +21,7 @@ The `callback serve` command SHALL call `_ensure_browsers()` before starting the
 
 #### Scenario: help output lists all commands
 - **WHEN** `callback --help` is invoked
-- **THEN** the output lists `serve`, `setup-mcp`, `install-browsers`, `uninstall`, `update`, `logs`, `trace-check`, `config`, and `version`
+- **THEN** the output lists `serve`, `install-browsers`, `uninstall`, `update`, `logs`, `trace-check`, `config`, and `version`
 
 ### Requirement: CLI version command reports installed package version
 The CLI SHALL provide `callback version`, which prints the installed package version from `importlib.metadata.version("callback")`.
@@ -133,55 +133,6 @@ secret values.
 - **WHEN** `callback trace-check --emit-test-trace` is invoked
 - **THEN** the command emits one sanitized trace named `callback.trace_check`
 - **AND** the trace contains no resume text, JD body text, wiki content, file paths, edits, or secrets
-
-### Requirement: setup-mcp writes Claude MCP config idempotently
-The CLI SHALL provide `callback setup-mcp` that writes a Claude MCP server entry to `~/.claude.json` under `mcpServers["callback"]` with command `"callback"` and args `["serve"]`. The operation SHALL preserve unrelated keys and MUST be idempotent.
-
-#### Scenario: setup-mcp creates Claude config entry
-- **GIVEN** a Claude config file without `mcpServers["callback"]`
-- **WHEN** `callback setup-mcp` writes Claude config
-- **THEN** the file contains `mcpServers["callback"].command` equal to `"callback"`
-- **AND** the file contains `mcpServers["callback"].args` equal to `["serve"]`
-- **AND** unrelated top-level keys remain present
-
-#### Scenario: setup-mcp is idempotent for Claude config
-- **GIVEN** a Claude config file already containing the expected `callback` MCP server entry
-- **WHEN** `callback setup-mcp` runs twice
-- **THEN** the config contains exactly one `callback` MCP server entry
-- **AND** the second run does not change the parsed config object
-
-#### Scenario: setup-mcp preserves Claude env map
-- **GIVEN** a Claude config file already containing `mcpServers["callback"].env`
-- **WHEN** `callback setup-mcp` rewrites the server entry
-- **THEN** the existing `env` map remains present
-
-### Requirement: setup-mcp writes Codex MCP config idempotently
-The CLI SHALL provide `callback setup-mcp` that writes a Codex MCP server entry to `~/.codex/config.toml` under `mcp_servers["callback"]` with command `"callback"` and args `["serve"]`. The operation SHALL preserve unrelated keys when the existing TOML can be parsed and MUST be idempotent.
-
-#### Scenario: setup-mcp creates Codex config entry
-- **GIVEN** a Codex config file without a `callback` MCP server entry
-- **WHEN** `callback setup-mcp` writes Codex config
-- **THEN** the file contains a `mcp_servers["callback"]` table
-- **AND** that table's `command` value equals `"callback"`
-- **AND** that table's `args` value equals `["serve"]`
-- **AND** unrelated parseable config keys remain present
-
-#### Scenario: setup-mcp is idempotent for Codex config
-- **GIVEN** a Codex config file already containing the expected `callback` MCP server entry
-- **WHEN** `callback setup-mcp` runs twice
-- **THEN** the config contains exactly one `callback` MCP server entry
-- **AND** the second run does not change the parsed config object
-
-#### Scenario: setup-mcp preserves Codex env map
-- **GIVEN** a Codex config file already containing `mcp_servers["callback"].env`
-- **WHEN** `callback setup-mcp` rewrites the server entry
-- **THEN** the existing `env` table remains present
-
-#### Scenario: setup-mcp rejects invalid Codex TOML
-- **GIVEN** `~/.codex/config.toml` exists but cannot be parsed as TOML
-- **WHEN** `callback setup-mcp` runs
-- **THEN** the command exits non-zero
-- **AND** the original file remains unchanged
 
 ### Requirement: install-browsers command installs Playwright Chromium
 
