@@ -55,13 +55,40 @@ def log_path() -> Path:
     return state_dir() / "server.log"
 
 
+def _resolve_pending_staging(src: Path, dst: Path, staging: Path) -> bool:
+    """Handle a leftover `.migrating` file from an interrupted earlier attempt.
+
+    Returns True if this suffix is now fully handled (caller should move on to
+    the next one), False if the copy still needs to run.
+    """
+    if not staging.exists():
+        return False
+    if src.exists():
+        # shutil.move below only unlinks src after its copy into staging fully
+        # succeeds, so src still being here means that copy was interrupted
+        # partway — staging may hold a truncated file. Discard it and redo
+        # the copy from the still-intact source.
+        staging.unlink()
+        return False
+    # src is already gone, so the copy into staging did complete; only the
+    # rename below was interrupted. Finish that rename.
+    staging.replace(dst)
+    return True
+
+
 def move_legacy_file(legacy: Path, target: Path) -> None:
     """Move a legacy file, plus its SQLite -wal/-shm siblings, to a new location.
 
     No-op if `legacy` does not exist. If `target` already exists, `legacy` is left in
     place untouched (never overwritten) and a warning is logged.
     """
-    if not legacy.exists():
+    staging_pending = any(
+        Path(f"{target}{suffix}.migrating").exists() for suffix in ("-wal", "-shm", "")
+    )
+    if not legacy.exists() and not staging_pending:
+        # Nothing to migrate — unless an earlier attempt's copy fully finished
+        # (unlinking `legacy` itself) before it could rename staging to target;
+        # `staging_pending` catches that so the rename below still gets to run.
         return
     if target.exists():
         logger.warning("legacy file %s left in place; %s already exists", legacy, target)
@@ -74,10 +101,7 @@ def move_legacy_file(legacy: Path, target: Path) -> None:
         src = Path(f"{legacy}{suffix}")
         dst = Path(f"{target}{suffix}")
         staging = Path(f"{dst}.migrating")
-        if staging.exists():
-            # A previous attempt copied this file but was interrupted before
-            # the rename below; finish that rename before doing anything else.
-            staging.replace(dst)
+        if _resolve_pending_staging(src, dst, staging):
             continue
         if not src.exists():
             continue
