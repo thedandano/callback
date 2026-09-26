@@ -100,6 +100,35 @@ def test_write_json_atomic_round_trips(tmp_path: Path):
     assert actual == expected
 
 
+def test_config_dir_defaults_under_home(monkeypatch, tmp_path: Path):
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+    actual = {
+        "config": paths.config_dir(),
+        "env_file": paths.env_file(),
+    }
+    root = tmp_path / ".config" / "callback"
+    expected = {
+        "config": root,
+        "env_file": root / "env.json",
+    }
+    assert actual == expected
+
+
+def test_xdg_config_home_moves_config_dir(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    actual = {
+        "config": paths.config_dir(),
+        "env_file": paths.env_file(),
+    }
+    root = tmp_path / "xdg" / "callback"
+    expected = {
+        "config": root,
+        "env_file": root / "env.json",
+    }
+    assert actual == expected
+
+
 def test_write_text_atomic_cleans_up_temp_file_on_rename_failure(tmp_path: Path, monkeypatch):
     target = tmp_path / "file.txt"
 
