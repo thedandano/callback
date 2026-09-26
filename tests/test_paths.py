@@ -347,7 +347,11 @@ def test_move_legacy_file_gives_up_when_the_lock_holder_never_finishes(
     """If a concurrent process is migrating this target and never finishes (or
     crashed holding the lock), this call must eventually give up — not touch
     the shared staging path (racing it could delete the other process's
-    in-progress or just-completed copy) and not hang forever.
+    in-progress or just-completed copy), not hang forever, and not return
+    normally either: a silent return would let the caller
+    (build_apply_graph/build_profile_graph) open `target`, creating a fresh
+    empty database that then makes every future startup skip migration for
+    good. It must raise instead, so startup fails loudly.
     """
     monkeypatch.setattr(paths, "_MIGRATION_LOCK_WAIT_S", 0.05)
     monkeypatch.setattr(paths, "_MIGRATION_LOCK_POLL_S", 0.01)
@@ -358,7 +362,9 @@ def test_move_legacy_file_gives_up_when_the_lock_holder_never_finishes(
     target.parent.mkdir(parents=True)
     Path(f"{target}.migrating.lock").touch()
 
-    paths.move_legacy_file(legacy, target)
+    with pytest.raises(RuntimeError) as excinfo:
+        paths.move_legacy_file(legacy, target)
+    assert str(target) in str(excinfo.value)
 
     actual = {
         "legacy_exists": legacy.exists(),
