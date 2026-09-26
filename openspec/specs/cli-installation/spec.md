@@ -45,17 +45,21 @@ The CLI SHALL provide `callback logs`, which tails `~/.local/state/callback/serv
 - **THEN** the command exits non-zero
 - **AND** stderr names the missing log path
 
-### Requirement: CLI config command manages MCP env vars
-The CLI SHALL provide `callback config` commands that set, unset, and list environment variables stored in the `callback` MCP server entries for Claude and Codex. The commands SHALL support `--target claude|codex|all`, defaulting to `all`.
+### Requirement: CLI config command manages a settings file callback owns
+The CLI SHALL provide `callback config` commands that set, unset, and list
+environment variable overrides stored in `~/.config/callback/env.json` (or
+`$XDG_CONFIG_HOME/callback/env.json`), a settings file callback reads itself
+at process startup. These commands SHALL NOT write to any MCP host's config
+file (e.g. `~/.claude.json`, `~/.codex/config.toml`).
 
-#### Scenario: env set writes Claude and Codex env maps
+#### Scenario: env set writes the settings file
 - **WHEN** `callback config env set CALLBACK_TRACE_BACKEND langsmith` is invoked
-- **THEN** Claude config contains `mcpServers["callback"].env.CALLBACK_TRACE_BACKEND = "langsmith"`
-- **AND** Codex config contains `mcp_servers["callback"].env.CALLBACK_TRACE_BACKEND = "langsmith"`
-- **AND** unrelated config keys remain present
+- **THEN** `~/.config/callback/env.json` contains `CALLBACK_TRACE_BACKEND = "langsmith"`
+- **AND** other keys already present in the file remain present
+- **AND** no MCP host config file is created or modified
 
 #### Scenario: env list redacts secret-like values
-- **GIVEN** `LANGSMITH_API_KEY` is configured in a `callback` MCP server env map
+- **GIVEN** `LANGSMITH_API_KEY` is configured in the settings file
 - **WHEN** `callback config env list` is invoked
 - **THEN** stdout lists `LANGSMITH_API_KEY=********`
 - **AND** the real value is only shown when `--show-secrets` is provided
@@ -63,40 +67,42 @@ The CLI SHALL provide `callback config` commands that set, unset, and list envir
 #### Scenario: invalid env names are rejected
 - **WHEN** `callback config env set bad-name value` is invoked
 - **THEN** the command exits non-zero
-- **AND** no MCP config file is written
+- **AND** the settings file is not created or modified
 
-### Requirement: CLI config status reports MCP env drift
-The CLI SHALL provide `callback config status` as a read-only diagnostic command
-for Claude and Codex `callback` MCP env maps. The command SHALL support
-`--target claude|codex|all`, default to `all`, redact secret-like values unless
-`--show-secrets` is provided, and MUST NOT create, normalize, or rewrite config
-files.
+### Requirement: CLI config status reports settings and legacy host entries
+The CLI SHALL provide `callback config status` as a read-only diagnostic
+command. It SHALL print the contents of `~/.config/callback/env.json`,
+redacting secret-like values unless `--show-secrets` is provided, and MUST NOT
+create, normalize, or rewrite any file. It SHALL also warn, without writing
+anything, if a legacy `callback` MCP server entry is still present in
+`~/.claude.json` or `~/.codex/config.toml` from an old `setup-mcp` install,
+naming `callback uninstall` as the way to remove it.
 
-#### Scenario: status reports same values
-- **GIVEN** Claude and Codex both configure a `callback` env key with the same value
+#### Scenario: status reports settings file contents
+- **GIVEN** the settings file configures one or more env keys
 - **WHEN** `callback config status` is invoked
-- **THEN** stdout includes that env key for both targets
-- **AND** the status is `same`
+- **THEN** stdout includes each configured env key
+- **AND** secret-like values are redacted unless `--show-secrets` is provided
 
-#### Scenario: status reports drift and missing values
-- **GIVEN** Claude and Codex configure different values for one env key
-- **AND** another env key is present in only one target
+#### Scenario: status is read-only for a missing settings file
+- **GIVEN** the settings file does not exist
 - **WHEN** `callback config status` is invoked
-- **THEN** stdout reports `different` for the changed key
-- **AND** stdout reports `missing` for the partially configured key
+- **THEN** stdout reports `(none)`
+- **AND** the settings file is not created
 
-#### Scenario: status is read-only for missing config files
-- **GIVEN** the selected MCP config files do not exist
+#### Scenario: status warns about a legacy duplicate server entry
+- **GIVEN** `~/.claude.json` or `~/.codex/config.toml` still has a `callback` MCP server entry
 - **WHEN** `callback config status` is invoked
-- **THEN** stdout reports `unset`
-- **AND** no MCP config file is written
+- **THEN** stderr contains a warning naming that host's config path
+- **AND** the warning tells the user to run `callback uninstall`
+- **AND** neither host config file is modified
 
 ### Requirement: CLI config langsmith writes tracing env vars
-The CLI SHALL provide `callback config langsmith` as the guided LangSmith setup command. It SHALL write `CALLBACK_TRACE_BACKEND=langsmith`, `LANGSMITH_TRACING=true`, `LANGSMITH_ENDPOINT`, `LANGSMITH_API_KEY`, and `LANGSMITH_PROJECT` to the selected MCP host config env maps. Defaults SHALL be `LANGSMITH_ENDPOINT=https://api.smith.langchain.com` and `LANGSMITH_PROJECT=Callback`.
+The CLI SHALL provide `callback config langsmith` as the guided LangSmith setup command. It SHALL write `CALLBACK_TRACE_BACKEND=langsmith`, `LANGSMITH_TRACING=true`, `LANGSMITH_ENDPOINT`, `LANGSMITH_API_KEY`, and `LANGSMITH_PROJECT` into the settings file. Defaults SHALL be `LANGSMITH_ENDPOINT=https://api.smith.langchain.com` and `LANGSMITH_PROJECT=Callback`.
 
 #### Scenario: LangSmith config writes expected env
 - **WHEN** `callback config langsmith --api-key lsv2-key --project callback-demo` is invoked
-- **THEN** both Claude and Codex `callback` MCP env maps contain the LangSmith tracing env vars
+- **THEN** the settings file contains the LangSmith tracing env vars
 - **AND** `LANGSMITH_PROJECT` equals `callback-demo`
 - **AND** `LANGSMITH_ENDPOINT` equals `https://api.smith.langchain.com`
 
@@ -105,19 +111,22 @@ The CLI SHALL provide `callback config langsmith` as the guided LangSmith setup 
 - **THEN** stdout tells the user to restart the MCP host
 
 ### Requirement: CLI trace-check verifies LangSmith tracing setup
-The CLI SHALL provide `callback trace-check` to verify that LangSmith tracing can be used from active environment variables or configured Claude/Codex MCP env maps. The command SHALL support `--target env|claude|codex|all`, defaulting to `env`, and SHALL NOT print secret values.
+The CLI SHALL provide `callback trace-check` to verify that LangSmith tracing
+can be used from the effective environment: process environment variables
+merged with the settings file, process values winning. It SHALL NOT print
+secret values.
 
 #### Scenario: trace-check reports missing required env
-- **GIVEN** `LANGSMITH_API_KEY` is not present for the selected target
+- **GIVEN** `LANGSMITH_API_KEY` is not present in the process environment or the settings file
 - **WHEN** `callback trace-check` is invoked
 - **THEN** the command exits non-zero
 - **AND** stderr says `LANGSMITH_API_KEY is required`
 
 #### Scenario: trace-check verifies LangSmith API reachability
-- **GIVEN** the selected target has `CALLBACK_TRACE_BACKEND=langsmith`, `LANGSMITH_TRACING=true`, and `LANGSMITH_API_KEY`
-- **WHEN** `callback trace-check --target claude` is invoked
+- **GIVEN** the effective environment has `CALLBACK_TRACE_BACKEND=langsmith`, `LANGSMITH_TRACING=true`, and `LANGSMITH_API_KEY`
+- **WHEN** `callback trace-check` is invoked
 - **THEN** the command imports LangSmith, constructs a client, and calls `list_projects(limit=1)`
-- **AND** stdout reports the target as ok without printing the API key
+- **AND** stdout reports ok without printing the API key
 
 #### Scenario: trace-check can emit a safe test trace
 - **GIVEN** LangSmith API reachability succeeds
