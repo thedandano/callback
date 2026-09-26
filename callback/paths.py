@@ -12,6 +12,7 @@ import logging
 import os
 import shutil
 import tempfile
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -106,26 +107,39 @@ def _copy_and_publish_staged(src: Path, dst: Path, staging: Path) -> None:
         raise OSError(f"failed to publish migrated file {dst}: {exc}") from exc
 
 
+_MIGRATION_LOCK_WAIT_S = 30.0
+_MIGRATION_LOCK_POLL_S = 0.2
+
+
 @contextmanager
 def _migration_lock(target: Path) -> Iterator[bool]:
     """Claim exclusive ownership of migrating into `target`.
 
-    Yields True if this call claimed the lock (and releases it on exit) or
-    False if another process already holds it — the caller should then skip
-    migrating entirely and let that other process finish, rather than racing
-    it for the shared `.migrating` staging path.
+    Yields True if this call claimed the lock (and releases it on exit). If
+    another process already holds it, waits for either `target` to appear
+    (that process published it — done, nothing left for us to do) or the
+    lock to be released (that process finished some other way — worth a
+    fresh attempt at claiming it) before giving up and yielding False. This
+    keeps a concurrent second process from opening (and thereby creating) an
+    empty database at `target` while the winner is still mid-copy.
 
-    ponytail: no staleness check, so a process that crashes while holding the
-    lock blocks migration until the lock file is removed by hand. Acceptable
-    for a one-time legacy-DB migration on a single-user local tool; add a
-    PID/liveness check if this ever needs to self-heal.
+    ponytail: no liveness check, so a process that crashes while holding the
+    lock makes every waiter time out and yield False — legacy stays in place
+    (never destroyed), just unmigrated until the stale lock file is removed
+    by hand. Acceptable for a one-time legacy-DB migration on a single-user
+    local tool; add a PID check if this ever needs to self-heal.
     """
     lock_path = Path(f"{target}.migrating.lock")
-    try:
-        fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
-        yield False
-        return
+    deadline = time.monotonic() + _MIGRATION_LOCK_WAIT_S
+    while True:
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break
+        except FileExistsError:
+            if target.exists() or time.monotonic() >= deadline:
+                yield False
+                return
+            time.sleep(_MIGRATION_LOCK_POLL_S)
     os.close(fd)
     try:
         yield True
@@ -158,6 +172,13 @@ def move_legacy_file(legacy: Path, target: Path) -> None:
             # target — let it finish rather than racing it for the shared
             # `.migrating` staging path.
             logger.info("migration for %s already in progress elsewhere; skipping", target)
+            return
+        if target.exists():
+            # The lock holder published target and released the lock between
+            # our last failed open attempt and this one, and we won the now-
+            # free lock on retry. Re-running the migration here would
+            # overwrite their just-published data with a stale copy.
+            logger.info("legacy file %s already migrated to %s elsewhere", legacy, target)
             return
         _migrate_all_suffixes(legacy, target)
     logger.info("moved legacy file %s to %s", legacy, target)
