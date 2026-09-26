@@ -1,6 +1,6 @@
 ---
 name: setup-callback
-description: This skill should be used when the user asks to "set up callback in this project", "start a job hunt here", "initialize callback", "bootstrap my job search", "set up my job search project", "init callback", or "configure callback for this project". Use it to scaffold project paths, onboard a resume, capture search preferences, and optionally set up ledger tracking — in one pass.
+description: This skill should be used when the user asks to "set up callback in this project", "start a job hunt here", "initialize callback", "bootstrap my job search", "set up my job search project", "init callback", or "configure callback for this project". Use it to scaffold project paths, onboard a resume, capture search preferences, and optionally set up California EDD/ledger tracking — in one pass.
 ---
 
 # Setup Callback
@@ -19,8 +19,6 @@ Write `.callback/config.json` in the project root. Prompt for each path or accep
 {
   "applications_dir": "./applications",
   "record_csv": "./data/record.csv",
-  "ledger_db": "./data/ledger.sqlite3",
-  "edd_xlsx": "./data/tracker.xlsx",
   "archive_dir": "./archive"
 }
 ```
@@ -61,13 +59,25 @@ Then call `set_search_preferences(...)` with all answers. Note: this fully repla
 
 ### 4. Ledger install (optional)
 
-Ask if the user wants EDD/unemployment tracking. If yes, tell them to install the `job-search-ledger` tool — e.g.:
+Ask if the user wants unemployment reporting tracking. This is specific to
+California's **EDD** (Employment Development Department) job-search
+contact-reporting requirement for **Unemployment Insurance** claimants — it
+does not apply to Disability Insurance (which covers wage loss while unable to
+work and carries no job-search requirement), and it does not apply outside
+California. Most users should skip it. Ask plainly: "Are you filing a
+California unemployment insurance claim and need to log job-search contacts
+for EDD?"
 
-```
-uvx --from git+<repo-url> job-search-ledger
-```
+If yes:
+1. Tell them to install the `job-search-ledger` tool so the command stays on
+   `PATH`: `uv tool install git+<repo-url>` (do not hardcode a repo path — point
+   the user to the project docs for the actual URL).
+2. Add `ledger_db` and `edd_xlsx` to `.callback/config.json` alongside the keys
+   from step 1, e.g. `"ledger_db": "./data/ledger.sqlite3"` and `"edd_xlsx":
+   "./data/tracker.xlsx"`.
 
-or add it to PATH if already installed. Do not hardcode a repo path; point the user to the project docs. Skip this step if not wanted.
+If no, or the user is outside California, skip this step entirely — every other
+callback feature works fully without it.
 
 ## Rules
 

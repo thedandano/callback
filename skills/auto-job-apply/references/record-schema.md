@@ -12,8 +12,8 @@ Column rules:
 
 - `Company`: employer or recruiter/client label if company is hidden.
 - `Title`: posting title. Keep recruiter-thread inferred titles explicit.
-- `Recorded Date`: date Codex created or updated the row.
-- `Email Date`: source email timestamp. Use PT when possible, for example `2026-05-20 08:17 PT`.
+- `Recorded Date`: date the agent created or updated the row.
+- `Email Date`: source email timestamp. Use the user's local time zone when possible, for example `2026-05-20 08:17 PT`.
 - `URL`: canonical job URL when available. For recruiter-only leads, use a stable thread descriptor.
 - `Salary range`: posting/recruiter compensation range, for example `$120K-$160K`, `$75/hr W2`, or `Not listed`. Do not invent salary. If multiple sources disagree, use the current employer/recruiter source and explain the conflict in `Notes`.
 - `Status`: compact state from the vocabulary below.
