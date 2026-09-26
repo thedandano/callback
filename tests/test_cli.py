@@ -584,6 +584,25 @@ def test_config_status_survives_malformed_legacy_host_config(_isolated_host_conf
     assert actual == expected
 
 
+def test_config_status_survives_unreadable_legacy_host_config(_isolated_host_configs):
+    """A filesystem-level read failure on a legacy host config (e.g. it's
+    accidentally a directory) must not hide an otherwise-valid settings file
+    either — same as the malformed-JSON case above, but for OSError."""
+    claude_path, _codex_path = _isolated_host_configs
+    claude_path.mkdir()  # a directory at the config path, not a file
+    paths.write_json_atomic(paths.env_file(), {"FOO": "bar"})
+
+    result = runner.invoke(app, ["config", "status"])
+
+    actual = {
+        "exit_code": result.exit_code,
+        "reports_settings": "FOO=bar" in result.stdout,
+        "warns_about_claude_probe": str(claude_path) in result.stderr,
+    }
+    expected = {"exit_code": 0, "reports_settings": True, "warns_about_claude_probe": True}
+    assert actual == expected
+
+
 def test_config_langsmith_and_env_set_never_touch_host_config_files(_isolated_host_configs):
     claude_path, codex_path = _isolated_host_configs
     claude_content = json.dumps({"mcpServers": {"other": {"command": "other"}}})
