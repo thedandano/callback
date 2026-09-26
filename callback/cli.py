@@ -115,11 +115,21 @@ def _write_startup_log_event(log_path: Path, line: str) -> None:
         handle.write(line + "\n")
 
 
+def _read_config_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as exc:
+        # e.g. path is a directory, or permissions deny access. Converted into
+        # the same ConfigError every caller already handles gracefully,
+        # rather than an uncaught exception class.
+        raise ConfigError(f"{path} could not be read: {exc}") from exc
+
+
 def _read_json_config(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
     try:
-        loaded = json.loads(path.read_text(encoding="utf-8"))
+        loaded = json.loads(_read_config_text(path))
     except json.JSONDecodeError as exc:
         raise ConfigError(f"{path} is not valid JSON: {exc.msg}") from exc
     if not isinstance(loaded, dict):
@@ -130,9 +140,8 @@ def _read_json_config(path: Path) -> dict[str, Any]:
 def _read_toml_config(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
-    text = path.read_text(encoding="utf-8")
     try:
-        loaded = tomllib.loads(text)
+        loaded = tomllib.loads(_read_config_text(path))
     except tomllib.TOMLDecodeError as exc:
         raise ConfigError(f"{path} is not valid TOML: {exc}") from exc
     return dict(loaded)
