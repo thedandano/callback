@@ -17,9 +17,9 @@ runner = CliRunner()
 
 
 @pytest.fixture(autouse=True)
-def _isolated_config_home(monkeypatch):
+def _isolated_config_home(tmp_path, monkeypatch):
     """Keep the settings file inside tmp_path; a developer's real env.json must never leak in."""
-    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
 
 
 @pytest.fixture
