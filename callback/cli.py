@@ -668,18 +668,22 @@ def uninstall(
     """Remove callback MCP server entries from Claude and Codex configs."""
     claude_path = DEFAULT_CLAUDE_CONFIG
     codex_path = DEFAULT_CODEX_CONFIG
+    config_error: ConfigError | None = None
     try:
         _remove_server_from_claude(claude_path)
         _remove_server_from_codex(codex_path)
     except ConfigError as exc:
-        typer.echo(f"uninstall failed: {exc}", err=True)
-        raise typer.Exit(1) from exc
+        config_error = exc
 
     if purge:
         for directory in (paths.data_dir(), paths.state_dir(), paths.config_dir()):
             if directory.exists():
                 shutil.rmtree(directory)
                 typer.echo(f"Deleted: {directory}")
+
+    if config_error is not None:
+        typer.echo(f"uninstall failed: {config_error}", err=True)
+        raise typer.Exit(1) from config_error
 
 
 @app.command()
