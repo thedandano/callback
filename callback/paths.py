@@ -195,12 +195,25 @@ def move_legacy_file(legacy: Path, target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     with _migration_lock(target) as acquired:
         if not acquired:
-            # Another process (e.g. a second MCP host's own `callback serve`
-            # pointed at the same state dir) is already migrating this same
-            # target — let it finish rather than racing it for the shared
-            # `.migrating` staging path.
-            logger.info("migration for %s already in progress elsewhere; skipping", target)
-            return
+            if target.exists():
+                # Another process (e.g. a second MCP host's own `callback
+                # serve` pointed at the same state dir) already published it
+                # while we were waiting — nothing left for us to do.
+                logger.info("legacy file %s already migrated to %s elsewhere", legacy, target)
+                return
+            # We gave up waiting and nothing was ever published — most likely
+            # the lock holder crashed. Raising here (rather than returning
+            # normally) stops the caller from opening `target`, which would
+            # create a fresh empty database and, once target.exists(), make
+            # every future startup skip migration permanently. `legacy` is
+            # untouched, so no data was lost — just fix or remove
+            # f"{target}.migrating.lock" by hand and retry.
+            raise RuntimeError(
+                f"could not migrate {legacy} to {target}: another process's "
+                f"migration lock ({target}.migrating.lock) did not clear "
+                f"within {_MIGRATION_LOCK_WAIT_S}s and never published the "
+                "target; remove the stale lock file if that process crashed"
+            )
         if target.exists():
             # The lock holder published target and released the lock between
             # our last failed open attempt and this one, and we won the now-
