@@ -64,7 +64,17 @@ from callback.wiki import WikiPageError, WikiPageIdError, WikiStore, split_front
 # Must run before any module-level os.environ read below (e.g. LOG_LEVEL): callback
 # owns its own settings file (~/.config/callback/env.json) independent of any MCP
 # host config, and env vars set only there would otherwise be invisible here.
-settings.apply_env_file()
+# A damaged env.json must not crash the import itself (both `callback serve` and
+# `python -m callback.server` import this module directly), so it's reported and
+# skipped here rather than raised, same as the CLI's own root-callback recovery.
+try:
+    settings.apply_env_file()
+except ValueError as exc:
+    print(
+        f"warning: {exc}; continuing without settings-file overrides. "
+        "Run `callback config status` to inspect it, or fix/remove it by hand.",
+        file=sys.stderr,
+    )
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 _LOG_FORMAT = "%(message)s"  # messages are already JSON strings
