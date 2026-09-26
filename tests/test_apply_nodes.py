@@ -244,6 +244,29 @@ def test_finalize_returns_error_when_apps_dir_unwritable(tmp_path, monkeypatch):
     assert actual == expected
 
 
+def test_finalize_writes_archive_to_output_dir(tmp_path, monkeypatch):
+    """finalize writes the JSON archive under output_dir when set, not the default apps dir."""
+    apps_dir = tmp_path / "apps"
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(apps_dir))
+    output_dir = tmp_path / "sandbox_out"
+    output_dir.mkdir()
+
+    state = ApplyState(session_id="redirect-session", output_dir=str(output_dir))
+    result = finalize(state)
+
+    expected_archive = output_dir / "redirect-session.json"
+    actual = {
+        "has_error": "error" in result,
+        "archive_in_output_dir": expected_archive.exists(),
+        "no_archive_in_apps_dir": not (apps_dir / "redirect-session.json").exists(),
+    }
+    assert actual == {
+        "has_error": False,
+        "archive_in_output_dir": True,
+        "no_archive_in_apps_dir": True,
+    }
+
+
 class TestTailorNode:
     def test_tailor_with_tailored_sections_converts_section_map(self):
         state = ApplyState(

@@ -492,6 +492,11 @@ def _resolve_tailored_text(state: ApplyState) -> str:
     return ""
 
 
+def _artifact_dir(state: ApplyState) -> Path:
+    """Where the PDF and JSON archive both go: output_dir if set, else the default apps dir."""
+    return Path(state.output_dir) if state.output_dir else paths.apps_dir()
+
+
 @trace_node("apply", "render")
 def render(state: ApplyState) -> dict:
     """Render tailored resume to PDF via HTML + Playwright."""
@@ -499,7 +504,7 @@ def render(state: ApplyState) -> dict:
     if state.tailored is None:
         return {"error": "render: state.tailored is None — tailor node must run first"}
 
-    base_dir = Path(state.output_dir) if state.output_dir else paths.apps_dir()
+    base_dir = _artifact_dir(state)
     try:
         base_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
@@ -682,14 +687,14 @@ def finalize(state: ApplyState) -> dict:
     """
     _log_enter("finalize", state)
 
-    apps_dir = paths.apps_dir()
+    artifact_dir = _artifact_dir(state)
     try:
-        apps_dir.mkdir(parents=True, exist_ok=True)
+        artifact_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         logger.error(
             json.dumps({"node": "finalize", "session_id": state.session_id, "error": str(exc)})
         )
-        return {"error": f"finalize: cannot create apps dir {apps_dir}: {exc}"}
+        return {"error": f"finalize: cannot create apps dir {artifact_dir}: {exc}"}
 
     # Derive tailored resume text from sections or tailored object
     tailored_text = _resolve_tailored_text(state)
@@ -721,7 +726,7 @@ def finalize(state: ApplyState) -> dict:
     }
 
     # Write archive JSON
-    archive_path = apps_dir / f"{state.session_id}.json"
+    archive_path = artifact_dir / f"{state.session_id}.json"
     try:
         with open(archive_path, "w") as f:
             json.dump(archive, f, indent=2)
