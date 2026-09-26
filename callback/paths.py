@@ -66,3 +66,13 @@ def write_text_atomic(path: Path, content: str) -> None:
 
 def write_json_atomic(path: Path, data: object) -> None:
     write_text_atomic(path, json.dumps(data))
+
+
+def config_dir() -> Path:
+    if xdg_config_home := os.environ.get("XDG_CONFIG_HOME"):
+        return Path(xdg_config_home) / "callback"
+    return Path.home() / ".config" / "callback"
+
+
+def env_file() -> Path:
+    return config_dir() / "env.json"

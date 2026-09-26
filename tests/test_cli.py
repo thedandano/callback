@@ -3,20 +3,33 @@
 from __future__ import annotations
 
 import json
-import tomllib
+import os
 from pathlib import Path
 from unittest.mock import ANY, MagicMock, Mock, patch
 
+import pytest
 from typer.testing import CliRunner
 
-from callback.cli import app, configure_claude, configure_codex
+from callback import paths
+from callback.cli import ConfigError, app
 
 runner = CliRunner()
 
 
-def _read_toml(path: Path) -> dict:
-    with path.open("rb") as handle:
-        return tomllib.load(handle)
+@pytest.fixture(autouse=True)
+def _isolated_config_home(tmp_path, monkeypatch):
+    """Keep the settings file inside tmp_path; a developer's real env.json must never leak in."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+
+
+@pytest.fixture
+def _isolated_host_configs(tmp_path, monkeypatch):
+    """Point legacy Claude/Codex config paths at tmp_path so real host files are never touched."""
+    claude_path = tmp_path / ".claude.json"
+    codex_path = tmp_path / ".codex" / "config.toml"
+    monkeypatch.setattr("callback.cli.DEFAULT_CLAUDE_CONFIG", claude_path)
+    monkeypatch.setattr("callback.cli.DEFAULT_CODEX_CONFIG", codex_path)
+    return claude_path, codex_path
 
 
 def test_cli_help_lists_commands():
@@ -25,7 +38,6 @@ def test_cli_help_lists_commands():
     assert result.exit_code == 0
     commands = (
         "serve",
-        "setup-mcp",
         "install-browsers",
         "uninstall",
         "update",
@@ -36,6 +48,27 @@ def test_cli_help_lists_commands():
     )
     for command in commands:
         assert command in result.stdout
+    assert "setup-mcp" not in result.stdout
+
+
+def test_settings_load_before_any_command_runs():
+    """env.json must be merged into os.environ before command logic executes.
+
+    Path-resolving code (e.g. the server log path) reads os.environ directly, so a
+    value set only in env.json is invisible unless settings load happens up front —
+    not deep inside individual commands that happen to need it today.
+    """
+    marker = "CALLBACK_TEST_SETTINGS_LOAD_MARKER"
+    os.environ.pop(marker, None)
+    paths.write_json_atomic(paths.env_file(), {marker: "loaded"})
+
+    try:
+        result = runner.invoke(app, ["config", "status"])
+        actual = {"exit_code": result.exit_code, "marker_value": os.environ.get(marker)}
+        expected = {"exit_code": 0, "marker_value": "loaded"}
+        assert actual == expected
+    finally:
+        os.environ.pop(marker, None)
 
 
 def test_version_prints_installed_distribution_version(monkeypatch):
@@ -98,6 +131,52 @@ def test_serve_without_flags_uses_home_state_log(monkeypatch):
         str(Path("~/.local/state/callback/server.log").expanduser())
     )
     run.assert_called_once_with()
+
+
+def test_serve_respects_callback_log_path_already_set_by_settings(monkeypatch, tmp_path):
+    """serve() must not clobber a CALLBACK_LOG_PATH the settings-loading callback
+    already put in os.environ, when neither --log-path nor --project-logs was
+    passed — otherwise env.json's override works for `python -m callback.server`
+    but is silently ignored by the documented `callback serve` entry point."""
+    configured_path = tmp_path / "from-settings" / "server.log"
+    monkeypatch.setenv("CALLBACK_LOG_PATH", str(configured_path))
+    startup_events: list[tuple[Path, str]] = []
+
+    def fake_write_startup_event(log_path: Path, line: str) -> None:
+        startup_events.append((log_path, line))
+
+    with (
+        patch("callback.cli._write_startup_log_event", side_effect=fake_write_startup_event),
+        patch("callback.server.configure_logging", Mock()),
+        patch("callback.server.run", Mock()),
+    ):
+        result = runner.invoke(app, ["serve"])
+
+    actual = {"exit_code": result.exit_code, "startup_log_path": startup_events[0][0]}
+    expected = {"exit_code": 0, "startup_log_path": configured_path}
+    assert actual == expected
+
+
+def test_malformed_settings_file_warns_instead_of_crashing_unrelated_commands():
+    """A damaged env.json must not brick a command that never touches settings
+    at all (uninstall doesn't read or write env.json) — every command
+    dispatches through the same root callback that loads it."""
+    env_path = paths.env_file()
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    env_path.write_text("not json", encoding="utf-8")
+
+    with (
+        patch("callback.cli._remove_server_from_claude"),
+        patch("callback.cli._remove_server_from_codex"),
+    ):
+        result = runner.invoke(app, ["uninstall"])
+
+    actual = {
+        "exit_code": result.exit_code,
+        "warns": "not valid JSON" in result.stderr,
+    }
+    expected = {"exit_code": 0, "warns": True}
+    assert actual == expected
 
 
 def test_serve_project_logs_uses_project_log(tmp_path, monkeypatch):
@@ -174,11 +253,28 @@ def test_logs_defaults_to_home_state_log_even_when_project_log_exists(tmp_path, 
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("callback.cli.DEFAULT_LOG_PATH", state_log)
+    monkeypatch.delenv("CALLBACK_LOG_PATH", raising=False)
 
     result = runner.invoke(app, ["logs", "--lines", "1"])
 
     assert result.exit_code == 0
     assert result.stdout.splitlines() == ["state-tail"]
+
+
+def test_logs_honors_callback_log_path_from_settings(tmp_path, monkeypatch):
+    """`logs` must consult the same CALLBACK_LOG_PATH `serve` honors — otherwise
+    `callback logs --follow` tails the wrong file (or reports one missing)
+    whenever the configured path differs from the default.
+    """
+    configured_path = tmp_path / "configured" / "server.log"
+    configured_path.parent.mkdir()
+    configured_path.write_text("configured\nlog\n", encoding="utf-8")
+    monkeypatch.setenv("CALLBACK_LOG_PATH", str(configured_path))
+
+    result = runner.invoke(app, ["logs"])
+
+    assert result.exit_code == 0
+    assert result.stdout.splitlines() == ["configured", "log"]
 
 
 def test_logs_project_logs_flag_uses_project_log(tmp_path, monkeypatch):
@@ -194,806 +290,107 @@ def test_logs_project_logs_flag_uses_project_log(tmp_path, monkeypatch):
     assert result.stdout.splitlines() == ["project", "log"]
 
 
-def test_configure_claude_creates_entry_and_preserves_unrelated_keys(tmp_path):
-    config_path = tmp_path / ".claude.json"
-    config_path.write_text(json.dumps({"theme": "dark"}), encoding="utf-8")
-
-    configure_claude(config_path)
-
-    config = json.loads(config_path.read_text(encoding="utf-8"))
-    expected = {
-        "theme": "dark",
-        "mcpServers": {
-            "callback": {
-                "command": "callback",
-                "args": ["serve"],
-            },
-        },
-    }
-    assert config == expected
+# ============================================================================
+# config env set / unset / list
+# ============================================================================
 
 
-def test_configure_claude_is_idempotent(tmp_path):
-    config_path = tmp_path / ".claude.json"
-
-    configure_claude(config_path)
-    first = json.loads(config_path.read_text(encoding="utf-8"))
-    configure_claude(config_path)
-    second = json.loads(config_path.read_text(encoding="utf-8"))
-
-    assert first == second
-    assert list(second["mcpServers"]) == ["callback"]
-
-
-def test_configure_claude_preserves_existing_env(tmp_path):
-    config_path = tmp_path / ".claude.json"
-    config_path.write_text(
-        json.dumps(
-            {
-                "mcpServers": {
-                    "callback": {
-                        "command": "old",
-                        "args": ["serve"],
-                        "env": {"CALLBACK_TRACE_BACKEND": "langsmith"},
-                    }
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    configure_claude(config_path, "/usr/local/bin/callback")
-
-    config = json.loads(config_path.read_text(encoding="utf-8"))
-    assert config["mcpServers"]["callback"] == {
-        "command": "/usr/local/bin/callback",
-        "args": ["serve"],
-        "env": {"CALLBACK_TRACE_BACKEND": "langsmith"},
-    }
-
-
-def test_configure_codex_creates_entry_and_preserves_unrelated_keys(tmp_path):
-    config_path = tmp_path / "config.toml"
-    config_path.write_text('model = "gpt-5.5"\n[profiles.default]\nservice_tier = "fast"\n')
-
-    configure_codex(config_path)
-
-    config = _read_toml(config_path)
-    expected = {
-        "model": "gpt-5.5",
-        "profiles": {"default": {"service_tier": "fast"}},
-        "mcp_servers": {
-            "callback": {
-                "command": "callback",
-                "args": ["serve"],
-            },
-        },
-    }
-    assert config == expected
-
-
-def test_configure_codex_is_idempotent(tmp_path):
-    config_path = tmp_path / "config.toml"
-
-    configure_codex(config_path)
-    first = _read_toml(config_path)
-    configure_codex(config_path)
-    second = _read_toml(config_path)
-
-    assert first == second
-    assert list(second["mcp_servers"]) == ["callback"]
-
-
-def test_configure_codex_preserves_existing_env(tmp_path):
-    config_path = tmp_path / "config.toml"
-    config_path.write_text(
-        (
-            "[mcp_servers.callback]\n"
-            'args = ["serve"]\n'
-            'command = "old"\n'
-            "[mcp_servers.callback.env]\n"
-            'CALLBACK_TRACE_BACKEND = "langsmith"\n'
-        ),
-        encoding="utf-8",
-    )
-
-    configure_codex(config_path, "/usr/local/bin/callback")
-
-    config = _read_toml(config_path)
-    assert config["mcp_servers"]["callback"] == {
-        "command": "/usr/local/bin/callback",
-        "args": ["serve"],
-        "env": {"CALLBACK_TRACE_BACKEND": "langsmith"},
-    }
-
-
-def test_configure_codex_preserves_arrays_of_tables(tmp_path):
-    codex_path = tmp_path / "config.toml"
-    codex_path.write_text(
-        '[[profiles]]\nname = "work"\nmodel = "gpt"\n\n[[profiles]]\nname = "home"\n',
-        encoding="utf-8",
-    )
-    configure_codex(codex_path)
-    actual = {
-        "profiles": _read_toml(codex_path)["profiles"],
-        "server_present": "callback" in _read_toml(codex_path)["mcp_servers"],
-    }
-    expected = {
-        "profiles": [{"name": "work", "model": "gpt"}, {"name": "home"}],
-        "server_present": True,
-    }
-    assert actual == expected
-
-
-def test_configure_codex_warns_when_comments_will_be_dropped(tmp_path, capsys):
-    codex_path = tmp_path / "config.toml"
-    codex_path.write_text('# my notes\nmodel = "gpt"\n', encoding="utf-8")
-    configure_codex(codex_path)
-    err = capsys.readouterr().err
-    actual = {
-        "warned": "comments" in err and str(codex_path) in err,
-        "comment_kept": "# my notes" in codex_path.read_text(),
-    }
-    expected = {"warned": True, "comment_kept": False}
-    assert actual == expected
-
-
-def test_config_status_does_not_warn_about_comments(tmp_path):
-    codex_path = tmp_path / "config.toml"
-    codex_path.write_text(
-        '# my notes\n[mcp_servers.callback]\ncommand = "callback"\n', encoding="utf-8"
-    )
-    result = runner.invoke(
-        app, ["config", "status", "--target", "codex", "--codex-config", str(codex_path)]
-    )
-    actual = {"exit_code": result.exit_code, "warned": "comments" in result.stderr}
-    expected = {"exit_code": 0, "warned": False}
-    assert actual == expected
-
-
-def test_setup_mcp_writes_both_configs(tmp_path):
-    claude_path = tmp_path / ".claude.json"
-    codex_path = tmp_path / ".codex" / "config.toml"
-    mock_result = MagicMock()
-    mock_result.returncode = 0
-
-    with (
-        patch("callback.cli._resolve_command", return_value="/usr/local/bin/callback"),
-        patch("callback.cli.subprocess.run", return_value=mock_result) as mock_run,
-    ):
-        result = runner.invoke(
-            app,
-            [
-                "setup-mcp",
-                "--claude-config",
-                str(claude_path),
-                "--codex-config",
-                str(codex_path),
-            ],
-        )
-
-    assert result.exit_code == 0
-    assert json.loads(claude_path.read_text(encoding="utf-8"))["mcpServers"]["callback"] == {
-        "command": "/usr/local/bin/callback",
-        "args": ["serve"],
-    }
-    assert _read_toml(codex_path)["mcp_servers"]["callback"] == {
-        "command": "/usr/local/bin/callback",
-        "args": ["serve"],
-    }
-    import sys
-
-    mock_run.assert_called_once_with([sys.executable, "-m", "playwright", "install", "chromium"])
-    assert "callback config langsmith" in result.stdout
-    assert "restart your MCP host" in result.stdout
-
-
-def test_setup_mcp_preserves_existing_env(tmp_path):
-    claude_path = tmp_path / ".claude.json"
-    codex_path = tmp_path / "config.toml"
-    claude_path.write_text(
-        json.dumps(
-            {
-                "mcpServers": {
-                    "callback": {
-                        "command": "old",
-                        "args": ["serve"],
-                        "env": {"LANGSMITH_PROJECT": "demo"},
-                    }
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    codex_path.write_text(
-        (
-            "[mcp_servers.callback]\n"
-            'args = ["serve"]\n'
-            'command = "old"\n'
-            "[mcp_servers.callback.env]\n"
-            'LANGSMITH_PROJECT = "demo"\n'
-        ),
-        encoding="utf-8",
-    )
-
-    with (
-        patch("callback.cli._resolve_command", return_value="/usr/local/bin/callback"),
-        patch("callback.cli.subprocess.run") as mock_run,
-    ):
-        result = runner.invoke(
-            app,
-            [
-                "setup-mcp",
-                "--skip-browsers",
-                "--claude-config",
-                str(claude_path),
-                "--codex-config",
-                str(codex_path),
-            ],
-        )
-
-    assert result.exit_code == 0
-    mock_run.assert_not_called()
-    assert json.loads(claude_path.read_text(encoding="utf-8"))["mcpServers"]["callback"] == {
-        "command": "/usr/local/bin/callback",
-        "args": ["serve"],
-        "env": {"LANGSMITH_PROJECT": "demo"},
-    }
-    assert _read_toml(codex_path)["mcp_servers"]["callback"] == {
-        "command": "/usr/local/bin/callback",
-        "args": ["serve"],
-        "env": {"LANGSMITH_PROJECT": "demo"},
-    }
-
-
-def test_setup_mcp_warns_about_comments_exactly_once(tmp_path):
-    claude_path = tmp_path / ".claude.json"
-    codex_path = tmp_path / "config.toml"
-    codex_path.write_text('# my notes\n[mcp_servers.callback]\ncommand = "old"\n', encoding="utf-8")
-    mock_result = MagicMock()
-    mock_result.returncode = 0
-
-    with (
-        patch("callback.cli._resolve_command", return_value="/usr/local/bin/callback"),
-        patch("callback.cli.subprocess.run", return_value=mock_result),
-    ):
-        result = runner.invoke(
-            app,
-            [
-                "setup-mcp",
-                "--claude-config",
-                str(claude_path),
-                "--codex-config",
-                str(codex_path),
-            ],
-        )
+def test_config_env_set_list_unset_round_trips_through_settings_file():
+    set_result = runner.invoke(app, ["config", "env", "set", "LANGSMITH_API_KEY", "secret-value"])
 
     actual = {
-        "exit_code": result.exit_code,
-        "comment_warning_count": result.stderr.count("contains comments"),
+        "exit_code": set_result.exit_code,
+        "env": json.loads(paths.env_file().read_text(encoding="utf-8")),
     }
-    expected = {"exit_code": 0, "comment_warning_count": 1}
+    expected = {"exit_code": 0, "env": {"LANGSMITH_API_KEY": "secret-value"}}
     assert actual == expected
 
-
-def test_config_env_set_list_unset_claude(tmp_path):
-    claude_path = tmp_path / ".claude.json"
-    codex_path = tmp_path / "config.toml"
-
-    result = runner.invoke(
-        app,
-        [
-            "config",
-            "env",
-            "set",
-            "LANGSMITH_API_KEY",
-            "secret-value",
-            "--target",
-            "claude",
-            "--claude-config",
-            str(claude_path),
-            "--codex-config",
-            str(codex_path),
-        ],
-    )
-
-    config = json.loads(claude_path.read_text(encoding="utf-8"))
-    actual = {
-        "exit_code": result.exit_code,
-        "env": config["mcpServers"]["callback"]["env"],
-        "codex_exists": codex_path.exists(),
-    }
-    expected = {
-        "exit_code": 0,
-        "env": {"LANGSMITH_API_KEY": "secret-value"},
-        "codex_exists": False,
-    }
-
-    assert actual == expected
-
-    list_result = runner.invoke(
-        app,
-        [
-            "config",
-            "env",
-            "list",
-            "--target",
-            "claude",
-            "--claude-config",
-            str(claude_path),
-        ],
-    )
-
+    list_result = runner.invoke(app, ["config", "env", "list"])
     actual = {
         "exit_code": list_result.exit_code,
         "redacted": "LANGSMITH_API_KEY=********" in list_result.stdout,
         "secret_hidden": "secret-value" not in list_result.stdout,
     }
-    expected = {
-        "exit_code": 0,
-        "redacted": True,
-        "secret_hidden": True,
-    }
-
+    expected = {"exit_code": 0, "redacted": True, "secret_hidden": True}
     assert actual == expected
 
-    show_result = runner.invoke(
-        app,
-        [
-            "config",
-            "env",
-            "list",
-            "--target",
-            "claude",
-            "--claude-config",
-            str(claude_path),
-            "--show-secrets",
-        ],
-    )
-
+    show_result = runner.invoke(app, ["config", "env", "list", "--show-secrets"])
     actual = {
         "exit_code": show_result.exit_code,
         "secret_shown": "LANGSMITH_API_KEY=secret-value" in show_result.stdout,
     }
-    expected = {
-        "exit_code": 0,
-        "secret_shown": True,
-    }
-
+    expected = {"exit_code": 0, "secret_shown": True}
     assert actual == expected
 
-    unset_result = runner.invoke(
-        app,
-        [
-            "config",
-            "env",
-            "unset",
-            "LANGSMITH_API_KEY",
-            "--target",
-            "claude",
-            "--claude-config",
-            str(claude_path),
-        ],
-    )
-
-    config = json.loads(claude_path.read_text(encoding="utf-8"))
+    unset_result = runner.invoke(app, ["config", "env", "unset", "LANGSMITH_API_KEY"])
     actual = {
         "exit_code": unset_result.exit_code,
-        "env": config["mcpServers"]["callback"]["env"],
+        "env": json.loads(paths.env_file().read_text(encoding="utf-8")),
     }
-    expected = {
-        "exit_code": 0,
-        "env": {},
-    }
-
+    expected = {"exit_code": 0, "env": {}}
     assert actual == expected
 
 
-def test_config_env_set_unset_codex(tmp_path):
-    codex_path = tmp_path / "config.toml"
+def test_config_env_set_preserves_other_existing_keys():
+    paths.write_json_atomic(paths.env_file(), {"LANGSMITH_PROJECT": "Callback"})
 
-    set_result = runner.invoke(
-        app,
-        [
-            "config",
-            "env",
-            "set",
-            "CALLBACK_TRACE_BACKEND",
-            "langsmith",
-            "--target",
-            "codex",
-            "--codex-config",
-            str(codex_path),
-        ],
-    )
-
-    config = _read_toml(codex_path)
-    actual = {
-        "exit_code": set_result.exit_code,
-        "env": config["mcp_servers"]["callback"]["env"],
-    }
-    expected = {
-        "exit_code": 0,
-        "env": {"CALLBACK_TRACE_BACKEND": "langsmith"},
-    }
-
-    assert actual == expected
-
-    unset_result = runner.invoke(
-        app,
-        [
-            "config",
-            "env",
-            "unset",
-            "CALLBACK_TRACE_BACKEND",
-            "--target",
-            "codex",
-            "--codex-config",
-            str(codex_path),
-        ],
-    )
-
-    config = _read_toml(codex_path)
-    actual = {
-        "exit_code": unset_result.exit_code,
-        "env": config["mcp_servers"]["callback"]["env"],
-    }
-    expected = {
-        "exit_code": 0,
-        "env": {},
-    }
-
-    assert actual == expected
-
-
-def test_config_env_list_prints_literal_target_headers(tmp_path):
-    claude_path = tmp_path / ".claude.json"
-    claude_path.write_text(
-        json.dumps(
-            {
-                "mcpServers": {
-                    "callback": {
-                        "command": "callback",
-                        "args": ["serve"],
-                        "env": {"LANGSMITH_PROJECT": "Callback"},
-                    }
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    result = runner.invoke(
-        app,
-        [
-            "config",
-            "env",
-            "list",
-            "--target",
-            "claude",
-            "--claude-config",
-            str(claude_path),
-        ],
-    )
+    result = runner.invoke(app, ["config", "env", "set", "CALLBACK_TRACE_BACKEND", "langsmith"])
 
     actual = {
         "exit_code": result.exit_code,
-        "has_header": "[claude]" in result.stdout,
+        "env": json.loads(paths.env_file().read_text(encoding="utf-8")),
+    }
+    expected = {
+        "exit_code": 0,
+        "env": {"LANGSMITH_PROJECT": "Callback", "CALLBACK_TRACE_BACKEND": "langsmith"},
+    }
+    assert actual == expected
+
+    unset_result = runner.invoke(app, ["config", "env", "unset", "CALLBACK_TRACE_BACKEND"])
+
+    actual = {
+        "exit_code": unset_result.exit_code,
+        "env": json.loads(paths.env_file().read_text(encoding="utf-8")),
+    }
+    expected = {"exit_code": 0, "env": {"LANGSMITH_PROJECT": "Callback"}}
+    assert actual == expected
+
+
+def test_config_env_list_prints_flat_key_value_pairs_without_target_headers():
+    paths.write_json_atomic(paths.env_file(), {"LANGSMITH_PROJECT": "Callback"})
+
+    result = runner.invoke(app, ["config", "env", "list"])
+
+    actual = {
+        "exit_code": result.exit_code,
         "has_env": "LANGSMITH_PROJECT=Callback" in result.stdout,
+        "no_target_header": "[claude]" not in result.stdout and "[codex]" not in result.stdout,
     }
-    expected = {
-        "exit_code": 0,
-        "has_header": True,
-        "has_env": True,
-    }
-
+    expected = {"exit_code": 0, "has_env": True, "no_target_header": True}
     assert actual == expected
 
 
-def test_config_status_reports_same_env_for_all_targets(tmp_path):
-    claude_path = tmp_path / ".claude.json"
-    codex_path = tmp_path / "config.toml"
-    expected_env = {
-        "CALLBACK_TRACE_BACKEND": "langsmith",
-        "LANGSMITH_TRACING": "true",
-        "LANGSMITH_API_KEY": "lsv2-secret",
-    }
-    claude_path.write_text(
-        json.dumps(
-            {
-                "mcpServers": {
-                    "callback": {
-                        "command": "callback",
-                        "args": ["serve"],
-                        "env": expected_env,
-                    }
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    codex_path.write_text(
-        (
-            "[mcp_servers.callback]\n"
-            'command = "callback"\n'
-            'args = ["serve"]\n'
-            "[mcp_servers.callback.env]\n"
-            'CALLBACK_TRACE_BACKEND = "langsmith"\n'
-            'LANGSMITH_TRACING = "true"\n'
-            'LANGSMITH_API_KEY = "lsv2-secret"\n'
-        ),
-        encoding="utf-8",
-    )
-
-    result = runner.invoke(
-        app,
-        [
-            "config",
-            "status",
-            "--claude-config",
-            str(claude_path),
-            "--codex-config",
-            str(codex_path),
-        ],
-    )
+def test_config_env_set_rejects_invalid_name_without_writing():
+    result = runner.invoke(app, ["config", "env", "set", "bad-name", "value"])
 
     actual = {
         "exit_code": result.exit_code,
-        "has_backend": "CALLBACK_TRACE_BACKEND" in result.stdout,
-        "has_same": "same" in result.stdout,
-        "redacts_key": "LANGSMITH_API_KEY" in result.stdout
-        and "********" in result.stdout
-        and "lsv2-secret" not in result.stdout,
+        "invalid_name_error": "invalid env var name" in result.stderr,
+        "env_file_exists": paths.env_file().exists(),
     }
-    expected = {
-        "exit_code": 0,
-        "has_backend": True,
-        "has_same": True,
-        "redacts_key": True,
-    }
-
+    expected = {"exit_code": 1, "invalid_name_error": True, "env_file_exists": False}
     assert actual == expected
 
 
-def test_config_status_reports_missing_and_different_values(tmp_path):
-    claude_path = tmp_path / ".claude.json"
-    codex_path = tmp_path / "config.toml"
-    claude_path.write_text(
-        json.dumps(
-            {
-                "mcpServers": {
-                    "callback": {
-                        "command": "callback",
-                        "args": ["serve"],
-                        "env": {
-                            "LANGSMITH_PROJECT": "Callback",
-                            "LANGSMITH_TRACING": "true",
-                        },
-                    }
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    codex_path.write_text(
-        (
-            "[mcp_servers.callback]\n"
-            'command = "callback"\n'
-            'args = ["serve"]\n'
-            "[mcp_servers.callback.env]\n"
-            'LANGSMITH_PROJECT = "Other"\n'
-        ),
-        encoding="utf-8",
-    )
+# ============================================================================
+# config langsmith
+# ============================================================================
 
+
+def test_config_langsmith_sets_expected_env_in_settings_file():
     result = runner.invoke(
         app,
-        [
-            "config",
-            "status",
-            "--claude-config",
-            str(claude_path),
-            "--codex-config",
-            str(codex_path),
-        ],
-    )
-
-    actual = {
-        "exit_code": result.exit_code,
-        "project_different": "LANGSMITH_PROJECT" in result.stdout and "different" in result.stdout,
-        "tracing_missing": "LANGSMITH_TRACING" in result.stdout and "missing" in result.stdout,
-        "shows_unset_cell": "(unset)" in result.stdout,
-    }
-    expected = {
-        "exit_code": 0,
-        "project_different": True,
-        "tracing_missing": True,
-        "shows_unset_cell": True,
-    }
-
-    assert actual == expected
-
-
-def test_config_status_show_secrets_reveals_secret_values(tmp_path):
-    claude_path = tmp_path / ".claude.json"
-    codex_path = tmp_path / "config.toml"
-    claude_path.write_text(
-        json.dumps(
-            {
-                "mcpServers": {
-                    "callback": {
-                        "command": "callback",
-                        "args": ["serve"],
-                        "env": {"LANGSMITH_API_KEY": "lsv2-secret"},
-                    }
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    codex_path.write_text(
-        (
-            "[mcp_servers.callback]\n"
-            'command = "callback"\n'
-            'args = ["serve"]\n'
-            "[mcp_servers.callback.env]\n"
-            'LANGSMITH_API_KEY = "lsv2-secret"\n'
-        ),
-        encoding="utf-8",
-    )
-
-    result = runner.invoke(
-        app,
-        [
-            "config",
-            "status",
-            "--show-secrets",
-            "--claude-config",
-            str(claude_path),
-            "--codex-config",
-            str(codex_path),
-        ],
-    )
-
-    actual = {
-        "exit_code": result.exit_code,
-        "shows_secret": "lsv2-secret" in result.stdout,
-        "does_not_redact": "********" not in result.stdout,
-    }
-    expected = {
-        "exit_code": 0,
-        "shows_secret": True,
-        "does_not_redact": True,
-    }
-
-    assert actual == expected
-
-
-def test_config_status_target_claude_does_not_read_or_write_codex(tmp_path):
-    claude_path = tmp_path / ".claude.json"
-    codex_path = tmp_path / "config.toml"
-    claude_path.write_text(
-        json.dumps(
-            {
-                "mcpServers": {
-                    "callback": {
-                        "command": "callback",
-                        "args": ["serve"],
-                        "env": {"LANGSMITH_PROJECT": "Callback"},
-                    }
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    result = runner.invoke(
-        app,
-        [
-            "config",
-            "status",
-            "--target",
-            "claude",
-            "--claude-config",
-            str(claude_path),
-            "--codex-config",
-            str(codex_path),
-        ],
-    )
-
-    actual = {
-        "exit_code": result.exit_code,
-        "has_claude_value": "Callback" in result.stdout,
-        "codex_not_checked": "not checked" in result.stdout,
-        "codex_exists": codex_path.exists(),
-    }
-    expected = {
-        "exit_code": 0,
-        "has_claude_value": True,
-        "codex_not_checked": True,
-        "codex_exists": False,
-    }
-
-    assert actual == expected
-
-
-def test_config_status_missing_env_maps_reports_unset_without_writing(tmp_path):
-    claude_path = tmp_path / ".claude.json"
-    codex_path = tmp_path / "config.toml"
-
-    result = runner.invoke(
-        app,
-        [
-            "config",
-            "status",
-            "--claude-config",
-            str(claude_path),
-            "--codex-config",
-            str(codex_path),
-        ],
-    )
-
-    actual = {
-        "exit_code": result.exit_code,
-        "has_none": "(none)" in result.stdout,
-        "has_unset": "unset" in result.stdout,
-        "claude_exists": claude_path.exists(),
-        "codex_exists": codex_path.exists(),
-    }
-    expected = {
-        "exit_code": 0,
-        "has_none": True,
-        "has_unset": True,
-        "claude_exists": False,
-        "codex_exists": False,
-    }
-
-    assert actual == expected
-
-
-def test_config_env_rejects_invalid_name_without_writing(tmp_path):
-    claude_path = tmp_path / ".claude.json"
-
-    result = runner.invoke(
-        app,
-        [
-            "config",
-            "env",
-            "set",
-            "bad-name",
-            "value",
-            "--target",
-            "claude",
-            "--claude-config",
-            str(claude_path),
-        ],
-    )
-
-    assert result.exit_code == 1
-    assert "invalid env var name" in result.stderr
-    assert not claude_path.exists()
-
-
-def test_config_langsmith_sets_expected_env_for_all_targets(tmp_path):
-    claude_path = tmp_path / ".claude.json"
-    codex_path = tmp_path / "config.toml"
-
-    result = runner.invoke(
-        app,
-        [
-            "config",
-            "langsmith",
-            "--api-key",
-            "lsv2-key",
-            "--project",
-            "callback-demo",
-            "--target",
-            "all",
-            "--claude-config",
-            str(claude_path),
-            "--codex-config",
-            str(codex_path),
-        ],
+        ["config", "langsmith", "--api-key", "lsv2-key", "--project", "callback-demo"],
     )
 
     expected_env = {
@@ -1003,37 +400,20 @@ def test_config_langsmith_sets_expected_env_for_all_targets(tmp_path):
         "LANGSMITH_ENDPOINT": "https://api.smith.langchain.com",
         "LANGSMITH_PROJECT": "callback-demo",
     }
-    assert result.exit_code == 0
-    assert (
-        json.loads(claude_path.read_text(encoding="utf-8"))["mcpServers"]["callback"]["env"]
-        == expected_env
-    )
-    assert _read_toml(codex_path)["mcp_servers"]["callback"]["env"] == expected_env
+    actual = {
+        "exit_code": result.exit_code,
+        "env": json.loads(paths.env_file().read_text(encoding="utf-8")),
+    }
+    expected = {"exit_code": 0, "env": expected_env}
+    assert actual == expected
 
 
-def test_config_langsmith_defaults_to_callback_project_and_langsmith_endpoint(tmp_path):
-    claude_path = tmp_path / ".claude.json"
-    codex_path = tmp_path / "config.toml"
-
-    result = runner.invoke(
-        app,
-        [
-            "config",
-            "langsmith",
-            "--api-key",
-            "lsv2-key",
-            "--target",
-            "claude",
-            "--claude-config",
-            str(claude_path),
-            "--codex-config",
-            str(codex_path),
-        ],
-    )
+def test_config_langsmith_defaults_to_callback_project_and_langsmith_endpoint():
+    result = runner.invoke(app, ["config", "langsmith", "--api-key", "lsv2-key"])
 
     actual = {
         "exit_code": result.exit_code,
-        "env": json.loads(claude_path.read_text(encoding="utf-8"))["mcpServers"]["callback"]["env"],
+        "env": json.loads(paths.env_file().read_text(encoding="utf-8")),
     }
     expected = {
         "exit_code": 0,
@@ -1045,8 +425,206 @@ def test_config_langsmith_defaults_to_callback_project_and_langsmith_endpoint(tm
             "LANGSMITH_PROJECT": "Callback",
         },
     }
-
     assert actual == expected
+
+
+# ============================================================================
+# config status
+# ============================================================================
+
+
+def test_config_status_does_not_warn_about_comments(_isolated_host_configs):
+    _claude_path, codex_path = _isolated_host_configs
+    codex_path.parent.mkdir(parents=True, exist_ok=True)
+    codex_path.write_text(
+        '# my notes\n[mcp_servers.callback]\ncommand = "callback"\n', encoding="utf-8"
+    )
+
+    result = runner.invoke(app, ["config", "status"])
+
+    actual = {"exit_code": result.exit_code, "warned_comments": "comments" in result.stderr}
+    expected = {"exit_code": 0, "warned_comments": False}
+    assert actual == expected
+
+
+def test_config_status_reports_settings_redacting_secrets(_isolated_host_configs):
+    paths.write_json_atomic(
+        paths.env_file(),
+        {
+            "CALLBACK_TRACE_BACKEND": "langsmith",
+            "LANGSMITH_TRACING": "true",
+            "LANGSMITH_API_KEY": "lsv2-secret",
+        },
+    )
+
+    result = runner.invoke(app, ["config", "status"])
+
+    actual = {
+        "exit_code": result.exit_code,
+        "has_backend": "CALLBACK_TRACE_BACKEND=langsmith" in result.stdout,
+        "has_tracing": "LANGSMITH_TRACING=true" in result.stdout,
+        "redacts_key": "LANGSMITH_API_KEY=********" in result.stdout,
+        "secret_hidden": "lsv2-secret" not in result.stdout,
+    }
+    expected = {
+        "exit_code": 0,
+        "has_backend": True,
+        "has_tracing": True,
+        "redacts_key": True,
+        "secret_hidden": True,
+    }
+    assert actual == expected
+
+
+def test_config_status_warns_about_legacy_entry_for_claude_only(_isolated_host_configs):
+    claude_path, codex_path = _isolated_host_configs
+    claude_path.write_text(
+        json.dumps({"mcpServers": {"callback": {"command": "callback", "args": ["serve"]}}}),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["config", "status"])
+
+    actual = {
+        "exit_code": result.exit_code,
+        "warns_claude": str(claude_path) in result.stderr,
+        "warns_codex": str(codex_path) in result.stderr,
+    }
+    expected = {"exit_code": 0, "warns_claude": True, "warns_codex": False}
+    assert actual == expected
+
+
+def test_config_status_show_secrets_reveals_secret_values(_isolated_host_configs):
+    paths.write_json_atomic(paths.env_file(), {"LANGSMITH_API_KEY": "lsv2-secret"})
+
+    result = runner.invoke(app, ["config", "status", "--show-secrets"])
+
+    actual = {
+        "exit_code": result.exit_code,
+        "shows_secret": "LANGSMITH_API_KEY=lsv2-secret" in result.stdout,
+    }
+    expected = {"exit_code": 0, "shows_secret": True}
+    assert actual == expected
+
+
+def test_config_status_does_not_modify_legacy_host_configs(_isolated_host_configs):
+    claude_path, codex_path = _isolated_host_configs
+    claude_content = json.dumps({"mcpServers": {"callback": {"command": "callback"}}})
+    claude_path.write_text(claude_content, encoding="utf-8")
+    codex_path.parent.mkdir(parents=True, exist_ok=True)
+    codex_content = '[mcp_servers.callback]\ncommand = "callback"\n'
+    codex_path.write_text(codex_content, encoding="utf-8")
+
+    result = runner.invoke(app, ["config", "status"])
+
+    actual = {
+        "exit_code": result.exit_code,
+        "claude_unchanged": claude_path.read_text(encoding="utf-8") == claude_content,
+        "codex_unchanged": codex_path.read_text(encoding="utf-8") == codex_content,
+    }
+    expected = {"exit_code": 0, "claude_unchanged": True, "codex_unchanged": True}
+    assert actual == expected
+
+
+def test_config_status_missing_settings_file_reports_none_without_writing(_isolated_host_configs):
+    result = runner.invoke(app, ["config", "status"])
+
+    actual = {
+        "exit_code": result.exit_code,
+        "has_none": "(none)" in result.stdout,
+        "env_file_exists": paths.env_file().exists(),
+    }
+    expected = {"exit_code": 0, "has_none": True, "env_file_exists": False}
+    assert actual == expected
+
+
+def test_config_status_hedges_on_legacy_entry_instead_of_assuming_duplicate(
+    _isolated_host_configs,
+):
+    """A presence-only check can't tell a leftover duplicate from someone's only,
+    correctly-configured manual registration — so the message must not confidently
+    tell every reader to delete their one working entry."""
+    claude_path, _codex_path = _isolated_host_configs
+    claude_path.write_text(
+        json.dumps({"mcpServers": {"callback": {"command": "callback", "args": ["serve"]}}}),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["config", "status"])
+
+    actual = {
+        "exit_code": result.exit_code,
+        "mentions_uninstall": "callback uninstall" in result.stderr,
+        "hedges_for_sole_install": "only callback registration" in result.stderr,
+        "asserts_duplicate_as_fact": "legacy duplicate server" in result.stderr,
+    }
+    expected = {
+        "exit_code": 0,
+        "mentions_uninstall": True,
+        "hedges_for_sole_install": True,
+        "asserts_duplicate_as_fact": False,
+    }
+    assert actual == expected
+
+
+def test_config_status_survives_malformed_legacy_host_config(_isolated_host_configs):
+    """A malformed legacy host config must not hide an otherwise-valid settings file."""
+    claude_path, _codex_path = _isolated_host_configs
+    claude_path.write_text("not valid json", encoding="utf-8")
+    paths.write_json_atomic(paths.env_file(), {"FOO": "bar"})
+
+    result = runner.invoke(app, ["config", "status"])
+
+    actual = {
+        "exit_code": result.exit_code,
+        "reports_settings": "FOO=bar" in result.stdout,
+        "warns_about_claude_probe": str(claude_path) in result.stderr,
+    }
+    expected = {"exit_code": 0, "reports_settings": True, "warns_about_claude_probe": True}
+    assert actual == expected
+
+
+def test_config_status_survives_unreadable_legacy_host_config(_isolated_host_configs):
+    """A filesystem-level read failure on a legacy host config (e.g. it's
+    accidentally a directory) must not hide an otherwise-valid settings file
+    either — same as the malformed-JSON case above, but for OSError."""
+    claude_path, _codex_path = _isolated_host_configs
+    claude_path.mkdir()  # a directory at the config path, not a file
+    paths.write_json_atomic(paths.env_file(), {"FOO": "bar"})
+
+    result = runner.invoke(app, ["config", "status"])
+
+    actual = {
+        "exit_code": result.exit_code,
+        "reports_settings": "FOO=bar" in result.stdout,
+        "warns_about_claude_probe": str(claude_path) in result.stderr,
+    }
+    expected = {"exit_code": 0, "reports_settings": True, "warns_about_claude_probe": True}
+    assert actual == expected
+
+
+def test_config_langsmith_and_env_set_never_touch_host_config_files(_isolated_host_configs):
+    claude_path, codex_path = _isolated_host_configs
+    claude_content = json.dumps({"mcpServers": {"other": {"command": "other"}}})
+    claude_path.write_text(claude_content, encoding="utf-8")
+    codex_path.parent.mkdir(parents=True, exist_ok=True)
+    codex_content = '[mcp_servers.other]\ncommand = "other"\n'
+    codex_path.write_text(codex_content, encoding="utf-8")
+
+    runner.invoke(app, ["config", "langsmith", "--api-key", "lsv2-key"])
+    runner.invoke(app, ["config", "env", "set", "FOO", "bar"])
+
+    actual = {
+        "claude_unchanged": claude_path.read_text(encoding="utf-8") == claude_content,
+        "codex_unchanged": codex_path.read_text(encoding="utf-8") == codex_content,
+    }
+    expected = {"claude_unchanged": True, "codex_unchanged": True}
+    assert actual == expected
+
+
+# ============================================================================
+# trace-check
+# ============================================================================
 
 
 def test_trace_check_reports_missing_langsmith_key(monkeypatch):
@@ -1060,26 +638,19 @@ def test_trace_check_reports_missing_langsmith_key(monkeypatch):
     assert "LANGSMITH_API_KEY is required" in result.stderr
 
 
-def test_trace_check_claude_reads_config_and_emits_safe_trace(tmp_path):
-    claude_path = tmp_path / ".claude.json"
-    claude_path.write_text(
-        json.dumps(
-            {
-                "mcpServers": {
-                    "callback": {
-                        "command": "callback",
-                        "args": ["serve"],
-                        "env": {
-                            "CALLBACK_TRACE_BACKEND": "langsmith",
-                            "LANGSMITH_TRACING": "true",
-                            "LANGSMITH_API_KEY": "lsv2-secret",
-                            "LANGSMITH_PROJECT": "callback-demo",
-                        },
-                    }
-                }
-            }
-        ),
-        encoding="utf-8",
+def test_trace_check_reads_settings_file_and_emits_safe_trace(monkeypatch):
+    monkeypatch.delenv("CALLBACK_TRACE_BACKEND", raising=False)
+    monkeypatch.delenv("LANGSMITH_TRACING", raising=False)
+    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+    monkeypatch.delenv("LANGSMITH_PROJECT", raising=False)
+    paths.write_json_atomic(
+        paths.env_file(),
+        {
+            "CALLBACK_TRACE_BACKEND": "langsmith",
+            "LANGSMITH_TRACING": "true",
+            "LANGSMITH_API_KEY": "lsv2-secret",
+            "LANGSMITH_PROJECT": "callback-demo",
+        },
     )
 
     class FakeClient:
@@ -1091,21 +662,15 @@ def test_trace_check_claude_reads_config_and_emits_safe_trace(tmp_path):
         patch("callback.cli._make_langsmith_client", return_value=FakeClient()) as make_client,
         patch("callback.cli.emit_trace_check_probe") as emit_trace,
     ):
-        result = runner.invoke(
-            app,
-            [
-                "trace-check",
-                "--target",
-                "claude",
-                "--claude-config",
-                str(claude_path),
-                "--emit-test-trace",
-            ],
-        )
+        result = runner.invoke(app, ["trace-check", "--emit-test-trace"])
 
-    assert result.exit_code == 0
-    assert "claude: ok" in result.stdout
-    assert "lsv2-secret" not in result.stdout
+    actual = {
+        "exit_code": result.exit_code,
+        "reports_ok": "ok" in result.stdout,
+        "secret_hidden": "lsv2-secret" not in result.stdout,
+    }
+    expected = {"exit_code": 0, "reports_ok": True, "secret_hidden": True}
+    assert actual == expected
     make_client.assert_called_once()
     emit_trace.assert_called_once()
 
@@ -1125,86 +690,6 @@ def test_trace_check_redacts_secret_on_auth_failure(monkeypatch):
     assert result.exit_code == 1
     assert "bad token" in result.stderr
     assert "lsv2-secret" not in result.stderr
-
-
-def test_setup_mcp_skip_browsers_writes_configs_without_install(tmp_path):
-    claude_path = tmp_path / ".claude.json"
-    codex_path = tmp_path / ".codex" / "config.toml"
-
-    with (
-        patch("callback.cli._resolve_command", return_value="/usr/local/bin/callback"),
-        patch("callback.cli.subprocess.run") as mock_run,
-    ):
-        result = runner.invoke(
-            app,
-            [
-                "setup-mcp",
-                "--skip-browsers",
-                "--claude-config",
-                str(claude_path),
-                "--codex-config",
-                str(codex_path),
-            ],
-        )
-
-    assert result.exit_code == 0
-    mock_run.assert_not_called()
-    assert json.loads(claude_path.read_text(encoding="utf-8"))["mcpServers"]["callback"] == {
-        "command": "/usr/local/bin/callback",
-        "args": ["serve"],
-    }
-    assert _read_toml(codex_path)["mcp_servers"]["callback"] == {
-        "command": "/usr/local/bin/callback",
-        "args": ["serve"],
-    }
-
-
-def test_setup_mcp_browser_install_failure_leaves_configs_unwritten(tmp_path):
-    claude_path = tmp_path / ".claude.json"
-    codex_path = tmp_path / ".codex" / "config.toml"
-    mock_result = MagicMock()
-    mock_result.returncode = 7
-
-    with patch("callback.cli.subprocess.run", return_value=mock_result):
-        result = runner.invoke(
-            app,
-            [
-                "setup-mcp",
-                "--claude-config",
-                str(claude_path),
-                "--codex-config",
-                str(codex_path),
-            ],
-        )
-
-    assert result.exit_code == 7
-    assert "browser install failed" in result.stderr
-    assert not claude_path.exists()
-    assert not codex_path.exists()
-
-
-def test_setup_mcp_rejects_invalid_codex_toml_without_overwrite(tmp_path):
-    claude_path = tmp_path / ".claude.json"
-    codex_path = tmp_path / "config.toml"
-    original = "[broken"
-    codex_path.write_text(original, encoding="utf-8")
-
-    with patch("callback.cli.subprocess.run") as mock_run:
-        result = runner.invoke(
-            app,
-            [
-                "setup-mcp",
-                "--claude-config",
-                str(claude_path),
-                "--codex-config",
-                str(codex_path),
-            ],
-        )
-
-    assert result.exit_code == 1
-    assert "not valid TOML" in result.stderr
-    assert codex_path.read_text(encoding="utf-8") == original
-    mock_run.assert_not_called()
 
 
 # ============================================================================
@@ -1269,15 +754,18 @@ def test_uninstall_without_purge_preserves_data_dir(tmp_path):
     assert data_dir.exists()
 
 
-def test_uninstall_purge_deletes_data_and_state_dirs(tmp_path):
+def test_uninstall_purge_deletes_data_state_and_config_dirs(tmp_path):
     data_dir = tmp_path / "share"
     state_dir = tmp_path / "state"
+    config_dir = tmp_path / "config"
     data_dir.mkdir()
     state_dir.mkdir()
+    config_dir.mkdir()
 
     with (
         patch("callback.paths.data_dir", lambda: data_dir),
         patch("callback.paths.state_dir", lambda: state_dir),
+        patch("callback.paths.config_dir", lambda: config_dir),
         patch("callback.cli._remove_server_from_claude"),
         patch("callback.cli._remove_server_from_codex"),
     ):
@@ -1286,15 +774,44 @@ def test_uninstall_purge_deletes_data_and_state_dirs(tmp_path):
     assert result.exit_code == 0
     assert not data_dir.exists()
     assert not state_dir.exists()
+    assert not config_dir.exists()
+
+
+def test_uninstall_purge_deletes_data_when_legacy_config_removal_fails(tmp_path):
+    data_dir = tmp_path / "share"
+    state_dir = tmp_path / "state"
+    config_dir = tmp_path / "config"
+    data_dir.mkdir()
+    state_dir.mkdir()
+    config_dir.mkdir()
+
+    with (
+        patch("callback.paths.data_dir", lambda: data_dir),
+        patch("callback.paths.state_dir", lambda: state_dir),
+        patch("callback.paths.config_dir", lambda: config_dir),
+        patch(
+            "callback.cli._remove_server_from_claude",
+            side_effect=ConfigError("invalid Claude config"),
+        ),
+    ):
+        result = runner.invoke(app, ["uninstall", "--purge"])
+
+    assert result.exit_code == 1
+    assert "uninstall failed: invalid Claude config" in result.stderr
+    assert not data_dir.exists()
+    assert not state_dir.exists()
+    assert not config_dir.exists()
 
 
 def test_uninstall_purge_skips_absent_dirs(tmp_path):
     data_dir = tmp_path / "share"
     state_dir = tmp_path / "state"
+    config_dir = tmp_path / "config"
 
     with (
         patch("callback.paths.data_dir", lambda: data_dir),
         patch("callback.paths.state_dir", lambda: state_dir),
+        patch("callback.paths.config_dir", lambda: config_dir),
         patch("callback.cli._remove_server_from_claude"),
         patch("callback.cli._remove_server_from_codex"),
     ):

@@ -32,7 +32,7 @@ from pydantic import ValidationError
 
 import callback.scorer as scorer
 import callback.version_check as version_check
-from callback import paths
+from callback import paths, settings
 from callback.apply_graph import (
     FINALIZE_NODE,
     KEYWORDS_ACCEPT_NODE,
@@ -60,6 +60,21 @@ from callback.repository.stories import label_line_field, tags_from_meta
 from callback.section_map import SectionMap, SkillsSection, apply_edit
 from callback.state import ApplyState, CreatedStory, ProfileState
 from callback.wiki import WikiPageError, WikiPageIdError, WikiStore, split_frontmatter
+
+# Must run before any module-level os.environ read below (e.g. LOG_LEVEL): callback
+# owns its own settings file (~/.config/callback/env.json) independent of any MCP
+# host config, and env vars set only there would otherwise be invisible here.
+# A damaged env.json must not crash the import itself (both `callback serve` and
+# `python -m callback.server` import this module directly), so it's reported and
+# skipped here rather than raised, same as the CLI's own root-callback recovery.
+try:
+    settings.apply_env_file()
+except ValueError as exc:
+    print(
+        f"warning: {exc}; continuing without settings-file overrides. "
+        "Run `callback config status` to inspect it, or fix/remove it by hand.",
+        file=sys.stderr,
+    )
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 _LOG_FORMAT = "%(message)s"  # messages are already JSON strings

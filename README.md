@@ -96,12 +96,11 @@ You don't need this for any of the installs above. Use it if you want the `callb
 ```bash
 uv tool install git+https://github.com/thedandano/callback.git
 callback install-browsers      # headless Chromium, for reading postings and rendering PDFs
-callback setup-mcp             # register the server with Claude and Codex
 ```
 
-Restart your MCP client afterward. `setup-mcp` is deliberately noninteractive. It registers the server entry, preserves any `env` map already there, and never asks for API keys or touches your tracing setup.
+Register `callback` with your MCP client the normal way for that client (e.g. add it to `~/.claude.json` or `~/.codex/config.toml`), then restart the client.
 
-Run `callback config status` to confirm it worked. It's read-only, and it compares the Claude and Codex entries side by side, reporting each as `same`, `different`, `missing`, or `unset`.
+Run `callback config status` to confirm your settings. It's read-only and shows the contents of `~/.config/callback/env.json`, the file callback itself owns for tracing and other overrides — no MCP host config file needed.
 
 </details>
 
@@ -192,13 +191,13 @@ callback config langsmith --api-key lsv2-... --project Callback   # noninteracti
 callback config status            # inspect; secrets redacted by default
 callback config env list --show-secrets
 
-callback config env set CALLBACK_TRACE_BACKEND langsmith --target all
-callback config env unset LANGSMITH_API_KEY --target codex
+callback config env set CALLBACK_TRACE_BACKEND langsmith
+callback config env unset LANGSMITH_API_KEY
 
-callback trace-check --target codex --emit-test-trace      # verify it works
+callback trace-check --emit-test-trace      # verify it works
 ```
 
-MCP clients launch `callback serve` as a subprocess, so these variables have to live in the client's MCP config `env` map, not your shell profile. Restart the client after any change.
+These commands write to `~/.config/callback/env.json` (override the location with `XDG_CONFIG_HOME`), a settings file callback owns and reads itself at startup — independent of how you installed it (plugin, standalone CLI, or a hand-edited MCP config). Restart your MCP client after any change so it picks up the new environment.
 
 <details>
 <summary>Tracing details</summary>
@@ -307,8 +306,12 @@ uv run python -m callback.server       # run the server locally
 For a development install that puts the CLI on your `PATH`:
 
 ```bash
-make install && callback setup-mcp
+make install
 ```
+
+Then register `callback` with your MCP client the normal way for that client (e.g.
+add it to `~/.claude.json` or `~/.codex/config.toml`), same as the standalone CLI
+install above.
 
 `make install` embeds a build version derived from git. A clean checkout of `origin/main`
 prints the package version. Commits ahead of it get a suffix like `1.1.0-03-a1b2c3d`, and
