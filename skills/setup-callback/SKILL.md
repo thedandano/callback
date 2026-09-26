@@ -1,6 +1,6 @@
 ---
 name: setup-callback
-description: This skill should be used when the user asks to "set up callback in this project", "start a job hunt here", "initialize callback", "bootstrap my job search", "set up my job search project", "init callback", or "configure callback for this project". Use it to scaffold project paths, onboard a resume, and capture search preferences — in one pass.
+description: This skill should be used when the user asks to "set up callback in this project", "start a job hunt here", "initialize callback", "bootstrap my job search", "set up my job search project", "init callback", or "configure callback for this project". Use it to scaffold project paths, onboard a resume, capture search preferences, and optionally set up California EDD/ledger tracking — in one pass.
 ---
 
 # Setup Callback
@@ -56,6 +56,25 @@ Ask these questions (skip any the user already answered):
 - **Lead recency (days):** how many days back to scan (default: 3).
 
 Then call `set_search_preferences(...)` with all answers. Note: this fully replaces stored prefs, so collect everything before calling.
+
+### 4. Ledger install (optional)
+
+Ask if the user wants unemployment/disability-insurance reporting tracking. This is
+specific to California's **EDD** (Employment Development Department) job-search
+contact-reporting requirement — it does not apply outside California, and most
+users should skip it. Ask plainly: "Are you filing California unemployment or
+disability insurance claims and need to log job-search contacts for EDD?"
+
+If yes:
+1. Tell them to install the `job-search-ledger` tool so the command stays on
+   `PATH`: `uv tool install git+<repo-url>` (do not hardcode a repo path — point
+   the user to the project docs for the actual URL).
+2. Add `ledger_db` and `edd_xlsx` to `.callback/config.json` alongside the keys
+   from step 1, e.g. `"ledger_db": "./data/ledger.sqlite3"` and `"edd_xlsx":
+   "./data/tracker.xlsx"`.
+
+If no, or the user is outside California, skip this step entirely — every other
+callback feature works fully without it.
 
 ## Rules
 
