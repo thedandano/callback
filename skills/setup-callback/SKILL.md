@@ -59,11 +59,14 @@ Then call `set_search_preferences(...)` with all answers. Note: this fully repla
 
 ### 4. Ledger install (optional)
 
-Ask if the user wants unemployment/disability-insurance reporting tracking. This is
-specific to California's **EDD** (Employment Development Department) job-search
-contact-reporting requirement — it does not apply outside California, and most
-users should skip it. Ask plainly: "Are you filing California unemployment or
-disability insurance claims and need to log job-search contacts for EDD?"
+Ask if the user wants unemployment reporting tracking. This is specific to
+California's **EDD** (Employment Development Department) job-search
+contact-reporting requirement for **Unemployment Insurance** claimants — it
+does not apply to Disability Insurance (which covers wage loss while unable to
+work and carries no job-search requirement), and it does not apply outside
+California. Most users should skip it. Ask plainly: "Are you filing a
+California unemployment insurance claim and need to log job-search contacts
+for EDD?"
 
 If yes:
 1. Tell them to install the `job-search-ledger` tool so the command stays on
