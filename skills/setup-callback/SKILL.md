@@ -19,8 +19,6 @@ Write `.callback/config.json` in the project root. Prompt for each path or accep
 {
   "applications_dir": "./applications",
   "record_csv": "./data/record.csv",
-  "ledger_db": "./data/ledger.sqlite3",
-  "edd_xlsx": "./data/tracker.xlsx",
   "archive_dir": "./archive"
 }
 ```
@@ -58,16 +56,6 @@ Ask these questions (skip any the user already answered):
 - **Lead recency (days):** how many days back to scan (default: 3).
 
 Then call `set_search_preferences(...)` with all answers. Note: this fully replaces stored prefs, so collect everything before calling.
-
-### 4. Ledger install (optional)
-
-Ask if the user wants EDD/unemployment tracking. If yes, tell them to install the `job-search-ledger` tool — e.g.:
-
-```
-uvx --from git+<repo-url> job-search-ledger
-```
-
-or add it to PATH if already installed. Do not hardcode a repo path; point the user to the project docs. Skip this step if not wanted.
 
 ## Rules
 
