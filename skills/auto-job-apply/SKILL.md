@@ -28,7 +28,7 @@ How to apply each field (the values come from the profile; the interpretation ru
 
 Read `.callback/config.json` (see `setup-callback`) for `applications_dir`, `record_csv`, and `archive_dir`. If the file is missing, or if any of these 3 keys are absent, stop and tell the user to run `setup-callback` — never fall back to a hard-coded path. `ledger_db` and `edd_xlsx` are independent optional keys in the same file — `ledger_db` enables ledger dedupe/recording, `edd_xlsx` separately enables the EDD/unemployment Excel export. Check each one on its own before using it; never assume one is set because the other is. There is exactly ONE of each live record file; update it in place. Never create timestamped, run-suffixed, or near-duplicate variants of them.
 
-- Automation memory: if `XDG_STATE_HOME` is set, `$XDG_STATE_HOME/callback/auto-job-apply/memory.md`; otherwise resolve the user's actual home directory first and use `<resolved home>/.local/state/callback/auto-job-apply/memory.md` — a bare `~` does not expand inside a quoted path or filesystem API call, so never write it literally. Create this file and its parent directories if they don't exist yet; a missing diary is not an error.
+- Automation memory: `.callback/auto-job-apply/memory.md`. Create this file and its parent directories if they don't exist yet; a missing diary is not an error.
 - Canonical record CSV (one only): `record_csv`
 - Canonical ledger DB (one only), only if `.callback/config.json` sets `ledger_db`: `ledger_db`
 - Canonical Excel tracker (one only), only if `.callback/config.json` sets `edd_xlsx`: `edd_xlsx`

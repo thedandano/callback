@@ -76,8 +76,9 @@ If yes:
    from step 1, e.g. `"ledger_db": "./data/ledger.sqlite3"` and `"edd_xlsx":
    "./data/tracker.xlsx"`.
 
-If no, or the user is outside California, skip ledger setup entirely — every other
-callback feature works fully without it.
+If no, the user is outside California, or the command is not installed, remove
+any existing `ledger_db` and `edd_xlsx` keys from `.callback/config.json`. Every
+other callback feature works fully without them.
 
 ## Rules
 
