@@ -234,6 +234,54 @@ def test_move_legacy_file_leaves_legacy_when_both_exist(tmp_path: Path, caplog):
     assert actual == expected
 
 
+def test_move_legacy_file_retry_discards_incomplete_staging_file(tmp_path: Path):
+    """A process killed mid-copy leaves `.migrating` truncated while `legacy` is
+    still intact (shutil.move only unlinks its source after the copy succeeds).
+    A retry must redo the copy from the still-good source, not blindly publish
+    the stale partial staging file as the final target.
+    """
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy-db-full-content")
+    target = tmp_path / "state" / "apply-sessions.db"
+    target.parent.mkdir(parents=True)
+    Path(f"{target}.migrating").write_text("truncated")
+
+    paths.move_legacy_file(legacy, target)
+
+    actual = {
+        "target_content": target.read_text(),
+        "staging_exists": Path(f"{target}.migrating").exists(),
+        "legacy_exists": legacy.exists(),
+    }
+    expected = {
+        "target_content": "legacy-db-full-content",
+        "staging_exists": False,
+        "legacy_exists": False,
+    }
+    assert actual == expected
+
+
+def test_move_legacy_file_retry_finishes_a_completed_copy(tmp_path: Path):
+    """If the copy into staging fully succeeded (source already unlinked) and only
+    the final rename was interrupted, a retry finishes that rename rather than
+    redoing the copy.
+    """
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    target = tmp_path / "state" / "apply-sessions.db"
+    target.parent.mkdir(parents=True)
+    Path(f"{target}.migrating").write_text("legacy-db-full-content")
+
+    paths.move_legacy_file(legacy, target)
+
+    actual = {
+        "target_content": target.read_text(),
+        "staging_exists": Path(f"{target}.migrating").exists(),
+    }
+    expected = {"target_content": "legacy-db-full-content", "staging_exists": False}
+    assert actual == expected
+
+
 def test_write_text_atomic_creates_parents_and_leaves_no_temp_file(tmp_path: Path):
     target = tmp_path / "nested" / "file.txt"
     paths.write_text_atomic(target, "hello\n")
