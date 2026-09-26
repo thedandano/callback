@@ -38,7 +38,7 @@ Also read the compiled profile (via `get_wiki_pages` or the profile summary) for
 6. Stage scores >= 70 as `Needs review - not applied`.
 7. Keep lower scores as `Scored - below threshold` unless the user explicitly wants a stretch.
 8. Submit an application only after explicit current-turn approval.
-9. If `.callback/config.json` sets `ledger_db`, for real applications, confirmations, or recruiter resume submissions, update the job search ledger via the `job-search-ledger` command and export the unemployment-compatible workbook to the path at `edd_xlsx`. If `ledger_db` isn't set, skip this step — do not mention the ledger.
+9. If `.callback/config.json` sets `ledger_db`, for real applications, confirmations, or recruiter resume submissions, update the job search ledger via the `job-search-ledger` command. If `ledger_db` isn't set, skip this — do not mention the ledger. Separately, if `.callback/config.json` also sets `edd_xlsx`, export the unemployment-compatible workbook to that path — do not assume `edd_xlsx` is set just because `ledger_db` is.
 
 ## Approval Boundary
 
