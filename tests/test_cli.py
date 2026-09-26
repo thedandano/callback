@@ -557,12 +557,14 @@ def test_config_status_hedges_on_legacy_entry_instead_of_assuming_duplicate(
         "mentions_uninstall": "callback uninstall" in result.stderr,
         "hedges_for_sole_install": "only callback registration" in result.stderr,
         "asserts_duplicate_as_fact": "legacy duplicate server" in result.stderr,
+        "asserts_env_map": "env map set directly" in result.stderr,
     }
     expected = {
         "exit_code": 0,
         "mentions_uninstall": True,
         "hedges_for_sole_install": True,
         "asserts_duplicate_as_fact": False,
+        "asserts_env_map": False,
     }
     assert actual == expected
 
@@ -801,6 +803,43 @@ def test_uninstall_purge_deletes_data_when_legacy_config_removal_fails(tmp_path)
     assert not data_dir.exists()
     assert not state_dir.exists()
     assert not config_dir.exists()
+
+
+def test_uninstall_purge_deletes_data_when_codex_config_cannot_be_read(
+    tmp_path, _isolated_host_configs
+):
+    _claude_path, codex_path = _isolated_host_configs
+    data_dir = tmp_path / "share"
+    state_dir = tmp_path / "state"
+    config_dir = tmp_path / "config"
+    data_dir.mkdir()
+    state_dir.mkdir()
+    config_dir.mkdir()
+    codex_path.mkdir(parents=True)
+
+    with (
+        patch("callback.paths.data_dir", lambda: data_dir),
+        patch("callback.paths.state_dir", lambda: state_dir),
+        patch("callback.paths.config_dir", lambda: config_dir),
+    ):
+        result = runner.invoke(app, ["uninstall", "--purge"])
+
+    actual = {
+        "exit_code": result.exit_code,
+        "reports_config_error": "could not be read" in result.stderr,
+        "data_deleted": not data_dir.exists(),
+        "state_deleted": not state_dir.exists(),
+        "config_deleted": not config_dir.exists(),
+    }
+    expected = {
+        "exit_code": 1,
+        "reports_config_error": True,
+        "data_deleted": True,
+        "state_deleted": True,
+        "config_deleted": True,
+    }
+
+    assert actual == expected
 
 
 def test_uninstall_purge_skips_absent_dirs(tmp_path):

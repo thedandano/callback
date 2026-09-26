@@ -152,7 +152,7 @@ def _warn_if_comments(path: Path) -> None:
     # ponytail: full-line comments only; an inline `# …` after a value is not detected.
     if not path.exists():
         return
-    text = path.read_text(encoding="utf-8")
+    text = _read_config_text(path)
     if any(line.lstrip().startswith("#") for line in text.splitlines()):
         typer.echo(
             f"warning: {path} contains comments; callback rewrites this file "
@@ -252,23 +252,29 @@ def _redact_text(text: str, env: Mapping[str, str]) -> str:
     return redacted
 
 
-def _claude_has_legacy_server(path: Path) -> bool:
+def _claude_legacy_server_env_map(path: Path) -> bool | None:
     config = _read_json_config(path)
     servers = config.get("mcpServers", {})
     if not isinstance(servers, dict):
         raise ConfigError(f'{path} key "mcpServers" must be an object')
-    return SERVER_NAME in servers
+    entry = servers.get(SERVER_NAME)
+    if entry is None:
+        return None
+    return isinstance(entry, Mapping) and isinstance(entry.get("env"), Mapping)
 
 
-def _codex_has_legacy_server(path: Path) -> bool:
+def _codex_legacy_server_env_map(path: Path) -> bool | None:
     config = _read_toml_config(path)
     servers = config.get("mcp_servers", {})
     if not isinstance(servers, dict):
         raise ConfigError(f'{path} key "mcp_servers" must be a table')
-    return SERVER_NAME in servers
+    entry = servers.get(SERVER_NAME)
+    if entry is None:
+        return None
+    return isinstance(entry, Mapping) and isinstance(entry.get("env"), Mapping)
 
 
-def _legacy_entry_note(path: Path) -> str:
+def _legacy_entry_note(path: Path, *, has_env_map: bool) -> str:
     """Note text for a `callback` MCP server entry found in a host config.
 
     Presence alone can't distinguish a leftover duplicate (from the old setup-mcp
@@ -276,13 +282,18 @@ def _legacy_entry_note(path: Path) -> str:
     configured manual registration — so this hedges instead of telling every
     reader to delete their one working entry.
     """
-    return (
-        f"note: {path} has a callback MCP server entry with an env map set "
-        "directly in it. If you also installed callback as a plugin, this may be "
-        "a leftover duplicate from the old setup-mcp flow — remove it with "
-        "`callback uninstall` if so. If this is your only callback registration "
-        f"(e.g. a standalone or uvx install), it's fine to leave the entry, but "
-        f"remove its env map: those inherited process values take priority over "
+    note = (
+        f"note: {path} has a callback MCP server entry. If you also installed "
+        "callback as a plugin, this may be a leftover duplicate from the old "
+        "setup-mcp flow — remove it with `callback uninstall` if so. If this is "
+        "your only callback registration (e.g. a standalone or uvx install), "
+        "it's fine to leave the entry."
+    )
+    if not has_env_map:
+        return note
+    return note + (
+        " It has an env map set directly in it; remove that map because its "
+        "inherited process values take priority over "
         f"{paths.env_file()}, so changes made with `callback config` (e.g. a "
         "rotated API key) will silently have no effect until the old map is gone."
     )
@@ -297,13 +308,13 @@ def _legacy_warning_lines() -> list[str]:
     settings file — it's downgraded to its own warning instead.
     """
     warnings = []
-    for path, has_legacy_server in (
-        (DEFAULT_CLAUDE_CONFIG, _claude_has_legacy_server),
-        (DEFAULT_CODEX_CONFIG, _codex_has_legacy_server),
+    for path, legacy_server_env_map in (
+        (DEFAULT_CLAUDE_CONFIG, _claude_legacy_server_env_map),
+        (DEFAULT_CODEX_CONFIG, _codex_legacy_server_env_map),
     ):
         try:
-            if has_legacy_server(path):
-                warnings.append(_legacy_entry_note(path))
+            if (has_env_map := legacy_server_env_map(path)) is not None:
+                warnings.append(_legacy_entry_note(path, has_env_map=has_env_map))
         except ConfigError as exc:
             warnings.append(f"warning: could not check {path} for a legacy entry: {exc}")
     return warnings
