@@ -4,9 +4,11 @@ Isolation: XDG_DATA_HOME + callback.paths.wiki_dir patched per test so nodes
 write to tmp_path rather than ~/.local/share/callback.
 """
 
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
+from callback import paths
 from callback.profile_graph import _route_check_profile, build_profile_graph, make_config
 from callback.profilecompiler import save_compiled_profile
 from callback.repository.resumes import list_resumes, save_resume
@@ -290,3 +292,26 @@ class TestCreateStoryInterrupt:
             "orphaned_skills": [],
             "next": (),
         }
+
+
+# ---------------------------------------------------------------------------
+# Legacy DB migration
+# ---------------------------------------------------------------------------
+
+
+class TestLegacyDbMigration:
+    """build_profile_graph migrates an old data_dir()-rooted DB into state_dir()."""
+
+    def test_build_profile_graph_migrates_legacy_db_from_data_dir(self, tmp_path):
+        legacy_path = paths.data_dir() / "profile-sessions.db"
+        legacy_path.parent.mkdir(parents=True, exist_ok=True)
+        sqlite3.connect(str(legacy_path)).close()
+
+        build_profile_graph()
+
+        actual = {
+            "new_db_exists": paths.profile_db_path().exists(),
+            "legacy_db_exists": legacy_path.exists(),
+        }
+        expected = {"new_db_exists": True, "legacy_db_exists": False}
+        assert actual == expected

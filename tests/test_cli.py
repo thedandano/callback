@@ -107,6 +107,7 @@ def test_serve_without_flags_uses_home_state_log(monkeypatch):
     startup_events: list[tuple[Path, str]] = []
 
     monkeypatch.delenv("CALLBACK_LOG_PATH", raising=False)
+    monkeypatch.delenv("XDG_STATE_HOME", raising=False)
 
     def fake_write_startup_event(log_path: Path, line: str) -> None:
         startup_events.append((log_path, line))
@@ -118,18 +119,17 @@ def test_serve_without_flags_uses_home_state_log(monkeypatch):
     ):
         result = runner.invoke(app, ["serve"])
 
+    expected_log_path = paths.log_path()
     actual = {
         "exit_code": result.exit_code,
         "startup_log_path": startup_events[0][0],
     }
     expected = {
         "exit_code": 0,
-        "startup_log_path": Path("~/.local/state/callback/server.log").expanduser(),
+        "startup_log_path": expected_log_path,
     }
     assert actual == expected
-    configure_logging.assert_called_once_with(
-        str(Path("~/.local/state/callback/server.log").expanduser())
-    )
+    configure_logging.assert_called_once_with(str(expected_log_path))
     run.assert_called_once_with()
 
 
@@ -243,8 +243,10 @@ def test_logs_prints_trailing_lines(tmp_path):
 
 
 def test_logs_defaults_to_home_state_log_even_when_project_log_exists(tmp_path, monkeypatch):
-    state_log = tmp_path / "state" / "server.log"
-    state_log.parent.mkdir()
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg-state"))
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    state_log = paths.log_path()
+    state_log.parent.mkdir(parents=True)
     state_log.write_text("state\nstate-tail\n", encoding="utf-8")
 
     project_log = tmp_path / ".callback" / "server.log"
@@ -252,7 +254,6 @@ def test_logs_defaults_to_home_state_log_even_when_project_log_exists(tmp_path, 
     project_log.write_text("project\nlog\n", encoding="utf-8")
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("callback.cli.DEFAULT_LOG_PATH", state_log)
     monkeypatch.delenv("CALLBACK_LOG_PATH", raising=False)
 
     result = runner.invoke(app, ["logs", "--lines", "1"])

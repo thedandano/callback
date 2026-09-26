@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,7 @@ from callback import paths
 
 def test_data_dir_defaults_under_home(monkeypatch, tmp_path: Path):
     monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    monkeypatch.delenv("XDG_STATE_HOME", raising=False)
     monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
     actual = {
         "data": paths.data_dir(),
@@ -19,15 +21,16 @@ def test_data_dir_defaults_under_home(monkeypatch, tmp_path: Path):
         "profile_db": paths.profile_db_path(),
         "state": paths.state_dir(),
     }
-    root = tmp_path / ".local" / "share" / "callback"
+    data_root = tmp_path / ".local" / "share" / "callback"
+    state_root = tmp_path / ".local" / "state" / "callback"
     expected = {
-        "data": root,
-        "inputs": root / "inputs",
-        "wiki": root / "profile-wiki",
-        "apps": root / "applications",
-        "apply_db": root / "apply-sessions.db",
-        "profile_db": root / "profile-sessions.db",
-        "state": tmp_path / ".local" / "state" / "callback",
+        "data": data_root,
+        "inputs": data_root / "inputs",
+        "wiki": data_root / "profile-wiki",
+        "apps": data_root / "applications",
+        "apply_db": state_root / "apply-sessions.db",
+        "profile_db": state_root / "profile-sessions.db",
+        "state": state_root,
     }
     assert actual == expected
 
@@ -35,13 +38,12 @@ def test_data_dir_defaults_under_home(monkeypatch, tmp_path: Path):
 def test_xdg_data_home_moves_every_data_path(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
     monkeypatch.delenv("CALLBACK_APPS_DIR", raising=False)
+    monkeypatch.delenv("XDG_STATE_HOME", raising=False)
     actual = {
         "data": paths.data_dir(),
         "inputs": paths.inputs_dir(),
         "wiki": paths.wiki_dir(),
         "apps": paths.apps_dir(),
-        "apply_db": paths.apply_db_path(),
-        "profile_db": paths.profile_db_path(),
     }
     root = tmp_path / "xdg" / "callback"
     expected = {
@@ -49,17 +51,125 @@ def test_xdg_data_home_moves_every_data_path(monkeypatch, tmp_path: Path):
         "inputs": root / "inputs",
         "wiki": root / "profile-wiki",
         "apps": root / "applications",
-        "apply_db": root / "apply-sessions.db",
-        "profile_db": root / "profile-sessions.db",
     }
     assert actual == expected
+    # apply_db_path()/profile_db_path() now live under state_dir(), which is governed
+    # by XDG_STATE_HOME (not XDG_DATA_HOME) — see the XDG_STATE_HOME tests below,
+    # so changing XDG_DATA_HOME alone must not move them.
 
 
 def test_callback_apps_dir_overrides_only_the_archive(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "apps"))
+    monkeypatch.delenv("XDG_STATE_HOME", raising=False)
     actual = {"apps": paths.apps_dir(), "wiki": paths.wiki_dir()}
     expected = {"apps": tmp_path / "apps", "wiki": tmp_path / "xdg" / "callback" / "profile-wiki"}
+    assert actual == expected
+
+
+def test_state_dir_honors_xdg_state_home(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    assert paths.state_dir() == tmp_path / "callback"
+
+
+def test_state_dir_defaults_under_home_local_state(monkeypatch, tmp_path: Path):
+    monkeypatch.delenv("XDG_STATE_HOME", raising=False)
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+    assert paths.state_dir() == tmp_path / ".local" / "state" / "callback"
+
+
+def test_apply_db_path_is_under_state_dir(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    assert paths.apply_db_path().parent == paths.state_dir()
+
+
+def test_profile_db_path_is_under_state_dir(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    assert paths.profile_db_path().parent == paths.state_dir()
+
+
+def test_log_path_is_under_state_dir(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    assert paths.log_path() == paths.state_dir() / "server.log"
+
+
+def test_move_legacy_file_moves_existing_file(tmp_path: Path):
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy-db")
+    target = tmp_path / "state" / "apply-sessions.db"
+
+    paths.move_legacy_file(legacy, target)
+
+    actual = {
+        "target_exists": target.exists(),
+        "legacy_exists": legacy.exists(),
+        "content": target.read_text(),
+    }
+    expected = {"target_exists": True, "legacy_exists": False, "content": "legacy-db"}
+    assert actual == expected
+
+
+def test_move_legacy_file_moves_wal_shm_siblings(tmp_path: Path):
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy-db")
+    legacy_wal = Path(f"{legacy}-wal")
+    legacy_shm = Path(f"{legacy}-shm")
+    legacy_wal.write_text("wal")
+    legacy_shm.write_text("shm")
+    target = tmp_path / "state" / "apply-sessions.db"
+
+    paths.move_legacy_file(legacy, target)
+
+    actual = {
+        "target_db_exists": target.exists(),
+        "target_wal_exists": Path(f"{target}-wal").exists(),
+        "target_shm_exists": Path(f"{target}-shm").exists(),
+        "legacy_wal_exists": legacy_wal.exists(),
+        "legacy_shm_exists": legacy_shm.exists(),
+    }
+    expected = {
+        "target_db_exists": True,
+        "target_wal_exists": True,
+        "target_shm_exists": True,
+        "legacy_wal_exists": False,
+        "legacy_shm_exists": False,
+    }
+    assert actual == expected
+
+
+def test_move_legacy_file_noop_when_legacy_missing(tmp_path: Path):
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    target = tmp_path / "state" / "apply-sessions.db"
+
+    paths.move_legacy_file(legacy, target)
+
+    assert target.exists() is False
+
+
+def test_move_legacy_file_leaves_legacy_when_both_exist(tmp_path: Path, caplog):
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy-content")
+    target = tmp_path / "state" / "apply-sessions.db"
+    target.parent.mkdir(parents=True)
+    target.write_text("target-content")
+
+    with caplog.at_level(logging.WARNING):
+        paths.move_legacy_file(legacy, target)
+
+    actual = {
+        "target_content": target.read_text(),
+        "legacy_exists": legacy.exists(),
+        "warning_logged": any(record.levelno == logging.WARNING for record in caplog.records),
+    }
+    expected = {"target_content": "target-content", "legacy_exists": True, "warning_logged": True}
     assert actual == expected
 
 

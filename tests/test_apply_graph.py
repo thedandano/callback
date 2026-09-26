@@ -2,9 +2,11 @@
 
 import json
 import logging
+import sqlite3
 
 import pytest
 
+from callback import paths
 from callback.apply_graph import build_apply_graph, make_config
 from callback.state import ApplyState
 
@@ -226,3 +228,21 @@ class TestKeywordHandoffInterrupts:
 
         with pytest.raises(ValueError, match="keywords missing"):
             apply_graph.invoke(None, config)
+
+
+class TestLegacyDbMigration:
+    """build_apply_graph migrates an old data_dir()-rooted DB into state_dir()."""
+
+    def test_build_apply_graph_migrates_legacy_db_from_data_dir(self, tmp_path):
+        legacy_path = paths.data_dir() / "apply-sessions.db"
+        legacy_path.parent.mkdir(parents=True, exist_ok=True)
+        sqlite3.connect(str(legacy_path)).close()
+
+        build_apply_graph()
+
+        actual = {
+            "new_db_exists": paths.apply_db_path().exists(),
+            "legacy_db_exists": legacy_path.exists(),
+        }
+        expected = {"new_db_exists": True, "legacy_db_exists": False}
+        assert actual == expected
