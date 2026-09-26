@@ -80,6 +80,27 @@ def test_state_dir_defaults_under_home_local_state(monkeypatch, tmp_path: Path):
     assert paths.state_dir() == tmp_path / ".local" / "state" / "callback"
 
 
+def test_state_dir_ignores_a_relative_xdg_state_home(monkeypatch, tmp_path: Path):
+    """The XDG spec requires these paths to be absolute and treats a relative
+    value as invalid — different processes with different cwds would
+    otherwise silently land on different session stores."""
+    monkeypatch.setenv("XDG_STATE_HOME", "relative/path")
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+    assert paths.state_dir() == tmp_path / ".local" / "state" / "callback"
+
+
+def test_data_dir_ignores_a_relative_xdg_data_home(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_DATA_HOME", "relative/path")
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+    assert paths.data_dir() == tmp_path / ".local" / "share" / "callback"
+
+
+def test_config_dir_ignores_a_relative_xdg_config_home(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", "relative/path")
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+    assert paths.config_dir() == tmp_path / ".config" / "callback"
+
+
 def test_apply_db_path_is_under_state_dir(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
     monkeypatch.delenv("XDG_DATA_HOME", raising=False)

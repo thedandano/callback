@@ -20,16 +20,29 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+def _xdg_root(env_var: str, default: Path) -> Path:
+    """Resolve an XDG base-directory override, or `default` if unset or invalid.
+
+    The XDG Base Directory spec requires these paths to be absolute and says
+    a relative value must be treated as invalid (ignored, not resolved
+    relative to cwd) — otherwise different processes with different working
+    directories would silently land on different session stores.
+    """
+    if not (value := os.environ.get(env_var)):
+        return default
+    path = Path(value)
+    if not path.is_absolute():
+        logger.warning("ignoring relative %s=%r; must be absolute per the XDG spec", env_var, value)
+        return default
+    return path
+
+
 def data_dir() -> Path:
-    if xdg_data_home := os.environ.get("XDG_DATA_HOME"):
-        return Path(xdg_data_home) / "callback"
-    return Path.home() / ".local" / "share" / "callback"
+    return _xdg_root("XDG_DATA_HOME", Path.home() / ".local" / "share") / "callback"
 
 
 def state_dir() -> Path:
-    if xdg_state_home := os.environ.get("XDG_STATE_HOME"):
-        return Path(xdg_state_home) / "callback"
-    return Path.home() / ".local" / "state" / "callback"
+    return _xdg_root("XDG_STATE_HOME", Path.home() / ".local" / "state") / "callback"
 
 
 def inputs_dir() -> Path:
@@ -86,6 +99,21 @@ def _copy_and_publish_staged(src: Path, dst: Path, staging: Path) -> None:
     stages under a temp name first. The final rename is same-filesystem (both
     under dst.parent) and atomic, so `dst` itself never holds a truncated
     file, only ever the complete one or none at all.
+
+    ponytail: this is a raw file copy, not a SQLite-aware one. It doesn't
+    quiesce a source still open and being written to by another live
+    process, and doesn't specially recover a hot rollback journal before
+    copying (a stray -journal isn't moved at all). For this one-time
+    legacy-path migration on a single-user local tool, that only matters if
+    an old callback process is still running against the legacy path at the
+    exact moment a new one migrates it out from under it — a narrow window
+    during a version upgrade, not routine operation; the WAL-before-main
+    ordering above still keeps the migrated file internally consistent (just
+    possibly missing that old process's very latest, un-checkpointed
+    writes). If this ever needs to be safe against that too, switch the main
+    "" suffix to `sqlite3.connect(str(src)).execute("VACUUM INTO ?",
+    (str(staging),))`, which quiesces and recovers through SQLite's own
+    engine instead of the filesystem.
     """
     try:
         shutil.move(str(src), str(staging))
@@ -223,9 +251,7 @@ def write_json_atomic(path: Path, data: object) -> None:
 
 
 def config_dir() -> Path:
-    if xdg_config_home := os.environ.get("XDG_CONFIG_HOME"):
-        return Path(xdg_config_home) / "callback"
-    return Path.home() / ".config" / "callback"
+    return _xdg_root("XDG_CONFIG_HOME", Path.home() / ".config") / "callback"
 
 
 def env_file() -> Path:
