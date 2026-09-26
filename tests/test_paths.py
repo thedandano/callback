@@ -320,6 +320,46 @@ def test_move_legacy_file_preserves_staging_when_publish_rename_fails(
     assert actual == expected
 
 
+def test_move_legacy_file_skips_when_another_process_holds_the_lock(tmp_path: Path):
+    """If a concurrent process (e.g. a second MCP host's own server) is already
+    migrating this target, this call must not touch the shared staging path at
+    all — racing it could delete the other process's in-progress or just-
+    completed copy.
+    """
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy-db-full-content")
+    target = tmp_path / "state" / "apply-sessions.db"
+    target.parent.mkdir(parents=True)
+    Path(f"{target}.migrating.lock").touch()
+
+    paths.move_legacy_file(legacy, target)
+
+    actual = {
+        "legacy_exists": legacy.exists(),
+        "target_exists": target.exists(),
+        "lock_exists": Path(f"{target}.migrating.lock").exists(),
+    }
+    expected = {"legacy_exists": True, "target_exists": False, "lock_exists": True}
+    assert actual == expected
+
+
+def test_move_legacy_file_releases_the_lock_after_a_successful_migration(tmp_path: Path):
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy-db-full-content")
+    target = tmp_path / "state" / "apply-sessions.db"
+
+    paths.move_legacy_file(legacy, target)
+
+    actual = {
+        "target_content": target.read_text(),
+        "lock_exists": Path(f"{target}.migrating.lock").exists(),
+    }
+    expected = {"target_content": "legacy-db-full-content", "lock_exists": False}
+    assert actual == expected
+
+
 def test_write_text_atomic_creates_parents_and_leaves_no_temp_file(tmp_path: Path):
     target = tmp_path / "nested" / "file.txt"
     paths.write_text_atomic(target, "hello\n")

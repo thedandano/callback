@@ -12,6 +12,8 @@ import logging
 import os
 import shutil
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -104,6 +106,33 @@ def _copy_and_publish_staged(src: Path, dst: Path, staging: Path) -> None:
         raise OSError(f"failed to publish migrated file {dst}: {exc}") from exc
 
 
+@contextmanager
+def _migration_lock(target: Path) -> Iterator[bool]:
+    """Claim exclusive ownership of migrating into `target`.
+
+    Yields True if this call claimed the lock (and releases it on exit) or
+    False if another process already holds it — the caller should then skip
+    migrating entirely and let that other process finish, rather than racing
+    it for the shared `.migrating` staging path.
+
+    ponytail: no staleness check, so a process that crashes while holding the
+    lock blocks migration until the lock file is removed by hand. Acceptable
+    for a one-time legacy-DB migration on a single-user local tool; add a
+    PID/liveness check if this ever needs to self-heal.
+    """
+    lock_path = Path(f"{target}.migrating.lock")
+    try:
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        yield False
+        return
+    os.close(fd)
+    try:
+        yield True
+    finally:
+        lock_path.unlink(missing_ok=True)
+
+
 def move_legacy_file(legacy: Path, target: Path) -> None:
     """Move a legacy file, plus its SQLite -wal/-shm siblings, to a new location.
 
@@ -122,6 +151,19 @@ def move_legacy_file(legacy: Path, target: Path) -> None:
         logger.warning("legacy file %s left in place; %s already exists", legacy, target)
         return
     target.parent.mkdir(parents=True, exist_ok=True)
+    with _migration_lock(target) as acquired:
+        if not acquired:
+            # Another process (e.g. a second MCP host's own `callback serve`
+            # pointed at the same state dir) is already migrating this same
+            # target — let it finish rather than racing it for the shared
+            # `.migrating` staging path.
+            logger.info("migration for %s already in progress elsewhere; skipping", target)
+            return
+        _migrate_all_suffixes(legacy, target)
+    logger.info("moved legacy file %s to %s", legacy, target)
+
+
+def _migrate_all_suffixes(legacy: Path, target: Path) -> None:
     # -wal/-shm move first, the main file last: if this is interrupted partway
     # through, the original main file is still at `legacy`, never orphaned at
     # `target` without the WAL that may hold uncommitted data.
@@ -134,7 +176,6 @@ def move_legacy_file(legacy: Path, target: Path) -> None:
         if not src.exists():
             continue
         _copy_and_publish_staged(src, dst, staging)
-    logger.info("moved legacy file %s to %s", legacy, target)
 
 
 def write_text_atomic(path: Path, content: str) -> None:
