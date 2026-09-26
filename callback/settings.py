@@ -23,7 +23,15 @@ def read_env_file() -> dict[str, str]:
         return {}
 
     try:
-        loaded = json.loads(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        # e.g. path is a directory, or permissions deny access. Converted into
+        # the same ValueError every caller already knows how to handle
+        # gracefully, rather than a startup-crashing exception class.
+        raise ValueError(f"{path} could not be read: {exc}") from exc
+
+    try:
+        loaded = json.loads(text)
     except json.JSONDecodeError as exc:
         raise ValueError(f"{path} is not valid JSON: {exc.msg}") from exc
 
