@@ -20,16 +20,16 @@ def test_hermes_plugin_manifest_matches_expected():
     }
 
 
-def test_hermes_mcp_manifest_matches_dot_mcp_json():
+def test_hermes_mcp_manifest_runs_the_installed_plugin_checkout():
     hermes_mcp = json.loads((REPO_ROOT / "mcp.json").read_text())
-    dot_mcp = json.loads((REPO_ROOT / ".mcp.json").read_text())
+
     assert hermes_mcp == {
         "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
         "mcpServers": {
             "callback": {
                 "type": "stdio",
-                "command": dot_mcp["mcpServers"]["callback"]["command"],
-                "args": dot_mcp["mcpServers"]["callback"]["args"],
+                "command": "uv",
+                "args": ["run", "--directory", "${PLUGIN_ROOT}", "callback", "serve"],
             }
         },
     }

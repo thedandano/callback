@@ -3,10 +3,11 @@
   "mcpServers": {
     "callback": {
       "type": "stdio",
-      "command": "uvx",
+      "command": "uv",
       "args": [
-        "--from",
-        "git+https://github.com/thedandano/callback",
+        "run",
+        "--directory",
+        "${PLUGIN_ROOT}",
         "callback",
         "serve"
       ]
