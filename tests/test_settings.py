@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 
 import pytest
 
@@ -75,3 +76,18 @@ def test_apply_env_file_logs_key_names_but_never_values(caplog):
     }
     expected = {"has_key_name": True, "leaks_value": False}
     assert actual == expected
+
+
+def test_log_level_from_env_file_applies_before_server_module_reads_it(monkeypatch):
+    """callback.server reads LOG_LEVEL into a module-level constant at import time.
+
+    Settings must be loaded before that import happens (not deep inside run()), or a
+    LOG_LEVEL set only in env.json is silently ignored for every server invocation.
+    """
+    monkeypatch.delenv("LOG_LEVEL", raising=False)
+    paths.write_json_atomic(paths.env_file(), {"LOG_LEVEL": "DEBUG"})
+
+    sys.modules.pop("callback.server", None)
+    import callback.server
+
+    assert callback.server.LOG_LEVEL == "DEBUG"

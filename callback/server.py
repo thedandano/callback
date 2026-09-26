@@ -61,6 +61,11 @@ from callback.section_map import SectionMap, SkillsSection, apply_edit
 from callback.state import ApplyState, CreatedStory, ProfileState
 from callback.wiki import WikiPageError, WikiPageIdError, WikiStore, split_frontmatter
 
+# Must run before any module-level os.environ read below (e.g. LOG_LEVEL): callback
+# owns its own settings file (~/.config/callback/env.json) independent of any MCP
+# host config, and env vars set only there would otherwise be invisible here.
+settings.apply_env_file()
+
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 _LOG_FORMAT = "%(message)s"  # messages are already JSON strings
 _LOG_PATH: Path | None = None
@@ -1863,7 +1868,6 @@ def check_update() -> str:
 
 def run() -> None:
     """Run the FastMCP stdio server."""
-    settings.apply_env_file()
     if _LOG_PATH is None:
         configure_logging(os.environ.get("CALLBACK_LOG_PATH") or DEFAULT_LOG_PATH)
     started_at = time.monotonic()

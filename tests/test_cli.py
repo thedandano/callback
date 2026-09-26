@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import ANY, MagicMock, Mock, patch
 
@@ -48,6 +49,26 @@ def test_cli_help_lists_commands():
     for command in commands:
         assert command in result.stdout
     assert "setup-mcp" not in result.stdout
+
+
+def test_settings_load_before_any_command_runs():
+    """env.json must be merged into os.environ before command logic executes.
+
+    Path-resolving code (e.g. the server log path) reads os.environ directly, so a
+    value set only in env.json is invisible unless settings load happens up front —
+    not deep inside individual commands that happen to need it today.
+    """
+    marker = "CALLBACK_TEST_SETTINGS_LOAD_MARKER"
+    os.environ.pop(marker, None)
+    paths.write_json_atomic(paths.env_file(), {marker: "loaded"})
+
+    try:
+        result = runner.invoke(app, ["config", "status"])
+        actual = {"exit_code": result.exit_code, "marker_value": os.environ.get(marker)}
+        expected = {"exit_code": 0, "marker_value": "loaded"}
+        assert actual == expected
+    finally:
+        os.environ.pop(marker, None)
 
 
 def test_version_prints_installed_distribution_version(monkeypatch):
@@ -454,7 +475,12 @@ def test_config_status_missing_settings_file_reports_none_without_writing(_isola
     assert actual == expected
 
 
-def test_config_status_warns_about_legacy_duplicate_server(_isolated_host_configs):
+def test_config_status_hedges_on_legacy_entry_instead_of_assuming_duplicate(
+    _isolated_host_configs,
+):
+    """A presence-only check can't tell a leftover duplicate from someone's only,
+    correctly-configured manual registration — so the message must not confidently
+    tell every reader to delete their one working entry."""
     claude_path, _codex_path = _isolated_host_configs
     claude_path.write_text(
         json.dumps({"mcpServers": {"callback": {"command": "callback", "args": ["serve"]}}}),
@@ -465,10 +491,16 @@ def test_config_status_warns_about_legacy_duplicate_server(_isolated_host_config
 
     actual = {
         "exit_code": result.exit_code,
-        "mentions_legacy": "legacy duplicate server" in result.stderr,
         "mentions_uninstall": "callback uninstall" in result.stderr,
+        "hedges_for_sole_install": "only callback registration" in result.stderr,
+        "asserts_duplicate_as_fact": "legacy duplicate server" in result.stderr,
     }
-    expected = {"exit_code": 0, "mentions_legacy": True, "mentions_uninstall": True}
+    expected = {
+        "exit_code": 0,
+        "mentions_uninstall": True,
+        "hedges_for_sole_install": True,
+        "asserts_duplicate_as_fact": False,
+    }
     assert actual == expected
 
 
