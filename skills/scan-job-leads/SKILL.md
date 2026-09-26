@@ -51,7 +51,7 @@ If no full source is found, record `Needs source - manual lookup` with attempted
 
 ## Paths
 
-Read file paths from `.callback/config.json` (`record_csv`, `ledger_db`). Invoke the ledger via the `job-search-ledger` command — do not hardcode a repo or database path.
+Read `record_csv` from `.callback/config.json`. If `.callback/config.json` sets `ledger_db`, also read it and invoke the ledger via the `job-search-ledger` command — do not hardcode a repo or database path. If `ledger_db` isn't set, skip the ledger — do not mention it.
 
 ## Output
 

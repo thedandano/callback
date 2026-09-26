@@ -25,7 +25,7 @@ This is a one-job workflow. Do not scan Gmail, Google Jobs, FAANG careers, CSV l
    - `get_wiki_pages`: fetch relevant page IDs from `data.wiki_index`, then tailor with that evidence.
    - `submit_tailor`: tailor directly from visible resume evidence.
    - `onboard_user` or `create_story`: stop and explain what profile evidence is missing.
-5. Call `submit_tailor(session_id, edits=[...])`, or use `no_coverage=True` only when no truthful supported edits exist.
+5. Call `submit_tailor(session_id, edits=[...])`, or use `no_coverage=True` only when no truthful supported edits exist. If `.callback/config.json` is present and sets `applications_dir`, pass `output_dir` as the absolute path of `applications_dir/<YYYY-MM-DD>/<company-role-slug>/` so the tailored PDF lands in the project folder instead of callback's hidden data directory.
 6. Return `pdf_path`, `archive_path`, before/after scores, accepted/rejected edits, uncovered skills, and a short mismatch summary.
 
 ## Tailoring Rules
