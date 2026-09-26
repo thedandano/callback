@@ -144,6 +144,41 @@ def test_move_legacy_file_moves_wal_shm_siblings(tmp_path: Path):
     assert actual == expected
 
 
+def test_move_legacy_file_moves_wal_and_shm_before_the_main_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The main .db file must move last.
+
+    If the process is interrupted (or the move is non-atomic across filesystems),
+    an interruption must always leave the ORIGINAL main file still at the legacy
+    path — never a main file at target whose WAL never made the trip, which would
+    silently roll back or lose uncommitted sessions on the next open.
+    """
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy-db")
+    Path(f"{legacy}-wal").write_text("wal")
+    Path(f"{legacy}-shm").write_text("shm")
+    target = tmp_path / "state" / "apply-sessions.db"
+
+    moved_order: list[str] = []
+    real_move = paths.shutil.move
+
+    def _tracking_move(src: str, dst: str) -> str:
+        moved_order.append(Path(src).name)
+        return real_move(src, dst)
+
+    monkeypatch.setattr(paths.shutil, "move", _tracking_move)
+
+    paths.move_legacy_file(legacy, target)
+
+    assert moved_order == [
+        "apply-sessions.db-wal",
+        "apply-sessions.db-shm",
+        "apply-sessions.db",
+    ]
+
+
 def test_move_legacy_file_noop_when_legacy_missing(tmp_path: Path):
     legacy = tmp_path / "legacy" / "apply-sessions.db"
     target = tmp_path / "state" / "apply-sessions.db"

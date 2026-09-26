@@ -67,7 +67,10 @@ def move_legacy_file(legacy: Path, target: Path) -> None:
         logger.warning("legacy file %s left in place; %s already exists", legacy, target)
         return
     target.parent.mkdir(parents=True, exist_ok=True)
-    for suffix in ("", "-wal", "-shm"):
+    # -wal/-shm move first, the main file last: if this is interrupted partway
+    # through, the original main file is still at `legacy`, never orphaned at
+    # `target` without the WAL that may hold uncommitted data.
+    for suffix in ("-wal", "-shm", ""):
         src = Path(f"{legacy}{suffix}")
         if not src.exists():
             continue
