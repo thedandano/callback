@@ -37,17 +37,14 @@ uv run python -m callback.server
 # Or run the packaged CLI
 uv run callback serve
 
-# Register the MCP server with Claude and Codex
-uv run callback setup-mcp
-
-# Configure LangSmith tracing env vars in Claude/Codex MCP configs
+# Configure LangSmith tracing env vars in callback's own settings file (~/.config/callback/env.json)
 uv run callback config langsmith
 uv run callback config status
 uv run callback config env list
 uv run callback config env set CALLBACK_TRACE_BACKEND langsmith
 uv run callback config env unset CALLBACK_TRACE_BACKEND
-uv run callback trace-check --target env
-uv run callback trace-check --target codex --emit-test-trace
+uv run callback trace-check
+uv run callback trace-check --emit-test-trace
 
 # All tests
 uv run pytest
@@ -85,12 +82,16 @@ uv run pytest -m local evals/                          # E1 + E2 checks over the
 - `LANGSMITH_API_KEY`: Required for LangSmith tracing; also gates eval experiment recording. The runner logs a WARNING and skips recording when unset.
 - `LANGSMITH_PROJECT`: LangSmith project name. Defaults to `Callback` when tracing is enabled.
 - `XDG_DATA_HOME`: Moves the whole data root (resumes, wiki, checkpoint DBs, compiled profile, applications archive) from `~/.local/share/callback` to `$XDG_DATA_HOME/callback`.
+- `XDG_CONFIG_HOME`: Moves the settings file from `~/.config/callback/env.json` to `$XDG_CONFIG_HOME/callback/env.json`.
 
-`callback setup-mcp` is noninteractive and only registers the MCP server entry.
-Use `callback config langsmith` or `callback config env ...` to write env vars
-into Claude/Codex MCP config `env` maps. Use `callback config status` to compare
-Claude/Codex env maps without writing files. Restart the MCP host after config
-changes. Tracing is opt-in; trace metadata must stay safe and compact:
+Env var overrides live in `~/.config/callback/env.json`, a settings file
+callback owns and reads itself at process startup, independent of any MCP
+host's config file. Use `callback config langsmith` or `callback config env
+...` to write it, and `callback config status` to inspect it (read-only; also
+warns about a legacy `callback` entry left in `~/.claude.json` or
+`~/.codex/config.toml` by an old `setup-mcp` install — run `callback
+uninstall` to remove it). Restart the MCP host after config changes. Tracing
+is opt-in; trace metadata must stay safe and compact:
 `session_id`, `tool_name`, `resume_label`, `graph_name`, and `transport` only.
 Do not include resume text, JD body text, wiki page content, API keys, or edits
 in trace metadata.

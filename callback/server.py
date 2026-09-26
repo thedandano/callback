@@ -32,7 +32,7 @@ from pydantic import ValidationError
 
 import callback.scorer as scorer
 import callback.version_check as version_check
-from callback import paths
+from callback import paths, settings
 from callback.apply_graph import (
     FINALIZE_NODE,
     KEYWORDS_ACCEPT_NODE,
@@ -1863,6 +1863,7 @@ def check_update() -> str:
 
 def run() -> None:
     """Run the FastMCP stdio server."""
+    settings.apply_env_file()
     if _LOG_PATH is None:
         configure_logging(os.environ.get("CALLBACK_LOG_PATH") or DEFAULT_LOG_PATH)
     started_at = time.monotonic()

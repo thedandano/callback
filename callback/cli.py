@@ -12,14 +12,14 @@ import subprocess
 import sys
 import time
 import tomllib
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Any
 
 import typer
 
-from callback import paths
+from callback import paths, settings
 from callback.observability import (
     DEFAULT_LANGSMITH_ENDPOINT,
     DEFAULT_LANGSMITH_PROJECT,
@@ -34,9 +34,6 @@ app.add_typer(config_app, name="config")
 config_app.add_typer(env_app, name="env")
 
 SERVER_NAME = "callback"
-SERVER_COMMAND = "callback"
-SERVER_ARGS = ["serve"]
-PROJECT_LOG_SERVER_ARGS = ["serve", "--project-logs"]
 DEFAULT_LOG_PATH = Path("~/.local/state/callback/server.log").expanduser()
 DEFAULT_CLAUDE_CONFIG = Path("~/.claude.json").expanduser()
 DEFAULT_CODEX_CONFIG = Path("~/.codex/config.toml").expanduser()
@@ -48,8 +45,6 @@ LANGSMITH_ENV_DEFAULTS = {
     "LANGSMITH_ENDPOINT": DEFAULT_LANGSMITH_ENDPOINT,
     "LANGSMITH_PROJECT": DEFAULT_LANGSMITH_PROJECT,
 }
-CONFIG_TARGETS = ("claude", "codex", "all")
-TRACE_CHECK_TARGETS = ("env", "claude", "codex", "all")
 LANGSMITH_TRACE_KEYS = (
     "CALLBACK_TRACE_BACKEND",
     "LANGSMITH_TRACING",
@@ -67,25 +62,6 @@ class ConfigError(Exception):
 
 class TraceCheckError(Exception):
     """Raised when LangSmith trace verification fails."""
-
-
-def _resolve_command() -> str:
-    """Return absolute path to the callback binary, falling back to the bare name."""
-    return shutil.which(SERVER_COMMAND) or SERVER_COMMAND
-
-
-def mcp_server_config(
-    command: str | None = None,
-    *,
-    project_logs: bool = False,
-    env: Mapping[str, str] | None = None,
-) -> dict[str, object]:
-    """Return the launcher config shared by supported MCP clients."""
-    args = PROJECT_LOG_SERVER_ARGS if project_logs else SERVER_ARGS
-    config: dict[str, object] = {"command": command or SERVER_COMMAND, "args": list(args)}
-    if env is not None:
-        config["env"] = dict(env)
-    return config
 
 
 def _project_log_path() -> Path:
@@ -124,27 +100,6 @@ def _read_json_config(path: Path) -> dict[str, Any]:
     if not isinstance(loaded, dict):
         raise ConfigError(f"{path} must contain a JSON object")
     return loaded
-
-
-def _coerce_env(value: object) -> dict[str, str] | None:
-    """Return a string env map from an existing MCP server entry."""
-    if not isinstance(value, Mapping):
-        return None
-    env = value.get("env")
-    if not isinstance(env, Mapping):
-        return None
-    return {str(key): str(env_value) for key, env_value in env.items()}
-
-
-def configure_claude(path: Path, command: str | None = None) -> None:
-    """Write the Claude MCP server entry, preserving unrelated config keys."""
-    config = _read_json_config(path)
-    servers = config.setdefault("mcpServers", {})
-    if not isinstance(servers, dict):
-        raise ConfigError(f'{path} key "mcpServers" must be an object')
-    env = _coerce_env(servers.get(SERVER_NAME))
-    servers[SERVER_NAME] = mcp_server_config(command, env=env)
-    paths.write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
 
 
 def _read_toml_config(path: Path) -> dict[str, Any]:
@@ -238,36 +193,6 @@ def _dump_toml(config: Mapping[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def configure_codex(path: Path, command: str | None = None) -> None:
-    """Write the Codex MCP server entry, preserving parseable config keys."""
-    _warn_if_comments(path)
-    config = _read_toml_config(path)
-    servers = config.setdefault("mcp_servers", {})
-    if not isinstance(servers, dict):
-        raise ConfigError(f'{path} key "mcp_servers" must be a table')
-    env = _coerce_env(servers.get(SERVER_NAME))
-    servers[SERVER_NAME] = mcp_server_config(command, env=env)
-    paths.write_text_atomic(path, _dump_toml(config))
-
-
-def _target_names(target: str) -> tuple[str, ...]:
-    normalized = target.strip().lower()
-    if normalized == "all":
-        return ("claude", "codex")
-    if normalized in ("claude", "codex"):
-        return (normalized,)
-    raise ConfigError(f"target must be one of: {', '.join(CONFIG_TARGETS)}")
-
-
-def _trace_check_target_names(target: str) -> tuple[str, ...]:
-    normalized = target.strip().lower()
-    if normalized == "all":
-        return ("claude", "codex")
-    if normalized in ("env", "claude", "codex"):
-        return (normalized,)
-    raise TraceCheckError(f"target must be one of: {', '.join(TRACE_CHECK_TARGETS)}")
-
-
 def _validate_env_name(name: str) -> str:
     normalized = name.strip()
     if not ENV_NAME_RE.match(normalized):
@@ -293,187 +218,46 @@ def _redact_text(text: str, env: Mapping[str, str]) -> str:
     return redacted
 
 
-def _ensure_claude_server(config: dict[str, Any], path: Path) -> dict[str, Any]:
-    servers = config.setdefault("mcpServers", {})
-    if not isinstance(servers, dict):
-        raise ConfigError(f'{path} key "mcpServers" must be an object')
-
-    server = servers.get(SERVER_NAME)
-    if server is None:
-        server = mcp_server_config()
-        servers[SERVER_NAME] = server
-    if not isinstance(server, dict):
-        raise ConfigError(f"{path} mcpServers.{SERVER_NAME} must be an object")
-
-    env = server.setdefault("env", {})
-    if not isinstance(env, dict):
-        raise ConfigError(f"{path} mcpServers.{SERVER_NAME}.env must be an object")
-    return env
-
-
-def _ensure_codex_server(config: dict[str, Any], path: Path) -> dict[str, Any]:
-    servers = config.setdefault("mcp_servers", {})
-    if not isinstance(servers, dict):
-        raise ConfigError(f'{path} key "mcp_servers" must be a table')
-
-    server = servers.get(SERVER_NAME)
-    if server is None:
-        server = mcp_server_config()
-        servers[SERVER_NAME] = server
-    if not isinstance(server, dict):
-        raise ConfigError(f"{path} mcp_servers.{SERVER_NAME} must be a table")
-
-    env = server.setdefault("env", {})
-    if not isinstance(env, dict):
-        raise ConfigError(f"{path} mcp_servers.{SERVER_NAME}.env must be a table")
-    return env
-
-
-def _set_claude_env(path: Path, env_updates: Mapping[str, str]) -> None:
-    config = _read_json_config(path)
-    env = _ensure_claude_server(config, path)
-    env.update(env_updates)
-    paths.write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
-
-
-def _set_codex_env(path: Path, env_updates: Mapping[str, str]) -> None:
-    _warn_if_comments(path)
-    config = _read_toml_config(path)
-    env = _ensure_codex_server(config, path)
-    env.update(env_updates)
-    paths.write_text_atomic(path, _dump_toml(config))
-
-
-def _unset_claude_env(path: Path, key: str) -> None:
-    config = _read_json_config(path)
-    env = _ensure_claude_server(config, path)
-    env.pop(key, None)
-    paths.write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
-
-
-def _unset_codex_env(path: Path, key: str) -> None:
-    _warn_if_comments(path)
-    config = _read_toml_config(path)
-    env = _ensure_codex_server(config, path)
-    env.pop(key, None)
-    paths.write_text_atomic(path, _dump_toml(config))
-
-
-def _read_claude_env(path: Path) -> dict[str, str]:
+def _claude_has_legacy_server(path: Path) -> bool:
     config = _read_json_config(path)
     servers = config.get("mcpServers", {})
     if not isinstance(servers, dict):
         raise ConfigError(f'{path} key "mcpServers" must be an object')
-    return _coerce_env(servers.get(SERVER_NAME)) or {}
+    return SERVER_NAME in servers
 
 
-def _read_codex_env(path: Path) -> dict[str, str]:
+def _codex_has_legacy_server(path: Path) -> bool:
     config = _read_toml_config(path)
     servers = config.get("mcp_servers", {})
     if not isinstance(servers, dict):
         raise ConfigError(f'{path} key "mcp_servers" must be a table')
-    return _coerce_env(servers.get(SERVER_NAME)) or {}
+    return SERVER_NAME in servers
 
 
-def _read_process_trace_env() -> dict[str, str]:
-    return {key: value for key in LANGSMITH_TRACE_KEYS if (value := os.environ.get(key))}
-
-
-def _trace_check_env_for_target(
-    target: str,
-    *,
-    claude_path: Path,
-    codex_path: Path,
-) -> dict[str, str]:
-    if target == "env":
-        return _read_process_trace_env()
-    if target == "claude":
-        return _read_claude_env(claude_path)
-    return _read_codex_env(codex_path)
-
-
-def _config_paths(
-    *,
-    claude_config: Path | None,
-    codex_config: Path | None,
-) -> dict[str, Path]:
-    return {
-        "claude": claude_config or DEFAULT_CLAUDE_CONFIG,
-        "codex": codex_config or DEFAULT_CODEX_CONFIG,
-    }
-
-
-def _config_env_readers() -> dict[str, Callable[[Path], dict[str, str]]]:
-    return {"claude": _read_claude_env, "codex": _read_codex_env}
-
-
-def _read_config_envs(
-    targets: tuple[str, ...],
-    paths: Mapping[str, Path],
-) -> dict[str, dict[str, str]]:
-    readers = _config_env_readers()
-    return {target: readers[target](paths[target]) for target in targets}
-
-
-def _status_for_env_key(
-    env_key: str,
-    targets: tuple[str, ...],
-    envs: Mapping[str, Mapping[str, str]],
-) -> str:
-    values = [envs[target].get(env_key) for target in targets]
-    if any(value is None for value in values):
-        return "missing"
-    if len(set(values)) == 1:
-        return "same"
-    return "different"
-
-
-def _status_cell(
-    target_name: str,
-    env_key: str | None,
-    targets: tuple[str, ...],
-    envs: Mapping[str, Mapping[str, str]],
-    *,
-    show_secrets: bool,
-) -> str:
-    if target_name not in targets:
-        return "not checked"
-    if env_key is None:
-        return "(none)"
-    env = envs[target_name]
-    if env_key not in env:
-        return "(unset)"
-    return _display_env_value(env_key, env[env_key], show_secrets=show_secrets)
-
-
-def _build_config_status_text(
-    targets: tuple[str, ...],
-    envs: Mapping[str, Mapping[str, str]],
-    *,
-    show_secrets: bool,
-) -> str:
-    header = ("env var", "Claude", "Codex", "status")
-    env_keys = sorted({env_key for env in envs.values() for env_key in env})
-    rows = [
-        (
-            env_key,
-            _status_cell("claude", env_key, targets, envs, show_secrets=show_secrets),
-            _status_cell("codex", env_key, targets, envs, show_secrets=show_secrets),
-            _status_for_env_key(env_key, targets, envs),
+def _legacy_warning_lines() -> list[str]:
+    """Warn about `callback` MCP server entries left behind by the old setup-mcp flow."""
+    warnings = []
+    if _claude_has_legacy_server(DEFAULT_CLAUDE_CONFIG):
+        warnings.append(
+            f"warning: {DEFAULT_CLAUDE_CONFIG} still has a legacy duplicate server entry "
+            "for callback; run `callback uninstall` to remove it."
         )
-        for env_key in env_keys
-    ] or [
-        (
-            "(none)",
-            _status_cell("claude", None, targets, envs, show_secrets=show_secrets),
-            _status_cell("codex", None, targets, envs, show_secrets=show_secrets),
-            "unset",
+    if _codex_has_legacy_server(DEFAULT_CODEX_CONFIG):
+        warnings.append(
+            f"warning: {DEFAULT_CODEX_CONFIG} still has a legacy duplicate server entry "
+            "for callback; run `callback uninstall` to remove it."
         )
-    ]
-    widths = [max(len(row[i]) for row in (header, *rows)) for i in range(len(header))]
-    lines = ["callback MCP env status"]
-    for row in (header, *rows):
-        lines.append("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)).rstrip())
+    return warnings
+
+
+def _build_status_text(env: Mapping[str, str], *, show_secrets: bool) -> str:
+    lines = [f"callback settings ({paths.env_file()})"]
+    if not env:
+        lines.append("(none)")
+        return "\n".join(lines)
+    for env_key in sorted(env):
+        value = _display_env_value(env_key, env[env_key], show_secrets=show_secrets)
+        lines.append(f"{env_key}={value}")
     return "\n".join(lines)
 
 
@@ -539,46 +323,11 @@ def _check_langsmith_target(
     return project
 
 
-def _set_env_for_targets(
-    targets: tuple[str, ...],
-    env_updates: Mapping[str, str],
-    *,
-    claude_path: Path,
-    codex_path: Path,
-) -> None:
-    for target in targets:
-        if target == "claude":
-            _set_claude_env(claude_path, env_updates)
-        else:
-            _set_codex_env(codex_path, env_updates)
-
-
-def _unset_env_for_targets(
-    targets: tuple[str, ...],
-    key: str,
-    *,
-    claude_path: Path,
-    codex_path: Path,
-) -> None:
-    for target in targets:
-        if target == "claude":
-            _unset_claude_env(claude_path, key)
-        else:
-            _unset_codex_env(codex_path, key)
-
-
-def _validate_claude_config(path: Path) -> None:
-    config = _read_json_config(path)
-    servers = config.get("mcpServers", {})
-    if not isinstance(servers, dict):
-        raise ConfigError(f'{path} key "mcpServers" must be an object')
-
-
-def _validate_codex_config(path: Path) -> None:
-    config = _read_toml_config(path)
-    servers = config.get("mcp_servers", {})
-    if not isinstance(servers, dict):
-        raise ConfigError(f'{path} key "mcp_servers" must be a table')
+def _effective_trace_env() -> dict[str, str]:
+    """Merge callback's settings file into a copy of the process env, process values winning."""
+    merged: dict[str, str] = dict(os.environ)
+    settings.apply_env_file(merged)
+    return {key: value for key in LANGSMITH_TRACE_KEYS if (value := merged.get(key))}
 
 
 def _install_browsers() -> int:
@@ -656,54 +405,6 @@ def serve(
     run()
 
 
-@app.command("setup-mcp")
-def setup_mcp(
-    claude_config: Annotated[
-        Path | None,
-        typer.Option("--claude-config", help="Claude JSON config path."),
-    ] = None,
-    codex_config: Annotated[
-        Path | None,
-        typer.Option("--codex-config", help="Codex TOML config path."),
-    ] = None,
-    skip_browsers: Annotated[
-        bool,
-        typer.Option(
-            "--skip-browsers",
-            help="Skip Playwright Chromium installation during setup.",
-        ),
-    ] = False,
-) -> None:
-    """Install callback MCP server entries for Claude and Codex."""
-    claude_path = claude_config or DEFAULT_CLAUDE_CONFIG
-    codex_path = codex_config or DEFAULT_CODEX_CONFIG
-    command = _resolve_command()
-    try:
-        _validate_claude_config(claude_path)
-        _validate_codex_config(codex_path)
-        if not skip_browsers:
-            typer.echo("Installing Playwright Chromium for callback...")
-            browser_install_returncode = _install_browsers()
-            if browser_install_returncode != 0:
-                typer.echo(
-                    "setup-mcp failed: browser install failed; "
-                    "run `callback install-browsers` for details",
-                    err=True,
-                )
-                raise typer.Exit(browser_install_returncode)
-        configure_claude(claude_path, command)
-        configure_codex(codex_path, command)
-    except ConfigError as exc:
-        typer.echo(f"setup-mcp failed: {exc}", err=True)
-        raise typer.Exit(1) from exc
-
-    typer.echo(f"Updated Claude config: {claude_path}")
-    typer.echo(f"Updated Codex config: {codex_path}")
-    typer.echo("Next: run `callback config langsmith` to enable LangSmith tracing.")
-    typer.echo("Then restart your MCP host so Claude or Codex reloads the config.")
-    typer.echo("Use `callback logs --follow` to watch server logs.")
-
-
 @config_app.command("langsmith")
 def config_langsmith(
     api_key: Annotated[
@@ -714,18 +415,6 @@ def config_langsmith(
         str,
         typer.Option("--project", help="LangSmith project name."),
     ] = DEFAULT_LANGSMITH_PROJECT,
-    target: Annotated[
-        str,
-        typer.Option("--target", help="Config target: claude, codex, or all."),
-    ] = "all",
-    claude_config: Annotated[
-        Path | None,
-        typer.Option("--claude-config", help="Claude JSON config path."),
-    ] = None,
-    codex_config: Annotated[
-        Path | None,
-        typer.Option("--codex-config", help="Codex TOML config path."),
-    ] = None,
     endpoint: Annotated[
         str,
         typer.Option("--endpoint", help="LangSmith API endpoint."),
@@ -735,228 +424,127 @@ def config_langsmith(
         typer.Option("--workspace-id", help="Optional LangSmith workspace ID."),
     ] = None,
 ) -> None:
-    """Configure LangSmith tracing environment variables in MCP host configs."""
+    """Configure LangSmith tracing environment variables in callback's settings file."""
     try:
-        targets = _target_names(target)
-        if api_key is None:
-            api_key = typer.prompt("LangSmith API key", hide_input=True)
-        env_updates = {
-            **LANGSMITH_ENV_DEFAULTS,
-            "LANGSMITH_API_KEY": api_key,
-            "LANGSMITH_PROJECT": project,
-        }
-        env_updates["LANGSMITH_ENDPOINT"] = endpoint
-        if workspace_id:
-            env_updates["LANGSMITH_WORKSPACE_ID"] = workspace_id
-        _set_env_for_targets(
-            targets,
-            env_updates,
-            claude_path=claude_config or DEFAULT_CLAUDE_CONFIG,
-            codex_path=codex_config or DEFAULT_CODEX_CONFIG,
-        )
-    except ConfigError as exc:
+        env = settings.read_env_file()
+    except ValueError as exc:
         typer.echo(f"config langsmith failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
-    typer.echo(f"Updated LangSmith env for: {', '.join(targets)}")
+    if api_key is None:
+        api_key = typer.prompt("LangSmith API key", hide_input=True)
+    assert api_key is not None, "typer.prompt always returns a string"
+
+    env.update(LANGSMITH_ENV_DEFAULTS)
+    env["LANGSMITH_API_KEY"] = api_key
+    env["LANGSMITH_PROJECT"] = project
+    env["LANGSMITH_ENDPOINT"] = endpoint
+    if workspace_id:
+        env["LANGSMITH_WORKSPACE_ID"] = workspace_id
+    paths.write_json_atomic(paths.env_file(), env)
+
+    typer.echo(f"Updated LangSmith settings in {paths.env_file()}")
     typer.echo("Restart your MCP host so it reloads the new environment.")
     typer.echo("Use `callback logs --follow` to inspect startup or tracing warnings.")
 
 
 @config_app.command("status")
 def config_status(
-    target: Annotated[
-        str,
-        typer.Option("--target", help="Config target: claude, codex, or all."),
-    ] = "all",
-    claude_config: Annotated[
-        Path | None,
-        typer.Option("--claude-config", help="Claude JSON config path."),
-    ] = None,
-    codex_config: Annotated[
-        Path | None,
-        typer.Option("--codex-config", help="Codex TOML config path."),
-    ] = None,
     show_secrets: Annotated[
         bool,
         typer.Option("--show-secrets", help="Print secret-like values instead of redacting."),
     ] = False,
 ) -> None:
-    """Show callback MCP env status for Claude and Codex."""
+    """Show callback's settings file and warn about legacy per-host MCP config entries."""
     try:
-        targets = _target_names(target)
-        config_paths_by_target = _config_paths(
-            claude_config=claude_config, codex_config=codex_config
-        )
-        envs = _read_config_envs(targets, config_paths_by_target)
-    except ConfigError as exc:
+        env = settings.read_env_file()
+        warnings = _legacy_warning_lines()
+    except (ValueError, ConfigError) as exc:
         typer.echo(f"config status failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
-    typer.echo(_build_config_status_text(targets, envs, show_secrets=show_secrets))
+    typer.echo(_build_status_text(env, show_secrets=show_secrets))
+    for warning in warnings:
+        typer.echo(warning, err=True)
 
 
 @env_app.command("set")
-def config_env_set(
-    key: str,
-    value: str,
-    target: Annotated[
-        str,
-        typer.Option("--target", help="Config target: claude, codex, or all."),
-    ] = "all",
-    claude_config: Annotated[
-        Path | None,
-        typer.Option("--claude-config", help="Claude JSON config path."),
-    ] = None,
-    codex_config: Annotated[
-        Path | None,
-        typer.Option("--codex-config", help="Codex TOML config path."),
-    ] = None,
-) -> None:
-    """Set one MCP environment variable for callback."""
+def config_env_set(key: str, value: str) -> None:
+    """Set one env var override in callback's settings file."""
     try:
         env_key = _validate_env_name(key)
-        targets = _target_names(target)
-        _set_env_for_targets(
-            targets,
-            {env_key: value},
-            claude_path=claude_config or DEFAULT_CLAUDE_CONFIG,
-            codex_path=codex_config or DEFAULT_CODEX_CONFIG,
-        )
-    except ConfigError as exc:
+        env = settings.read_env_file()
+    except (ConfigError, ValueError) as exc:
         typer.echo(f"config env set failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
-    typer.echo(f"Set {env_key} for: {', '.join(targets)}")
+    env[env_key] = value
+    paths.write_json_atomic(paths.env_file(), env)
+
+    typer.echo(f"Set {env_key} in {paths.env_file()}")
     typer.echo("Restart your MCP host so it reloads the new environment.")
 
 
 @env_app.command("unset")
-def config_env_unset(
-    key: str,
-    target: Annotated[
-        str,
-        typer.Option("--target", help="Config target: claude, codex, or all."),
-    ] = "all",
-    claude_config: Annotated[
-        Path | None,
-        typer.Option("--claude-config", help="Claude JSON config path."),
-    ] = None,
-    codex_config: Annotated[
-        Path | None,
-        typer.Option("--codex-config", help="Codex TOML config path."),
-    ] = None,
-) -> None:
-    """Unset one MCP environment variable for callback."""
+def config_env_unset(key: str) -> None:
+    """Unset one env var override in callback's settings file."""
     try:
         env_key = _validate_env_name(key)
-        targets = _target_names(target)
-        _unset_env_for_targets(
-            targets,
-            env_key,
-            claude_path=claude_config or DEFAULT_CLAUDE_CONFIG,
-            codex_path=codex_config or DEFAULT_CODEX_CONFIG,
-        )
-    except ConfigError as exc:
+        env = settings.read_env_file()
+    except (ConfigError, ValueError) as exc:
         typer.echo(f"config env unset failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
-    typer.echo(f"Unset {env_key} for: {', '.join(targets)}")
+    env.pop(env_key, None)
+    paths.write_json_atomic(paths.env_file(), env)
+
+    typer.echo(f"Unset {env_key} in {paths.env_file()}")
     typer.echo("Restart your MCP host so it reloads the new environment.")
 
 
 @env_app.command("list")
 def config_env_list(
-    target: Annotated[
-        str,
-        typer.Option("--target", help="Config target: claude, codex, or all."),
-    ] = "all",
-    claude_config: Annotated[
-        Path | None,
-        typer.Option("--claude-config", help="Claude JSON config path."),
-    ] = None,
-    codex_config: Annotated[
-        Path | None,
-        typer.Option("--codex-config", help="Codex TOML config path."),
-    ] = None,
     show_secrets: Annotated[
         bool,
         typer.Option("--show-secrets", help="Print secret-like values instead of redacting."),
     ] = False,
 ) -> None:
-    """List callback MCP environment variables."""
+    """List env var overrides in callback's settings file."""
     try:
-        targets = _target_names(target)
-        config_paths_by_target = _config_paths(
-            claude_config=claude_config, codex_config=codex_config
-        )
-        readers = _config_env_readers()
-        printed = False
-        for target_name in targets:
-            env = readers[target_name](config_paths_by_target[target_name])
-            typer.echo(f"[{target_name}]")
-            if not env:
-                typer.echo("(none)")
-                continue
-            printed = True
-            for env_key in sorted(env):
-                value = _display_env_value(env_key, env[env_key], show_secrets=show_secrets)
-                typer.echo(f"{env_key}={value}")
-        if not printed:
-            return
-    except ConfigError as exc:
+        env = settings.read_env_file()
+    except ValueError as exc:
         typer.echo(f"config env list failed: {exc}", err=True)
         raise typer.Exit(1) from exc
+
+    if not env:
+        typer.echo("(none)")
+        return
+    for env_key in sorted(env):
+        value = _display_env_value(env_key, env[env_key], show_secrets=show_secrets)
+        typer.echo(f"{env_key}={value}")
 
 
 @app.command("trace-check")
 def trace_check(
-    target: Annotated[
-        str,
-        typer.Option("--target", help="Trace target: env, claude, codex, or all."),
-    ] = "env",
     emit_test_trace: Annotated[
         bool,
         typer.Option("--emit-test-trace", help="Emit one safe LangSmith test trace."),
     ] = False,
-    claude_config: Annotated[
-        Path | None,
-        typer.Option("--claude-config", help="Claude JSON config path."),
-    ] = None,
-    codex_config: Annotated[
-        Path | None,
-        typer.Option("--codex-config", help="Codex TOML config path."),
-    ] = None,
 ) -> None:
     """Verify LangSmith tracing configuration and optional test trace emission."""
     try:
-        targets = _trace_check_target_names(target)
-    except TraceCheckError as exc:
+        env = _effective_trace_env()
+    except ValueError as exc:
         typer.echo(f"trace-check failed: {exc}", err=True)
         raise typer.Exit(1) from exc
 
-    failures = 0
-    for target_name in targets:
-        env = _trace_check_env_for_target(
-            target_name,
-            claude_path=claude_config or DEFAULT_CLAUDE_CONFIG,
-            codex_path=codex_config or DEFAULT_CODEX_CONFIG,
-        )
-        try:
-            project = _check_langsmith_target(
-                target_name,
-                env,
-                emit_test_trace=emit_test_trace,
-            )
-        except (ConfigError, TraceCheckError) as exc:
-            failures += 1
-            typer.echo(f"{target_name}: failed: {_redact_text(str(exc), env)}", err=True)
-            continue
+    try:
+        project = _check_langsmith_target("env", env, emit_test_trace=emit_test_trace)
+    except (ConfigError, TraceCheckError) as exc:
+        typer.echo(f"trace-check failed: {_redact_text(str(exc), env)}", err=True)
+        raise typer.Exit(1) from exc
 
-        typer.echo(f"{target_name}: ok (project: {project})")
-
-    if failures:
-        raise typer.Exit(1)
+    typer.echo(f"env: ok (project: {project})")
 
 
 @app.command()
