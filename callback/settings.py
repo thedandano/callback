@@ -9,11 +9,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from collections.abc import MutableMapping
 
 from callback import paths
 
 logger = logging.getLogger(__name__)
+ENV_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
 
 def read_env_file() -> dict[str, str]:
@@ -35,8 +37,11 @@ def read_env_file() -> dict[str, str]:
     except json.JSONDecodeError as exc:
         raise ValueError(f"{path} is not valid JSON: {exc.msg}") from exc
 
-    if not isinstance(loaded, dict) or not all(isinstance(value, str) for value in loaded.values()):
-        raise ValueError(f"{path} must be a JSON object of string values")
+    if not isinstance(loaded, dict) or not all(
+        isinstance(key, str) and ENV_NAME_RE.fullmatch(key) and isinstance(value, str)
+        for key, value in loaded.items()
+    ):
+        raise ValueError(f"{path} must be a JSON object of valid env-var names and string values")
 
     return loaded
 

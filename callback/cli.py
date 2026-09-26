@@ -26,6 +26,7 @@ from callback.observability import (
     emit_trace_check_probe,
 )
 from callback.plugin_install import PluginInstallError, install, resolve_targets
+from callback.settings import ENV_NAME_RE
 
 app = typer.Typer(no_args_is_help=True)
 config_app = typer.Typer(no_args_is_help=True)
@@ -60,7 +61,6 @@ SERVER_NAME = "callback"
 DEFAULT_LOG_PATH = Path("~/.local/state/callback/server.log").expanduser()
 DEFAULT_CLAUDE_CONFIG = Path("~/.claude.json").expanduser()
 DEFAULT_CODEX_CONFIG = Path("~/.codex/config.toml").expanduser()
-ENV_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 SECRET_ENV_MARKERS = ("KEY", "TOKEN", "SECRET", "PASSWORD")
 LANGSMITH_ENV_DEFAULTS = {
     "CALLBACK_TRACE_BACKEND": "langsmith",
