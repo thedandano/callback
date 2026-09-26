@@ -8,9 +8,13 @@ test patch takes effect without reloading modules.
 from __future__ import annotations
 
 import json
+import logging
 import os
+import shutil
 import tempfile
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def data_dir() -> Path:
@@ -20,6 +24,8 @@ def data_dir() -> Path:
 
 
 def state_dir() -> Path:
+    if xdg_state_home := os.environ.get("XDG_STATE_HOME"):
+        return Path(xdg_state_home) / "callback"
     return Path.home() / ".local" / "state" / "callback"
 
 
@@ -38,11 +44,39 @@ def apps_dir() -> Path:
 
 
 def apply_db_path() -> Path:
-    return data_dir() / "apply-sessions.db"
+    return state_dir() / "apply-sessions.db"
 
 
 def profile_db_path() -> Path:
-    return data_dir() / "profile-sessions.db"
+    return state_dir() / "profile-sessions.db"
+
+
+def log_path() -> Path:
+    return state_dir() / "server.log"
+
+
+def move_legacy_file(legacy: Path, target: Path) -> None:
+    """Move a legacy file, plus its SQLite -wal/-shm siblings, to a new location.
+
+    No-op if `legacy` does not exist. If `target` already exists, `legacy` is left in
+    place untouched (never overwritten) and a warning is logged.
+    """
+    if not legacy.exists():
+        return
+    if target.exists():
+        logger.warning("legacy file %s left in place; %s already exists", legacy, target)
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    for suffix in ("", "-wal", "-shm"):
+        src = Path(f"{legacy}{suffix}")
+        if not src.exists():
+            continue
+        dst = Path(f"{target}{suffix}")
+        try:
+            shutil.move(str(src), str(dst))
+        except OSError as exc:
+            raise OSError(f"failed to move legacy file {src} to {dst}: {exc}") from exc
+    logger.info("moved legacy file %s to %s", legacy, target)
 
 
 def write_text_atomic(path: Path, content: str) -> None:

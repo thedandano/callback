@@ -79,7 +79,6 @@ except ValueError as exc:
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 _LOG_FORMAT = "%(message)s"  # messages are already JSON strings
 _LOG_PATH: Path | None = None
-DEFAULT_LOG_PATH = Path("~/.local/state/callback/server.log").expanduser()
 
 
 def configure_logging(log_path: str | Path | None = None) -> None:
@@ -1887,7 +1886,7 @@ def check_update() -> str:
 def run() -> None:
     """Run the FastMCP stdio server."""
     if _LOG_PATH is None:
-        configure_logging(os.environ.get("CALLBACK_LOG_PATH") or DEFAULT_LOG_PATH)
+        configure_logging(os.environ.get("CALLBACK_LOG_PATH") or paths.log_path())
     started_at = time.monotonic()
     _log(
         "INFO",

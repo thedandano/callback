@@ -90,6 +90,9 @@ def build_profile_graph(db_path: Path | None = None):
         after onboard and an interrupt before create_story.
     """
     db_path = db_path if db_path is not None else paths.profile_db_path()
+    # One-time migration: earlier callback versions kept this checkpoint DB under
+    # data_dir() (XDG_DATA_HOME); it belongs under state_dir() (XDG_STATE_HOME).
+    paths.move_legacy_file(paths.data_dir() / "profile-sessions.db", paths.profile_db_path())
     # Initialize checkpointer with SQLite backend
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path), check_same_thread=False)
