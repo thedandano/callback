@@ -306,8 +306,12 @@ uv run python -m callback.server       # run the server locally
 For a development install that puts the CLI on your `PATH`:
 
 ```bash
-make install && callback setup-mcp
+make install
 ```
+
+Then register `callback` with your MCP client the normal way for that client (e.g.
+add it to `~/.claude.json` or `~/.codex/config.toml`), same as the standalone CLI
+install above.
 
 `make install` embeds a build version derived from git. A clean checkout of `origin/main`
 prints the package version. Commits ahead of it get a suffix like `1.1.0-03-a1b2c3d`, and

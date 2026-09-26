@@ -33,6 +33,18 @@ env_app = typer.Typer(no_args_is_help=True)
 app.add_typer(config_app, name="config")
 config_app.add_typer(env_app, name="env")
 
+
+@app.callback()
+def _load_settings() -> None:
+    """Merge ~/.config/callback/env.json into the process env before any command runs.
+
+    Runs ahead of every subcommand (not inside one), so path-resolving code that
+    reads os.environ directly (e.g. the server log path) sees settings-file values
+    too, not just ones the parent shell happened to export.
+    """
+    settings.apply_env_file()
+
+
 SERVER_NAME = "callback"
 DEFAULT_LOG_PATH = Path("~/.local/state/callback/server.log").expanduser()
 DEFAULT_CLAUDE_CONFIG = Path("~/.claude.json").expanduser()
@@ -234,19 +246,31 @@ def _codex_has_legacy_server(path: Path) -> bool:
     return SERVER_NAME in servers
 
 
+def _legacy_entry_note(path: Path) -> str:
+    """Note text for a `callback` MCP server entry found in a host config.
+
+    Presence alone can't distinguish a leftover duplicate (from the old setup-mcp
+    flow, alongside a separate plugin install) from someone's only, correctly
+    configured manual registration — so this hedges instead of telling every
+    reader to delete their one working entry.
+    """
+    return (
+        f"note: {path} has a callback MCP server entry with an env map set "
+        "directly in it. If you also installed callback as a plugin, this may be "
+        "a leftover duplicate from the old setup-mcp flow — remove it with "
+        "`callback uninstall` if so. If this is your only callback registration "
+        f"(e.g. a standalone or uvx install), it's fine to leave as is, though env "
+        f"vars now belong in {paths.env_file()} instead."
+    )
+
+
 def _legacy_warning_lines() -> list[str]:
-    """Warn about `callback` MCP server entries left behind by the old setup-mcp flow."""
+    """Note any `callback` MCP server entries still sitting in a host config."""
     warnings = []
     if _claude_has_legacy_server(DEFAULT_CLAUDE_CONFIG):
-        warnings.append(
-            f"warning: {DEFAULT_CLAUDE_CONFIG} still has a legacy duplicate server entry "
-            "for callback; run `callback uninstall` to remove it."
-        )
+        warnings.append(_legacy_entry_note(DEFAULT_CLAUDE_CONFIG))
     if _codex_has_legacy_server(DEFAULT_CODEX_CONFIG):
-        warnings.append(
-            f"warning: {DEFAULT_CODEX_CONFIG} still has a legacy duplicate server entry "
-            "for callback; run `callback uninstall` to remove it."
-        )
+        warnings.append(_legacy_entry_note(DEFAULT_CODEX_CONFIG))
     return warnings
 
 
