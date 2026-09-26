@@ -69,14 +69,14 @@ California unemployment insurance claim and need to log job-search contacts
 for EDD?"
 
 If yes:
-1. Tell them to install the `job-search-ledger` tool so the command stays on
-   `PATH`: `uv tool install git+<repo-url>` (do not hardcode a repo path — point
-   the user to the project docs for the actual URL).
+1. Ask whether they already have the personal `job-search-ledger` command
+   installed. Do not invent an install URL or repository. If they do not, skip
+   ledger setup; callback remains fully functional without it.
 2. Add `ledger_db` and `edd_xlsx` to `.callback/config.json` alongside the keys
    from step 1, e.g. `"ledger_db": "./data/ledger.sqlite3"` and `"edd_xlsx":
    "./data/tracker.xlsx"`.
 
-If no, or the user is outside California, skip this step entirely — every other
+If no, or the user is outside California, skip ledger setup entirely — every other
 callback feature works fully without it.
 
 ## Rules

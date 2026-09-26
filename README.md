@@ -244,7 +244,7 @@ Point a scheduler at the `scan-job-leads` skill.
 Claude `/schedule`, weekday mornings:
 
 ```
-/schedule "0 8 * * 1-5" Use the scan-job-leads skill. Read search preferences via get_search_preferences, scan configured sources within lead_recency_days, dedupe against the ledger, and return the standard scan-job-leads summary with recommended leads for apply-to-job.
+/schedule "0 8 * * 1-5" Use the scan-job-leads skill. Read search preferences via get_search_preferences, scan configured sources within lead_recency_days, dedupe against the configured ledger when ledger_db exists, otherwise dedupe against the record CSV, and return the standard scan-job-leads summary with recommended leads for apply-to-job.
 ```
 
 Or plain cron:
