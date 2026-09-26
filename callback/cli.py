@@ -41,8 +41,19 @@ def _load_settings() -> None:
     Runs ahead of every subcommand (not inside one), so path-resolving code that
     reads os.environ directly (e.g. the server log path) sees settings-file values
     too, not just ones the parent shell happened to export.
+
+    A damaged env.json must not brick every command, including the ones a user
+    would reach for to fix or inspect it (config status, config env unset,
+    uninstall) — so a malformed file is reported here and skipped, not raised.
     """
-    settings.apply_env_file()
+    try:
+        settings.apply_env_file()
+    except ValueError as exc:
+        typer.echo(
+            f"warning: {exc}; continuing without settings-file overrides. "
+            "Run `callback config status` to inspect it, or fix/remove it by hand.",
+            err=True,
+        )
 
 
 SERVER_NAME = "callback"
@@ -397,7 +408,14 @@ def serve(
     ] = False,
 ) -> None:
     """Start the callback MCP server."""
-    resolved_log_path = _resolve_log_path(log_path, project_logs=project_logs)
+    already_configured = os.environ.get("CALLBACK_LOG_PATH")
+    if log_path is None and not project_logs and already_configured:
+        # Settings (env.json, or the parent shell) already chose a path and
+        # neither CLI flag overrides it — honor it instead of silently
+        # replacing it with the default.
+        resolved_log_path = Path(already_configured).expanduser()
+    else:
+        resolved_log_path = _resolve_log_path(log_path, project_logs=project_logs)
     os.environ["CALLBACK_LOG_PATH"] = str(resolved_log_path)
     startup_event = json.dumps(
         {

@@ -133,6 +133,52 @@ def test_serve_without_flags_uses_home_state_log(monkeypatch):
     run.assert_called_once_with()
 
 
+def test_serve_respects_callback_log_path_already_set_by_settings(monkeypatch, tmp_path):
+    """serve() must not clobber a CALLBACK_LOG_PATH the settings-loading callback
+    already put in os.environ, when neither --log-path nor --project-logs was
+    passed — otherwise env.json's override works for `python -m callback.server`
+    but is silently ignored by the documented `callback serve` entry point."""
+    configured_path = tmp_path / "from-settings" / "server.log"
+    monkeypatch.setenv("CALLBACK_LOG_PATH", str(configured_path))
+    startup_events: list[tuple[Path, str]] = []
+
+    def fake_write_startup_event(log_path: Path, line: str) -> None:
+        startup_events.append((log_path, line))
+
+    with (
+        patch("callback.cli._write_startup_log_event", side_effect=fake_write_startup_event),
+        patch("callback.server.configure_logging", Mock()),
+        patch("callback.server.run", Mock()),
+    ):
+        result = runner.invoke(app, ["serve"])
+
+    actual = {"exit_code": result.exit_code, "startup_log_path": startup_events[0][0]}
+    expected = {"exit_code": 0, "startup_log_path": configured_path}
+    assert actual == expected
+
+
+def test_malformed_settings_file_warns_instead_of_crashing_unrelated_commands():
+    """A damaged env.json must not brick a command that never touches settings
+    at all (uninstall doesn't read or write env.json) — every command
+    dispatches through the same root callback that loads it."""
+    env_path = paths.env_file()
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    env_path.write_text("not json", encoding="utf-8")
+
+    with (
+        patch("callback.cli._remove_server_from_claude"),
+        patch("callback.cli._remove_server_from_codex"),
+    ):
+        result = runner.invoke(app, ["uninstall"])
+
+    actual = {
+        "exit_code": result.exit_code,
+        "warns": "not valid JSON" in result.stderr,
+    }
+    expected = {"exit_code": 0, "warns": True}
+    assert actual == expected
+
+
 def test_serve_project_logs_uses_project_log(tmp_path, monkeypatch):
     run = Mock()
     configure_logging = Mock()

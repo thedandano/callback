@@ -78,6 +78,29 @@ def test_apply_env_file_logs_key_names_but_never_values(caplog):
     assert actual == expected
 
 
+def test_apply_env_file_never_relocates_itself_via_xdg_config_home(caplog):
+    """XDG_CONFIG_HOME is the bootstrap variable used to find env.json itself.
+
+    Applying a value stored inside the file would make a later call to
+    paths.env_file() resolve somewhere else than where this file was actually
+    read from — splitting settings across two locations with no clear owner.
+    """
+    paths.write_json_atomic(
+        paths.env_file(), {"XDG_CONFIG_HOME": "/should-be-ignored", "FOO": "bar"}
+    )
+    environ: dict[str, str] = {}
+
+    with caplog.at_level(logging.WARNING):
+        settings.apply_env_file(environ)
+
+    actual = {
+        "environ": environ,
+        "warned": any(record.levelno == logging.WARNING for record in caplog.records),
+    }
+    expected = {"environ": {"FOO": "bar"}, "warned": True}
+    assert actual == expected
+
+
 def test_log_level_from_env_file_applies_before_server_module_reads_it(monkeypatch):
     """callback.server reads LOG_LEVEL into a module-level constant at import time.
 
