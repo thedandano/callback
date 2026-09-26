@@ -45,6 +45,22 @@ def test_read_env_file_raises_value_error_on_non_string_value():
     assert str(env_path) in str(excinfo.value)
 
 
+def test_read_env_file_raises_value_error_when_unreadable():
+    """A path.exists() True but path.read_text() OSError (e.g. env.json is
+    accidentally a directory, or permissions deny access) must convert into
+    the same ValueError every caller already handles gracefully — not an
+    uncaught exception class that crashes startup.
+    """
+    env_path = paths.env_file()
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    env_path.mkdir()  # a directory at the settings-file path, not a file
+
+    with pytest.raises(ValueError) as excinfo:
+        settings.read_env_file()
+
+    assert str(env_path) in str(excinfo.value)
+
+
 def test_apply_env_file_sets_missing_key():
     paths.write_json_atomic(paths.env_file(), {"FOO": "bar"})
     environ: dict[str, str] = {}
