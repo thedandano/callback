@@ -4,9 +4,11 @@ Isolation: XDG_DATA_HOME + callback.paths.wiki_dir patched per test so nodes
 write to tmp_path rather than ~/.local/share/callback.
 """
 
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
+from callback import paths
 from callback.profile_graph import _route_check_profile, build_profile_graph, make_config
 from callback.profilecompiler import save_compiled_profile
 from callback.repository.resumes import list_resumes, save_resume
@@ -290,3 +292,49 @@ class TestCreateStoryInterrupt:
             "orphaned_skills": [],
             "next": (),
         }
+
+
+# ---------------------------------------------------------------------------
+# Legacy DB migration
+# ---------------------------------------------------------------------------
+
+
+class TestLegacyDbMigration:
+    """build_profile_graph migrates an old data_dir()-rooted DB into state_dir()."""
+
+    def test_build_profile_graph_migrates_legacy_db_from_data_dir(self, tmp_path):
+        legacy_path = paths.data_dir() / "profile-sessions.db"
+        legacy_path.parent.mkdir(parents=True, exist_ok=True)
+        sqlite3.connect(str(legacy_path)).close()
+
+        build_profile_graph()
+
+        actual = {
+            "new_db_exists": paths.profile_db_path().exists(),
+            "legacy_db_exists": legacy_path.exists(),
+        }
+        expected = {"new_db_exists": True, "legacy_db_exists": False}
+        assert actual == expected
+
+    def test_build_profile_graph_skips_migration_when_db_path_is_explicit(self, tmp_path):
+        """An explicit db_path must be the graph's only database.
+
+        If it happens to equal the default legacy path, migration must not run —
+        otherwise it gets moved away and sqlite3.connect creates a fresh, empty
+        DB in its place, silently losing every existing session.
+        """
+        legacy_path = paths.data_dir() / "profile-sessions.db"
+        legacy_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(legacy_path))
+        conn.execute("CREATE TABLE marker (id INTEGER)")
+        conn.commit()
+        conn.close()
+
+        build_profile_graph(db_path=legacy_path)
+
+        actual = {
+            "still_at_explicit_path": legacy_path.exists(),
+            "not_moved_to_state_dir": not (paths.state_dir() / "profile-sessions.db").exists(),
+        }
+        expected = {"still_at_explicit_path": True, "not_moved_to_state_dir": True}
+        assert actual == expected

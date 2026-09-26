@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,7 @@ from callback import paths
 
 def test_data_dir_defaults_under_home(monkeypatch, tmp_path: Path):
     monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    monkeypatch.delenv("XDG_STATE_HOME", raising=False)
     monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
     actual = {
         "data": paths.data_dir(),
@@ -19,15 +21,16 @@ def test_data_dir_defaults_under_home(monkeypatch, tmp_path: Path):
         "profile_db": paths.profile_db_path(),
         "state": paths.state_dir(),
     }
-    root = tmp_path / ".local" / "share" / "callback"
+    data_root = tmp_path / ".local" / "share" / "callback"
+    state_root = tmp_path / ".local" / "state" / "callback"
     expected = {
-        "data": root,
-        "inputs": root / "inputs",
-        "wiki": root / "profile-wiki",
-        "apps": root / "applications",
-        "apply_db": root / "apply-sessions.db",
-        "profile_db": root / "profile-sessions.db",
-        "state": tmp_path / ".local" / "state" / "callback",
+        "data": data_root,
+        "inputs": data_root / "inputs",
+        "wiki": data_root / "profile-wiki",
+        "apps": data_root / "applications",
+        "apply_db": state_root / "apply-sessions.db",
+        "profile_db": state_root / "profile-sessions.db",
+        "state": state_root,
     }
     assert actual == expected
 
@@ -35,13 +38,12 @@ def test_data_dir_defaults_under_home(monkeypatch, tmp_path: Path):
 def test_xdg_data_home_moves_every_data_path(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
     monkeypatch.delenv("CALLBACK_APPS_DIR", raising=False)
+    monkeypatch.delenv("XDG_STATE_HOME", raising=False)
     actual = {
         "data": paths.data_dir(),
         "inputs": paths.inputs_dir(),
         "wiki": paths.wiki_dir(),
         "apps": paths.apps_dir(),
-        "apply_db": paths.apply_db_path(),
-        "profile_db": paths.profile_db_path(),
     }
     root = tmp_path / "xdg" / "callback"
     expected = {
@@ -49,17 +51,377 @@ def test_xdg_data_home_moves_every_data_path(monkeypatch, tmp_path: Path):
         "inputs": root / "inputs",
         "wiki": root / "profile-wiki",
         "apps": root / "applications",
-        "apply_db": root / "apply-sessions.db",
-        "profile_db": root / "profile-sessions.db",
     }
     assert actual == expected
+    # apply_db_path()/profile_db_path() now live under state_dir(), which is governed
+    # by XDG_STATE_HOME (not XDG_DATA_HOME) — see the XDG_STATE_HOME tests below,
+    # so changing XDG_DATA_HOME alone must not move them.
 
 
 def test_callback_apps_dir_overrides_only_the_archive(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "apps"))
+    monkeypatch.delenv("XDG_STATE_HOME", raising=False)
     actual = {"apps": paths.apps_dir(), "wiki": paths.wiki_dir()}
     expected = {"apps": tmp_path / "apps", "wiki": tmp_path / "xdg" / "callback" / "profile-wiki"}
+    assert actual == expected
+
+
+def test_state_dir_honors_xdg_state_home(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    assert paths.state_dir() == tmp_path / "callback"
+
+
+def test_state_dir_defaults_under_home_local_state(monkeypatch, tmp_path: Path):
+    monkeypatch.delenv("XDG_STATE_HOME", raising=False)
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+    assert paths.state_dir() == tmp_path / ".local" / "state" / "callback"
+
+
+def test_state_dir_ignores_a_relative_xdg_state_home(monkeypatch, tmp_path: Path):
+    """The XDG spec requires these paths to be absolute and treats a relative
+    value as invalid — different processes with different cwds would
+    otherwise silently land on different session stores."""
+    monkeypatch.setenv("XDG_STATE_HOME", "relative/path")
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+    assert paths.state_dir() == tmp_path / ".local" / "state" / "callback"
+
+
+def test_data_dir_ignores_a_relative_xdg_data_home(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_DATA_HOME", "relative/path")
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+    assert paths.data_dir() == tmp_path / ".local" / "share" / "callback"
+
+
+def test_config_dir_ignores_a_relative_xdg_config_home(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", "relative/path")
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+    assert paths.config_dir() == tmp_path / ".config" / "callback"
+
+
+def test_apply_db_path_is_under_state_dir(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    assert paths.apply_db_path().parent == paths.state_dir()
+
+
+def test_profile_db_path_is_under_state_dir(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    assert paths.profile_db_path().parent == paths.state_dir()
+
+
+def test_log_path_is_under_state_dir(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    assert paths.log_path() == paths.state_dir() / "server.log"
+
+
+def test_move_legacy_file_moves_existing_file(tmp_path: Path):
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy-db")
+    target = tmp_path / "state" / "apply-sessions.db"
+
+    paths.move_legacy_file(legacy, target)
+
+    actual = {
+        "target_exists": target.exists(),
+        "legacy_exists": legacy.exists(),
+        "content": target.read_text(),
+    }
+    expected = {"target_exists": True, "legacy_exists": False, "content": "legacy-db"}
+    assert actual == expected
+
+
+def test_move_legacy_file_moves_wal_shm_siblings(tmp_path: Path):
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy-db")
+    legacy_wal = Path(f"{legacy}-wal")
+    legacy_shm = Path(f"{legacy}-shm")
+    legacy_wal.write_text("wal")
+    legacy_shm.write_text("shm")
+    target = tmp_path / "state" / "apply-sessions.db"
+
+    paths.move_legacy_file(legacy, target)
+
+    actual = {
+        "target_db_exists": target.exists(),
+        "target_wal_exists": Path(f"{target}-wal").exists(),
+        "target_shm_exists": Path(f"{target}-shm").exists(),
+        "legacy_wal_exists": legacy_wal.exists(),
+        "legacy_shm_exists": legacy_shm.exists(),
+    }
+    expected = {
+        "target_db_exists": True,
+        "target_wal_exists": True,
+        "target_shm_exists": True,
+        "legacy_wal_exists": False,
+        "legacy_shm_exists": False,
+    }
+    assert actual == expected
+
+
+def test_move_legacy_file_moves_wal_and_shm_before_the_main_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The main .db file must move last.
+
+    If the process is interrupted (or the move is non-atomic across filesystems),
+    an interruption must always leave the ORIGINAL main file still at the legacy
+    path — never a main file at target whose WAL never made the trip, which would
+    silently roll back or lose uncommitted sessions on the next open.
+    """
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy-db")
+    Path(f"{legacy}-wal").write_text("wal")
+    Path(f"{legacy}-shm").write_text("shm")
+    target = tmp_path / "state" / "apply-sessions.db"
+
+    moved_order: list[str] = []
+    real_move = paths.shutil.move
+
+    def _tracking_move(src: str, dst: str) -> str:
+        moved_order.append(Path(src).name)
+        return real_move(src, dst)
+
+    monkeypatch.setattr(paths.shutil, "move", _tracking_move)
+
+    paths.move_legacy_file(legacy, target)
+
+    assert moved_order == [
+        "apply-sessions.db-wal",
+        "apply-sessions.db-shm",
+        "apply-sessions.db",
+    ]
+
+
+def test_move_legacy_file_never_leaves_a_partial_file_at_the_final_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Cross-filesystem shutil.move copies then unlinks — not atomic. If the copy
+    is interrupted partway, a truncated file can land at the destination name.
+    That must never be the real target name: only a retry-safe staging name,
+    so target.exists() never means "half a database."
+    """
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy-db-full-content")
+    target = tmp_path / "state" / "apply-sessions.db"
+
+    def _interrupted_move(src: str, dst: str) -> None:
+        Path(dst).parent.mkdir(parents=True, exist_ok=True)
+        Path(dst).write_text("truncated")
+        raise OSError("simulated interruption mid-copy")
+
+    monkeypatch.setattr(paths.shutil, "move", _interrupted_move)
+
+    with pytest.raises(OSError):
+        paths.move_legacy_file(legacy, target)
+
+    assert target.exists() is False
+
+
+def test_move_legacy_file_noop_when_legacy_missing(tmp_path: Path):
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    target = tmp_path / "state" / "apply-sessions.db"
+
+    paths.move_legacy_file(legacy, target)
+
+    assert target.exists() is False
+
+
+def test_move_legacy_file_leaves_legacy_when_both_exist(tmp_path: Path, caplog):
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy-content")
+    target = tmp_path / "state" / "apply-sessions.db"
+    target.parent.mkdir(parents=True)
+    target.write_text("target-content")
+
+    with caplog.at_level(logging.WARNING):
+        paths.move_legacy_file(legacy, target)
+
+    actual = {
+        "target_content": target.read_text(),
+        "legacy_exists": legacy.exists(),
+        "warning_logged": any(record.levelno == logging.WARNING for record in caplog.records),
+    }
+    expected = {"target_content": "target-content", "legacy_exists": True, "warning_logged": True}
+    assert actual == expected
+
+
+def test_move_legacy_file_retry_discards_incomplete_staging_file(tmp_path: Path):
+    """A process killed mid-copy leaves `.migrating` truncated while `legacy` is
+    still intact (shutil.move only unlinks its source after the copy succeeds).
+    A retry must redo the copy from the still-good source, not blindly publish
+    the stale partial staging file as the final target.
+    """
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy-db-full-content")
+    target = tmp_path / "state" / "apply-sessions.db"
+    target.parent.mkdir(parents=True)
+    Path(f"{target}.migrating").write_text("truncated")
+
+    paths.move_legacy_file(legacy, target)
+
+    actual = {
+        "target_content": target.read_text(),
+        "staging_exists": Path(f"{target}.migrating").exists(),
+        "legacy_exists": legacy.exists(),
+    }
+    expected = {
+        "target_content": "legacy-db-full-content",
+        "staging_exists": False,
+        "legacy_exists": False,
+    }
+    assert actual == expected
+
+
+def test_move_legacy_file_retry_finishes_a_completed_copy(tmp_path: Path):
+    """If the copy into staging fully succeeded (source already unlinked) and only
+    the final rename was interrupted, a retry finishes that rename rather than
+    redoing the copy.
+    """
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    target = tmp_path / "state" / "apply-sessions.db"
+    target.parent.mkdir(parents=True)
+    Path(f"{target}.migrating").write_text("legacy-db-full-content")
+
+    paths.move_legacy_file(legacy, target)
+
+    actual = {
+        "target_content": target.read_text(),
+        "staging_exists": Path(f"{target}.migrating").exists(),
+    }
+    expected = {"target_content": "legacy-db-full-content", "staging_exists": False}
+    assert actual == expected
+
+
+def test_move_legacy_file_preserves_staging_when_publish_rename_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """If the final rename fails after the copy into staging already succeeded
+    (shutil.move already unlinked `legacy`), staging must survive so a retry can
+    finish the rename — not get deleted, which would lose the only complete copy.
+    """
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy-db-full-content")
+    target = tmp_path / "state" / "apply-sessions.db"
+
+    real_replace = Path.replace
+
+    def _failing_replace(self: Path, dst):
+        if self.name.endswith(".migrating"):
+            raise OSError("simulated failure publishing the migrated file")
+        return real_replace(self, dst)
+
+    monkeypatch.setattr(Path, "replace", _failing_replace)
+
+    with pytest.raises(OSError):
+        paths.move_legacy_file(legacy, target)
+
+    staging = Path(f"{target}.migrating")
+    actual = {
+        "staging_exists": staging.exists(),
+        "staging_content": staging.read_text() if staging.exists() else None,
+        "legacy_exists": legacy.exists(),
+    }
+    expected = {
+        "staging_exists": True,
+        "staging_content": "legacy-db-full-content",
+        "legacy_exists": False,
+    }
+    assert actual == expected
+
+
+def test_move_legacy_file_gives_up_when_the_lock_holder_never_finishes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """If a concurrent process is migrating this target and never finishes (or
+    crashed holding the lock), this call must eventually give up — not touch
+    the shared staging path (racing it could delete the other process's
+    in-progress or just-completed copy), not hang forever, and not return
+    normally either: a silent return would let the caller
+    (build_apply_graph/build_profile_graph) open `target`, creating a fresh
+    empty database that then makes every future startup skip migration for
+    good. It must raise instead, so startup fails loudly.
+    """
+    monkeypatch.setattr(paths, "_MIGRATION_LOCK_WAIT_S", 0.05)
+    monkeypatch.setattr(paths, "_MIGRATION_LOCK_POLL_S", 0.01)
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy-db-full-content")
+    target = tmp_path / "state" / "apply-sessions.db"
+    target.parent.mkdir(parents=True)
+    Path(f"{target}.migrating.lock").touch()
+
+    with pytest.raises(RuntimeError) as excinfo:
+        paths.move_legacy_file(legacy, target)
+    assert str(target) in str(excinfo.value)
+
+    actual = {
+        "legacy_exists": legacy.exists(),
+        "target_exists": target.exists(),
+        "lock_exists": Path(f"{target}.migrating.lock").exists(),
+    }
+    expected = {"legacy_exists": True, "target_exists": False, "lock_exists": True}
+    assert actual == expected
+
+
+def test_move_legacy_file_rechecks_target_after_winning_a_freed_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """If the lock holder publishes `target` and releases the lock while this
+    call is waiting, and this call then wins the now-free lock on retry, it
+    must notice `target` already exists and not re-run the migration — that
+    would overwrite the other process's just-published data with a stale
+    copy of `legacy`.
+    """
+    monkeypatch.setattr(paths, "_MIGRATION_LOCK_WAIT_S", 5.0)
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy-db-full-content")
+    target = tmp_path / "state" / "apply-sessions.db"
+    target.parent.mkdir(parents=True)
+    lock_path = Path(f"{target}.migrating.lock")
+    lock_path.touch()
+
+    def _fake_sleep(_seconds: float) -> None:
+        # Simulate the lock holder finishing between our failed open attempt
+        # and our retry: it published target and released the lock.
+        if lock_path.exists():
+            target.write_text("published-by-other-process")
+            lock_path.unlink()
+
+    monkeypatch.setattr(paths.time, "sleep", _fake_sleep)
+
+    paths.move_legacy_file(legacy, target)
+
+    actual = {"target_content": target.read_text(), "legacy_exists": legacy.exists()}
+    expected = {"target_content": "published-by-other-process", "legacy_exists": True}
+    assert actual == expected
+
+
+def test_move_legacy_file_releases_the_lock_after_a_successful_migration(tmp_path: Path):
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy-db-full-content")
+    target = tmp_path / "state" / "apply-sessions.db"
+
+    paths.move_legacy_file(legacy, target)
+
+    actual = {
+        "target_content": target.read_text(),
+        "lock_exists": Path(f"{target}.migrating.lock").exists(),
+    }
+    expected = {"target_content": "legacy-db-full-content", "lock_exists": False}
     assert actual == expected
 
 

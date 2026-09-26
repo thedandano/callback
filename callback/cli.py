@@ -57,7 +57,6 @@ def _load_settings() -> None:
 
 
 SERVER_NAME = "callback"
-DEFAULT_LOG_PATH = Path("~/.local/state/callback/server.log").expanduser()
 DEFAULT_CLAUDE_CONFIG = Path("~/.claude.json").expanduser()
 DEFAULT_CODEX_CONFIG = Path("~/.codex/config.toml").expanduser()
 ENV_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
@@ -106,7 +105,7 @@ def _resolve_log_path(
         # no CLI flag overrides it — honor it instead of silently falling
         # back to the default. Shared by every caller (serve, logs, ...).
         return Path(configured).expanduser()
-    return DEFAULT_LOG_PATH
+    return paths.log_path()
 
 
 def _write_startup_log_event(log_path: Path, line: str) -> None:

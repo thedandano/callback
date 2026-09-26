@@ -2,9 +2,11 @@
 
 import json
 import logging
+import sqlite3
 
 import pytest
 
+from callback import paths
 from callback.apply_graph import build_apply_graph, make_config
 from callback.state import ApplyState
 
@@ -226,3 +228,44 @@ class TestKeywordHandoffInterrupts:
 
         with pytest.raises(ValueError, match="keywords missing"):
             apply_graph.invoke(None, config)
+
+
+class TestLegacyDbMigration:
+    """build_apply_graph migrates an old data_dir()-rooted DB into state_dir()."""
+
+    def test_build_apply_graph_migrates_legacy_db_from_data_dir(self, tmp_path):
+        legacy_path = paths.data_dir() / "apply-sessions.db"
+        legacy_path.parent.mkdir(parents=True, exist_ok=True)
+        sqlite3.connect(str(legacy_path)).close()
+
+        build_apply_graph()
+
+        actual = {
+            "new_db_exists": paths.apply_db_path().exists(),
+            "legacy_db_exists": legacy_path.exists(),
+        }
+        expected = {"new_db_exists": True, "legacy_db_exists": False}
+        assert actual == expected
+
+    def test_build_apply_graph_skips_migration_when_db_path_is_explicit(self, tmp_path):
+        """An explicit db_path must be the graph's only database.
+
+        If it happens to equal the default legacy path, migration must not run —
+        otherwise it gets moved away and sqlite3.connect creates a fresh, empty
+        DB in its place, silently losing every existing session.
+        """
+        legacy_path = paths.data_dir() / "apply-sessions.db"
+        legacy_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(legacy_path))
+        conn.execute("CREATE TABLE marker (id INTEGER)")
+        conn.commit()
+        conn.close()
+
+        build_apply_graph(db_path=legacy_path)
+
+        actual = {
+            "still_at_explicit_path": legacy_path.exists(),
+            "not_moved_to_state_dir": not (paths.state_dir() / "apply-sessions.db").exists(),
+        }
+        expected = {"still_at_explicit_path": True, "not_moved_to_state_dir": True}
+        assert actual == expected
