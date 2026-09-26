@@ -550,6 +550,23 @@ def test_config_status_hedges_on_legacy_entry_instead_of_assuming_duplicate(
     assert actual == expected
 
 
+def test_config_status_survives_malformed_legacy_host_config(_isolated_host_configs):
+    """A malformed legacy host config must not hide an otherwise-valid settings file."""
+    claude_path, _codex_path = _isolated_host_configs
+    claude_path.write_text("not valid json", encoding="utf-8")
+    paths.write_json_atomic(paths.env_file(), {"FOO": "bar"})
+
+    result = runner.invoke(app, ["config", "status"])
+
+    actual = {
+        "exit_code": result.exit_code,
+        "reports_settings": "FOO=bar" in result.stdout,
+        "warns_about_claude_probe": str(claude_path) in result.stderr,
+    }
+    expected = {"exit_code": 0, "reports_settings": True, "warns_about_claude_probe": True}
+    assert actual == expected
+
+
 def test_config_langsmith_and_env_set_never_touch_host_config_files(_isolated_host_configs):
     claude_path, codex_path = _isolated_host_configs
     claude_content = json.dumps({"mcpServers": {"other": {"command": "other"}}})
@@ -701,15 +718,18 @@ def test_uninstall_without_purge_preserves_data_dir(tmp_path):
     assert data_dir.exists()
 
 
-def test_uninstall_purge_deletes_data_and_state_dirs(tmp_path):
+def test_uninstall_purge_deletes_data_state_and_config_dirs(tmp_path):
     data_dir = tmp_path / "share"
     state_dir = tmp_path / "state"
+    config_dir = tmp_path / "config"
     data_dir.mkdir()
     state_dir.mkdir()
+    config_dir.mkdir()
 
     with (
         patch("callback.paths.data_dir", lambda: data_dir),
         patch("callback.paths.state_dir", lambda: state_dir),
+        patch("callback.paths.config_dir", lambda: config_dir),
         patch("callback.cli._remove_server_from_claude"),
         patch("callback.cli._remove_server_from_codex"),
     ):
@@ -718,15 +738,18 @@ def test_uninstall_purge_deletes_data_and_state_dirs(tmp_path):
     assert result.exit_code == 0
     assert not data_dir.exists()
     assert not state_dir.exists()
+    assert not config_dir.exists()
 
 
 def test_uninstall_purge_skips_absent_dirs(tmp_path):
     data_dir = tmp_path / "share"
     state_dir = tmp_path / "state"
+    config_dir = tmp_path / "config"
 
     with (
         patch("callback.paths.data_dir", lambda: data_dir),
         patch("callback.paths.state_dir", lambda: state_dir),
+        patch("callback.paths.config_dir", lambda: config_dir),
         patch("callback.cli._remove_server_from_claude"),
         patch("callback.cli._remove_server_from_codex"),
     ):

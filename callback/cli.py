@@ -270,18 +270,31 @@ def _legacy_entry_note(path: Path) -> str:
         "directly in it. If you also installed callback as a plugin, this may be "
         "a leftover duplicate from the old setup-mcp flow — remove it with "
         "`callback uninstall` if so. If this is your only callback registration "
-        f"(e.g. a standalone or uvx install), it's fine to leave as is, though env "
-        f"vars now belong in {paths.env_file()} instead."
+        f"(e.g. a standalone or uvx install), it's fine to leave the entry, but "
+        f"remove its env map: those inherited process values take priority over "
+        f"{paths.env_file()}, so changes made with `callback config` (e.g. a "
+        "rotated API key) will silently have no effect until the old map is gone."
     )
 
 
 def _legacy_warning_lines() -> list[str]:
-    """Note any `callback` MCP server entries still sitting in a host config."""
+    """Note any `callback` MCP server entries still sitting in a host config.
+
+    Each host probe is independent: callback's own settings are now the
+    source of truth, so a malformed or oddly-shaped legacy host config must
+    not stop `config status` from reporting the (possibly perfectly valid)
+    settings file — it's downgraded to its own warning instead.
+    """
     warnings = []
-    if _claude_has_legacy_server(DEFAULT_CLAUDE_CONFIG):
-        warnings.append(_legacy_entry_note(DEFAULT_CLAUDE_CONFIG))
-    if _codex_has_legacy_server(DEFAULT_CODEX_CONFIG):
-        warnings.append(_legacy_entry_note(DEFAULT_CODEX_CONFIG))
+    for path, has_legacy_server in (
+        (DEFAULT_CLAUDE_CONFIG, _claude_has_legacy_server),
+        (DEFAULT_CODEX_CONFIG, _codex_has_legacy_server),
+    ):
+        try:
+            if has_legacy_server(path):
+                warnings.append(_legacy_entry_note(path))
+        except ConfigError as exc:
+            warnings.append(f"warning: could not check {path} for a legacy entry: {exc}")
     return warnings
 
 
@@ -643,7 +656,9 @@ def install_browsers() -> None:
 def uninstall(
     purge: Annotated[
         bool,
-        typer.Option("--purge", help="Also delete application data and state directories."),
+        typer.Option(
+            "--purge", help="Also delete application data, state, and settings (incl. API keys)."
+        ),
     ] = False,
 ) -> None:
     """Remove callback MCP server entries from Claude and Codex configs."""
@@ -657,7 +672,7 @@ def uninstall(
         raise typer.Exit(1) from exc
 
     if purge:
-        for directory in (paths.data_dir(), paths.state_dir()):
+        for directory in (paths.data_dir(), paths.state_dir(), paths.config_dir()):
             if directory.exists():
                 shutil.rmtree(directory)
                 typer.echo(f"Deleted: {directory}")
