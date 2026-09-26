@@ -50,7 +50,7 @@ These are HARD rules. They override any older path conventions elsewhere in this
 
 ## Run Title
 
-For scheduled automation runs, compute the local date and 24-hour run-start hour in the user's local time zone. Use this exact title format wherever the host/app allows a conversation or chat title: `Auto Job Apply - YYYY-MM-DD - HH <TZ>`, where `<TZ>` is the local zone abbreviation (e.g. PT, ET, UTC). Also make the first line of the final response exactly `Run title: Auto Job Apply - YYYY-MM-DD - HH <TZ>` with the computed date, hour, and zone abbreviation, not placeholders.
+For scheduled automation runs, compute the local date and 24-hour run-start hour using the host machine's own system-local time zone at run time (e.g. `date +%Z`, or the equivalent host/app clock) — never a zone inferred from the user's stated location, which can differ from where the automation actually executes. Use this exact title format wherever the host/app allows a conversation or chat title: `Auto Job Apply - YYYY-MM-DD - HH <TZ>`, where `<TZ>` is the local zone abbreviation (e.g. PT, ET, UTC). Also make the first line of the final response exactly `Run title: Auto Job Apply - YYYY-MM-DD - HH <TZ>` with the computed date, hour, and zone abbreviation, not placeholders.
 
 ## Orchestrator Model
 
