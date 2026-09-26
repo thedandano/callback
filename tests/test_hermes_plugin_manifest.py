@@ -29,7 +29,7 @@ def test_hermes_mcp_manifest_runs_the_installed_plugin_checkout():
             "callback": {
                 "type": "stdio",
                 "command": "uv",
-                "args": ["run", "--directory", "${PLUGIN_ROOT}", "callback", "serve"],
+                "args": ["run", "--project", "${PLUGIN_ROOT}", "callback", "serve"],
             }
         },
     }

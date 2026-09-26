@@ -6,7 +6,7 @@
       "command": "uv",
       "args": [
         "run",
-        "--directory",
+        "--project",
         "${PLUGIN_ROOT}",
         "callback",
         "serve"

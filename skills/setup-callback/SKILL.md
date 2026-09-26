@@ -33,10 +33,11 @@ Re-running this step updates the config in place — no duplicates.
 
 Ask for:
 - `resume_path` — PDF, DOCX, or TXT.
-- `input_paths` — optional list of additional source files (skills docs, accomplishments).
+- `skills_path` — optional plain-text skills file.
+- `accomplishments_path` — optional plain-text accomplishments file.
 
 Then:
-1. Call `onboard_user(resume_path=..., input_paths=[...])`.
+1. Call `onboard_user(resume_path=..., skills_path=..., accomplishments_path=...)`.
 2. On success (`next_action: compile_profile`), call `compile_profile()`.
 3. Report: registered label, detected sections, warnings, skill coverage gaps, next action.
 
@@ -47,14 +48,14 @@ Never fabricate experience, skills, dates, metrics, or tools.
 Ask these questions (skip any the user already answered):
 
 - **Location:** home city/state; remote preference.
-- **Work types:** e.g. `["full_time", "contract"]`.
+- **Work types:** one or more of `onsite_local`, `hybrid_local`, or `remote`.
 - **Comp target:** annual total comp (USD or omit).
 - **Target titles:** list of preferred job titles.
 - **Seniority bands + blockers:** bands you want (e.g. `["senior", "staff"]`); titles/levels to exclude.
 - **Target companies:** companies of interest.
 - **Core domains / skip domains:** domains to prioritize vs. skip.
 - **Referral companies:** companies where you have a contact (`name` + optional `note`).
-- **Scan sources:** where to look for leads (e.g. `["gmail", "linkedin", "company_careers"]`).
+- **Scan sources:** structured sources, e.g. `[{"name": "Gmail alerts", "kind": "email", "instructions": "Search job-alert emails"}]`. `kind` is one of `email`, `web_search`, `careers_page`, or `job_board`.
 - **Lead recency (days):** how many days back to scan (default: 3).
 
 Then call `set_search_preferences(...)` with all answers. Note: this fully replaces stored prefs, so collect everything before calling.

@@ -32,6 +32,10 @@ The consequence: **every grouping decision is yours, made at `create_story` time
 
 Do not skip straight to `create_story`/`compile_profile`. Walk the loop.
 
+### 0. Register
+
+Before scanning a fresh profile, call `onboard_user` with the confirmed `resume_path` and any supplied `skills_path` or `accomplishments_path`. Keep its returned `session_id` for the profile workflow. On a re-onboard, call it again only when the source files changed.
+
 ### 1. Scan
 
 - Confirm the resume path (PDF, DOCX, TXT, or Markdown).
