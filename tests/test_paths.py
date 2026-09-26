@@ -320,12 +320,16 @@ def test_move_legacy_file_preserves_staging_when_publish_rename_fails(
     assert actual == expected
 
 
-def test_move_legacy_file_skips_when_another_process_holds_the_lock(tmp_path: Path):
-    """If a concurrent process (e.g. a second MCP host's own server) is already
-    migrating this target, this call must not touch the shared staging path at
-    all — racing it could delete the other process's in-progress or just-
-    completed copy.
+def test_move_legacy_file_gives_up_when_the_lock_holder_never_finishes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """If a concurrent process is migrating this target and never finishes (or
+    crashed holding the lock), this call must eventually give up — not touch
+    the shared staging path (racing it could delete the other process's
+    in-progress or just-completed copy) and not hang forever.
     """
+    monkeypatch.setattr(paths, "_MIGRATION_LOCK_WAIT_S", 0.05)
+    monkeypatch.setattr(paths, "_MIGRATION_LOCK_POLL_S", 0.01)
     legacy = tmp_path / "legacy" / "apply-sessions.db"
     legacy.parent.mkdir(parents=True)
     legacy.write_text("legacy-db-full-content")
@@ -341,6 +345,40 @@ def test_move_legacy_file_skips_when_another_process_holds_the_lock(tmp_path: Pa
         "lock_exists": Path(f"{target}.migrating.lock").exists(),
     }
     expected = {"legacy_exists": True, "target_exists": False, "lock_exists": True}
+    assert actual == expected
+
+
+def test_move_legacy_file_rechecks_target_after_winning_a_freed_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """If the lock holder publishes `target` and releases the lock while this
+    call is waiting, and this call then wins the now-free lock on retry, it
+    must notice `target` already exists and not re-run the migration — that
+    would overwrite the other process's just-published data with a stale
+    copy of `legacy`.
+    """
+    monkeypatch.setattr(paths, "_MIGRATION_LOCK_WAIT_S", 5.0)
+    legacy = tmp_path / "legacy" / "apply-sessions.db"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy-db-full-content")
+    target = tmp_path / "state" / "apply-sessions.db"
+    target.parent.mkdir(parents=True)
+    lock_path = Path(f"{target}.migrating.lock")
+    lock_path.touch()
+
+    def _fake_sleep(_seconds: float) -> None:
+        # Simulate the lock holder finishing between our failed open attempt
+        # and our retry: it published target and released the lock.
+        if lock_path.exists():
+            target.write_text("published-by-other-process")
+            lock_path.unlink()
+
+    monkeypatch.setattr(paths.time, "sleep", _fake_sleep)
+
+    paths.move_legacy_file(legacy, target)
+
+    actual = {"target_content": target.read_text(), "legacy_exists": legacy.exists()}
+    expected = {"target_content": "published-by-other-process", "legacy_exists": True}
     assert actual == expected
 
 
