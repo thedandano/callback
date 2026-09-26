@@ -26,9 +26,9 @@ How to apply each field (the values come from the profile; the interpretation ru
 
 ## Required Files
 
-Read `.callback/config.json` (see `setup-callback`) for `applications_dir`, `record_csv`, and `archive_dir`. If the file is missing, or if any of these 3 keys are absent, stop and tell the user to run `setup-callback` — never fall back to a hard-coded path. `ledger_db` and `edd_xlsx` are optional keys in the same file. There is exactly ONE of each live record file; update it in place. Never create timestamped, run-suffixed, or near-duplicate variants of them.
+Read `.callback/config.json` (see `setup-callback`) for `applications_dir`, `record_csv`, and `archive_dir`. If the file is missing, or if any of these 3 keys are absent, stop and tell the user to run `setup-callback` — never fall back to a hard-coded path. `ledger_db` and `edd_xlsx` are independent optional keys in the same file — `ledger_db` enables ledger dedupe/recording, `edd_xlsx` separately enables the EDD/unemployment Excel export. Check each one on its own before using it; never assume one is set because the other is. There is exactly ONE of each live record file; update it in place. Never create timestamped, run-suffixed, or near-duplicate variants of them.
 
-- Automation memory: `${XDG_STATE_HOME:-~/.local/state}/callback/auto-job-apply/memory.md` — create this file and its parent directories if they don't exist yet; a missing diary is not an error.
+- Automation memory: if `XDG_STATE_HOME` is set, `$XDG_STATE_HOME/callback/auto-job-apply/memory.md`; otherwise resolve the user's actual home directory first and use `<resolved home>/.local/state/callback/auto-job-apply/memory.md` — a bare `~` does not expand inside a quoted path or filesystem API call, so never write it literally. Create this file and its parent directories if they don't exist yet; a missing diary is not an error.
 - Canonical record CSV (one only): `record_csv`
 - Canonical ledger DB (one only), only if `.callback/config.json` sets `ledger_db`: `ledger_db`
 - Canonical Excel tracker (one only), only if `.callback/config.json` sets `edd_xlsx`: `edd_xlsx`
@@ -168,7 +168,7 @@ Only if `.callback/config.json` sets `ledger_db`: use the durable job search led
 - Use strict `ContactType` values: `Online`, `Email`, `Phone`, `In-Person`, `Mail`, `Fax`.
 - Use strict `Outcome` values: `Applied`, `No Decision`, `Hired`, `Not Hiring`, `Pending`, `Interviewed`, `Interview Date Set`, `No response from employer`.
 - Store callback details as metadata, not as duplicate export columns: `SalaryRange`, `InternalStatus`, `ResumeScoreAfterTailoring`, `ResumeScoreBeforeTailoring`, `ResumePath`, `CoverLetterPath`, and callback run identifiers when useful.
-- After recording a reportable contact, run `export-excel` to update the canonical tracker at `edd_xlsx` (from `.callback/config.json`) in place, with its first columns matching the unemployment/EDD schema. Do not create dated or run-suffixed xlsx variants alongside it. If a dated export is genuinely needed (e.g. before a risky bulk edit), write it into `archive_dir/xlsx_exports/`, never to the project root or the data directory. If writing the canonical tracker in place is blocked, write the dated export under `archive_dir/xlsx_exports/` and state that a privacy/lock issue prevented updating the canonical workbook directly.
+- After recording a reportable contact, if `.callback/config.json` also sets `edd_xlsx`, run `export-excel` to update the canonical tracker at `edd_xlsx` in place, with its first columns matching the unemployment/EDD schema. Do not create dated or run-suffixed xlsx variants alongside it. If a dated export is genuinely needed (e.g. before a risky bulk edit), write it into `archive_dir/xlsx_exports/`, never to the project root or the data directory. If writing the canonical tracker in place is blocked, write the dated export under `archive_dir/xlsx_exports/` and state that a privacy/lock issue prevented updating the canonical workbook directly. If `edd_xlsx` isn't set, the contact is still recorded in the ledger — just skip the export, and don't mention the tracker.
 
 ## Final Summary
 

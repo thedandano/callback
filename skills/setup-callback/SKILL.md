@@ -1,6 +1,6 @@
 ---
 name: setup-callback
-description: This skill should be used when the user asks to "set up callback in this project", "start a job hunt here", "initialize callback", "bootstrap my job search", "set up my job search project", "init callback", or "configure callback for this project". Use it to scaffold project paths, onboard a resume, capture search preferences, and optionally set up ledger tracking — in one pass.
+description: This skill should be used when the user asks to "set up callback in this project", "start a job hunt here", "initialize callback", "bootstrap my job search", "set up my job search project", "init callback", or "configure callback for this project". Use it to scaffold project paths, onboard a resume, and capture search preferences — in one pass.
 ---
 
 # Setup Callback
