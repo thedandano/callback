@@ -157,7 +157,7 @@ Sources are data, not hard-coded. Each entry in `scan_sources` is an instruction
 
 ## Recording
 
-Use the schema and status vocabulary in [record-schema.md](references/record-schema.md). `Recorded Date` is when the agent recorded or acted on the row. `Email Date` is the source Gmail/recruiter/status email timestamp, in the user's local time zone. `Salary range` is required for new rows; use `Not listed` when unavailable.
+Use the schema and status vocabulary in [record-schema.md](references/record-schema.md). `Recorded Date` is when the agent recorded or acted on the row. `Email Date` is the source Gmail/recruiter/status email's own timestamp, recorded as-is with the offset from its Date header — never converted to a different zone, since there's no reliable source for "the user's" zone here. `Salary range` is required for new rows; use `Not listed` when unavailable.
 
 Always include enough notes to explain future dedupe decisions, salary source, mismatch summary, and next action. The record is the anti-spam ledger.
 
