@@ -24,6 +24,8 @@ Write `.callback/config.json` in the project root. Prompt for each path or accep
 ```
 
 Create the directories: `data/`, `applications/`, `archive/`.
+Add `.callback/` to the project's `.gitignore` (append it; never replace the
+existing ignore rules) so automation memory and job-search details stay local.
 
 Re-running this step updates the config in place — no duplicates.
 
