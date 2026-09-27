@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "callback",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Job application MCP workflows for profile onboarding, resume tailoring, lead scanning, and application review.",
   "author": {
     "name": "thedandano",
