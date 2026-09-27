@@ -29,9 +29,36 @@ def test_hermes_mcp_manifest_runs_the_installed_plugin_checkout():
             "callback": {
                 "type": "stdio",
                 "command": "uv",
-                "args": ["run", "--no-dev", "--project", "${PLUGIN_ROOT}", "callback", "serve"],
+                "args": [
+                    "run",
+                    "--python",
+                    ">=3.12",
+                    "--no-dev",
+                    "--project",
+                    "${PLUGIN_ROOT}",
+                    "callback",
+                    "serve",
+                ],
             }
         },
+    }
+
+
+def test_host_specific_mcp_manifest_remains_uvx_based():
+    manifest = json.loads((REPO_ROOT / ".mcp.json").read_text())
+
+    assert manifest == {
+        "mcpServers": {
+            "callback": {
+                "command": "uvx",
+                "args": [
+                    "--from",
+                    "git+https://github.com/thedandano/callback",
+                    "callback",
+                    "serve",
+                ],
+            }
+        }
     }
 
 

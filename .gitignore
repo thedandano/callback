@@ -17,6 +17,7 @@ wheels/
 # Claude Code local config
 .claude/
 .superpowers/
+.worktrees/
 
 # Codex local
 .agents
