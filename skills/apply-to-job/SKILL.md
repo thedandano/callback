@@ -25,20 +25,20 @@ Also read the compiled profile (via `get_wiki_pages` or the profile summary) for
 
 ## Workflow
 
-1. Dedupe against the job search ledger first, then the CSV record.
+1. If `.callback/config.json` sets `ledger_db`, dedupe against the job search ledger first, then the CSV record. If `ledger_db` isn't set, dedupe against the CSV record alone — do not mention the ledger.
 2. Validate the source exposes the complete current JD.
 3. Run callback directly:
    - `load_jd`
    - host extracts JDData
    - `submit_keywords`
    - `get_wiki_pages` when useful
-   - `submit_tailor`
+   - `submit_tailor`, passing `output_dir` as the absolute path of `applications_dir/<YYYY-MM-DD>/<company-role-slug>/` (from `.callback/config.json`) so the tailored PDF lands in the project folder instead of callback's hidden data directory.
 4. Store artifacts under the configured `applications_dir` from `.callback/config.json` — use slug `<YYYY-MM-DD>/<company-role-slug>/`. One folder per role per day; reuse the day's folder, do not create near-duplicate run variants.
 5. Record status in the CSV at `record_csv` from `.callback/config.json`.
 6. Stage scores >= 70 as `Needs review - not applied`.
 7. Keep lower scores as `Scored - below threshold` unless the user explicitly wants a stretch.
 8. Submit an application only after explicit current-turn approval.
-9. For real applications, confirmations, or recruiter resume submissions, update the job search ledger via the `job-search-ledger` command and export the unemployment-compatible workbook to the path at `edd_xlsx`.
+9. If `.callback/config.json` sets `ledger_db`, for real applications, confirmations, or recruiter resume submissions, update the job search ledger via the `job-search-ledger` command. If `ledger_db` isn't set, skip this — do not mention the ledger. Separately, if `.callback/config.json` also sets `edd_xlsx`, export the unemployment-compatible workbook to that path — do not assume `edd_xlsx` is set just because `ledger_db` is.
 
 ## Approval Boundary
 
