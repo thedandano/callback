@@ -105,15 +105,16 @@ def test_apply_env_file_logs_key_names_but_never_values(caplog):
     assert actual == expected
 
 
-def test_apply_env_file_never_relocates_itself_via_xdg_config_home(caplog):
-    """XDG_CONFIG_HOME is the bootstrap variable used to find env.json itself.
+def test_apply_env_file_never_relocates_itself_via_bootstrap_variables(caplog):
+    """HOME and XDG_CONFIG_HOME locate env.json itself.
 
     Applying a value stored inside the file would make a later call to
     paths.env_file() resolve somewhere else than where this file was actually
     read from — splitting settings across two locations with no clear owner.
     """
     paths.write_json_atomic(
-        paths.env_file(), {"XDG_CONFIG_HOME": "/should-be-ignored", "FOO": "bar"}
+        paths.env_file(),
+        {"HOME": "/should-be-ignored", "XDG_CONFIG_HOME": "/also-ignored", "FOO": "bar"},
     )
     environ: dict[str, str] = {}
 

@@ -50,13 +50,13 @@ def apply_env_file(environ: MutableMapping[str, str] = os.environ) -> None:
     """Load env.json into environ, without overriding keys already present there."""
     loaded_keys = []
     for key, value in read_env_file().items():
-        if key == "XDG_CONFIG_HOME":
-            # This is the bootstrap variable used to find env.json itself. Applying
-            # a value stored inside the file would relocate where the next call to
-            # paths.env_file() looks, splitting settings across two locations.
+        if key in {"HOME", "XDG_CONFIG_HOME"}:
+            # These variables locate env.json. Applying a value stored inside the
+            # file would relocate where the next call looks, splitting settings.
             logger.warning(
-                "Ignoring XDG_CONFIG_HOME set inside %s — it can't relocate the "
+                "Ignoring %s set inside %s — it can't relocate the "
                 "file it was read from. Set it in the process environment instead.",
+                key,
                 paths.env_file(),
             )
             continue
