@@ -859,7 +859,15 @@ def _complete_workflow() -> dict:
 
 
 def _submit_tailor_artifacts(final: dict, session_id: str) -> dict:
-    archive_path = str(paths.apps_dir() / f"{session_id}.json")
+    """Resolve this run's artifact paths from final graph state.
+
+    archive_path mirrors apply_nodes._artifact_dir: output_dir from state when the
+    caller set one (same directory finalize actually wrote the archive into), else
+    the default apps dir.
+    """
+    output_dir = final.get("output_dir")
+    artifact_dir = Path(output_dir) if output_dir else paths.apps_dir()
+    archive_path = str(artifact_dir / f"{session_id}.json")
     return {
         "pdf_path": final.get("pdf_path"),
         "archive_path": archive_path,
@@ -1035,11 +1043,11 @@ def submit_tailor(
       value: str | dict (required for add/replace; project add/replacement uses a ProjectEntry dict)
       category: str (optional, for categorized skills)
 
-    output_dir (optional): an absolute directory to write the final PDF into instead of the
-    default applications dir. Recommended for sandboxed hosts (Claude/Codex) whose filesystem
-    cannot reach callback's default output. The PDF is written there directly (a redirect, not
-    a copy); data.pdf_path points inside it. An unwritable path returns an invalid_output_dir
-    error rather than silently falling back.
+    output_dir (optional): an absolute directory to write the final PDF and JSON archive into
+    instead of the default applications dir. Recommended for sandboxed hosts (Claude/Codex)
+    whose filesystem cannot reach callback's default output. Both artifacts are written there
+    directly (a redirect, not a copy); data.pdf_path and data.archive_path point inside it. An
+    unwritable path returns an invalid_output_dir error rather than silently falling back.
 
     When no_coverage=True, skips edit application entirely, sets no_coverage in
     graph state, and runs the graph directly to finalize.
