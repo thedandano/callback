@@ -38,7 +38,10 @@ Ask for:
 Then:
 1. Call `onboard_user(resume_path=..., accomplishments_path=...)`.
 2. On success (`next_action: compile_profile`), call `compile_profile(session_id=...)` with its returned session ID.
-3. Report: registered label, detected sections, warnings, skill coverage gaps, next action.
+3. If `accomplishments_path` is supplied, follow `onboard-profile`'s Scan → Plan
+   → Confirm → Compile workflow to create the approved stories before reporting
+   setup complete.
+4. Report: registered label, detected sections, warnings, skill coverage gaps, next action.
 
 Never fabricate experience, skills, dates, metrics, or tools.
 
@@ -56,6 +59,10 @@ Ask these questions (skip any the user already answered):
 - **Referral companies:** companies where you have a contact (`name` + optional `note`).
 - **Scan sources:** structured sources, e.g. `[{"name": "Gmail alerts", "kind": "email", "instructions": "Search job-alert emails"}]`. `kind` is one of `email`, `web_search`, `careers_page`, or `job_board`.
 - **Lead recency (days):** how many days back to scan (default: 3).
+- **Sponsorship and work authorization:** whether sponsorship is needed, and the
+  user's current authorization status.
+- **Actual years of experience:** the truthful total; use `yoe_gap_multiplier`
+  `1.75` unless the user specifies another value.
 
 Then call `set_search_preferences(...)` with all answers. Note: this fully replaces stored prefs, so collect everything before calling.
 
