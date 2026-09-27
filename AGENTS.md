@@ -22,6 +22,18 @@ Finite maintenance horizon - build only what the walking skeleton needs.
 State persists via LangGraph SQLite checkpointers under `~/.local/state/callback/`.
 Logs default to `~/.local/state/callback/server.log`.
 
+### Cross-harness plugin packaging
+
+- Keep one shared plugin body at the repository root: `skills/` contains the
+  host-neutral workflows, `.mcp.json` serves Claude, Codex, and generic MCP
+  clients, and root `plugin.json` plus `mcp.json` serves Hermes and other Agent
+  Plugins v1 hosts.
+- Keep host-specific manifests as thin adapters. Do not copy or fork skills per
+  harness, and do not add a native Hermes wrapper while the portable package
+  covers the requirement.
+- Add future harnesses by reusing the shared skills and server, with only the
+  smallest discovery or launch adapter that the host requires.
+
 ## Commands
 
 ```bash
