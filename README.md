@@ -60,9 +60,22 @@ Restart your session afterward.
 ```
 hermes plugins install thedandano/callback
 hermes plugins enable callback
+hermes plugins list --plain --no-bundled
 ```
 
-Portable plugins install disabled by default, so the `enable` step is required. Hermes namespaces the skills by plugin name, e.g. `callback:tailor-resume`.
+Portable plugins are installed disabled by default, so the `enable` step is required.
+Start a fresh chat afterward so Hermes connects the plugin's MCP server. `hermes
+mcp list` shows user-configured servers, not MCP servers bundled in portable
+plugins.
+
+Plugin skills are not shown by the `hermes skills list` command or added to the
+system prompt. In a chat, ask Hermes to call `skills_list`; it returns the full
+generated names, such as `agent-plugin-callback-<hash>:tailor-resume`. Load one
+with `skill_view("<qualified-name>")`. Do not assume the namespace is
+`callback:`.
+
+Claude, Codex, Hermes, and future plugin-capable hosts share the same `skills/`
+directory. Only their discovery names and MCP launch adapters differ.
 
 ### Cursor, Claude Desktop, or any other MCP client
 
