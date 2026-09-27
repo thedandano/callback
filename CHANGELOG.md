@@ -16,6 +16,13 @@
 - Existing users must re-run `onboard_user` after upgrading to the HTML renderer + extractor fixes. Older `sections.json` files may contain corrupted contact fields (for example duplicated email or incorrect location).
 - A host that emits `required_any` or `preferred_any` against an OLD callback server is silently degraded: `dataclass_wizard` drops the unknown key, so the group is ignored (not matched, not reported). Upgrade the server before relying on either.
 
+## [1.6.1](https://github.com/thedandano/callback/compare/v1.6.0...v1.6.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* activate callback MCP in Hermes ([#111](https://github.com/thedandano/callback/issues/111)) ([8b9ab59](https://github.com/thedandano/callback/commit/8b9ab59652641974a12993e8112be21b3fd6bb97))
+
 ## [1.6.0](https://github.com/thedandano/callback/compare/v1.5.0...v1.6.0) (2026-09-27)
 
 
