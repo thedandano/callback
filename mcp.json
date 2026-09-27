@@ -6,6 +6,8 @@
       "command": "uv",
       "args": [
         "run",
+        "--python",
+        ">=3.12",
         "--no-dev",
         "--project",
         "${PLUGIN_ROOT}",
