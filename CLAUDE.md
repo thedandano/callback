@@ -34,15 +34,14 @@ uv run playwright install chromium
 # Run the MCP server (stdio)
 uv run python -m callback.server
 
-# Register MCP server entries and configure tracing env vars
-uv run callback setup-mcp
+# Configure tracing env vars in callback's own settings file (~/.config/callback/env.json)
 uv run callback config langsmith
 uv run callback config status
 uv run callback config env list
 uv run callback config env set CALLBACK_TRACE_BACKEND langsmith
 uv run callback config env unset CALLBACK_TRACE_BACKEND
-uv run callback trace-check --target env
-uv run callback trace-check --target codex --emit-test-trace
+uv run callback trace-check
+uv run callback trace-check --emit-test-trace
 
 # All tests
 uv run pytest
@@ -113,6 +112,7 @@ uv run pytest -m local evals/                          # E1 + E2 checks over the
 ## Env Vars
 
 - `XDG_DATA_HOME`: Moves the whole data root (resumes, wiki, checkpoint DBs, compiled profile, applications archive) from `~/.local/share/callback` to `$XDG_DATA_HOME/callback`.
+- `XDG_CONFIG_HOME`: Moves the settings file from `~/.config/callback/env.json` to `$XDG_CONFIG_HOME/callback/env.json`.
 - `CALLBACK_APPS_DIR`: Override where application PDFs and JSON archives are written; overrides only the archive directory, not the other data roots.
 - `CALLBACK_FETCH_PAGE_TIMEOUT_MS`: Override the Playwright page-load timeout in milliseconds. Default: `30000`.
 - `CALLBACK_FETCH_OUTER_TIMEOUT_S`: Override the outer fetch timeout in seconds. Default: `35`.
@@ -122,11 +122,14 @@ uv run pytest -m local evals/                          # E1 + E2 checks over the
 - `LANGSMITH_API_KEY`: Required for LangSmith tracing; also gates eval experiment recording. The runner logs a WARNING and skips recording when unset.
 - `LANGSMITH_PROJECT`: LangSmith project name. Defaults to `Callback` when tracing is enabled.
 
-`setup-mcp` only registers the MCP server and stays noninteractive for install
-scripts. Use `callback config langsmith` or `callback config env ...` to write
-env vars into Claude/Codex MCP config `env` maps. Use
-`callback config status` to compare Claude/Codex env maps without writing files,
-then restart the MCP host after config changes.
+Env var overrides live in `~/.config/callback/env.json`, a settings file
+callback owns and reads itself at process startup — not in any MCP host's
+config file. Use `callback config langsmith` or `callback config env ...` to
+write it, and `callback config status` to inspect it (read-only; also warns if
+a legacy `callback` entry is still sitting in `~/.claude.json` or
+`~/.codex/config.toml` from an old `setup-mcp` install — run `callback
+uninstall` to remove it). Restart the MCP host after config changes, since it
+only reloads env vars at startup.
 Tracing metadata must stay safe: `session_id`, `tool_name`, `resume_label`,
 `graph_name`, and `transport` only. Never include resume text, JD body text,
 wiki content, API keys, or proposed edits in trace metadata.
