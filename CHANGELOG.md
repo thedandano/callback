@@ -16,6 +16,21 @@
 - Existing users must re-run `onboard_user` after upgrading to the HTML renderer + extractor fixes. Older `sections.json` files may contain corrupted contact fields (for example duplicated email or incorrect location).
 - A host that emits `required_any` or `preferred_any` against an OLD callback server is silently degraded: `dataclass_wizard` drops the unknown key, so the group is ignored (not matched, not reported). Upgrade the server before relying on either.
 
+## [1.6.0](https://github.com/thedandano/callback/compare/v1.5.0...v1.6.0) (2026-09-27)
+
+
+### Features
+
+* callback owns its settings file, stop writing host MCP configs ([#105](https://github.com/thedandano/callback/issues/105)) ([0751554](https://github.com/thedandano/callback/commit/0751554ae9872bf203402f430440860c0d97d46f))
+* honor XDG_STATE_HOME; move session DBs and log to state dir ([#107](https://github.com/thedandano/callback/issues/107)) ([29804f5](https://github.com/thedandano/callback/commit/29804f5e5d270feffa21eb32cbc52142aa93cad0))
+* support installation as a Hermes Agent portable plugin ([#103](https://github.com/thedandano/callback/issues/103)) ([1ff47c0](https://github.com/thedandano/callback/commit/1ff47c0892301a4979bdc22b664dfbd6e807fb28))
+
+
+### Bug Fixes
+
+* JSON archive follows output_dir the same as the PDF ([#106](https://github.com/thedandano/callback/issues/106)) ([55c6e5a](https://github.com/thedandano/callback/commit/55c6e5a423dfb984efe62f1b8918b7bf16d4648a))
+* make skills host-neutral (paths, ledger, time zone) ([#104](https://github.com/thedandano/callback/issues/104)) ([6b4ea4d](https://github.com/thedandano/callback/commit/6b4ea4d5313e4958b465e316455353b138f9a5b5))
+
 ## [1.5.0](https://github.com/thedandano/callback/compare/v1.4.1...v1.5.0) (2026-09-25)
 
 
