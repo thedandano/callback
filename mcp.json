@@ -1,0 +1,17 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "callback": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--no-dev",
+        "--project",
+        "${PLUGIN_ROOT}",
+        "callback",
+        "serve"
+      ]
+    }
+  }
+}

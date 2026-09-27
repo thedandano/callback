@@ -32,6 +32,10 @@ The consequence: **every grouping decision is yours, made at `create_story` time
 
 Do not skip straight to `create_story`/`compile_profile`. Walk the loop.
 
+### 0. Register
+
+Before scanning a fresh profile, call `onboard_user` with the confirmed `resume_path` and any supplied `accomplishments_path`. Then call `compile_profile(session_id=...)` with the returned session ID before creating stories. Reuse a session ID only while the previous response says `next_action=create_story`; otherwise omit it to start the next story in a new thread. On a re-onboard, call it again only when the source files changed.
+
 ### 1. Scan
 
 - Confirm the resume path (PDF, DOCX, TXT, or Markdown).
@@ -61,9 +65,8 @@ Wait for approval. If the user wants changes, revise the table and re-present. D
 
 ### 4. Compile (only after approval) or iterate
 
-- For each approved entry that isn't already a faithful stored story, call `create_story(primary_skill, skills, story_type, job_title, situation, behavior, impact)` with the agreed `job_title`.
+- For each approved entry that isn't already a faithful stored story, call `create_story(primary_skill, skills, story_type, job_title, situation, behavior, impact)` with the agreed `job_title`; add `session_id=...` only when the preceding response says `next_action=create_story`.
 - On a re-onboard, correct any drifted stories to match the approved plan before compiling.
-- Then call `compile_profile()` (pass `story_tags` only if the user supplies a JSON list/dict).
 - `create_story` recompiles the profile in the same call and returns `orphaned_skills`; calling `compile_profile()` afterwards is optional.
 
 ### 5. Report
