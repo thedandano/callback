@@ -218,7 +218,7 @@ h1 {
     runs to the JD fetch interrupt, and
     <code style="font-family:ui-monospace,monospace;font-size:11px;background:#1B1921;padding:1px 5px;border-radius:3px;color:#80FFEA">submit_keywords</code>
     injects host-extracted JDData, runs initial parse/score, and returns tailor context.
-    Sessions persist across server restarts via SqliteSaver at <code style="font-family:ui-monospace,monospace;font-size:11px;background:#1B1921;padding:1px 5px;border-radius:3px;color:#80FFEA">~/.local/share/callback/apply-sessions.db</code>.
+    Sessions persist across server restarts via SqliteSaver at <code style="font-family:ui-monospace,monospace;font-size:11px;background:#1B1921;padding:1px 5px;border-radius:3px;color:#80FFEA">~/.local/state/callback/apply-sessions.db</code>.
     Tailoring, rendering, reporting, and finalization are reached through <code>submit_tailor</code>.
   </p>
 </div>
@@ -410,7 +410,7 @@ h1 {
       <div class="layer-label">Storage</div>
       <div class="node store">
         <div class="node-title">SqliteSaver — Session Checkpoints
-          <span class="node-file">~/.local/share/callback/apply-sessions.db</span>
+          <span class="node-file">~/.local/state/callback/apply-sessions.db</span>
         </div>
         <div class="node-body">
           <code>SqliteSaver(sqlite3.connect(str(db_path), check_same_thread=False))</code>
@@ -524,7 +524,7 @@ h1 {
         </tr>
         <tr>
           <td>SqliteSaver — apply-sessions.db</td>
-          <td><code>~/.local/share/callback/apply-sessions.db</code></td>
+          <td><code>~/.local/state/callback/apply-sessions.db</code></td>
           <td>LangGraph checkpoint writes (post-node)</td>
           <td>Persisted <code>ApplyState</code> keyed by <code>thread_id</code></td>
           <td class="isolated">✓ full</td>

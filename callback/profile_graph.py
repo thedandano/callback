@@ -89,7 +89,13 @@ def build_profile_graph(db_path: Path | None = None):
         Compiled LangGraph StateGraph for ProfileState with an interrupt
         after onboard and an interrupt before create_story.
     """
-    db_path = db_path if db_path is not None else paths.profile_db_path()
+    if db_path is None:
+        # One-time migration: earlier callback versions kept this checkpoint DB
+        # under data_dir() (XDG_DATA_HOME); it belongs under state_dir()
+        # (XDG_STATE_HOME). Only for the default path — an explicit db_path is
+        # the caller's own database, never something to migrate out from under it.
+        paths.move_legacy_file(paths.data_dir() / "profile-sessions.db", paths.profile_db_path())
+        db_path = paths.profile_db_path()
     # Initialize checkpointer with SQLite backend
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path), check_same_thread=False)

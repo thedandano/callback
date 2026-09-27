@@ -55,10 +55,13 @@ def _load_phase(jd_url: str | None, jd_text: str) -> dict:
 def main():
     jd_url = sys.argv[1] if len(sys.argv) > 1 else None
 
-    # Run under an isolated data root so the temp resume is the only one registered
-    # and nothing here touches the real wiki, sessions, or archive (callback.paths).
+    # Run under isolated data and state roots so the temp resume is the only one
+    # registered and nothing here touches the real wiki, archive, or session
+    # checkpoint DBs (callback.paths).
     data_root = tempfile.mkdtemp(prefix="callback-smoke-")
+    state_root = tempfile.mkdtemp(prefix="callback-smoke-state-")
     os.environ["XDG_DATA_HOME"] = data_root
+    os.environ["XDG_STATE_HOME"] = state_root
     os.environ.pop("CALLBACK_APPS_DIR", None)
 
     # Create a temp resume file
@@ -145,6 +148,7 @@ def main():
     finally:
         Path(resume_path).unlink(missing_ok=True)
         shutil.rmtree(data_root, ignore_errors=True)  # the whole isolated data root
+        shutil.rmtree(state_root, ignore_errors=True)  # the whole isolated state root
 
 
 if __name__ == "__main__":
