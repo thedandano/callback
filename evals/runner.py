@@ -18,6 +18,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import ProxyHandler, Request, build_opener
 
 from langsmith.utils import LangSmithError
 
@@ -33,7 +35,8 @@ from evals.tailor_checks import run_checks as tailor_run_checks
 logger = logging.getLogger("callback.evals")
 
 EXTRACT_DIR = Path(__file__).resolve().parent / "extract"
-HOSTS = ("claude", "codex")
+HOSTS = ("claude", "codex", "ollama", "llamacpp", "hermes")
+LOCAL_PORTS = {"ollama": 11434, "llamacpp": 8080}
 EVALS = ("extract", "tailor")
 CODEX_DEFAULT_MODEL = "gpt-5.6-terra"
 HOST_TIMEOUT_S = 900
@@ -213,8 +216,46 @@ def _claude_result(stdout: str) -> str:
     raise HostError(f"claude reply has no result: {stdout[:200]!r}{extra}")
 
 
-def call_host(host: str, model: str | None, prompt: str, run: RunFn = subprocess.run) -> str:
-    """Send one prompt to the host CLI and return its reply text."""
+def _local_port(host: str, port: int | None) -> int:
+    return LOCAL_PORTS[host] if port is None else port
+
+
+def _call_local_host(host: str, model: str, prompt: str, port: int) -> str:
+    url = f"http://127.0.0.1:{port}/v1/chat/completions"
+    payload = {"model": model, "messages": [{"role": "user", "content": prompt}], "stream": False}
+    request = Request(
+        url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}
+    )
+    try:
+        with build_opener(ProxyHandler({})).open(request, timeout=HOST_TIMEOUT_S) as response:
+            content = json.load(response)["choices"][0]["message"]["content"]
+    except (HTTPError, URLError, TimeoutError) as exc:
+        raise HostError(f"{host} port {port}: request failed: {exc}") from exc
+    except (json.JSONDecodeError, UnicodeDecodeError, KeyError, IndexError, TypeError) as exc:
+        raise HostError(f"{host} port {port}: invalid chat response: {exc}") from exc
+    if not isinstance(content, str) or not content.strip():
+        raise HostError(f"{host} port {port}: chat response has no answer text")
+    return content
+
+
+def call_host(
+    host: str,
+    model: str | None,
+    prompt: str,
+    run: RunFn = subprocess.run,
+    *,
+    port: int | None = None,
+    provider: str | None = None,
+) -> str:
+    """Send one prompt to a local server or host CLI and return its reply text."""
+    if host in LOCAL_PORTS:
+        if model is None or not model.strip():
+            raise HostError(f"--model is required for --host {host}")
+        return _call_local_host(host, model, prompt, _local_port(host, port))
+    return _call_cli_host(host, model, prompt, run)
+
+
+def _call_cli_host(host: str, model: str | None, prompt: str, run: RunFn) -> str:
     with tempfile.TemporaryDirectory(prefix="callback-eval-") as scratch:
         out_file = Path(scratch) / "reply.txt"
         cmd = _claude_cmd(model) if host == "claude" else _codex_cmd(model, out_file)
@@ -269,6 +310,8 @@ def _host_output(
     checks_only: bool,
     run: RunFn | None,
     commit: str,
+    port: int | None = None,
+    provider: str | None = None,
 ) -> tuple[dict | None, Check | None]:
     """The host output for one fixture: freshly produced, or read back with --checks-only.
 
@@ -280,10 +323,12 @@ def _host_output(
                 "host_output_present", False, f"{path.name} missing; run without --checks-only"
             )
         return json.loads(path.read_text(encoding="utf-8")).get("output"), None
-    if run is None:
+    if run is None and host not in LOCAL_PORTS:
         raise ValueError("run is required unless checks_only")
     try:
-        raw = call_host(host, model, prompt, run=run)
+        raw = call_host(
+            host, model, prompt, run=run or subprocess.run, port=port, provider=provider
+        )
     except (HostError, subprocess.TimeoutExpired) as exc:
         message = f"{type(exc).__name__}: {exc}"
         logger.warning("%s: host call failed: %s", fixture, message)
@@ -302,6 +347,8 @@ def run_extract(
     checks_only: bool,
     run: RunFn | None,
     commit: str,
+    port: int | None = None,
+    provider: str | None = None,
 ) -> list[EvalRow]:
     rows = []
     for board in boards:
@@ -317,6 +364,8 @@ def run_extract(
             checks_only=checks_only,
             run=run,
             commit=commit,
+            port=port,
+            provider=provider,
         )
         checks = [gate] if gate else extract_run_checks(json.dumps(output), expected, jd_text)
         rows.append(EvalRow("extract", board, checks))
@@ -332,6 +381,8 @@ def run_tailor(
     checks_only: bool,
     run: RunFn | None,
     commit: str,
+    port: int | None = None,
+    provider: str | None = None,
 ) -> list[EvalRow]:
     rows = []
     for case_dir in dirs:
@@ -347,6 +398,8 @@ def run_tailor(
             checks_only=checks_only,
             run=run,
             commit=commit,
+            port=port,
+            provider=provider,
         )
         checks = [gate] if gate else tailor_run_checks(case, output)
         rows.append(EvalRow("tailor", fixture, checks))
@@ -371,6 +424,8 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--model", default=None, help="host model flag; default is the host's own default"
     )
+    parser.add_argument("--port", type=int, help="local server port (Ollama 11434, llama.cpp 8080)")
+    parser.add_argument("--provider", help="Hermes inference provider override")
     parser.add_argument(
         "--eval", choices=EVALS, action="append", help="run only this eval (repeatable)"
     )
@@ -384,6 +439,20 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "--no-langsmith", action="store_true", help="do not record a LangSmith experiment"
     )
     return parser.parse_args(argv)
+
+
+def _validate_args(args: argparse.Namespace) -> None:
+    if args.model is not None and not args.model.strip():
+        raise ValueError("--model must not be blank")
+    if args.host in LOCAL_PORTS and args.model is None and not args.checks_only:
+        raise ValueError(f"--model is required for --host {args.host}")
+    if args.port is not None:
+        if args.host not in LOCAL_PORTS:
+            raise ValueError("--port is only supported for Ollama and llama.cpp")
+        if not 1 <= args.port <= 65535:
+            raise ValueError("--port must be between 1 and 65535")
+    if args.provider is not None and (args.host != "hermes" or not args.provider.strip()):
+        raise ValueError("--provider must be nonblank and is only supported for Hermes")
 
 
 def _selected_boards(only: list[str] | None) -> list[str]:
@@ -445,6 +514,8 @@ def _run_one_eval(name: str, args: argparse.Namespace, run_meta: dict) -> list[E
             checks_only=args.checks_only,
             run=subprocess.run,
             commit=run_meta["commit"],
+            port=args.port,
+            provider=args.provider,
         )
         _record_experiment(experiments.record_extract, rows, args, run_meta, name)
         return rows
@@ -455,6 +526,8 @@ def _run_one_eval(name: str, args: argparse.Namespace, run_meta: dict) -> list[E
         checks_only=args.checks_only,
         run=subprocess.run,
         commit=run_meta["commit"],
+        port=args.port,
+        provider=args.provider,
     )
     _record_experiment(experiments.record_tailor, rows, args, run_meta, name)
     return rows
@@ -464,9 +537,10 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s", stream=sys.stderr)
     wanted = args.eval or list(EVALS)
-    run_meta = {"host": args.host, "model": args.model or "default", "commit": _commit()}
     rows: list[EvalRow] = []
     try:
+        _validate_args(args)
+        run_meta = {"host": args.host, "model": args.model or "default", "commit": _commit()}
         for name in wanted:
             rows.extend(_run_one_eval(name, args, run_meta))
     except ValueError as exc:

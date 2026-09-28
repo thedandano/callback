@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 import subprocess
+from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
+from urllib.error import HTTPError, URLError
 
 import pytest
 from langsmith.utils import LangSmithError
@@ -25,6 +28,177 @@ from evals.runner import (
     tailor_prompt,
 )
 from evals.tailor_checks import TailorCase
+
+
+@pytest.mark.parametrize(
+    ("host", "port", "url"),
+    [
+        ("ollama", None, "http://127.0.0.1:11434/v1/chat/completions"),
+        ("llamacpp", None, "http://127.0.0.1:8080/v1/chat/completions"),
+        ("ollama", 12345, "http://127.0.0.1:12345/v1/chat/completions"),
+        ("llamacpp", 8081, "http://127.0.0.1:8081/v1/chat/completions"),
+    ],
+)
+def test_local_host_sends_chat_request(host, port, url, monkeypatch):
+    seen = {}
+
+    def open_request(request, *, timeout):
+        seen.update(url=request.full_url, method=request.get_method(), timeout=timeout)
+        seen["body"] = json.loads(request.data)
+        seen["content_type"] = request.get_header("Content-type")
+        return BytesIO(b'{"choices": [{"message": {"content": "MODEL REPLY"}}]}')
+
+    def fake_opener(handler):
+        seen["proxies"] = handler.proxies
+        return SimpleNamespace(open=open_request)
+
+    monkeypatch.setattr(runner, "build_opener", fake_opener, raising=False)
+    reply = call_host(host, "chosen-model", "PROMPT", port=port)
+
+    assert reply == "MODEL REPLY"
+    assert seen == {
+        "url": url,
+        "method": "POST",
+        "timeout": 900,
+        "body": {
+            "model": "chosen-model",
+            "messages": [{"role": "user", "content": "PROMPT"}],
+            "stream": False,
+        },
+        "content_type": "application/json",
+        "proxies": {},
+    }
+
+
+@pytest.mark.parametrize("host", ["ollama", "llamacpp"])
+def test_local_host_requires_model_before_fixture_work(host, monkeypatch, capsys):
+    def forbidden():
+        raise AssertionError("validation must precede git and fixture work")
+
+    monkeypatch.setattr(runner, "_commit", forbidden)
+    assert main(["--host", host]) == 1
+    assert f"--model is required for --host {host}" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        ["--host", "ollama", "--model", " "],
+        ["--host", "claude", "--model", ""],
+        ["--host", "ollama", "--model", "m", "--port", "0"],
+        ["--host", "llamacpp", "--model", "m", "--port", "-1"],
+        ["--host", "ollama", "--model", "m", "--port", "65536"],
+        ["--host", "claude", "--port", "8080"],
+        ["--host", "codex", "--port", "8080"],
+        ["--host", "hermes", "--port", "8080"],
+        ["--host", "ollama", "--model", "m", "--provider", "openrouter"],
+        ["--host", "hermes", "--provider", " "],
+    ],
+)
+def test_invalid_host_arguments_fail_before_fixture_work(flags, monkeypatch, capsys):
+    def forbidden():
+        raise AssertionError("invalid options must not touch fixtures")
+
+    monkeypatch.setattr(runner, "_commit", forbidden)
+    assert main(flags) == 1
+    assert capsys.readouterr().err
+
+
+@pytest.mark.parametrize("port", [1, 65535])
+def test_local_port_accepts_boundaries(port):
+    args = runner._parse_args(["--host", "ollama", "--model", "m", "--port", str(port)])
+    runner._validate_args(args)
+
+
+def test_noninteger_port_is_an_argument_error():
+    with pytest.raises(SystemExit) as exc:
+        runner._parse_args(["--host", "ollama", "--model", "m", "--port", "abc"])
+    assert exc.value.code == 2
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        URLError("connection refused"),
+        HTTPError("http://127.0.0.1:11434", 404, "model not found", {}, None),
+        TimeoutError("timed out"),
+    ],
+)
+def test_local_connection_errors_reach_the_user(error, monkeypatch):
+    def open_request(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(
+        runner, "build_opener", lambda *_: SimpleNamespace(open=open_request), raising=False
+    )
+    with pytest.raises(HostError, match="ollama.*11434"):
+        call_host("ollama", "m", "PROMPT")
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"not json",
+        b"[]",
+        b"{}",
+        b'{"choices": []}',
+        b'{"choices": [{"message": {"content": null}}]}',
+        b'{"choices": [{"message": {"content": " "}}]}',
+    ],
+)
+def test_local_invalid_response_is_a_host_error(body, monkeypatch):
+    monkeypatch.setattr(
+        runner,
+        "build_opener",
+        lambda *_: SimpleNamespace(open=lambda *args, **kwargs: BytesIO(body)),
+        raising=False,
+    )
+    with pytest.raises(HostError, match="ollama.*11434"):
+        call_host("ollama", "m", "PROMPT")
+
+
+@pytest.mark.parametrize("host", ["ollama", "llamacpp", "hermes"])
+def test_new_hosts_checks_only_need_no_model_or_transport(host, tmp_path, monkeypatch):
+    extract_dir = tmp_path / "extract"
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    _write_extract_fixture(extract_dir, "acme", expected)
+    monkeypatch.setattr(runner, "EXTRACT_DIR", extract_dir)
+    monkeypatch.setattr(runner, "_commit", lambda: "abc1234")
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("checks-only must stay offline")
+
+    monkeypatch.setattr(runner, "call_host", forbidden)
+    monkeypatch.setattr(runner.experiments, "record_extract", forbidden)
+    assert main(["--host", host, "--checks-only", "--eval", "extract"]) == 0
+
+
+def test_local_failure_clears_saved_reply_and_continues(tmp_path, monkeypatch):
+    extract_dir = tmp_path / "extract"
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    for board in ["a", "b"]:
+        _write_extract_fixture(extract_dir, board, expected)
+    monkeypatch.setattr(runner, "EXTRACT_DIR", extract_dir)
+    replies = iter(
+        [
+            URLError("connection refused"),
+            {"choices": [{"message": {"content": json.dumps(expected)}}]},
+        ]
+    )
+
+    def open_request(*args, **kwargs):
+        reply = next(replies)
+        if isinstance(reply, URLError):
+            raise reply
+        return BytesIO(json.dumps(reply).encode())
+
+    monkeypatch.setattr(runner, "build_opener", lambda *_: SimpleNamespace(open=open_request))
+    rows = run_extract("ollama", "m", ["a", "b"], checks_only=False, run=None, commit="abc")
+    saved = json.loads((extract_dir / "a.host.json").read_text())
+    assert saved["output"] is None
+    assert "connection refused" in saved["raw"]
+    assert [(row.fixture, row.passed) for row in rows] == [("a", False), ("b", True)]
+
 
 SECTIONS = {
     "summary": "Backend engineer.",
