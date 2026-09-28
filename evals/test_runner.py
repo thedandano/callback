@@ -247,12 +247,29 @@ def test_format_table_lists_first_failure():
     actual = format_table(rows)
 
     expected = (
-        "eval     fixture           result  first failing check / note\n"
-        "extract  ashby             PASS    \n"
-        "tailor   jane-doe-backend  FAIL    grounded: ungrounded: ['70%']\n"
-        "extract  greenhouse        SKIP    not evaluated: only 3 expected terms are "
+        "eval     fixture           score  result  first failing check / note\n"
+        "extract  ashby             1/1    PASS    \n"
+        "tailor   jane-doe-backend  1/2    FAIL    grounded: ungrounded: ['70%']\n"
+        "extract  greenhouse        1/1    SKIP    not evaluated: only 3 expected terms are "
         "still in the JD (content drift)"
     )
+    assert actual == expected
+
+
+def test_eval_row_score_counts_only_non_skipped_checks():
+    actual = {
+        "passing": EvalRow("extract", "passing", [Check("valid", True)]).score,
+        "failing": EvalRow("extract", "failing", [Check("valid", False)]).score,
+        "mixed": EvalRow(
+            "extract", "mixed", [Check("valid", True), Check("drift", True, skipped=True)]
+        ).score,
+        "all_skipped": EvalRow(
+            "extract", "all-skipped", [Check("drift", True, skipped=True)]
+        ).score,
+    }
+
+    expected = {"passing": "1/1", "failing": "0/1", "mixed": "1/1", "all_skipped": "—"}
+
     assert actual == expected
 
 
