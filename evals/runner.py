@@ -78,6 +78,14 @@ class EvalRow:
         return "PASS"
 
     @property
+    def score(self) -> str:
+        """Passed checks over checks that ran, excluding skipped checks."""
+        applicable = [check for check in self.checks if not check.skipped]
+        if not applicable:
+            return "—"
+        return f"{sum(check.passed for check in applicable)}/{len(applicable)}"
+
+    @property
     def first_failure(self) -> str | None:
         return first_failure(self.checks)
 
@@ -348,10 +356,12 @@ def run_tailor(
 
 def format_table(rows: list[EvalRow]) -> str:
     width = max([len("fixture"), *(len(r.fixture) for r in rows)])
-    lines = [f"{'eval':8} {'fixture':{width}}  result  first failing check / note"]
+    lines = [f"{'eval':8} {'fixture':{width}}  score  result  first failing check / note"]
     for row in rows:
         last_column = row.first_failure if not row.passed else (row.note or "")
-        lines.append(f"{row.eval_name:8} {row.fixture:{width}}  {row.status:6}  {last_column}")
+        lines.append(
+            f"{row.eval_name:8} {row.fixture:{width}}  {row.score:5}  {row.status:6}  {last_column}"
+        )
     return "\n".join(lines)
 
 
