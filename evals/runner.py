@@ -12,6 +12,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -19,8 +20,8 @@ import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from http.client import HTTPException
 from pathlib import Path
-from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
 
 import yaml
@@ -219,6 +220,25 @@ def _hermes_cmd(model: str | None, provider: str | None) -> list[str]:
     return cmd
 
 
+def _hermes_home(home: Path) -> Path:
+    if home.parent.name == "profiles":
+        return home
+    native_root = Path.home() / ".hermes"
+    root = native_root if home.is_relative_to(native_root) else home
+    try:
+        name = (root / "active_profile").read_text(encoding="utf-8-sig").strip().lower()
+    except FileNotFoundError:
+        return home
+    except (OSError, UnicodeDecodeError) as exc:
+        raise HostError(f"hermes: could not read active profile: {exc}") from exc
+    if not name or name == "default":
+        return home
+    profile = root / "profiles" / name
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", name) or not profile.is_dir():
+        raise HostError(f"hermes: active profile is invalid or missing: {name!r}")
+    return profile
+
+
 def _read_harness_config(host: str) -> dict:
     locations = {
         "claude": ("CLAUDE_CONFIG_DIR", "~/.claude", "settings.json", json.loads),
@@ -226,7 +246,8 @@ def _read_harness_config(host: str) -> dict:
         "hermes": ("HERMES_HOME", "~/.hermes", "config.yaml", yaml.safe_load),
     }
     env, default_dir, filename, load = locations[host]
-    path = Path(os.environ.get(env) or default_dir).expanduser() / filename
+    home = Path(os.path.expandvars(os.environ.get(env) or default_dir)).expanduser()
+    path = (_hermes_home(home) if host == "hermes" else home) / filename
     if not path.exists():
         return {}
     try:
@@ -246,7 +267,10 @@ def _harness_defaults(host: str) -> tuple[str | None, str | None]:
     provider = None
     if host == "hermes" and isinstance(model, dict):
         provider = model.get("provider")
-        model = model.get("default")
+        model = model.get("default") or model.get("model")
+        if isinstance(model, dict):
+            provider = model.get("provider") or provider
+            model = model.get("model")
     model_env = {"claude": "ANTHROPIC_MODEL", "hermes": "HERMES_INFERENCE_MODEL"}.get(host)
     if model_env:
         model = os.environ.get(model_env, model)
@@ -315,7 +339,7 @@ def _call_local_host(host: str, model: str, prompt: str, port: int) -> str:
     try:
         with build_opener(ProxyHandler({})).open(request, timeout=HOST_TIMEOUT_S) as response:
             content = json.load(response)["choices"][0]["message"]["content"]
-    except (HTTPError, URLError, TimeoutError) as exc:
+    except (OSError, HTTPException) as exc:
         raise HostError(f"{host} port {port}: request failed: {exc}") from exc
     except (json.JSONDecodeError, UnicodeDecodeError, KeyError, IndexError, TypeError) as exc:
         raise HostError(f"{host} port {port}: invalid chat response: {exc}") from exc

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 from email.message import Message
+from http.client import IncompleteRead
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -973,3 +974,63 @@ def test_langsmith_failure_is_logged_and_local_results_still_print(tmp_path, mon
         in m
         for m in caplog.messages
     )
+
+
+@pytest.mark.parametrize(
+    "error", [ConnectionResetError("connection reset"), IncompleteRead(b"partial")]
+)
+def test_body_read_failure_clears_saved_reply_and_continues(error, tmp_path, monkeypatch):
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    for board in ["a", "b"]:
+        _write_extract_fixture(tmp_path, board, expected)
+    monkeypatch.setattr(runner, "EXTRACT_DIR", tmp_path)
+
+    class BrokenBody(BytesIO):
+        def read(self, *args):
+            raise error
+
+    replies = iter(
+        [
+            BrokenBody(),
+            BytesIO(
+                json.dumps({"choices": [{"message": {"content": json.dumps(expected)}}]}).encode()
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        runner,
+        "build_opener",
+        lambda *_: SimpleNamespace(open=lambda *args, **kwargs: next(replies)),
+    )
+    rows = run_extract("ollama", "m", ["a", "b"], checks_only=False, run=None, commit="abc")
+    assert json.loads((tmp_path / "a.host.json").read_text())["output"] is None
+    assert [(row.fixture, row.passed) for row in rows] == [("a", False), ("b", True)]
+
+
+@pytest.mark.parametrize("explicit_profile", [False, True])
+def test_hermes_defaults_follow_native_profile(explicit_profile, tmp_path, monkeypatch):
+    (tmp_path / "config.yaml").write_text("model: root-model")
+    (tmp_path / "active_profile").write_text("work\n", encoding="utf-8-sig")
+    profile = tmp_path / "profiles" / ("other" if explicit_profile else "work")
+    profile.mkdir(parents=True)
+    (profile / "config.yaml").write_text("model: profile-model")
+    monkeypatch.setenv("HERMES_HOME", str(profile if explicit_profile else tmp_path))
+    monkeypatch.delenv("HERMES_INFERENCE_MODEL", raising=False)
+    assert runner._harness_defaults("hermes") == ("profile-model", None)
+
+
+@pytest.mark.parametrize("name", ["../escape", "missing"])
+def test_invalid_active_hermes_profile_reaches_user(name, tmp_path, monkeypatch):
+    (tmp_path / "active_profile").write_text(name)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    with pytest.raises(HostError, match="profile"):
+        runner._harness_defaults("hermes")
+
+
+def test_hermes_nested_model_default(tmp_path, monkeypatch):
+    (tmp_path / "config.yaml").write_text(
+        "model:\n  default:\n    model: chosen-model\n    provider: openrouter\n  provider: auto\n"
+    )
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.delenv("HERMES_INFERENCE_MODEL", raising=False)
+    assert runner._harness_defaults("hermes") == ("chosen-model", "openrouter")

@@ -367,7 +367,8 @@ passes that name to the isolated CLI. It respects `CLAUDE_CONFIG_DIR`,
 `CODEX_HOME`, and `HERMES_HOME`; Claude's `ANTHROPIC_MODEL` and Hermes's
 `HERMES_INFERENCE_MODEL` environment overrides also apply. With no saved choice,
 the runner leaves model selection to the CLI. It does not copy other user
-settings, profile-specific model choices, or custom provider definitions.
+settings, Codex profile overrides, or custom provider definitions. Hermes follows
+its active profile, including an explicit profile directory in `HERMES_HOME`.
 
 Hermes also reads the provider from its saved `model` settings; `--provider`
 overrides that choice. Authentication stays with the harness. Hermes uses

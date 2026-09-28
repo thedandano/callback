@@ -87,7 +87,7 @@ This is a bounded extension to the existing eval flow. This document is the requ
   Extend the stale-file/batch-continuation tests to a local connection failure. Assert the failed output becomes null and the next fixture runs. Extend the offline test to local hosts with HTTP/subprocess sentinels.
 
 - [x] **Step 2: Run `uv run pytest evals/test_runner.py -v`.** New tests fail because local routing and validation are absent.
-- [x] **Step 3: Implement the minimal local helper.** Use top-level stdlib imports for `Request`, `build_opener`, `ProxyHandler`, `HTTPError`, and `URLError`. Use `build_opener(ProxyHandler({})).open(request, timeout=HOST_TIMEOUT_S)` so a shell's proxy settings cannot redirect the loopback request. Decode the outer response and validate the first message's content. Convert expected HTTP/network/response failures into contextual `HostError` so existing fixture failure handling applies. Do not request `response_format` or send tool definitions.
+- [x] **Step 3: Implement the minimal local helper.** Use top-level stdlib imports for `Request`, `build_opener`, `ProxyHandler`, `HTTPException`. Use `build_opener(ProxyHandler({})).open(request, timeout=HOST_TIMEOUT_S)` so a shell's proxy settings cannot redirect the loopback request. Decode the outer response and validate the first message's content. Convert expected HTTP/network/response failures into contextual `HostError` so existing fixture failure handling applies. Do not request `response_format` or send tool definitions.
 - [x] **Step 4: Wire the flags through both eval kinds.** Require `run` only for CLI hosts; checks-only must return before transport selection. Resolve the local default once when forming run metadata and use the same value for requests.
 - [x] **Step 5: Run `uv run pytest evals/test_runner.py -v` and `uv run ruff check evals/runner.py evals/test_runner.py`.** All pass; split small helpers only if the existing complexity limit of 7 requires it.
 - [x] **Step 6: Commit only the task's files:** `feat: run evals against local model servers`.
@@ -128,13 +128,13 @@ This is a bounded extension to the existing eval flow. This document is the requ
 - Hermes routing fields: `provider` (selected value or `"auto"`), `transport: "cli"`, `isolation: "customizations_disabled"`, `builtin_tools: true`.
 - Add those fields to `run_meta`; `evals/experiments.py` already forwards the dictionary, so no new experiment recorder is needed.
 
-- [ ] **Step 1: Add metadata and log tests.** Assert a local default port, port override, and Hermes provider appear consistently in host files and experiment metadata. Assert legacy Claude/Codex exact output dictionaries still pass. Assert failed calls retain routing metadata and null output. Checks-only invokes neither host nor experiment recording.
+- [x] **Step 1: Add metadata and log tests.** Assert a local default port, port override, and Hermes provider appear consistently in host files and experiment metadata. Assert legacy Claude/Codex exact output dictionaries still pass. Assert failed calls retain routing metadata and null output. Checks-only invokes neither host nor experiment recording.
 
   Add INFO log assertions for `calling host=<host> model=<model> fixture=<fixture>` before a fresh call, plus port/provider when applicable. Log `checking saved output fixture=<fixture>` for checks-only. Do not log prompts, environment values, or credentials.
 
-- [ ] **Step 2: Run `uv run pytest evals/test_runner.py evals/test_experiments.py -v`.** New metadata/log tests fail.
-- [ ] **Step 3: Add routing metadata and the two log messages.** Preserve current experiment name format `<commit>-<host>-<model>`; routing differences live in experiment metadata. Record explicit new-host models verbatim. Document that Hermes `auto` is a request to the harness, not a verified resolved provider.
-- [ ] **Step 4: Update usage docs and runner docstrings.** Include the examples below, server prerequisites, model/alias requirements, Hermes isolation limits, offline checks-only behavior, and existing output overwrite behavior. Replace the outdated claim that all supported hosts run without tools. Keep the server's host-owned reasoning boundary explicit in `AGENTS.md`.
+- [x] **Step 2: Run `uv run pytest evals/test_runner.py evals/test_experiments.py -v`.** New metadata/log tests fail.
+- [x] **Step 3: Add routing metadata and the two log messages.** Preserve current experiment name format `<commit>-<host>-<model>`; routing differences live in experiment metadata. Record explicit new-host models verbatim. Document that Hermes `auto` is a request to the harness, not a verified resolved provider.
+- [x] **Step 4: Update usage docs and runner docstrings.** Include the examples below, server prerequisites, model/alias requirements, Hermes isolation limits, offline checks-only behavior, and existing output overwrite behavior. Replace the outdated claim that all supported hosts run without tools. Keep the server's host-owned reasoning boundary explicit in `AGENTS.md`.
 
   ```bash
   uv run python scripts/run_evals.py --host ollama --model qwen3:8b --eval extract --case reddit
@@ -147,7 +147,7 @@ This is a bounded extension to the existing eval flow. This document is the requ
 
   Mark model names as examples; `resume-eval` must be the configured llama.cpp server alias, and `<model-id>` must be replaced. Show the llama.cpp default 8080 separately so an override example does not hide it.
 
-- [ ] **Step 5: Run repository checks.**
+- [x] **Step 5: Run repository checks.**
 
   ```bash
   uv run pytest -m "not local"
@@ -158,9 +158,41 @@ This is a bounded extension to the existing eval flow. This document is the requ
 
   Expect no regressions. Run existing local checks over saved outputs with `uv run pytest -m local evals/`; distinguish known baseline model-quality failures from implementation regressions. Do not change expected checks or fabricate replies to make the baseline pass.
 
-- [ ] **Step 6: After implementation is approved, perform one live fixture per installed target.** Verify Hermes CLI help first. Use `--no-langsmith`, an already running local server, and an explicitly selected model. Obtain model-call authorization if the implementation request does not cover paid Hermes inference. Report unavailable services honestly. These calls overwrite host files; restore only generated fixture changes from this smoke run, preserving any pre-existing user edits. Successful transport need not mean the model passes every quality check.
-- [ ] **Step 7: Commit only the task's files:** `docs: explain local and Hermes eval runs`.
+- [x] **Step 6: After implementation is approved, perform one live fixture per installed target.** Verify Hermes CLI help first. Use `--no-langsmith`, an already running local server, and an explicitly selected model. Obtain model-call authorization if the implementation request does not cover paid Hermes inference. Report unavailable services honestly. These calls overwrite host files; restore only generated fixture changes from this smoke run, preserving any pre-existing user edits. Successful transport need not mean the model passes every quality check.
+- [x] **Step 7: Commit only the task's files:** `docs: explain local and Hermes eval runs`.
 
 ## Ponytail scope
 
 One shared local request helper; one Hermes subprocess path; existing runner tests. Skip remote endpoints, API-key flags, automatic model discovery/download, starting servers, retries, parallel runs, per-model output directories, and a general provider framework. Add those only when a concrete eval run needs them.
+
+
+## Implementation validation
+
+- Worktree: `.worktrees/local-model-hermes-evals`; branch: `feat/local-model-hermes-evals`.
+- CI test set: **978 passed**, 20 local tests deselected.
+- Full test suite: **985 passed, 13 failed**. These failures belong to unchanged archived model outputs and live postings, not the new runner paths.
+- Ruff lint and format checks pass. Pyright reports **0 errors** and two existing `setup.py` warnings because `setuptools` is a build dependency.
+- Live Ollama: `ornith-q8:latest`, Reddit extraction, **7/7 PASS**. Generated host output restored after the check.
+- Live Hermes using the same Ollama model through its custom provider: Reddit extraction, **7/7 PASS**. All required CLI flags verified; generated host output restored.
+- No llama.cpp server is available: `llama-server` is absent and `127.0.0.1:8080/v1/models` returns 404. Its request and failure paths are covered by tests.
+
+Full-suite failures (retained rather than weakening the checks):
+
+| Test | Cases |
+|---|---|
+| `evals/test_extract.py::test_host_extraction_passes_checks` | `apple`, `ashby`, `cedar`, `greenhouse` |
+| `evals/test_fetch_recall.py::test_live_fetch_recall_within_tolerance` | `ashby`, `cedar` |
+| `evals/test_tailor.py::test_host_tailor_output_passes_checks` | `jane-doe-backend`, `morgan-reyes-apple`, `morgan-reyes-ashby`, `morgan-reyes-cedar`, `morgan-reyes-greenhouse`, `morgan-reyes-qualcomm`, `morgan-reyes-reddit` |
+
+Implementation decisions:
+
+- Read only saved model names and the Hermes model provider before launching isolated commands. This preserves the requested defaults without importing other settings. Hermes follows its native active profile and explicit profile home. Codex profile overrides and custom provider definitions are not copied; this limit is documented in the README.
+- Require local model names, including for single-model llama.cpp. Saved-output checks require no model.
+
+
+Final review and fixes:
+
+- Fixed both Important findings: follow Hermes active-profile model defaults; translate HTTP body-read failures into fixture errors, clear stale output, and continue the batch.
+- Regraded the nested Hermes `model.default` mapping finding from Minor to Important: a valid native default must work when `--model` is omitted. Read its model and provider without importing other settings. Cost if wrong: a small compatibility branch to maintain.
+- Regression tests reproduced six failures before the fixes; focused runner and experiment tests now pass **93/93**.
+- Deferred remote endpoints, server startup, downloads, authentication flags, retries, and parallel execution as explicitly excluded scope. No Critical findings or remaining Important findings.
