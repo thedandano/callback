@@ -11,9 +11,11 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import subprocess
 import sys
 import tempfile
+import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -21,6 +23,7 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
 
+import yaml
 from langsmith.utils import LangSmithError
 
 from callback.jd_data import EXTRACTION_PROTOCOL
@@ -38,7 +41,6 @@ EXTRACT_DIR = Path(__file__).resolve().parent / "extract"
 HOSTS = ("claude", "codex", "ollama", "llamacpp", "hermes")
 LOCAL_PORTS = {"ollama": 11434, "llamacpp": 8080}
 EVALS = ("extract", "tailor")
-CODEX_DEFAULT_MODEL = "gpt-5.6-terra"
 HOST_TIMEOUT_S = 900
 RunFn = Callable[..., subprocess.CompletedProcess]
 
@@ -185,11 +187,9 @@ def _codex_cmd(model: str | None, out_file: Path) -> list[str]:
     # command above gets from --strict-mcp-config/--mcp-config '{}'/--tools ''/--setting-sources
     # '' — otherwise a configured callback MCP server or other user-level instructions would
     # leak into the supposedly isolated eval run.
-    return [
+    cmd = [
         "codex",
         "exec",
-        "-m",
-        model or CODEX_DEFAULT_MODEL,
         "--skip-git-repo-check",
         "--ignore-user-config",
         "--sandbox",
@@ -197,6 +197,92 @@ def _codex_cmd(model: str | None, out_file: Path) -> list[str]:
         "-o",
         str(out_file),
     ]
+    return cmd[:2] + (["-m", model] if model else []) + cmd[2:]
+
+
+def _hermes_cmd(model: str | None, provider: str | None) -> list[str]:
+    cmd = [
+        "hermes",
+        "chat",
+        "--query-file",
+        "-",
+        "--oneshot",
+        "--quiet",
+        "--format",
+        "stream-json",
+        "--safe-mode",
+    ]
+    if model:
+        cmd.extend(["--model", model])
+    if provider:
+        cmd.extend(["--provider", provider])
+    return cmd
+
+
+def _read_harness_config(host: str) -> dict:
+    locations = {
+        "claude": ("CLAUDE_CONFIG_DIR", "~/.claude", "settings.json", json.loads),
+        "codex": ("CODEX_HOME", "~/.codex", "config.toml", tomllib.loads),
+        "hermes": ("HERMES_HOME", "~/.hermes", "config.yaml", yaml.safe_load),
+    }
+    env, default_dir, filename, load = locations[host]
+    path = Path(os.environ.get(env, default_dir)).expanduser() / filename
+    if not path.exists():
+        return {}
+    try:
+        config = load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError, yaml.YAMLError) as exc:
+        raise HostError(f"{host}: could not read model defaults from config: {exc}") from exc
+    if config is None:
+        return {}
+    if not isinstance(config, dict):
+        raise HostError(f"{host}: config must be an object")
+    return config
+
+
+def _harness_defaults(host: str) -> tuple[str | None, str | None]:
+    config = _read_harness_config(host)
+    model = config.get("model")
+    provider = None
+    if host == "hermes" and isinstance(model, dict):
+        provider = model.get("provider")
+        model = model.get("default")
+    model_env = {"claude": "ANTHROPIC_MODEL", "hermes": "HERMES_INFERENCE_MODEL"}.get(host)
+    if model_env:
+        model = os.environ.get(model_env, model)
+    for name, value in (("model", model), ("provider", provider)):
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise HostError(f"{host}: configured {name} must be a nonblank string")
+    return model, provider
+
+
+def _resolve_harness_defaults(args: argparse.Namespace) -> None:
+    if args.checks_only or args.host in LOCAL_PORTS:
+        return
+    if args.model is not None and (args.host != "hermes" or args.provider is not None):
+        return
+    model, provider = _harness_defaults(args.host)
+    args.model = args.model or model
+    args.provider = args.provider or provider
+
+
+def _hermes_result(stdout: str) -> str:
+    try:
+        events = [json.loads(line) for line in stdout.splitlines() if line.strip()]
+    except json.JSONDecodeError as exc:
+        raise HostError("hermes returned invalid stream-json output") from exc
+    if any(not isinstance(event, dict) for event in events):
+        raise HostError("hermes returned an invalid event")
+    results = [event for event in events if event.get("type") == "result"]
+    if len(results) != 1:
+        raise HostError("hermes must return exactly one result event")
+    result = results[0]
+    if result.get("exit_code") != 0 or result.get("error"):
+        raise HostError(f"hermes result failed: {result.get('error') or result.get('exit_code')}")
+    text = result.get("text")
+    if not isinstance(text, str) or not text.strip():
+        raise HostError("hermes result has no answer text")
+    return text
 
 
 def _claude_result(stdout: str) -> str:
@@ -252,21 +338,41 @@ def call_host(
         if model is None or not model.strip():
             raise HostError(f"--model is required for --host {host}")
         return _call_local_host(host, model, prompt, _local_port(host, port))
-    return _call_cli_host(host, model, prompt, run)
+    return _call_cli_host(host, model, prompt, run, provider)
 
 
-def _call_cli_host(host: str, model: str | None, prompt: str, run: RunFn) -> str:
+def _call_cli_host(
+    host: str, model: str | None, prompt: str, run: RunFn, provider: str | None
+) -> str:
     with tempfile.TemporaryDirectory(prefix="callback-eval-") as scratch:
         out_file = Path(scratch) / "reply.txt"
-        cmd = _claude_cmd(model) if host == "claude" else _codex_cmd(model, out_file)
-        proc = run(
-            cmd, input=prompt, capture_output=True, text=True, cwd=scratch, timeout=HOST_TIMEOUT_S
-        )
+        commands = {
+            "claude": _claude_cmd(model),
+            "codex": _codex_cmd(model, out_file),
+            "hermes": _hermes_cmd(model, provider),
+        }
+        cmd = commands[host]
+        try:
+            proc = run(
+                cmd,
+                input=prompt,
+                capture_output=True,
+                text=True,
+                cwd=scratch,
+                timeout=HOST_TIMEOUT_S,
+            )
+        except FileNotFoundError as exc:
+            raise HostError(f"{host} CLI is not installed or not on PATH") from exc
         if proc.returncode != 0:
             raise HostError(f"{host} exited {proc.returncode}: {proc.stderr.strip()[-500:]}")
         if host == "claude":
             return _claude_result(proc.stdout)
-        return out_file.read_text(encoding="utf-8")
+        if host == "hermes":
+            return _hermes_result(proc.stdout)
+        try:
+            return out_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise HostError("codex did not write a readable final reply") from exc
 
 
 def _write_host_file(
@@ -540,10 +646,11 @@ def main(argv: list[str] | None = None) -> int:
     rows: list[EvalRow] = []
     try:
         _validate_args(args)
+        _resolve_harness_defaults(args)
         run_meta = {"host": args.host, "model": args.model or "default", "commit": _commit()}
         for name in wanted:
             rows.extend(_run_one_eval(name, args, run_meta))
-    except ValueError as exc:
+    except (ValueError, HostError) as exc:
         print(exc, file=sys.stderr)
         return 1
     print(format_table(rows))

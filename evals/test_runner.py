@@ -200,6 +200,132 @@ def test_local_failure_clears_saved_reply_and_continues(tmp_path, monkeypatch):
     assert [(row.fixture, row.passed) for row in rows] == [("a", False), ("b", True)]
 
 
+@pytest.mark.parametrize("model", [None, "chosen-model"])
+@pytest.mark.parametrize("provider", [None, "openrouter"])
+def test_hermes_calls_isolated_cli_with_stdin(model, provider):
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout='{"type":"result","exit_code":0,"text":"MODEL REPLY"}\n', stderr=""
+        )
+
+    assert call_host("hermes", model, "PROMPT", run=fake_run, provider=provider) == "MODEL REPLY"
+    cmd, kwargs = calls[0]
+    expected = [
+        "hermes",
+        "chat",
+        "--query-file",
+        "-",
+        "--oneshot",
+        "--quiet",
+        "--format",
+        "stream-json",
+        "--safe-mode",
+    ]
+    if model:
+        expected.extend(["--model", model])
+    if provider:
+        expected.extend(["--provider", provider])
+    assert cmd == expected
+    assert kwargs["input"] == "PROMPT"
+    assert kwargs["timeout"] == 900
+    assert kwargs["capture_output"] is True
+    assert kwargs["text"] is True
+    assert kwargs["cwd"] != str(Path.cwd())
+
+
+def test_hermes_reads_only_terminal_answer():
+    stdout = "\n".join(
+        [
+            '{"type":"system","subtype":"init","model":"m"}',
+            '{"type":"text","text":"a discarded draft"}',
+            '{"type":"tool_use","name":"example"}',
+            '{"type":"tool_result","name":"example","output":"tool text"}',
+            '{"type":"result","exit_code":0,"text":"final answer"}',
+        ]
+    )
+    assert runner._hermes_result(stdout) == "final answer"
+
+
+@pytest.mark.parametrize(
+    "stdout",
+    [
+        "not json",
+        "[]",
+        '{"type":"text","text":"draft"}',
+        '{"type":"result","exit_code":1,"text":"partial answer"}',
+        '{"type":"result","exit_code":0,"text":"answer","error":"failed"}',
+        '{"type":"result","exit_code":0,"text":null}',
+        '{"type":"result","exit_code":0,"text":" "}',
+        '{"type":"result","exit_code":0,"text":"one"}\n{"type":"result","exit_code":0,"text":"two"}',
+    ],
+)
+def test_invalid_hermes_events_raise_host_error(stdout):
+    with pytest.raises(HostError, match="hermes"):
+        runner._hermes_result(stdout)
+
+
+def test_codex_without_model_does_not_force_a_model():
+    def fake_run(cmd, **kwargs):
+        assert "-m" not in cmd
+        Path(cmd[cmd.index("-o") + 1]).write_text("ANSWER")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    assert call_host("codex", None, "PROMPT", run=fake_run) == "ANSWER"
+
+
+@pytest.mark.parametrize("host", ["claude", "codex", "hermes"])
+def test_missing_cli_is_a_host_error(host):
+    def missing(cmd, **kwargs):
+        raise FileNotFoundError("not installed")
+
+    with pytest.raises(HostError, match=f"{host}.*not installed"):
+        call_host(host, None, "PROMPT", run=missing)
+
+
+@pytest.mark.parametrize(
+    ("host", "env", "filename", "config", "model", "provider"),
+    [
+        ("claude", "CLAUDE_CONFIG_DIR", "settings.json", '{"model":"sonnet"}', "sonnet", None),
+        ("codex", "CODEX_HOME", "config.toml", 'model = "gpt-5.6-terra"', "gpt-5.6-terra", None),
+        (
+            "hermes",
+            "HERMES_HOME",
+            "config.yaml",
+            "model:\n  default: chosen-model\n  provider: openrouter\n",
+            "chosen-model",
+            "openrouter",
+        ),
+    ],
+)
+def test_saved_harness_defaults_are_used_without_loading_other_settings(
+    host, env, filename, config, model, provider, tmp_path, monkeypatch
+):
+    (tmp_path / filename).write_text(config)
+    monkeypatch.setenv(env, str(tmp_path))
+    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
+    monkeypatch.delenv("HERMES_INFERENCE_MODEL", raising=False)
+    assert runner._harness_defaults(host) == (model, provider)
+
+
+@pytest.mark.parametrize("host", ["claude", "codex", "hermes"])
+def test_missing_harness_config_uses_native_defaults(host, tmp_path, monkeypatch):
+    for env in ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "HERMES_HOME"]:
+        monkeypatch.setenv(env, str(tmp_path))
+    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
+    monkeypatch.delenv("HERMES_INFERENCE_MODEL", raising=False)
+    assert runner._harness_defaults(host) == (None, None)
+
+
+def test_invalid_harness_config_is_not_silently_ignored(tmp_path, monkeypatch):
+    (tmp_path / "config.toml").write_text('model = "unterminated')
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    with pytest.raises(HostError, match="codex.*config"):
+        runner._harness_defaults("codex")
+
+
 SECTIONS = {
     "summary": "Backend engineer.",
     "skills": {"flat": ["Python"], "categorized": {}},
