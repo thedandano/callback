@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import json
 import subprocess
+from email.message import Message
+from http.client import IncompleteRead
+from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
+from urllib.error import HTTPError, URLError
 
 import pytest
 from langsmith.utils import LangSmithError
@@ -25,6 +30,415 @@ from evals.runner import (
     tailor_prompt,
 )
 from evals.tailor_checks import TailorCase
+
+
+@pytest.mark.parametrize(
+    ("host", "port", "url"),
+    [
+        ("ollama", None, "http://127.0.0.1:11434/v1/chat/completions"),
+        ("llamacpp", None, "http://127.0.0.1:8080/v1/chat/completions"),
+        ("ollama", 12345, "http://127.0.0.1:12345/v1/chat/completions"),
+        ("llamacpp", 8081, "http://127.0.0.1:8081/v1/chat/completions"),
+    ],
+)
+def test_local_host_sends_chat_request(host, port, url, monkeypatch):
+    seen = {}
+
+    def open_request(request, *, timeout):
+        seen.update(url=request.full_url, method=request.get_method(), timeout=timeout)
+        seen["body"] = json.loads(request.data)
+        seen["content_type"] = request.get_header("Content-type")
+        return BytesIO(b'{"choices": [{"message": {"content": "MODEL REPLY"}}]}')
+
+    def fake_opener(handler):
+        seen["proxies"] = handler.proxies
+        return SimpleNamespace(open=open_request)
+
+    monkeypatch.setattr(runner, "build_opener", fake_opener, raising=False)
+    reply = call_host(host, "chosen-model", "PROMPT", port=port)
+
+    assert reply == "MODEL REPLY"
+    assert seen == {
+        "url": url,
+        "method": "POST",
+        "timeout": 900,
+        "body": {
+            "model": "chosen-model",
+            "messages": [{"role": "user", "content": "PROMPT"}],
+            "stream": False,
+        },
+        "content_type": "application/json",
+        "proxies": {},
+    }
+
+
+@pytest.mark.parametrize("host", ["ollama", "llamacpp"])
+def test_local_host_requires_model_before_fixture_work(host, monkeypatch, capsys):
+    def forbidden():
+        raise AssertionError("validation must precede git and fixture work")
+
+    monkeypatch.setattr(runner, "_commit", forbidden)
+    assert main(["--host", host]) == 1
+    assert f"--model is required for --host {host}" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        ["--host", "ollama", "--model", " "],
+        ["--host", "claude", "--model", ""],
+        ["--host", "ollama", "--model", "m", "--port", "0"],
+        ["--host", "llamacpp", "--model", "m", "--port", "-1"],
+        ["--host", "ollama", "--model", "m", "--port", "65536"],
+        ["--host", "claude", "--port", "8080"],
+        ["--host", "codex", "--port", "8080"],
+        ["--host", "hermes", "--port", "8080"],
+        ["--host", "ollama", "--model", "m", "--provider", "openrouter"],
+        ["--host", "hermes", "--provider", " "],
+    ],
+)
+def test_invalid_host_arguments_fail_before_fixture_work(flags, monkeypatch, capsys):
+    def forbidden():
+        raise AssertionError("invalid options must not touch fixtures")
+
+    monkeypatch.setattr(runner, "_commit", forbidden)
+    assert main(flags) == 1
+    assert capsys.readouterr().err
+
+
+@pytest.mark.parametrize("port", [1, 65535])
+def test_local_port_accepts_boundaries(port):
+    args = runner._parse_args(["--host", "ollama", "--model", "m", "--port", str(port)])
+    runner._validate_args(args)
+
+
+def test_noninteger_port_is_an_argument_error():
+    with pytest.raises(SystemExit) as exc:
+        runner._parse_args(["--host", "ollama", "--model", "m", "--port", "abc"])
+    assert exc.value.code == 2
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        URLError("connection refused"),
+        HTTPError("http://127.0.0.1:11434", 404, "model not found", Message(), None),
+        TimeoutError("timed out"),
+    ],
+)
+def test_local_connection_errors_reach_the_user(error, monkeypatch):
+    def open_request(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(
+        runner, "build_opener", lambda *_: SimpleNamespace(open=open_request), raising=False
+    )
+    with pytest.raises(HostError, match="ollama.*11434"):
+        call_host("ollama", "m", "PROMPT")
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"not json",
+        b"[]",
+        b"{}",
+        b'{"choices": []}',
+        b'{"choices": [{"message": {"content": null}}]}',
+        b'{"choices": [{"message": {"content": " "}}]}',
+    ],
+)
+def test_local_invalid_response_is_a_host_error(body, monkeypatch):
+    monkeypatch.setattr(
+        runner,
+        "build_opener",
+        lambda *_: SimpleNamespace(open=lambda *args, **kwargs: BytesIO(body)),
+        raising=False,
+    )
+    with pytest.raises(HostError, match="ollama.*11434"):
+        call_host("ollama", "m", "PROMPT")
+
+
+@pytest.mark.parametrize("host", ["ollama", "llamacpp", "hermes"])
+def test_new_hosts_checks_only_need_no_model_or_transport(host, tmp_path, monkeypatch):
+    extract_dir = tmp_path / "extract"
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    _write_extract_fixture(extract_dir, "acme", expected)
+    monkeypatch.setattr(runner, "EXTRACT_DIR", extract_dir)
+    monkeypatch.setattr(runner, "_commit", lambda: "abc1234")
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("checks-only must stay offline")
+
+    monkeypatch.setattr(runner, "call_host", forbidden)
+    monkeypatch.setattr(runner.experiments, "record_extract", forbidden)
+    assert main(["--host", host, "--checks-only", "--eval", "extract"]) == 0
+
+
+def test_local_failure_clears_saved_reply_and_continues(tmp_path, monkeypatch):
+    extract_dir = tmp_path / "extract"
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    for board in ["a", "b"]:
+        _write_extract_fixture(extract_dir, board, expected)
+    monkeypatch.setattr(runner, "EXTRACT_DIR", extract_dir)
+    replies = iter(
+        [
+            URLError("connection refused"),
+            {"choices": [{"message": {"content": json.dumps(expected)}}]},
+        ]
+    )
+
+    def open_request(*args, **kwargs):
+        reply = next(replies)
+        if isinstance(reply, URLError):
+            raise reply
+        return BytesIO(json.dumps(reply).encode())
+
+    monkeypatch.setattr(runner, "build_opener", lambda *_: SimpleNamespace(open=open_request))
+    rows = run_extract("ollama", "m", ["a", "b"], checks_only=False, run=None, commit="abc")
+    saved = json.loads((extract_dir / "a.host.json").read_text())
+    assert saved["output"] is None
+    assert "connection refused" in saved["raw"]
+    assert [(row.fixture, row.passed) for row in rows] == [("a", False), ("b", True)]
+
+
+@pytest.mark.parametrize("model", [None, "chosen-model"])
+@pytest.mark.parametrize("provider", [None, "openrouter"])
+def test_hermes_calls_isolated_cli_with_stdin(model, provider):
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append((cmd, kwargs))
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout='{"type":"result","exit_code":0,"text":"MODEL REPLY"}\n', stderr=""
+        )
+
+    assert call_host("hermes", model, "PROMPT", run=fake_run, provider=provider) == "MODEL REPLY"
+    cmd, kwargs = calls[0]
+    expected = [
+        "hermes",
+        "chat",
+        "--query-file",
+        "-",
+        "--oneshot",
+        "--quiet",
+        "--format",
+        "stream-json",
+        "--safe-mode",
+    ]
+    if model:
+        expected.extend(["--model", model])
+    if provider:
+        expected.extend(["--provider", provider])
+    assert cmd == expected
+    assert kwargs["input"] == "PROMPT"
+    assert kwargs["timeout"] == 900
+    assert kwargs["capture_output"] is True
+    assert kwargs["text"] is True
+    assert kwargs["cwd"] != str(Path.cwd())
+
+
+def test_hermes_reads_only_terminal_answer():
+    stdout = "\n".join(
+        [
+            '{"type":"system","subtype":"init","model":"m"}',
+            '{"type":"text","text":"a discarded draft"}',
+            '{"type":"tool_use","name":"example"}',
+            '{"type":"tool_result","name":"example","output":"tool text"}',
+            '{"type":"result","exit_code":0,"text":"final answer"}',
+        ]
+    )
+    assert runner._hermes_result(stdout) == "final answer"
+
+
+@pytest.mark.parametrize(
+    "stdout",
+    [
+        "not json",
+        "[]",
+        '{"type":"text","text":"draft"}',
+        '{"type":"result","exit_code":1,"text":"partial answer"}',
+        '{"type":"result","exit_code":0,"text":"answer","error":"failed"}',
+        '{"type":"result","exit_code":0,"text":null}',
+        '{"type":"result","exit_code":0,"text":" "}',
+        '{"type":"result","exit_code":0,"text":"one"}\n{"type":"result","exit_code":0,"text":"two"}',
+    ],
+)
+def test_invalid_hermes_events_raise_host_error(stdout):
+    with pytest.raises(HostError, match="hermes"):
+        runner._hermes_result(stdout)
+
+
+def test_codex_without_model_does_not_force_a_model():
+    def fake_run(cmd, **kwargs):
+        assert "-m" not in cmd
+        Path(cmd[cmd.index("-o") + 1]).write_text("ANSWER")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    assert call_host("codex", None, "PROMPT", run=fake_run) == "ANSWER"
+
+
+@pytest.mark.parametrize("host", ["claude", "codex", "hermes"])
+def test_missing_cli_is_a_host_error(host):
+    def missing(cmd, **kwargs):
+        raise FileNotFoundError("not installed")
+
+    with pytest.raises(HostError, match=f"{host}.*not installed"):
+        call_host(host, None, "PROMPT", run=missing)
+
+
+@pytest.mark.parametrize(
+    ("host", "env", "filename", "config", "model", "provider"),
+    [
+        ("claude", "CLAUDE_CONFIG_DIR", "settings.json", '{"model":"sonnet"}', "sonnet", None),
+        ("codex", "CODEX_HOME", "config.toml", 'model = "gpt-5.6-terra"', "gpt-5.6-terra", None),
+        (
+            "hermes",
+            "HERMES_HOME",
+            "config.yaml",
+            "model:\n  default: chosen-model\n  provider: openrouter\n",
+            "chosen-model",
+            "openrouter",
+        ),
+    ],
+)
+def test_saved_harness_defaults_are_used_without_loading_other_settings(
+    host, env, filename, config, model, provider, tmp_path, monkeypatch
+):
+    (tmp_path / filename).write_text(config)
+    monkeypatch.setenv(env, str(tmp_path))
+    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
+    monkeypatch.delenv("HERMES_INFERENCE_MODEL", raising=False)
+    assert runner._harness_defaults(host) == (model, provider)
+
+
+@pytest.mark.parametrize("host", ["claude", "codex", "hermes"])
+def test_missing_harness_config_uses_native_defaults(host, tmp_path, monkeypatch):
+    for env in ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "HERMES_HOME"]:
+        monkeypatch.setenv(env, str(tmp_path))
+    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
+    monkeypatch.delenv("HERMES_INFERENCE_MODEL", raising=False)
+    assert runner._harness_defaults(host) == (None, None)
+
+
+def test_invalid_harness_config_is_not_silently_ignored(tmp_path, monkeypatch):
+    (tmp_path / "config.toml").write_text('model = "unterminated')
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    with pytest.raises(HostError, match="codex.*config"):
+        runner._harness_defaults("codex")
+
+
+@pytest.mark.parametrize(
+    ("host", "extra_flags", "routing"),
+    [
+        ("ollama", [], {"port": 11434, "transport": "http"}),
+        ("llamacpp", ["--port", "8081"], {"port": 8081, "transport": "http"}),
+        (
+            "hermes",
+            ["--provider", "openrouter"],
+            {
+                "provider": "openrouter",
+                "transport": "cli",
+                "isolation": "customizations_disabled",
+                "builtin_tools": True,
+            },
+        ),
+    ],
+)
+def test_new_host_routing_is_saved_and_recorded(
+    host, extra_flags, routing, tmp_path, monkeypatch, caplog
+):
+    extract_dir = tmp_path / "extract"
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    _write_extract_fixture(extract_dir, "acme", expected)
+    monkeypatch.setattr(runner, "EXTRACT_DIR", extract_dir)
+    monkeypatch.setattr(runner, "_commit", lambda: "abc")
+    seen = {}
+
+    def record(rows, metadata):
+        seen.update(metadata)
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout=json.dumps({"type": "result", "exit_code": 0, "text": json.dumps(expected)}),
+            stderr="",
+        )
+
+    monkeypatch.setattr(runner.experiments, "record_extract", record)
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        runner,
+        "build_opener",
+        lambda *_: SimpleNamespace(
+            open=lambda *args, **kwargs: BytesIO(
+                json.dumps({"choices": [{"message": {"content": json.dumps(expected)}}]}).encode()
+            )
+        ),
+    )
+    with caplog.at_level("INFO", logger="callback.evals"):
+        assert main(["--host", host, "--model", "chosen", "--eval", "extract", *extra_flags]) == 0
+    saved = json.loads((extract_dir / "acme.host.json").read_text())
+    assert {key: saved[key] for key in routing} == routing
+    assert seen == {"host": host, "model": "chosen", "commit": "abc", **routing}
+    assert f"calling host={host} model=chosen fixture=acme" in caplog.text
+    assert saved["output"] == expected
+
+
+def test_failed_local_call_keeps_routing_metadata(tmp_path, monkeypatch):
+    extract_dir = tmp_path / "extract"
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    _write_extract_fixture(extract_dir, "acme", expected)
+    monkeypatch.setattr(runner, "EXTRACT_DIR", extract_dir)
+
+    def failed(*args, **kwargs):
+        raise URLError("offline")
+
+    monkeypatch.setattr(runner, "build_opener", lambda *_: SimpleNamespace(open=failed))
+    rows = run_extract(
+        "ollama", "chosen", ["acme"], checks_only=False, run=None, commit="abc", port=12345
+    )
+    saved = json.loads((extract_dir / "acme.host.json").read_text())
+    assert rows[0].passed is False
+    assert saved["output"] is None
+    assert saved["port"] == 12345
+    assert saved["transport"] == "http"
+
+
+def test_checks_only_logs_saved_output(tmp_path, monkeypatch, caplog):
+    extract_dir = tmp_path / "extract"
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    _write_extract_fixture(extract_dir, "acme", expected)
+    monkeypatch.setattr(runner, "EXTRACT_DIR", extract_dir)
+    monkeypatch.setattr(runner, "_commit", lambda: "abc")
+    with caplog.at_level("INFO", logger="callback.evals"):
+        assert main(["--checks-only", "--eval", "extract"]) == 0
+    assert "checking saved output fixture=acme" in caplog.messages
+    assert "calling host=" not in caplog.text
+
+
+def test_saved_codex_default_is_passed_and_recorded(tmp_path, monkeypatch):
+    extract_dir = tmp_path / "extract"
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    _write_extract_fixture(extract_dir, "acme", expected)
+    (tmp_path / "config.toml").write_text(
+        'model = "chosen-default"\nmodel_reasoning_effort = "high"'
+    )
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    monkeypatch.setattr(runner, "EXTRACT_DIR", extract_dir)
+    monkeypatch.setattr(runner, "_commit", lambda: "abc")
+
+    def fake_run(cmd, **kwargs):
+        assert cmd[cmd.index("-m") + 1] == "chosen-default"
+        assert "--ignore-user-config" in cmd
+        Path(cmd[cmd.index("-o") + 1]).write_text(json.dumps(expected))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    assert main(["--host", "codex", "--eval", "extract", "--no-langsmith"]) == 0
+    assert json.loads((extract_dir / "acme.host.json").read_text())["model"] == "chosen-default"
+
 
 SECTIONS = {
     "summary": "Backend engineer.",
@@ -560,3 +974,63 @@ def test_langsmith_failure_is_logged_and_local_results_still_print(tmp_path, mon
         in m
         for m in caplog.messages
     )
+
+
+@pytest.mark.parametrize(
+    "error", [ConnectionResetError("connection reset"), IncompleteRead(b"partial")]
+)
+def test_body_read_failure_clears_saved_reply_and_continues(error, tmp_path, monkeypatch):
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    for board in ["a", "b"]:
+        _write_extract_fixture(tmp_path, board, expected)
+    monkeypatch.setattr(runner, "EXTRACT_DIR", tmp_path)
+
+    class BrokenBody(BytesIO):
+        def read(self, *args):
+            raise error
+
+    replies = iter(
+        [
+            BrokenBody(),
+            BytesIO(
+                json.dumps({"choices": [{"message": {"content": json.dumps(expected)}}]}).encode()
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        runner,
+        "build_opener",
+        lambda *_: SimpleNamespace(open=lambda *args, **kwargs: next(replies)),
+    )
+    rows = run_extract("ollama", "m", ["a", "b"], checks_only=False, run=None, commit="abc")
+    assert json.loads((tmp_path / "a.host.json").read_text())["output"] is None
+    assert [(row.fixture, row.passed) for row in rows] == [("a", False), ("b", True)]
+
+
+@pytest.mark.parametrize("explicit_profile", [False, True])
+def test_hermes_defaults_follow_native_profile(explicit_profile, tmp_path, monkeypatch):
+    (tmp_path / "config.yaml").write_text("model: root-model")
+    (tmp_path / "active_profile").write_text("work\n", encoding="utf-8-sig")
+    profile = tmp_path / "profiles" / ("other" if explicit_profile else "work")
+    profile.mkdir(parents=True)
+    (profile / "config.yaml").write_text("model: profile-model")
+    monkeypatch.setenv("HERMES_HOME", str(profile if explicit_profile else tmp_path))
+    monkeypatch.delenv("HERMES_INFERENCE_MODEL", raising=False)
+    assert runner._harness_defaults("hermes") == ("profile-model", None)
+
+
+@pytest.mark.parametrize("name", ["../escape", "missing"])
+def test_invalid_active_hermes_profile_reaches_user(name, tmp_path, monkeypatch):
+    (tmp_path / "active_profile").write_text(name)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    with pytest.raises(HostError, match="profile"):
+        runner._harness_defaults("hermes")
+
+
+def test_hermes_nested_model_default(tmp_path, monkeypatch):
+    (tmp_path / "config.yaml").write_text(
+        "model:\n  default:\n    model: chosen-model\n    provider: openrouter\n  provider: auto\n"
+    )
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.delenv("HERMES_INFERENCE_MODEL", raising=False)
+    assert runner._harness_defaults("hermes") == ("chosen-model", "openrouter")

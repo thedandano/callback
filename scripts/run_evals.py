@@ -4,6 +4,9 @@
 Usage:
   uv run python scripts/run_evals.py                      # claude, default model, both evals
   uv run python scripts/run_evals.py --host codex --model gpt-5.6-terra --eval tailor
+  uv run python scripts/run_evals.py --host ollama --model qwen3:8b --port 11434
+  uv run python scripts/run_evals.py --host llamacpp --model resume-eval --port 8080
+  uv run python scripts/run_evals.py --host hermes                     # harness defaults
   uv run python scripts/run_evals.py --checks-only        # re-check saved outputs, no model call
   uv run python scripts/run_evals.py --case reddit --case jane-doe-backend
 

@@ -333,6 +333,64 @@ uncommitted changes add `-dirty`.
 Architecture, graph design, and change discipline are documented in
 [CLAUDE.md](CLAUDE.md) and [BRIEF.md](BRIEF.md).
 
+### Model evals
+
+The runner sends each saved job or resume example to a model, saves its reply,
+then runs the extraction or tailoring checks. It tests those answers directly;
+it does not run the full MCP workflow or fetch live job postings.
+
+```bash
+uv run python scripts/run_evals.py --host claude       # saved/default model
+uv run python scripts/run_evals.py --host codex        # saved/default model
+uv run python scripts/run_evals.py --host hermes       # saved/default model
+uv run python scripts/run_evals.py --host hermes --provider openrouter --model MODEL_ID
+uv run python scripts/run_evals.py --host ollama --model MODEL_NAME
+uv run python scripts/run_evals.py --host llamacpp --model MODEL_ALIAS
+```
+
+Replace the capitalized names with your model or server alias. `--model` is
+required for Ollama and llama.cpp. Start the local server and load the model
+first; installing the CLI alone is not enough. Ollama defaults to port `11434`,
+and llama.cpp defaults to `8080`. Override either port with `--port`:
+
+```bash
+uv run python scripts/run_evals.py --host ollama --model MODEL_NAME --port 12345
+uv run python scripts/run_evals.py --host llamacpp --model MODEL_ALIAS --port 8081
+```
+
+Both local targets use their OpenAI-compatible chat endpoint on `127.0.0.1`.
+For llama.cpp, use the model alias set when starting `llama-server`.
+
+For Claude, Codex, and Hermes, `--model` overrides the harness default. Without
+it, the runner reads the saved model name from the harness's user settings, then
+passes that name to the isolated CLI. It respects `CLAUDE_CONFIG_DIR`,
+`CODEX_HOME`, and `HERMES_HOME`; Claude's `ANTHROPIC_MODEL` and Hermes's
+`HERMES_INFERENCE_MODEL` environment overrides also apply. With no saved choice,
+the runner leaves model selection to the CLI. It does not copy other user
+settings, Codex profile overrides, or custom provider definitions. Hermes follows
+its active profile, including an explicit profile directory in `HERMES_HOME`.
+
+Hermes also reads the provider from its saved `model` settings; `--provider`
+overrides that choice. Authentication stays with the harness. Hermes uses
+`--safe-mode` to exclude personal rules, memory, plugins, and MCP connections,
+but may retain built-in tools. Its results measure the harness as well as the
+model; direct Ollama and llama.cpp calls have no tools. Use a Hermes version
+supporting `--query-file`, `--safe-mode`, and `--format stream-json`.
+
+Run one example or check saved replies without calling a model:
+
+```bash
+uv run python scripts/run_evals.py --host ollama --model MODEL_NAME --eval extract --case reddit
+uv run python scripts/run_evals.py --checks-only
+```
+
+The runner logs before each host call. Each fresh run overwrites that example's
+`host.json`; failed calls replace stale replies with a recorded error. Runs are
+sequential, and simultaneous runs would overwrite each other's files. Local
+port and Hermes provider settings are saved with the results and sent to
+LangSmith experiment metadata. `--no-langsmith` skips experiment uploads;
+`--checks-only` always stays offline and needs no model.
+
 ---
 
 ## License

@@ -1,9 +1,9 @@
 """Feed each E1/E2 fixture to a host model, save its output, run the checks, print one table.
 
-The runner is the only thing in the repo that calls a model. It shells out to
-`claude -p` or `codex exec`, both non-interactive and isolated (no MCP servers,
-tools, settings, or CLAUDE.md) from a scratch directory so nothing colors the
-answer.
+The runner calls Claude, Codex, or Hermes from a scratch directory, or sends
+chat requests directly to a local Ollama or llama.cpp server. CLI calls exclude
+personal instructions and integrations; saved model choices are read separately.
+Hermes may retain its built-in tools, so it measures the harness as well as the model.
 """
 
 from __future__ import annotations
@@ -11,14 +11,20 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
+import re
 import subprocess
 import sys
 import tempfile
+import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from http.client import HTTPException
 from pathlib import Path
+from urllib.request import ProxyHandler, Request, build_opener
 
+import yaml
 from langsmith.utils import LangSmithError
 
 from callback.jd_data import EXTRACTION_PROTOCOL
@@ -33,9 +39,9 @@ from evals.tailor_checks import run_checks as tailor_run_checks
 logger = logging.getLogger("callback.evals")
 
 EXTRACT_DIR = Path(__file__).resolve().parent / "extract"
-HOSTS = ("claude", "codex")
+HOSTS = ("claude", "codex", "ollama", "llamacpp", "hermes")
+LOCAL_PORTS = {"ollama": 11434, "llamacpp": 8080}
 EVALS = ("extract", "tailor")
-CODEX_DEFAULT_MODEL = "gpt-5.6-terra"
 HOST_TIMEOUT_S = 900
 RunFn = Callable[..., subprocess.CompletedProcess]
 
@@ -182,11 +188,9 @@ def _codex_cmd(model: str | None, out_file: Path) -> list[str]:
     # command above gets from --strict-mcp-config/--mcp-config '{}'/--tools ''/--setting-sources
     # '' — otherwise a configured callback MCP server or other user-level instructions would
     # leak into the supposedly isolated eval run.
-    return [
+    cmd = [
         "codex",
         "exec",
-        "-m",
-        model or CODEX_DEFAULT_MODEL,
         "--skip-git-repo-check",
         "--ignore-user-config",
         "--sandbox",
@@ -194,6 +198,115 @@ def _codex_cmd(model: str | None, out_file: Path) -> list[str]:
         "-o",
         str(out_file),
     ]
+    return cmd[:2] + (["-m", model] if model else []) + cmd[2:]
+
+
+def _hermes_cmd(model: str | None, provider: str | None) -> list[str]:
+    cmd = [
+        "hermes",
+        "chat",
+        "--query-file",
+        "-",
+        "--oneshot",
+        "--quiet",
+        "--format",
+        "stream-json",
+        "--safe-mode",
+    ]
+    if model:
+        cmd.extend(["--model", model])
+    if provider:
+        cmd.extend(["--provider", provider])
+    return cmd
+
+
+def _hermes_home(home: Path) -> Path:
+    if home.parent.name == "profiles":
+        return home
+    native_root = Path.home() / ".hermes"
+    root = native_root if home.is_relative_to(native_root) else home
+    try:
+        name = (root / "active_profile").read_text(encoding="utf-8-sig").strip().lower()
+    except FileNotFoundError:
+        return home
+    except (OSError, UnicodeDecodeError) as exc:
+        raise HostError(f"hermes: could not read active profile: {exc}") from exc
+    if not name or name == "default":
+        return home
+    profile = root / "profiles" / name
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", name) or not profile.is_dir():
+        raise HostError(f"hermes: active profile is invalid or missing: {name!r}")
+    return profile
+
+
+def _read_harness_config(host: str) -> dict:
+    locations = {
+        "claude": ("CLAUDE_CONFIG_DIR", "~/.claude", "settings.json", json.loads),
+        "codex": ("CODEX_HOME", "~/.codex", "config.toml", tomllib.loads),
+        "hermes": ("HERMES_HOME", "~/.hermes", "config.yaml", yaml.safe_load),
+    }
+    env, default_dir, filename, load = locations[host]
+    home = Path(os.path.expandvars(os.environ.get(env) or default_dir)).expanduser()
+    path = (_hermes_home(home) if host == "hermes" else home) / filename
+    if not path.exists():
+        return {}
+    try:
+        config = load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError, yaml.YAMLError) as exc:
+        raise HostError(f"{host}: could not read model defaults from config: {exc}") from exc
+    if config is None:
+        return {}
+    if not isinstance(config, dict):
+        raise HostError(f"{host}: config must be an object")
+    return config
+
+
+def _harness_defaults(host: str) -> tuple[str | None, str | None]:
+    config = _read_harness_config(host)
+    model = config.get("model")
+    provider = None
+    if host == "hermes" and isinstance(model, dict):
+        provider = model.get("provider")
+        model = model.get("default") or model.get("model")
+        if isinstance(model, dict):
+            provider = model.get("provider") or provider
+            model = model.get("model")
+    model_env = {"claude": "ANTHROPIC_MODEL", "hermes": "HERMES_INFERENCE_MODEL"}.get(host)
+    if model_env:
+        model = os.environ.get(model_env, model)
+    for name, value in (("model", model), ("provider", provider)):
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise HostError(f"{host}: configured {name} must be a nonblank string")
+    return model, provider
+
+
+def _resolve_harness_defaults(args: argparse.Namespace) -> None:
+    if args.checks_only or args.host in LOCAL_PORTS:
+        return
+    if args.model is not None and (args.host != "hermes" or args.provider is not None):
+        return
+    model, provider = _harness_defaults(args.host)
+    args.model = args.model or model
+    args.provider = args.provider or provider
+
+
+def _hermes_result(stdout: str) -> str:
+    try:
+        events = [json.loads(line) for line in stdout.splitlines() if line.strip()]
+    except json.JSONDecodeError as exc:
+        raise HostError("hermes returned invalid stream-json output") from exc
+    if any(not isinstance(event, dict) for event in events):
+        raise HostError("hermes returned an invalid event")
+    results = [event for event in events if event.get("type") == "result"]
+    if len(results) != 1:
+        raise HostError("hermes must return exactly one result event")
+    result = results[0]
+    if result.get("exit_code") != 0 or result.get("error"):
+        raise HostError(f"hermes result failed: {result.get('error') or result.get('exit_code')}")
+    text = result.get("text")
+    if not isinstance(text, str) or not text.strip():
+        raise HostError("hermes result has no answer text")
+    return text
 
 
 def _claude_result(stdout: str) -> str:
@@ -213,23 +326,88 @@ def _claude_result(stdout: str) -> str:
     raise HostError(f"claude reply has no result: {stdout[:200]!r}{extra}")
 
 
-def call_host(host: str, model: str | None, prompt: str, run: RunFn = subprocess.run) -> str:
-    """Send one prompt to the host CLI and return its reply text."""
+def _local_port(host: str, port: int | None) -> int:
+    return LOCAL_PORTS[host] if port is None else port
+
+
+def _call_local_host(host: str, model: str, prompt: str, port: int) -> str:
+    url = f"http://127.0.0.1:{port}/v1/chat/completions"
+    payload = {"model": model, "messages": [{"role": "user", "content": prompt}], "stream": False}
+    request = Request(
+        url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}
+    )
+    try:
+        with build_opener(ProxyHandler({})).open(request, timeout=HOST_TIMEOUT_S) as response:
+            content = json.load(response)["choices"][0]["message"]["content"]
+    except (OSError, HTTPException) as exc:
+        raise HostError(f"{host} port {port}: request failed: {exc}") from exc
+    except (json.JSONDecodeError, UnicodeDecodeError, KeyError, IndexError, TypeError) as exc:
+        raise HostError(f"{host} port {port}: invalid chat response: {exc}") from exc
+    if not isinstance(content, str) or not content.strip():
+        raise HostError(f"{host} port {port}: chat response has no answer text")
+    return content
+
+
+def call_host(
+    host: str,
+    model: str | None,
+    prompt: str,
+    run: RunFn = subprocess.run,
+    *,
+    port: int | None = None,
+    provider: str | None = None,
+) -> str:
+    """Send one prompt to a local server or host CLI and return its reply text."""
+    if host in LOCAL_PORTS:
+        if model is None or not model.strip():
+            raise HostError(f"--model is required for --host {host}")
+        return _call_local_host(host, model, prompt, _local_port(host, port))
+    return _call_cli_host(host, model, prompt, run, provider)
+
+
+def _call_cli_host(
+    host: str, model: str | None, prompt: str, run: RunFn, provider: str | None
+) -> str:
     with tempfile.TemporaryDirectory(prefix="callback-eval-") as scratch:
         out_file = Path(scratch) / "reply.txt"
-        cmd = _claude_cmd(model) if host == "claude" else _codex_cmd(model, out_file)
-        proc = run(
-            cmd, input=prompt, capture_output=True, text=True, cwd=scratch, timeout=HOST_TIMEOUT_S
-        )
+        commands = {
+            "claude": _claude_cmd(model),
+            "codex": _codex_cmd(model, out_file),
+            "hermes": _hermes_cmd(model, provider),
+        }
+        cmd = commands[host]
+        try:
+            proc = run(
+                cmd,
+                input=prompt,
+                capture_output=True,
+                text=True,
+                cwd=scratch,
+                timeout=HOST_TIMEOUT_S,
+            )
+        except FileNotFoundError as exc:
+            raise HostError(f"{host} CLI is not installed or not on PATH") from exc
         if proc.returncode != 0:
             raise HostError(f"{host} exited {proc.returncode}: {proc.stderr.strip()[-500:]}")
         if host == "claude":
             return _claude_result(proc.stdout)
-        return out_file.read_text(encoding="utf-8")
+        if host == "hermes":
+            return _hermes_result(proc.stdout)
+        try:
+            return out_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise HostError("codex did not write a readable final reply") from exc
 
 
 def _write_host_file(
-    path: Path, host: str, model: str | None, raw: str, output: dict | None, commit: str
+    path: Path,
+    host: str,
+    model: str | None,
+    raw: str,
+    output: dict | None,
+    commit: str,
+    *,
+    routing: dict | None = None,
 ) -> None:
     path.write_text(
         json.dumps(
@@ -240,6 +418,7 @@ def _write_host_file(
                 "ran_at": _now(),
                 "raw": raw,
                 "output": output,
+                **(routing or {}),
             },
             indent=2,
             ensure_ascii=False,
@@ -250,13 +429,32 @@ def _write_host_file(
 
 
 def _record_host_reply(
-    path: Path, host: str, model: str | None, raw: str, commit: str
+    path: Path,
+    host: str,
+    model: str | None,
+    raw: str,
+    commit: str,
+    *,
+    routing: dict | None = None,
 ) -> dict | None:
     output = extract_json_object(raw)
     if output is None:
         logger.warning("%s: no JSON object in host reply; recorded raw text only", path.name)
-    _write_host_file(path, host, model, raw, output, commit)
+    _write_host_file(path, host, model, raw, output, commit, routing=routing)
     return output
+
+
+def _routing(host: str, port: int | None, provider: str | None) -> dict:
+    if host in LOCAL_PORTS:
+        return {"port": _local_port(host, port), "transport": "http"}
+    if host == "hermes":
+        return {
+            "provider": provider or "auto",
+            "transport": "cli",
+            "isolation": "customizations_disabled",
+            "builtin_tools": True,
+        }
+    return {}
 
 
 def _host_output(
@@ -269,29 +467,42 @@ def _host_output(
     checks_only: bool,
     run: RunFn | None,
     commit: str,
+    port: int | None = None,
+    provider: str | None = None,
 ) -> tuple[dict | None, Check | None]:
     """The host output for one fixture: freshly produced, or read back with --checks-only.
 
     A host call that times out or errors fails only this fixture's row; the batch continues.
     """
     if checks_only:
+        logger.info("checking saved output fixture=%s", fixture)
         if not path.exists():
             return None, Check(
                 "host_output_present", False, f"{path.name} missing; run without --checks-only"
             )
         return json.loads(path.read_text(encoding="utf-8")).get("output"), None
-    if run is None:
+    if run is None and host not in LOCAL_PORTS:
         raise ValueError("run is required unless checks_only")
+    routing = _routing(host, port, provider)
+    logger.info(
+        "calling host=%s model=%s fixture=%s routing=%s",
+        host,
+        model or "default",
+        fixture,
+        routing,
+    )
     try:
-        raw = call_host(host, model, prompt, run=run)
+        raw = call_host(
+            host, model, prompt, run=run or subprocess.run, port=port, provider=provider
+        )
     except (HostError, subprocess.TimeoutExpired) as exc:
         message = f"{type(exc).__name__}: {exc}"
         logger.warning("%s: host call failed: %s", fixture, message)
         # A stale host file from a prior successful run must not survive this failure:
         # LangSmith and --checks-only would otherwise silently replay the old output.
-        _write_host_file(path, host, model, message, None, commit)
+        _write_host_file(path, host, model, message, None, commit, routing=routing)
         return None, Check("host_call", False, message)
-    return _record_host_reply(path, host, model, raw, commit), None
+    return _record_host_reply(path, host, model, raw, commit, routing=routing), None
 
 
 def run_extract(
@@ -302,6 +513,8 @@ def run_extract(
     checks_only: bool,
     run: RunFn | None,
     commit: str,
+    port: int | None = None,
+    provider: str | None = None,
 ) -> list[EvalRow]:
     rows = []
     for board in boards:
@@ -317,6 +530,8 @@ def run_extract(
             checks_only=checks_only,
             run=run,
             commit=commit,
+            port=port,
+            provider=provider,
         )
         checks = [gate] if gate else extract_run_checks(json.dumps(output), expected, jd_text)
         rows.append(EvalRow("extract", board, checks))
@@ -332,6 +547,8 @@ def run_tailor(
     checks_only: bool,
     run: RunFn | None,
     commit: str,
+    port: int | None = None,
+    provider: str | None = None,
 ) -> list[EvalRow]:
     rows = []
     for case_dir in dirs:
@@ -347,6 +564,8 @@ def run_tailor(
             checks_only=checks_only,
             run=run,
             commit=commit,
+            port=port,
+            provider=provider,
         )
         checks = [gate] if gate else tailor_run_checks(case, output)
         rows.append(EvalRow("tailor", fixture, checks))
@@ -369,8 +588,12 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", choices=HOSTS, default="claude")
     parser.add_argument(
-        "--model", default=None, help="host model flag; default is the host's own default"
+        "--model",
+        default=None,
+        help="required for Ollama/llama.cpp; otherwise overrides the harness default",
     )
+    parser.add_argument("--port", type=int, help="local server port (Ollama 11434, llama.cpp 8080)")
+    parser.add_argument("--provider", help="Hermes inference provider override")
     parser.add_argument(
         "--eval", choices=EVALS, action="append", help="run only this eval (repeatable)"
     )
@@ -384,6 +607,20 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "--no-langsmith", action="store_true", help="do not record a LangSmith experiment"
     )
     return parser.parse_args(argv)
+
+
+def _validate_args(args: argparse.Namespace) -> None:
+    if args.model is not None and not args.model.strip():
+        raise ValueError("--model must not be blank")
+    if args.host in LOCAL_PORTS and args.model is None and not args.checks_only:
+        raise ValueError(f"--model is required for --host {args.host}")
+    if args.port is not None:
+        if args.host not in LOCAL_PORTS:
+            raise ValueError("--port is only supported for Ollama and llama.cpp")
+        if not 1 <= args.port <= 65535:
+            raise ValueError("--port must be between 1 and 65535")
+    if args.provider is not None and (args.host != "hermes" or not args.provider.strip()):
+        raise ValueError("--provider must be nonblank and is only supported for Hermes")
 
 
 def _selected_boards(only: list[str] | None) -> list[str]:
@@ -445,6 +682,8 @@ def _run_one_eval(name: str, args: argparse.Namespace, run_meta: dict) -> list[E
             checks_only=args.checks_only,
             run=subprocess.run,
             commit=run_meta["commit"],
+            port=args.port,
+            provider=args.provider,
         )
         _record_experiment(experiments.record_extract, rows, args, run_meta, name)
         return rows
@@ -455,6 +694,8 @@ def _run_one_eval(name: str, args: argparse.Namespace, run_meta: dict) -> list[E
         checks_only=args.checks_only,
         run=subprocess.run,
         commit=run_meta["commit"],
+        port=args.port,
+        provider=args.provider,
     )
     _record_experiment(experiments.record_tailor, rows, args, run_meta, name)
     return rows
@@ -464,12 +705,15 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s", stream=sys.stderr)
     wanted = args.eval or list(EVALS)
-    run_meta = {"host": args.host, "model": args.model or "default", "commit": _commit()}
     rows: list[EvalRow] = []
     try:
+        _validate_args(args)
+        _resolve_harness_defaults(args)
+        run_meta = {"host": args.host, "model": args.model or "default", "commit": _commit()}
+        run_meta.update(_routing(args.host, args.port, args.provider))
         for name in wanted:
             rows.extend(_run_one_eval(name, args, run_meta))
-    except ValueError as exc:
+    except (ValueError, HostError) as exc:
         print(exc, file=sys.stderr)
         return 1
     print(format_table(rows))
