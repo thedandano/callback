@@ -1,6 +1,6 @@
 # Local Model and Hermes Evals Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Work inline unless the user requests delegation.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking. Work inline unless the user requests delegation.
 
 **Goal:** Run the existing extraction and tailoring evals against Ollama, llama.cpp, or Hermes, with optional model overrides, native defaults where available, and local port overrides.
 
@@ -25,9 +25,9 @@ This is a bounded extension to the existing eval flow. This document is the requ
 - Local requests use `http://127.0.0.1:<port>/v1/chat/completions`. A port override changes only the port.
 - The user starts the local server and loads a model. Installing Ollama or llama.cpp alone does not start an eval endpoint. Require the llama.cpp server, not its interactive CLI.
 - Send an explicitly selected model verbatim. Require `--model` for both local servers, including single-model llama.cpp. Reject a missing local model before any host call or output write. No discovery or selection of the first installed model.
-- Claude, Codex, and Hermes must use their own defaults when `--model` is absent. Remove the runner's `CODEX_DEFAULT_MODEL` override. A built-in default under config isolation is not necessarily the user's configured default: resolving that conflict is part of the routing contract, and must not be hidden by recording `default` while forcing a different model.
-- Default Hermes assumption, pending the user's answer: disable personal customizations with `--safe-mode`. Credentials remain managed by Hermes. This disables user config, rules, memory injection, plugins, and MCP; it does **not** promise that built-in tools are disabled. Hermes results measure the harness with those built-in behaviors, while local HTTP results measure a direct model reply. Record this distinction.
-- Named Hermes providers defined only in ignored user config are unavailable in this mode. Document using native providers and existing credentials. If the user chooses their usual Hermes setup, revise Task 2 before implementation to omit safe mode and label results as configured runs.
+- Claude, Codex, and Hermes must use their own defaults when `--model` is absent. Remove the runner's `CODEX_DEFAULT_MODEL` override. Read only saved model names before launching the isolated CLI; record the resolved name when available. Do not import other user settings or force the old Codex model.
+- Hermes behavior: disable personal customizations with `--safe-mode`. Credentials remain managed by Hermes. This disables user config, rules, memory injection, plugins, and MCP; it does **not** promise that built-in tools are disabled. Hermes results measure the harness with those built-in behaviors, while local HTTP results measure a direct model reply. Record this distinction.
+- Read the Hermes provider from its saved model settings when no provider override is supplied. Named custom providers defined only in ignored user config remain unavailable; document that limit. Hermes credentials remain managed by the harness.
 - Local services must be unauthenticated loopback endpoints for this scope. Remote URLs, authenticated local proxies, and Hermes routing to a local endpoint are separate requests.
 
 ## Global constraints
@@ -55,7 +55,7 @@ This is a bounded extension to the existing eval flow. This document is the requ
 - [llama.cpp server](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md): default port 8080 and `/v1/chat/completions`.
 - [Hermes CLI parser](https://github.com/NousResearch/hermes-agent/blob/main/hermes_cli/_parser.py): query files, safe mode, provider/model overrides, and stream-json output.
 - Installed Hermes source also has `hermes_cli/stream_json.py`: terminal record uses `type: result`, `text`, and `exit_code`.
-- `hermes chat --help` could not run in this workspace sandbox because its launcher writes an install lock outside the writable roots. Source inspection succeeded. Execution must verify the installed CLI flags before a live smoke run; do not modify or repair Hermes as part of this task.
+- The sandbox initially blocked the Hermes launcher's install lock. An authorized `hermes chat --help` subsequently verified all required flags. No Hermes installation repair or modification was needed.
 
 ---
 
@@ -70,7 +70,7 @@ This is a bounded extension to the existing eval flow. This document is the requ
 - Thread optional `port` and `provider` keyword arguments through `_host_output`, `run_extract`, and `run_tailor`; `_run_one_eval` passes parsed values.
 - Add `_validate_args(args: argparse.Namespace) -> None`; call it before `_commit()` and any fixture work. `main` prints a validation error and returns 1, using the existing ValueError handling pattern.
 
-- [ ] **Step 1: Extend the existing tests.**
+- [x] **Step 1: Extend the existing tests.**
 
   Parameterize request tests for `ollama:11434`, `llamacpp:8080`, and overrides `ollama:12345`, `llamacpp:8081`. Patch `build_opener` to return a fake opener; assert proxy handling is explicitly disabled, and assert the exact URL, POST, JSON content type, timeout 900, and body:
 
@@ -86,11 +86,11 @@ This is a bounded extension to the existing eval flow. This document is the requ
 
   Extend the stale-file/batch-continuation tests to a local connection failure. Assert the failed output becomes null and the next fixture runs. Extend the offline test to local hosts with HTTP/subprocess sentinels.
 
-- [ ] **Step 2: Run `uv run pytest evals/test_runner.py -v`.** New tests fail because local routing and validation are absent.
-- [ ] **Step 3: Implement the minimal local helper.** Use top-level stdlib imports for `Request`, `build_opener`, `ProxyHandler`, `HTTPError`, and `URLError`. Use `build_opener(ProxyHandler({})).open(request, timeout=HOST_TIMEOUT_S)` so a shell's proxy settings cannot redirect the loopback request. Decode the outer response and validate the first message's content. Convert expected HTTP/network/response failures into contextual `HostError` so existing fixture failure handling applies. Do not request `response_format` or send tool definitions.
-- [ ] **Step 4: Wire the flags through both eval kinds.** Require `run` only for CLI hosts; checks-only must return before transport selection. Resolve the local default once when forming run metadata and use the same value for requests.
-- [ ] **Step 5: Run `uv run pytest evals/test_runner.py -v` and `uv run ruff check evals/runner.py evals/test_runner.py`.** All pass; split small helpers only if the existing complexity limit of 7 requires it.
-- [ ] **Step 6: Commit only the task's files:** `feat: run evals against local model servers`.
+- [x] **Step 2: Run `uv run pytest evals/test_runner.py -v`.** New tests fail because local routing and validation are absent.
+- [x] **Step 3: Implement the minimal local helper.** Use top-level stdlib imports for `Request`, `build_opener`, `ProxyHandler`, `HTTPError`, and `URLError`. Use `build_opener(ProxyHandler({})).open(request, timeout=HOST_TIMEOUT_S)` so a shell's proxy settings cannot redirect the loopback request. Decode the outer response and validate the first message's content. Convert expected HTTP/network/response failures into contextual `HostError` so existing fixture failure handling applies. Do not request `response_format` or send tool definitions.
+- [x] **Step 4: Wire the flags through both eval kinds.** Require `run` only for CLI hosts; checks-only must return before transport selection. Resolve the local default once when forming run metadata and use the same value for requests.
+- [x] **Step 5: Run `uv run pytest evals/test_runner.py -v` and `uv run ruff check evals/runner.py evals/test_runner.py`.** All pass; split small helpers only if the existing complexity limit of 7 requires it.
+- [x] **Step 6: Commit only the task's files:** `feat: run evals against local model servers`.
 
 ### Task 2: Add Hermes subprocess support
 
@@ -99,9 +99,9 @@ This is a bounded extension to the existing eval flow. This document is the requ
 **Interfaces:**
 - Add `_hermes_cmd(model: str | None, provider: str | None) -> list[str]`.
 - Add `_hermes_result(stdout: str) -> str`, returning only the terminal event's answer text.
-- Reuse Task 1's optional provider argument and model validation. Omit `--model` when absent so Hermes resolves its native default. Update the isolation design before implementation if the desired default comes from user config that safe mode ignores.
+- Reuse Task 1's optional provider argument and model validation. Omit `--model` when absent so Hermes resolves its native default. Read saved model/provider names separately before safe mode; pass those routing choices explicitly.
 
-- [ ] **Step 1: Add subprocess contract tests.** Assert this command and unchanged prompt passed as stdin in the existing scratch directory:
+- [x] **Step 1: Add subprocess contract tests.** Assert this command and unchanged prompt passed as stdin in the existing scratch directory:
 
   ```text
   hermes chat --query-file - --oneshot --quiet --format stream-json --safe-mode --model chosen-model
@@ -113,10 +113,10 @@ This is a bounded extension to the existing eval flow. This document is the requ
 
   Assert checks-only never launches Hermes, including when model/provider are absent.
 
-- [ ] **Step 2: Run `uv run pytest evals/test_runner.py -v`.** New Hermes tests fail.
-- [ ] **Step 3: Add command selection and event parsing.** Keep Claude and Codex commands unchanged. Add narrow handling of `FileNotFoundError` for a missing host CLI. Catch unsupported CLI versions through nonzero exit status; include stderr and require upgrading, with no permissive fallback.
-- [ ] **Step 4: Run `uv run pytest evals/test_runner.py -v` and `uv run ruff check evals/runner.py evals/test_runner.py`.** Existing isolation and output tests still pass.
-- [ ] **Step 5: Commit only the task's files:** `feat: add Hermes eval host`.
+- [x] **Step 2: Run `uv run pytest evals/test_runner.py -v`.** New Hermes tests fail.
+- [x] **Step 3: Add command selection and event parsing.** Keep Claude/Codex isolation flags; remove the hardcoded Codex default and pass a saved model name when available. Add narrow handling of `FileNotFoundError` for a missing host CLI. Catch unsupported CLI versions through nonzero exit status; include stderr and require upgrading, with no permissive fallback.
+- [x] **Step 4: Run `uv run pytest evals/test_runner.py -v` and `uv run ruff check evals/runner.py evals/test_runner.py`.** Existing isolation and output tests still pass.
+- [x] **Step 5: Commit only the task's files:** `feat: add Hermes eval host`.
 
 ### Task 3: Record routing, make calls visible, and document usage
 

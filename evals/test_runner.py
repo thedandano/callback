@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from email.message import Message
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -120,7 +121,7 @@ def test_noninteger_port_is_an_argument_error():
     "error",
     [
         URLError("connection refused"),
-        HTTPError("http://127.0.0.1:11434", 404, "model not found", {}, None),
+        HTTPError("http://127.0.0.1:11434", 404, "model not found", Message(), None),
         TimeoutError("timed out"),
     ],
 )
@@ -324,6 +325,118 @@ def test_invalid_harness_config_is_not_silently_ignored(tmp_path, monkeypatch):
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))
     with pytest.raises(HostError, match="codex.*config"):
         runner._harness_defaults("codex")
+
+
+@pytest.mark.parametrize(
+    ("host", "extra_flags", "routing"),
+    [
+        ("ollama", [], {"port": 11434, "transport": "http"}),
+        ("llamacpp", ["--port", "8081"], {"port": 8081, "transport": "http"}),
+        (
+            "hermes",
+            ["--provider", "openrouter"],
+            {
+                "provider": "openrouter",
+                "transport": "cli",
+                "isolation": "customizations_disabled",
+                "builtin_tools": True,
+            },
+        ),
+    ],
+)
+def test_new_host_routing_is_saved_and_recorded(
+    host, extra_flags, routing, tmp_path, monkeypatch, caplog
+):
+    extract_dir = tmp_path / "extract"
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    _write_extract_fixture(extract_dir, "acme", expected)
+    monkeypatch.setattr(runner, "EXTRACT_DIR", extract_dir)
+    monkeypatch.setattr(runner, "_commit", lambda: "abc")
+    seen = {}
+
+    def record(rows, metadata):
+        seen.update(metadata)
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout=json.dumps({"type": "result", "exit_code": 0, "text": json.dumps(expected)}),
+            stderr="",
+        )
+
+    monkeypatch.setattr(runner.experiments, "record_extract", record)
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        runner,
+        "build_opener",
+        lambda *_: SimpleNamespace(
+            open=lambda *args, **kwargs: BytesIO(
+                json.dumps({"choices": [{"message": {"content": json.dumps(expected)}}]}).encode()
+            )
+        ),
+    )
+    with caplog.at_level("INFO", logger="callback.evals"):
+        assert main(["--host", host, "--model", "chosen", "--eval", "extract", *extra_flags]) == 0
+    saved = json.loads((extract_dir / "acme.host.json").read_text())
+    assert {key: saved[key] for key in routing} == routing
+    assert seen == {"host": host, "model": "chosen", "commit": "abc", **routing}
+    assert f"calling host={host} model=chosen fixture=acme" in caplog.text
+    assert saved["output"] == expected
+
+
+def test_failed_local_call_keeps_routing_metadata(tmp_path, monkeypatch):
+    extract_dir = tmp_path / "extract"
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    _write_extract_fixture(extract_dir, "acme", expected)
+    monkeypatch.setattr(runner, "EXTRACT_DIR", extract_dir)
+
+    def failed(*args, **kwargs):
+        raise URLError("offline")
+
+    monkeypatch.setattr(runner, "build_opener", lambda *_: SimpleNamespace(open=failed))
+    rows = run_extract(
+        "ollama", "chosen", ["acme"], checks_only=False, run=None, commit="abc", port=12345
+    )
+    saved = json.loads((extract_dir / "acme.host.json").read_text())
+    assert rows[0].passed is False
+    assert saved["output"] is None
+    assert saved["port"] == 12345
+    assert saved["transport"] == "http"
+
+
+def test_checks_only_logs_saved_output(tmp_path, monkeypatch, caplog):
+    extract_dir = tmp_path / "extract"
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    _write_extract_fixture(extract_dir, "acme", expected)
+    monkeypatch.setattr(runner, "EXTRACT_DIR", extract_dir)
+    monkeypatch.setattr(runner, "_commit", lambda: "abc")
+    with caplog.at_level("INFO", logger="callback.evals"):
+        assert main(["--checks-only", "--eval", "extract"]) == 0
+    assert "checking saved output fixture=acme" in caplog.messages
+    assert "calling host=" not in caplog.text
+
+
+def test_saved_codex_default_is_passed_and_recorded(tmp_path, monkeypatch):
+    extract_dir = tmp_path / "extract"
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    _write_extract_fixture(extract_dir, "acme", expected)
+    (tmp_path / "config.toml").write_text(
+        'model = "chosen-default"\nmodel_reasoning_effort = "high"'
+    )
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    monkeypatch.setattr(runner, "EXTRACT_DIR", extract_dir)
+    monkeypatch.setattr(runner, "_commit", lambda: "abc")
+
+    def fake_run(cmd, **kwargs):
+        assert cmd[cmd.index("-m") + 1] == "chosen-default"
+        assert "--ignore-user-config" in cmd
+        Path(cmd[cmd.index("-o") + 1]).write_text(json.dumps(expected))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    assert main(["--host", "codex", "--eval", "extract", "--no-langsmith"]) == 0
+    assert json.loads((extract_dir / "acme.host.json").read_text())["model"] == "chosen-default"
 
 
 SECTIONS = {

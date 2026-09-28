@@ -1,9 +1,9 @@
 """Feed each E1/E2 fixture to a host model, save its output, run the checks, print one table.
 
-The runner is the only thing in the repo that calls a model. It shells out to
-`claude -p` or `codex exec`, both non-interactive and isolated (no MCP servers,
-tools, settings, or CLAUDE.md) from a scratch directory so nothing colors the
-answer.
+The runner calls Claude, Codex, or Hermes from a scratch directory, or sends
+chat requests directly to a local Ollama or llama.cpp server. CLI calls exclude
+personal instructions and integrations; saved model choices are read separately.
+Hermes may retain its built-in tools, so it measures the harness as well as the model.
 """
 
 from __future__ import annotations
@@ -226,7 +226,7 @@ def _read_harness_config(host: str) -> dict:
         "hermes": ("HERMES_HOME", "~/.hermes", "config.yaml", yaml.safe_load),
     }
     env, default_dir, filename, load = locations[host]
-    path = Path(os.environ.get(env, default_dir)).expanduser() / filename
+    path = Path(os.environ.get(env) or default_dir).expanduser() / filename
     if not path.exists():
         return {}
     try:
@@ -376,7 +376,14 @@ def _call_cli_host(
 
 
 def _write_host_file(
-    path: Path, host: str, model: str | None, raw: str, output: dict | None, commit: str
+    path: Path,
+    host: str,
+    model: str | None,
+    raw: str,
+    output: dict | None,
+    commit: str,
+    *,
+    routing: dict | None = None,
 ) -> None:
     path.write_text(
         json.dumps(
@@ -387,6 +394,7 @@ def _write_host_file(
                 "ran_at": _now(),
                 "raw": raw,
                 "output": output,
+                **(routing or {}),
             },
             indent=2,
             ensure_ascii=False,
@@ -397,13 +405,32 @@ def _write_host_file(
 
 
 def _record_host_reply(
-    path: Path, host: str, model: str | None, raw: str, commit: str
+    path: Path,
+    host: str,
+    model: str | None,
+    raw: str,
+    commit: str,
+    *,
+    routing: dict | None = None,
 ) -> dict | None:
     output = extract_json_object(raw)
     if output is None:
         logger.warning("%s: no JSON object in host reply; recorded raw text only", path.name)
-    _write_host_file(path, host, model, raw, output, commit)
+    _write_host_file(path, host, model, raw, output, commit, routing=routing)
     return output
+
+
+def _routing(host: str, port: int | None, provider: str | None) -> dict:
+    if host in LOCAL_PORTS:
+        return {"port": _local_port(host, port), "transport": "http"}
+    if host == "hermes":
+        return {
+            "provider": provider or "auto",
+            "transport": "cli",
+            "isolation": "customizations_disabled",
+            "builtin_tools": True,
+        }
+    return {}
 
 
 def _host_output(
@@ -424,6 +451,7 @@ def _host_output(
     A host call that times out or errors fails only this fixture's row; the batch continues.
     """
     if checks_only:
+        logger.info("checking saved output fixture=%s", fixture)
         if not path.exists():
             return None, Check(
                 "host_output_present", False, f"{path.name} missing; run without --checks-only"
@@ -431,6 +459,14 @@ def _host_output(
         return json.loads(path.read_text(encoding="utf-8")).get("output"), None
     if run is None and host not in LOCAL_PORTS:
         raise ValueError("run is required unless checks_only")
+    routing = _routing(host, port, provider)
+    logger.info(
+        "calling host=%s model=%s fixture=%s routing=%s",
+        host,
+        model or "default",
+        fixture,
+        routing,
+    )
     try:
         raw = call_host(
             host, model, prompt, run=run or subprocess.run, port=port, provider=provider
@@ -440,9 +476,9 @@ def _host_output(
         logger.warning("%s: host call failed: %s", fixture, message)
         # A stale host file from a prior successful run must not survive this failure:
         # LangSmith and --checks-only would otherwise silently replay the old output.
-        _write_host_file(path, host, model, message, None, commit)
+        _write_host_file(path, host, model, message, None, commit, routing=routing)
         return None, Check("host_call", False, message)
-    return _record_host_reply(path, host, model, raw, commit), None
+    return _record_host_reply(path, host, model, raw, commit, routing=routing), None
 
 
 def run_extract(
@@ -528,7 +564,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", choices=HOSTS, default="claude")
     parser.add_argument(
-        "--model", default=None, help="host model flag; default is the host's own default"
+        "--model",
+        default=None,
+        help="required for Ollama/llama.cpp; otherwise overrides the harness default",
     )
     parser.add_argument("--port", type=int, help="local server port (Ollama 11434, llama.cpp 8080)")
     parser.add_argument("--provider", help="Hermes inference provider override")
@@ -648,6 +686,7 @@ def main(argv: list[str] | None = None) -> int:
         _validate_args(args)
         _resolve_harness_defaults(args)
         run_meta = {"host": args.host, "model": args.model or "default", "commit": _commit()}
+        run_meta.update(_routing(args.host, args.port, args.provider))
         for name in wanted:
             rows.extend(_run_one_eval(name, args, run_meta))
     except (ValueError, HostError) as exc:

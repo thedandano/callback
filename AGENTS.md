@@ -76,6 +76,9 @@ uv run python scripts/smoke_profile.py
 uv run pytest -m "not local" evals/                    # E3 + check unit tests (CI)
 uv run python scripts/run_evals.py                     # E1 + E2 against `claude -p`, writes host outputs
 uv run python scripts/run_evals.py --host codex --model gpt-5.6-terra --eval tailor
+uv run python scripts/run_evals.py --host hermes        # saved/default model
+uv run python scripts/run_evals.py --host ollama --model MODEL_NAME --port 11434
+uv run python scripts/run_evals.py --host llamacpp --model MODEL_ALIAS --port 8080
 uv run python scripts/run_evals.py --checks-only       # re-check saved outputs, no model call, no LangSmith upload
 uv run pytest -m local evals/                          # E1 + E2 checks over the saved host outputs
 # baseline 2026-09-07, claude default model: E1 2/6 (PASS cedar/reddit), E2 1/8 (see INTENT §M6)
@@ -257,11 +260,17 @@ is committed under `evals/{extract,tailor,compile}/`: public job postings for
 extract, and two invented profiles — Jane Doe and the larger Morgan Reyes —
 covering tailor and compile. Nothing here is personal data.
 `scripts/run_evals.py` is the only code that calls a model: it shells out to
-`claude -p` or `codex exec`, isolated with `--strict-mcp-config` and an empty
+`claude -p`, `codex exec`, or `hermes chat`, isolated with `--strict-mcp-config` and an empty
 `--mcp-config`, `--tools ""`, `--setting-sources ""`, and a scratch working
 directory for Claude (`--bare` is avoided because it disables keychain auth),
 and `--ignore-user-config` for Codex (so `$CODEX_HOME/config.toml` — and any
-MCP servers or instructions it configures — can't leak into the run); it saves
+MCP servers or instructions it configures — can't leak into the run). Hermes uses
+`--safe-mode` to disable personal customizations but may retain built-in tools.
+The runner reads only saved model choices (and Hermes's model provider) before
+launching isolated commands, so `--model` is optional for these three harnesses.
+Ollama and llama.cpp use direct loopback HTTP chat requests and require `--model`;
+`--port` overrides defaults 11434 and 8080 respectively. `--provider` is a Hermes
+override. Fresh calls and saved-output checks are logged explicitly. The runner saves
 the reply next to the fixture (`<board>.host.json`, `<case>/host.json`), runs
 the checks, prints one table, and records the run as a LangSmith experiment
 named `<commit>-<host>-<model>` when `LANGSMITH_API_KEY` is set. CI never
