@@ -385,6 +385,7 @@ class TestRequiredAnyOrGroups:
             "preferred_missing_any": [],
             "required_coverage": pytest.approx(66.7),
             "preferred_coverage": None,
+            "ats_input_suspect": False,
         }
         assert actual == expected
 
@@ -427,5 +428,35 @@ class TestPreferredAnyOrGroups:
             "preferred_missing_any": [["Datadog", "Grafana"]],
             "required_coverage": 100.0,
             "preferred_coverage": 50.0,
+            "ats_input_suspect": False,
         }
         assert actual == expected
+
+
+class TestAtsInputSuspectHandoff:
+    """ats_input_suspect must reach the submit_keywords handoff when the resume
+    text has no recognizable section headers (the malformed-input case)."""
+
+    def test_submit_keywords_surfaces_suspect_flag_for_headerless_resume(
+        self, tmp_path, monkeypatch
+    ):
+        from callback.repository.resumes import save_resume
+        from callback.server import load_jd, submit_keywords
+
+        monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+
+        resume_file = tmp_path / "resume.txt"
+        resume_file.write_text(
+            "Jane Doe\nSenior Software Engineer\nBuilt Python microservices on AWS.\n"
+        )
+        save_resume("resume", str(resume_file))
+
+        loaded = json.loads(load_jd(jd_raw_text=SAMPLE_JD))
+        assert loaded["status"] == "ok"
+        session_id = loaded["session_id"]
+
+        result = json.loads(submit_keywords(session_id=session_id, jd_json=json.dumps(KEYWORDS)))
+
+        assert result["status"] == "ok"
+        assert result["data"]["score_gap"]["ats_input_suspect"] is True
