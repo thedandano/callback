@@ -1152,7 +1152,7 @@ def _submit_tailor_no_coverage(session_id: str, graph, config, resolved_output_d
             final["error"],
             session_id,
             retriable=True,
-            data={"score_final": None, "pdf_path": None},
+            data={"score_final": None, "pdf_path": None, "archive_path": None},
             host_action="report_and_wait",
         )
     artifacts = _submit_tailor_artifacts(final, session_id)
@@ -1291,7 +1291,7 @@ def _apply_tailor_edits(
             final["error"],
             session_id,
             retriable=True,
-            data={"score_final": None, "pdf_path": None},
+            data={"score_final": None, "pdf_path": None, "archive_path": None},
             host_action="report_and_wait",
         )
     artifacts = _submit_tailor_artifacts(final, session_id)

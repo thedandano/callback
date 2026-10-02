@@ -180,8 +180,9 @@ def test_submit_tailor_applies_valid_edits_and_rescores(tmp_path, monkeypatch):
 
 
 def test_submit_tailor_pipeline_error_marks_artifacts_null(tmp_path, monkeypatch):
-    """A pipeline_error must state explicitly that score_final/pdf_path do not exist
-    and direct the host not to synthesize them (host_action=report_and_wait)."""
+    """A pipeline_error must state explicitly that score_final/pdf_path/archive_path
+    do not exist and direct the host not to synthesize them
+    (host_action=report_and_wait)."""
     from callback.server import submit_tailor
 
     resume_label = "null_artifacts_resume"
@@ -209,6 +210,7 @@ def test_submit_tailor_pipeline_error_marks_artifacts_null(tmp_path, monkeypatch
     assert "data" in result
     assert result["data"]["score_final"] is None
     assert result["data"]["pdf_path"] is None
+    assert result["data"]["archive_path"] is None
 
 
 def test_submit_tailor_can_be_retried_after_render_failure(tmp_path, monkeypatch):
@@ -255,7 +257,7 @@ def test_submit_tailor_can_be_retried_after_render_failure(tmp_path, monkeypatch
             "retriable": True,
             "host_action": "report_and_wait",
         },
-        "data": {"score_final": None, "pdf_path": None},
+        "data": {"score_final": None, "pdf_path": None, "archive_path": None},
         "session_id": session_id,
     }
 
@@ -296,7 +298,7 @@ def test_submit_tailor_no_coverage_retry_clears_stale_render_outputs(tmp_path, m
             "retriable": True,
             "host_action": "report_and_wait",
         },
-        "data": {"score_final": None, "pdf_path": None},
+        "data": {"score_final": None, "pdf_path": None, "archive_path": None},
         "session_id": session_id,
     }
 
@@ -976,7 +978,7 @@ def test_submit_tailor_returns_envelope_when_extractor_raises(tmp_path, monkeypa
             "retriable": True,
             "host_action": "report_and_wait",
         },
-        "data": {"score_final": None, "pdf_path": None},
+        "data": {"score_final": None, "pdf_path": None, "archive_path": None},
         "session_id": session_id,
     }
     assert result == expected
@@ -1021,7 +1023,7 @@ def test_submit_tailor_can_be_retried_after_finalize_archive_write_failure(tmp_p
             "retriable": True,
             "host_action": "report_and_wait",
         },
-        "data": {"score_final": None, "pdf_path": None},
+        "data": {"score_final": None, "pdf_path": None, "archive_path": None},
         "session_id": session_id,
     }
 
