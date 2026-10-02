@@ -16,6 +16,18 @@
 - Existing users must re-run `onboard_user` after upgrading to the HTML renderer + extractor fixes. Older `sections.json` files may contain corrupted contact fields (for example duplicated email or incorrect location).
 - A host that emits `required_any` or `preferred_any` against an OLD callback server is silently degraded: `dataclass_wizard` drops the unknown key, so the group is ignored (not matched, not reported). Upgrade the server before relying on either.
 
+## [1.7.0](https://github.com/thedandano/callback/compare/v1.6.1...v1.7.0) (2026-10-02)
+
+
+### Features
+
+* show per-eval check scores ([#115](https://github.com/thedandano/callback/issues/115)) ([98e383e](https://github.com/thedandano/callback/commit/98e383ef9c647d775ca7b10f8e680af453cb88b3))
+
+
+### Documentation
+
+* define cross-harness plugin packaging ([#113](https://github.com/thedandano/callback/issues/113)) ([0cb2af3](https://github.com/thedandano/callback/commit/0cb2af35c94efbc4ef4b375a22165c7cc622e9ee))
+
 ## [1.6.1](https://github.com/thedandano/callback/compare/v1.6.0...v1.6.1) (2026-09-27)
 
 
