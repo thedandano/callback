@@ -112,6 +112,7 @@ def _run_score(
             }
             for d in r.breakdown.ats_diagnostics
         ],
+        "ats_input_suspect": r.breakdown.ats_input_suspect,
         "scoring_engine_version": scorer.SCORING_ENGINE_VERSION,
     }
 

@@ -60,6 +60,7 @@ class TestRunScore:
             "pref_matched": ["AWS"],
             "pref_unmatched": [],
             "ats_diagnostics": _expected_ats_diagnostics(),
+            "ats_input_suspect": False,
             "scoring_engine_version": "v2",
         }
         assert result == expected
@@ -84,6 +85,7 @@ class TestRunScore:
             "pref_matched": ["AWS"],
             "pref_unmatched": [],
             "ats_diagnostics": _expected_ats_diagnostics(),
+            "ats_input_suspect": False,
             "scoring_engine_version": "v2",
         }
         assert result == expected
@@ -107,6 +109,7 @@ class TestRunScore:
             "pref_group_unmatched": [],
             "pref_matched": [],
             "pref_unmatched": [],
+            "ats_input_suspect": True,
             "scoring_engine_version": "v2",
             "ats_diagnostics": _expected_ats_diagnostics(matched=False),
         }
@@ -160,6 +163,7 @@ class TestRunScore:
             "pref_unmatched": [],
             "pref_group_unmatched": [],
             "ats_diagnostics": _expected_ats_diagnostics(),
+            "ats_input_suspect": False,
             "scoring_engine_version": "v2",
         }
         assert result == expected
@@ -189,6 +193,7 @@ class TestRunScore:
             "pref_unmatched": [],
             "pref_group_unmatched": [],
             "ats_diagnostics": _expected_ats_diagnostics(),
+            "ats_input_suspect": False,
             "scoring_engine_version": "v2",
         }
         assert result == expected
@@ -226,6 +231,7 @@ class TestRunScore:
             "pref_unmatched": [],
             "pref_group_unmatched": [],
             "ats_diagnostics": _expected_ats_diagnostics(),
+            "ats_input_suspect": False,
             "scoring_engine_version": "v2",
         }
         assert result == expected
@@ -264,6 +270,7 @@ class TestRunScore:
             "pref_unmatched": [],
             "pref_group_unmatched": [],
             "ats_diagnostics": _expected_ats_diagnostics(),
+            "ats_input_suspect": False,
             "scoring_engine_version": "v2",
         }
         assert result == expected
@@ -294,6 +301,7 @@ class TestScoreInitial:
                 "pref_matched": ["AWS"],
                 "pref_unmatched": [],
                 "ats_diagnostics": _expected_ats_diagnostics(),
+                "ats_input_suspect": False,
                 "scoring_engine_version": "v2",
             }
         }
@@ -335,6 +343,7 @@ class TestScoreFinal:
                 "pref_matched": ["AWS"],
                 "pref_unmatched": [],
                 "ats_diagnostics": _expected_ats_diagnostics(closeable_by="render"),
+                "ats_input_suspect": False,
                 "scoring_engine_version": "v2",
             }
         }

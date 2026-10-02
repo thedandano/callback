@@ -377,6 +377,7 @@ def test_submit_tailor_no_coverage_retry_clears_stale_render_outputs(tmp_path, m
         "impact_evidence": 6.0,
         "ats_format": 6.666666666666666,
         "readability": 10.0,
+        "ats_input_suspect": False,
         "req_matched": ["Python"],
         "req_unmatched": ["Kubernetes"],
         "req_group_unmatched": [],

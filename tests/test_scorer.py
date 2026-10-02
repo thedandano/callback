@@ -42,6 +42,7 @@ GOLDEN_EXPECTED = {
         "ats_format": 6.666666666666666,
         "readability": 10.0,
         "renorm_factor": 1.0,
+        "ats_input_suspect": False,
         "ats_diagnostics": [
             {
                 "expected": "Experience",
@@ -319,11 +320,20 @@ class TestATSFormatScoring:
         result = score("Just some text.", required=[], preferred=[])
         assert result.breakdown.ats_format == 0.0
 
+    def test_zero_headers_flags_input_suspect(self):
+        result = score("just some prose with no sections at all", [], [], cfg=ScoringConfig())
+        assert result.breakdown.ats_format == 0.0
+        assert result.breakdown.ats_input_suspect is True
+
+    def test_headers_present_clears_input_suspect(self):
+        result = score("EXPERIENCE\nDid things.\nEDUCATION\nBS.", [], [], cfg=ScoringConfig())
+        assert result.breakdown.ats_input_suspect is False
+
     def test_score_ats_all_headers_matched(self):
         """_score_ats on text with all three canonical headers → full score, all matched=True."""
         cfg = ScoringConfig()
         text = "Experience\nSenior Engineer role.\n\nEducation\nB.Sc. CS\n\nSkills\nPython"
-        scalar, diags = _score_ats(text, cfg)
+        scalar, diags, _ = _score_ats(text, cfg)
         assert scalar == pytest.approx(cfg.weights.ats_format)
         assert diags == [
             _ats_diag("Experience", "Experience", True),
@@ -335,7 +345,7 @@ class TestATSFormatScoring:
         """_score_ats on text missing Skills header → 2/3 score, Skills diagnostic matched=False."""
         cfg = ScoringConfig()
         text = "Experience\nBuilt distributed systems.\n\nEducation\nB.Sc. CS"
-        scalar, diags = _score_ats(text, cfg)
+        scalar, diags, _ = _score_ats(text, cfg)
         assert scalar == pytest.approx(cfg.weights.ats_format * 2 / 3)
         assert diags == [
             _ats_diag("Experience", "Experience", True),

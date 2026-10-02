@@ -193,6 +193,7 @@ class TestKeywordHandoffInterrupts:
                     },
                 ],
                 "ats_format": 0.0,
+                "ats_input_suspect": True,
                 "experience_fit": None,
                 "experience_evaluated": False,
                 "impact_evidence": 0.0,
