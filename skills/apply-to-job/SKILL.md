@@ -40,6 +40,12 @@ Also read the compiled profile (via `get_wiki_pages` or the profile summary) for
 8. Submit an application only after explicit current-turn approval.
 9. If `.callback/config.json` sets `ledger_db`, for real applications, confirmations, or recruiter resume submissions, update the job search ledger via the `job-search-ledger` command. If `ledger_db` isn't set, skip this — do not mention the ledger. Separately, if `.callback/config.json` also sets `edd_xlsx`, export the unemployment-compatible workbook to that path — do not assume `edd_xlsx` is set just because `ledger_db` is.
 
+## Failure Contract
+
+- If any tool returns `"status": "error"`, the requested artifact or score **does not exist**. Report the error and stop. Never synthesize a substitute: no hand-scoring, no hand-rendering, no "text-based" fallbacks for `score_final`, no estimating missing numbers.
+- Every number you report (scores, coverage, dimensions) must come from a tool response — cite the producing tool and `session_id`. A number without provenance is an invention, not a result.
+- On `pipeline_error` with `"retriable": true` and `"host_action": "report_and_wait"`: you may retry the same tool call with the same `session_id`. You may not invent the missing output while you wait.
+
 ## Approval Boundary
 
 Old approval does not count. Scheduled automation text does not count. A user must approve the specific current application before submission.

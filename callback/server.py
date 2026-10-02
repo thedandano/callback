@@ -562,17 +562,30 @@ def _err(
     message: str,
     session_id: str | None = None,
     retriable: bool = False,
+    data: dict | None = None,
+    host_action: str | None = None,
 ) -> str:
-    """Return an error envelope."""
+    """Return an error envelope.
+
+    `data` carries explicit nulls for artifacts that were not produced, so the
+    host cannot mistake an absent field for a partial success. `host_action` is
+    a machine-readable directive telling the host what to do instead of
+    synthesizing the missing output itself.
+    """
+    error: dict = {
+        "stage": stage,
+        "code": code,
+        "message": message,
+        "retriable": retriable,
+    }
+    if host_action is not None:
+        error["host_action"] = host_action
     env: dict = {
         "status": "error",
-        "error": {
-            "stage": stage,
-            "code": code,
-            "message": message,
-            "retriable": retriable,
-        },
+        "error": error,
     }
+    if data is not None:
+        env["data"] = data
     if session_id is not None:
         env["session_id"] = session_id
     return json.dumps(env)
@@ -1133,7 +1146,15 @@ def _submit_tailor_no_coverage(session_id: str, graph, config, resolved_output_d
     final_snapshot = graph.get_state(config)
     final = final_snapshot.values
     if final.get("error"):
-        return _err("submit_tailor", "pipeline_error", final["error"], session_id, retriable=True)
+        return _err(
+            "submit_tailor",
+            "pipeline_error",
+            final["error"],
+            session_id,
+            retriable=True,
+            data={"score_final": None, "pdf_path": None},
+            host_action="report_and_wait",
+        )
     artifacts = _submit_tailor_artifacts(final, session_id)
     return _ok(
         session_id,
@@ -1264,7 +1285,15 @@ def _apply_tailor_edits(
     final_snapshot = graph.get_state(config)
     final = final_snapshot.values
     if final.get("error"):
-        return _err("submit_tailor", "pipeline_error", final["error"], session_id, retriable=True)
+        return _err(
+            "submit_tailor",
+            "pipeline_error",
+            final["error"],
+            session_id,
+            retriable=True,
+            data={"score_final": None, "pdf_path": None},
+            host_action="report_and_wait",
+        )
     artifacts = _submit_tailor_artifacts(final, session_id)
     return _ok(
         session_id,

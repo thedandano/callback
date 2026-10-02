@@ -28,6 +28,12 @@ This is a one-job workflow. Do not scan Gmail, Google Jobs, FAANG careers, CSV l
 5. Call `submit_tailor(session_id, edits=[...])`, or use `no_coverage=True` only when no truthful supported edits exist. If `.callback/config.json` is present and sets `applications_dir`, pass `output_dir` as the absolute path of `applications_dir/<YYYY-MM-DD>/<company-role-slug>/` so the tailored PDF lands in the project folder instead of callback's hidden data directory.
 6. Return `pdf_path`, `archive_path`, before/after scores, accepted/rejected edits, uncovered skills, and a short mismatch summary.
 
+## Failure Contract
+
+- If any tool returns `"status": "error"`, the requested artifact or score **does not exist**. Report the error and stop. Never synthesize a substitute: no hand-scoring, no hand-rendering, no "text-based" fallbacks for `score_final`, no estimating missing numbers.
+- Every number you report (scores, coverage, dimensions) must come from a tool response — cite the producing tool and `session_id`. A number without provenance is an invention, not a result.
+- On `pipeline_error` with `"retriable": true` and `"host_action": "report_and_wait"`: you may retry the same tool call with the same `session_id`. You may not invent the missing output while you wait.
+
 ## Tailoring Rules
 
 - Add a keyword only when it is supported by dated experience or clear project evidence.
