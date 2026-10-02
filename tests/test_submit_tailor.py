@@ -179,6 +179,40 @@ def test_submit_tailor_applies_valid_edits_and_rescores(tmp_path, monkeypatch):
     assert result["workflow"]["required_input"] == {}
 
 
+def test_submit_tailor_pipeline_error_marks_artifacts_null(tmp_path, monkeypatch):
+    """A pipeline_error must state explicitly that score_final/pdf_path/archive_path
+    do not exist and direct the host not to synthesize them
+    (host_action=report_and_wait)."""
+    from callback.server import submit_tailor
+
+    resume_label = "null_artifacts_resume"
+    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    _make_section_map_and_write(resume_label)
+
+    jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
+    session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
+
+    def broken_render(tailored, output_path):
+        return {"success": False, "error": "chromium crashed"}
+
+    monkeypatch.setattr("callback.apply_nodes.render_resume", broken_render)
+
+    result = json.loads(
+        submit_tailor(
+            session_id=session_id,
+            edits=[{"section": "summary", "op": "replace", "value": "Python engineer."}],
+        )
+    )
+    assert result["status"] == "error"
+    assert result["error"]["code"] == "pipeline_error"
+    assert result["error"]["host_action"] == "report_and_wait"
+    # Explicit nulls: the artifacts do not exist; the host must not invent them.
+    assert "data" in result
+    assert result["data"]["score_final"] is None
+    assert result["data"]["pdf_path"] is None
+    assert result["data"]["archive_path"] is None
+
+
 def test_submit_tailor_can_be_retried_after_render_failure(tmp_path, monkeypatch):
     """A render failure leaves the session at the tailor interrupt for a retry."""
     import callback.apply_nodes
@@ -221,7 +255,9 @@ def test_submit_tailor_can_be_retried_after_render_failure(tmp_path, monkeypatch
             "code": "pipeline_error",
             "message": "render: chromium crashed",
             "retriable": True,
+            "host_action": "report_and_wait",
         },
+        "data": {"score_final": None, "pdf_path": None, "archive_path": None},
         "session_id": session_id,
     }
 
@@ -260,7 +296,9 @@ def test_submit_tailor_no_coverage_retry_clears_stale_render_outputs(tmp_path, m
             "code": "pipeline_error",
             "message": "parse_final: PDF extracted to empty text",
             "retriable": True,
+            "host_action": "report_and_wait",
         },
+        "data": {"score_final": None, "pdf_path": None, "archive_path": None},
         "session_id": session_id,
     }
 
@@ -938,7 +976,9 @@ def test_submit_tailor_returns_envelope_when_extractor_raises(tmp_path, monkeypa
             "code": "pipeline_error",
             "message": "parse_final: extract failed: extractor: PDF yielded no text",
             "retriable": True,
+            "host_action": "report_and_wait",
         },
+        "data": {"score_final": None, "pdf_path": None, "archive_path": None},
         "session_id": session_id,
     }
     assert result == expected
@@ -981,7 +1021,9 @@ def test_submit_tailor_can_be_retried_after_finalize_archive_write_failure(tmp_p
             "code": "pipeline_error",
             "message": "finalize: cannot write archive: disk full",
             "retriable": True,
+            "host_action": "report_and_wait",
         },
+        "data": {"score_final": None, "pdf_path": None, "archive_path": None},
         "session_id": session_id,
     }
 
