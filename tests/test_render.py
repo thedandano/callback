@@ -396,7 +396,7 @@ def test_render_resume_ats_headers_round_trip(tmp_path):
     assert result == {"success": True, "pdf_path": output_path, "page_count": 1, "warnings": []}
 
     text = resume_extractor.extract(output_path)
-    ats_score, diagnostics = _score_ats(text, ScoringConfig())
+    ats_score, diagnostics, _ = _score_ats(text, ScoringConfig())
     assert ats_score == 10.0
     assert all(d.matched for d in diagnostics)
 

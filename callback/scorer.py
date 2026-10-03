@@ -113,6 +113,7 @@ class ScoreBreakdown:
     readability: float
     renorm_factor: float = 1.0  # > 1.0 only when experience_fit is not evaluated
     ats_diagnostics: list[ATSHeaderDiagnostic] = field(default_factory=list)
+    ats_input_suspect: bool = False  # True when zero headers matched: input may not be a resume
 
     def total(self) -> float:
         base = self.keyword_match + self.impact_evidence + self.ats_format + self.readability
@@ -181,7 +182,9 @@ def score(
     full_max = w.keyword_match + w.experience_fit + w.impact_evidence + w.ats_format + w.readability
     renorm = full_max / (full_max - w.experience_fit) if exp_score is None else 1.0
     impact_score, metric_bullets = _score_impact(resume_text, cfg)
-    ats_score, ats_diagnostics = _score_ats(resume_text, cfg, closeable_by=closeable_by)
+    ats_score, ats_diagnostics, ats_input_suspect = _score_ats(
+        resume_text, cfg, closeable_by=closeable_by
+    )
     read_score, detected_fillers = _score_readability(resume_text, cfg)
 
     return ScoreResult(
@@ -193,6 +196,7 @@ def score(
             readability=read_score,
             renorm_factor=renorm,
             ats_diagnostics=ats_diagnostics,
+            ats_input_suspect=ats_input_suspect,
         ),
         keywords=kw_result,
         metric_bullets=metric_bullets,
@@ -380,7 +384,8 @@ def _score_ats(
     resume_text: str,
     cfg: ScoringConfig,
     closeable_by: Literal["tailor", "render", "source_pdf"] = "source_pdf",
-) -> tuple[float, list[ATSHeaderDiagnostic]]:
+) -> tuple[float, list[ATSHeaderDiagnostic], bool]:
+    """Score standard section headers; the bool is input_suspect (True iff no headers matched)."""
     lines = resume_text.splitlines()
     diagnostics: list[ATSHeaderDiagnostic] = []
     found = 0
@@ -412,7 +417,7 @@ def _score_ats(
                 )
             )
     scalar_score = found / len(ATS_SECTION_PATTERNS) * cfg.weights.ats_format
-    return scalar_score, diagnostics
+    return scalar_score, diagnostics, found == 0
 
 
 def _score_readability(resume_text: str, cfg: ScoringConfig) -> tuple[float, list[str]]:
