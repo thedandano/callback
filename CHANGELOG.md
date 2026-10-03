@@ -16,6 +16,13 @@
 - Existing users must re-run `onboard_user` after upgrading to the HTML renderer + extractor fixes. Older `sections.json` files may contain corrupted contact fields (for example duplicated email or incorrect location).
 - A host that emits `required_any` or `preferred_any` against an OLD callback server is silently degraded: `dataclass_wizard` drops the unknown key, so the group is ignored (not matched, not reported). Upgrade the server before relying on either.
 
+## [1.8.0](https://github.com/thedandano/callback/compare/v1.7.0...v1.8.0) (2026-10-03)
+
+
+### Features
+
+* flag ats_input_suspect when zero section headers match ([#120](https://github.com/thedandano/callback/issues/120)) ([760aa5f](https://github.com/thedandano/callback/commit/760aa5f52151b7611b0eb19c2afc2aa5e86aa20d))
+
 ## [1.7.0](https://github.com/thedandano/callback/compare/v1.6.1...v1.7.0) (2026-10-02)
 
 
