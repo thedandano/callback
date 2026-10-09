@@ -35,22 +35,20 @@ def main():
             resume_path = f.name
 
         # Step 1: onboard_user with a real resume file
-        r1_str = onboard_user(resume_path=resume_path)
-        r1 = json.loads(r1_str)
+        r1 = onboard_user(resume_path=resume_path)
         print("onboard_user response:", json.dumps(r1, indent=2))
         assert r1["status"] == "ok", f"Expected status='ok', got {r1['status']}"
         assert r1.get("next_action") == "compile_profile"
         assert "session_id" in r1
 
         # Step 2: compile_profile (generates its own session)
-        r2_str = compile_profile()
-        r2 = json.loads(r2_str)
+        r2 = compile_profile()
         print("compile_profile response:", json.dumps(r2, indent=2))
         assert r2["status"] == "ok", f"Expected status='ok', got {r2['status']}"
         assert "compiled_profile" in r2.get("data", {})
 
         # Step 3: create_story with the current API
-        r3_str = create_story(
+        r3 = create_story(
             primary_skill="Terraform",
             skills=["Terraform", "AWS"],
             story_type="STAR",
@@ -59,7 +57,6 @@ def main():
             behavior="I automated provisioning using Terraform modules.",
             impact="Reduced deployment time by 50%.",
         )
-        r3 = json.loads(r3_str)
         print("create_story response:", json.dumps(r3, indent=2))
         assert r3["status"] == "ok", f"Expected status='ok', got {r3['status']}"
         assert r3.get("next_action") == "compile_profile"
