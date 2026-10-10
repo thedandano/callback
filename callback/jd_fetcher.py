@@ -25,7 +25,34 @@ logger = logging.getLogger("callback.jd_fetcher")
 
 DEFAULT_PAGE_TIMEOUT_MS = 30_000
 DEFAULT_OUTER_TIMEOUT_S = 35
-SETTLE_MS = 2_500
+# How often the settle loop re-reads the body text while waiting for it to stop
+# changing on JS-rendered pages.
+SETTLE_POLL_MS = 500
+# Upper bound on waiting for late-loading content. The page timeout still caps
+# the whole load; this only shortens the wait when content settles early.
+SETTLE_BUDGET_S = 8.0
+# Consecutive polls with unchanged body text before the page counts as settled.
+SETTLE_STABLE_ROUNDS = 2
+# Body text shorter than this never counts as settled: an empty SPA shell is
+# trivially "stable" and would end the wait before the real content loads.
+# A page that never reaches this keeps polling until the budget is spent and
+# is then rejected downstream by the thin-content guard, as before.
+SETTLE_MIN_CHARS = 200
+# Runs before any page script via context.add_init_script. Covers the
+# high-signal headless fingerprints (webdriver flag, missing window.chrome,
+# empty plugins/languages). It will not fool enterprise bot management
+# (Cloudflare, PerimeterX, DataDome) - those need a real headed browser,
+# which is out of scope for the fetcher.
+#
+# NOTE: this must be bare statements, not a "() => {...}" wrapper -
+# add_init_script evaluates the string as-is and never invokes a bare
+# arrow function, so a wrapped version silently does nothing.
+_STEALTH_INIT_SCRIPT = """
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+if (!window.chrome) { window.chrome = { runtime: {} }; }
+Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+"""
 # Bound on each browser/driver cleanup step after a fetch or a timeout.
 CLOSE_TIMEOUT_S = 5.0
 # Once the outer deadline has already fired, remaining cleanup steps get only this
@@ -66,6 +93,10 @@ def _page_timeout_ms() -> int:
 
 def _outer_timeout_s() -> float:
     return float(os.getenv("CALLBACK_FETCH_OUTER_TIMEOUT_S", DEFAULT_OUTER_TIMEOUT_S))
+
+
+def _settle_budget_s() -> float:
+    return float(os.getenv("CALLBACK_FETCH_SETTLE_BUDGET_S", SETTLE_BUDGET_S))
 
 
 def _log(event: str, **fields: object) -> None:
@@ -226,6 +257,38 @@ async def _cleanup(step: str, coro: Any, url: str, bound: float) -> None:
         _log("browser_cleanup_failed", url=url, step=step, error_class=type(exc).__name__)
 
 
+async def _await_settled_body(page: Any, url: str) -> None:
+    """Wait until the page's body text stops changing, or the budget is spent.
+
+    JS-rendered boards often paint a shell on domcontentloaded and inject the
+    job content seconds later via XHR. A fixed sleep either wastes time or
+    extracts the empty shell; polling for stability adapts to the page.
+    A bot-challenge page also stabilizes (on its challenge text) and is then
+    rejected downstream by the thin-content guard, as before.
+
+    The poll count bounds the wait instead of wall-clock time so the loop
+    terminates deterministically; with real 500ms sleeps it equals the budget.
+    """
+    max_polls = max(1, int(_settle_budget_s() * 1000 / SETTLE_POLL_MS))
+    last: str | None = None
+    stable = 0
+    for _ in range(max_polls):
+        try:
+            text = await page.evaluate(_BODY_TEXT_SCRIPT)
+        except Exception as exc:
+            _log("fetch_settle_aborted", url=url, error_class=type(exc).__name__)
+            break
+        if text == last:
+            stable += 1
+            if stable >= SETTLE_STABLE_ROUNDS and len(text) >= SETTLE_MIN_CHARS:
+                break
+        else:
+            stable = 0
+            last = text
+        await page.wait_for_timeout(SETTLE_POLL_MS)
+    _log("fetch_settled", url=url, body_chars=len(last or ""), stable_rounds=stable)
+
+
 async def _load_page(url: str) -> tuple[str, str, str]:
     """Return (html, body_text, title) for url using a normal Chrome user agent."""
     playwright = await async_playwright().start()
@@ -233,13 +296,14 @@ async def _load_page(url: str) -> tuple[str, str, str]:
     try:
         browser = await playwright.chromium.launch(headless=True, args=["--no-sandbox"])
         context = await browser.new_context(user_agent=USER_AGENT, viewport=VIEWPORT)
+        await context.add_init_script(_STEALTH_INIT_SCRIPT)
         page = await context.new_page()
         response = await page.goto(url, wait_until="domcontentloaded", timeout=_page_timeout_ms())
         status = response.status if response else None
         _log("fetch_status", url=url, status=status)
         if status is None or not 200 <= status < 300:
             raise RuntimeError(f"http status {status}")
-        await page.wait_for_timeout(SETTLE_MS)
+        await _await_settled_body(page, url)
         html = await page.content()
         body_text = await page.evaluate(_BODY_TEXT_SCRIPT)
         title = await page.title()

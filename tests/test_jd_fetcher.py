@@ -335,6 +335,7 @@ def _fake_playwright(
 
     context = Mock()
     context.new_page = AsyncMock(return_value=page)
+    context.add_init_script = AsyncMock(side_effect=lambda script: calls.__setitem__("init_script", script))
     browser = Mock()
     browser.new_context = AsyncMock(
         side_effect=lambda **kw: calls.__setitem__("new_context", kw) or context
@@ -379,17 +380,54 @@ def test_fetch_url_to_markdown_wires_playwright_and_extracts(monkeypatch):
         + "filler " * 10,
         "launch": {"headless": True, "args": ["--no-sandbox"]},
         "new_context": {"user_agent": jd_fetcher.USER_AGENT, "viewport": jd_fetcher.VIEWPORT},
+        "init_script": jd_fetcher._STEALTH_INIT_SCRIPT,
         "goto": {
             "url": "https://example.com/job",
             "wait_until": "domcontentloaded",
             "timeout": jd_fetcher.DEFAULT_PAGE_TIMEOUT_MS,
         },
-        "settle_ms": jd_fetcher.SETTLE_MS,
+        "settle_ms": jd_fetcher.SETTLE_POLL_MS,
         "evaluate": jd_fetcher._BODY_TEXT_SCRIPT,
         "closed": True,
         "stopped": True,
     }
     assert actual == expected
+
+
+def _scripted_page(texts):
+    """Fake page whose body text follows the scripted sequence, then holds."""
+    calls = {"waits": 0}
+
+    class _Page:
+        def __init__(self):
+            self._i = 0
+
+        async def evaluate(self, script):
+            assert script == jd_fetcher._BODY_TEXT_SCRIPT
+            text = texts[min(self._i, len(texts) - 1)]
+            self._i += 1
+            return text
+
+        async def wait_for_timeout(self, ms):
+            assert ms == jd_fetcher.SETTLE_POLL_MS
+            calls["waits"] += 1
+
+    return _Page(), calls
+
+
+def test_await_settled_body_breaks_once_text_stabilizes():
+    page, calls = _scripted_page(["", "x" * 250, "x" * 250, "x" * 250])
+    asyncio.run(jd_fetcher._await_settled_body(page, "https://example.com/job"))
+    max_polls = int(jd_fetcher._settle_budget_s() * 1000 / jd_fetcher.SETTLE_POLL_MS)
+    assert calls["waits"] == 3
+    assert calls["waits"] < max_polls
+
+
+def test_await_settled_body_ignores_a_stable_empty_shell():
+    page, calls = _scripted_page([""])
+    asyncio.run(jd_fetcher._await_settled_body(page, "https://example.com/job"))
+    max_polls = int(jd_fetcher._settle_budget_s() * 1000 / jd_fetcher.SETTLE_POLL_MS)
+    assert calls["waits"] == max_polls
 
 
 def test_fetch_url_to_markdown_logs_a_truncated_section(monkeypatch, caplog):
