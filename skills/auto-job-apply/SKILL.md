@@ -194,6 +194,7 @@ Do not emit separate `Scored Roles`, `Review Queue`, `Referral Leads`, or `Skipp
 Every number comes from `submit_tailor`'s `data.report`. Do not compute or estimate any of them. Round every whole-number field with standard round-half-up (0.5 rounds up); never truncate and never rely on language-default rounding (e.g. Python's round-half-to-even).
 
 - If `submit_tailor` returns `"status": "error"` (e.g. `pipeline_error`), the score and artifacts for that row **do not exist** — write `—` in every score cell and record the error in `Notes`. Never synthesize a substitute: no hand-scoring, no "text-based" fallbacks, no estimating. On `"host_action": "report_and_wait"` with `"retriable": true` you may retry the same call with the same `session_id`; you may not invent the missing output while you wait.
+- Transport: tool results arrive as structured data (the envelope dict) — read fields like `status`, `session_id`, and `data` directly. Never `json.loads` a tool result.
 
 - `KW /55`: `after.keyword_match`, rounded to a whole number.
 - `Req%` / `Pref%`: `after.required_coverage` / `after.preferred_coverage`, whole percent. Write `—` when `preferred_coverage` is null (the JD listed no preferred keywords).
