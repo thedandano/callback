@@ -4,6 +4,7 @@ import asyncio
 import json
 import subprocess
 import sys
+import time
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -418,7 +419,9 @@ class _ScriptedPage:
 def test_await_settled_body_breaks_once_text_stabilizes():
     calls = {"waits": 0}
     page = _ScriptedPage(["", "x" * 250, "x" * 250, "x" * 250], calls)
-    asyncio.run(jd_fetcher._await_settled_body(page, "https://example.com/job"))
+    asyncio.run(
+        jd_fetcher._await_settled_body(page, "https://example.com/job", time.monotonic() + 60)
+    )
     max_polls = int(jd_fetcher._settle_budget_s() * 1000 / jd_fetcher.SETTLE_POLL_MS)
     # Stability is not accepted before the minimum window (~2.5s): the text
     # is stable from the 3rd poll, but the break waits for the floor.
@@ -429,9 +432,33 @@ def test_await_settled_body_breaks_once_text_stabilizes():
 def test_await_settled_body_ignores_a_stable_empty_shell():
     calls = {"waits": 0}
     page = _ScriptedPage([""], calls)
-    asyncio.run(jd_fetcher._await_settled_body(page, "https://example.com/job"))
+    asyncio.run(
+        jd_fetcher._await_settled_body(page, "https://example.com/job", time.monotonic() + 60)
+    )
     max_polls = int(jd_fetcher._settle_budget_s() * 1000 / jd_fetcher.SETTLE_POLL_MS)
     assert calls["waits"] == max_polls
+
+
+def test_await_settled_body_skips_when_outer_deadline_near():
+    calls = {"waits": 0}
+    page = _ScriptedPage(["x" * 250] * 8, calls)
+    # The outer deadline leaves no room for the extraction reserve:
+    # settling is skipped entirely rather than starving extraction.
+    asyncio.run(
+        jd_fetcher._await_settled_body(page, "https://example.com/job", time.monotonic() + 1)
+    )
+    assert calls["waits"] == 0
+
+
+def test_await_settled_body_caps_budget_by_outer_deadline():
+    calls = {"waits": 0}
+    page = _ScriptedPage(["x" * 250] * 8, calls)
+    # Outer deadline allows ~2s of settling after the extraction reserve;
+    # the 8s budget is capped, so the loop exhausts 4 polls without idling.
+    asyncio.run(
+        jd_fetcher._await_settled_body(page, "https://example.com/job", time.monotonic() + 7)
+    )
+    assert calls["waits"] == 4
 
 
 def test_await_settled_body_retries_transient_evaluate_errors():
@@ -449,7 +476,9 @@ def test_await_settled_body_retries_transient_evaluate_errors():
             return await super().evaluate(script)
 
     page = _FlakyPage(["x" * 250] * 8, calls)
-    asyncio.run(jd_fetcher._await_settled_body(page, "https://example.com/job"))
+    asyncio.run(
+        jd_fetcher._await_settled_body(page, "https://example.com/job", time.monotonic() + 60)
+    )
     # The first poll fails transiently (e.g. a navigation destroyed the
     # execution context); the loop retries instead of snapshotting early,
     # then breaks on stability after the minimum window.

@@ -42,6 +42,9 @@ SETTLE_MIN_CHARS = 200
 # fixed wait). An SPA shell can be stable while the real content is still in
 # flight; without a floor we'd snapshot the shell sooner than we used to.
 SETTLE_MIN_POLLS = 5
+# Time reserved for HTML extraction after settling. A slow page load must not
+# let the settle budget consume the outer deadline and starve extraction.
+SETTLE_EXTRACTION_RESERVE_S = 5.0
 # Runs before any page script via context.add_init_script. Covers the
 # high-signal headless fingerprints (webdriver flag, missing window.chrome,
 # empty plugins/languages). It will not fool enterprise bot management
@@ -270,7 +273,7 @@ async def _cleanup(step: str, coro: Any, url: str, bound: float) -> None:
         _log("browser_cleanup_failed", url=url, step=step, error_class=type(exc).__name__)
 
 
-async def _await_settled_body(page: Any, url: str) -> None:
+async def _await_settled_body(page: Any, url: str, deadline: float) -> None:
     """Wait until the page's body text stops changing, or the budget is spent.
 
     JS-rendered boards often paint a shell on domcontentloaded and inject the
@@ -280,16 +283,21 @@ async def _await_settled_body(page: Any, url: str) -> None:
     fixed wait): a shell can be stable while the real content is still in
     flight, and snapshotting it would regress the old minimum wait.
     The budget is a wall-clock deadline covering sleeps and slow evaluations,
-    so settling can never consume the outer fetch timeout and starve
-    extraction. Transient evaluate failures (e.g. a navigation destroying the
-    execution context mid-poll) are retried until the deadline rather than
-    snapshotting the replacement document early.
+    capped by the outer fetch deadline (minus time reserved for extraction)
+    so settling can never starve extraction. Transient evaluate failures
+    (e.g. a navigation destroying the execution context mid-poll) are retried
+    until the deadline rather than snapshotting the replacement document early.
     A bot-challenge page also stabilizes (on its challenge text) and is then
     rejected downstream by the thin-content guard, as before.
     """
     budget_s = _settle_budget_s()
+    outer_remaining = deadline - time.monotonic() - SETTLE_EXTRACTION_RESERVE_S
+    if outer_remaining <= 0:
+        _log("fetch_settle_skipped", url=url, reason="no time left before outer deadline")
+        return
+    budget_s = min(budget_s, outer_remaining)
     deadline = time.monotonic() + budget_s
-    max_polls = max(1, int(budget_s * 1000 / SETTLE_POLL_MS))
+    max_polls = max(1, round(budget_s * 1000 / SETTLE_POLL_MS))
     last: str | None = None
     stable = 0
     for i in range(max_polls):
@@ -318,8 +326,12 @@ async def _await_settled_body(page: Any, url: str) -> None:
     _log("fetch_settled", url=url, body_chars=len(last or ""), stable_rounds=stable)
 
 
-async def _load_page(url: str) -> tuple[str, str, str]:
-    """Return (html, body_text, title) for url using a normal Chrome user agent."""
+async def _load_page(url: str, deadline: float) -> tuple[str, str, str]:
+    """Return (html, body_text, title) for url using a normal Chrome user agent.
+
+    deadline is the outer fetch deadline; the settle phase is capped so
+    extraction still gets its reserved share.
+    """
     playwright = await async_playwright().start()
     browser = None
     try:
@@ -332,7 +344,7 @@ async def _load_page(url: str) -> tuple[str, str, str]:
         _log("fetch_status", url=url, status=status)
         if status is None or not 200 <= status < 300:
             raise RuntimeError(f"http status {status}")
-        await _await_settled_body(page, url)
+        await _await_settled_body(page, url, deadline)
         html = await page.content()
         body_text = await page.evaluate(_BODY_TEXT_SCRIPT)
         title = await page.title()
@@ -365,7 +377,7 @@ async def _cleanup_all(browser: Any, playwright: Any, url: str) -> None:
 
 
 async def _fetch_url_to_markdown_unbounded(url: str, deadline: float) -> str:
-    html, body_text, title = await _load_page(url)
+    html, body_text, title = await _load_page(url, deadline)
     remaining = deadline - time.monotonic()
     extracted = await asyncio.to_thread(run_killable, _extract_worker, html, remaining)
     markdown = extract_markdown(extracted, body_text, url)
