@@ -4,6 +4,7 @@ import asyncio
 import json
 import subprocess
 import sys
+import time
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -335,6 +336,9 @@ def _fake_playwright(
 
     context = Mock()
     context.new_page = AsyncMock(return_value=page)
+    context.add_init_script = AsyncMock(
+        side_effect=lambda script: calls.__setitem__("init_script", script)
+    )
     browser = Mock()
     browser.new_context = AsyncMock(
         side_effect=lambda **kw: calls.__setitem__("new_context", kw) or context
@@ -379,17 +383,121 @@ def test_fetch_url_to_markdown_wires_playwright_and_extracts(monkeypatch):
         + "filler " * 10,
         "launch": {"headless": True, "args": ["--no-sandbox"]},
         "new_context": {"user_agent": jd_fetcher.USER_AGENT, "viewport": jd_fetcher.VIEWPORT},
+        "init_script": jd_fetcher._STEALTH_INIT_SCRIPT,
         "goto": {
             "url": "https://example.com/job",
             "wait_until": "domcontentloaded",
             "timeout": jd_fetcher.DEFAULT_PAGE_TIMEOUT_MS,
         },
-        "settle_ms": jd_fetcher.SETTLE_MS,
+        "settle_ms": jd_fetcher.SETTLE_POLL_MS,
         "evaluate": jd_fetcher._BODY_TEXT_SCRIPT,
         "closed": True,
         "stopped": True,
     }
     assert actual == expected
+
+
+class _ScriptedPage:
+    """Fake page whose body text follows the scripted sequence, then holds."""
+
+    def __init__(self, texts, calls):
+        self._texts = texts
+        self._calls = calls
+        self._i = 0
+
+    async def evaluate(self, script):
+        assert script == jd_fetcher._BODY_TEXT_SCRIPT
+        text = self._texts[min(self._i, len(self._texts) - 1)]
+        self._i += 1
+        return text
+
+    async def wait_for_timeout(self, ms):
+        assert ms <= jd_fetcher.SETTLE_POLL_MS, f"sleep {ms} exceeds poll interval"
+        self._calls["waits"] += 1
+        self._calls.setdefault("sleeps", []).append(ms)
+
+
+def test_await_settled_body_breaks_once_text_stabilizes():
+    calls = {"waits": 0}
+    page = _ScriptedPage(["", "x" * 250, "x" * 250, "x" * 250], calls)
+    asyncio.run(
+        jd_fetcher._await_settled_body(page, "https://example.com/job", time.monotonic() + 60)
+    )
+    max_polls = int(jd_fetcher._settle_budget_s() * 1000 / jd_fetcher.SETTLE_POLL_MS)
+    # Stability is not accepted before the minimum window (~2.5s): the text
+    # is stable from the 3rd poll, but the break waits for the floor.
+    assert calls["waits"] == jd_fetcher.SETTLE_MIN_POLLS
+    assert calls["waits"] < max_polls
+
+
+def test_await_settled_body_ignores_a_stable_empty_shell():
+    calls = {"waits": 0}
+    page = _ScriptedPage([""], calls)
+    asyncio.run(
+        jd_fetcher._await_settled_body(page, "https://example.com/job", time.monotonic() + 60)
+    )
+    max_polls = int(jd_fetcher._settle_budget_s() * 1000 / jd_fetcher.SETTLE_POLL_MS)
+    assert calls["waits"] == max_polls
+
+
+def test_await_settled_body_skips_when_outer_deadline_passed():
+    calls = {"waits": 0}
+    page = _ScriptedPage(["x" * 250] * 8, calls)
+    # The outer deadline has already passed: settling is skipped entirely
+    # rather than starving extraction.
+    asyncio.run(
+        jd_fetcher._await_settled_body(page, "https://example.com/job", time.monotonic() - 1)
+    )
+    assert calls["waits"] == 0
+
+
+def test_await_settled_body_splits_short_budget_with_extraction():
+    calls = {"waits": 0}
+    page = _ScriptedPage(["x" * 250] * 8, calls)
+    # 4s left: the 7s post-settle reserve is halved to 2s, leaving a 2s
+    # settle budget (4 polls) instead of skipping settling entirely.
+    asyncio.run(
+        jd_fetcher._await_settled_body(page, "https://example.com/job", time.monotonic() + 4)
+    )
+    assert calls["waits"] == 4
+
+
+def test_await_settled_body_caps_sleep_at_remaining_deadline():
+    calls: dict = {"waits": 0}
+    page = _ScriptedPage(["x" * 250] * 8, calls)
+    # ~0.7s left: after the 0.35s reserve the settle budget is ~0.35s, so the
+    # single sleep must be capped below the full 500ms poll interval rather
+    # than overshooting into extraction time.
+    asyncio.run(
+        jd_fetcher._await_settled_body(page, "https://example.com/job", time.monotonic() + 0.7)
+    )
+    assert calls["waits"] == 1
+    assert len(calls["sleeps"]) == 1
+    assert calls["sleeps"][0] < jd_fetcher.SETTLE_POLL_MS
+
+
+def test_await_settled_body_retries_transient_evaluate_errors():
+    calls = {"waits": 0}
+
+    class _FlakyPage(_ScriptedPage):
+        def __init__(self, texts, calls):
+            super().__init__(texts, calls)
+            self._failed = False
+
+        async def evaluate(self, script):
+            if not self._failed:
+                self._failed = True
+                raise RuntimeError("Execution context was destroyed")
+            return await super().evaluate(script)
+
+    page = _FlakyPage(["x" * 250] * 8, calls)
+    asyncio.run(
+        jd_fetcher._await_settled_body(page, "https://example.com/job", time.monotonic() + 60)
+    )
+    # The first poll fails transiently (e.g. a navigation destroyed the
+    # execution context); the loop retries instead of snapshotting early,
+    # then breaks on stability after the minimum window.
+    assert calls["waits"] == jd_fetcher.SETTLE_MIN_POLLS
 
 
 def test_fetch_url_to_markdown_logs_a_truncated_section(monkeypatch, caplog):
@@ -509,7 +617,7 @@ def test_fetch_url_to_markdown_propagates_outer_timeout(monkeypatch):
 
 def test_fetch_gives_extraction_only_the_remaining_budget(monkeypatch):
     """The outer timeout bounds the whole fetch: the killable extraction gets what is
-    left after the page load, not a fresh budget."""
+    left after the page load, minus a proportional teardown reserve — not a fresh budget."""
     monkeypatch.setattr(jd_fetcher, "_outer_timeout_s", lambda: 2.0)
     _fake_playwright(monkeypatch, goto_delay=0.5)
     seen: dict = {}
@@ -522,7 +630,9 @@ def test_fetch_gives_extraction_only_the_remaining_budget(monkeypatch):
 
     asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
 
-    actual = {"budget_reduced": 1.0 < seen["timeout"] < 1.6}
+    # ~1.5s remains after the 0.5s load; half is reserved for teardown,
+    # so extraction gets ~0.75s — bounded by the outer deadline, not fresh.
+    actual = {"budget_reduced": 0.6 < seen["timeout"] < 0.9}
     expected = {"budget_reduced": True}
     assert actual == expected
 
