@@ -434,6 +434,28 @@ def test_await_settled_body_ignores_a_stable_empty_shell():
     assert calls["waits"] == max_polls
 
 
+def test_await_settled_body_retries_transient_evaluate_errors():
+    calls = {"waits": 0}
+
+    class _FlakyPage(_ScriptedPage):
+        def __init__(self, texts, calls):
+            super().__init__(texts, calls)
+            self._failed = False
+
+        async def evaluate(self, script):
+            if not self._failed:
+                self._failed = True
+                raise RuntimeError("Execution context was destroyed")
+            return await super().evaluate(script)
+
+    page = _FlakyPage(["x" * 250] * 8, calls)
+    asyncio.run(jd_fetcher._await_settled_body(page, "https://example.com/job"))
+    # The first poll fails transiently (e.g. a navigation destroyed the
+    # execution context); the loop retries instead of snapshotting early,
+    # then breaks on stability after the minimum window.
+    assert calls["waits"] == jd_fetcher.SETTLE_MIN_POLLS
+
+
 def test_fetch_url_to_markdown_logs_a_truncated_section(monkeypatch, caplog):
     caplog.set_level("INFO", logger="callback.jd_fetcher")
     _fake_playwright(monkeypatch)

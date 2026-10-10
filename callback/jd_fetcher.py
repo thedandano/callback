@@ -279,21 +279,30 @@ async def _await_settled_body(page: Any, url: str) -> None:
     Stability is never accepted before SETTLE_MIN_POLLS polls (~2.5s, the old
     fixed wait): a shell can be stable while the real content is still in
     flight, and snapshotting it would regress the old minimum wait.
+    The budget is a wall-clock deadline covering sleeps and slow evaluations,
+    so settling can never consume the outer fetch timeout and starve
+    extraction. Transient evaluate failures (e.g. a navigation destroying the
+    execution context mid-poll) are retried until the deadline rather than
+    snapshotting the replacement document early.
     A bot-challenge page also stabilizes (on its challenge text) and is then
     rejected downstream by the thin-content guard, as before.
-
-    The poll count bounds the wait instead of wall-clock time so the loop
-    terminates deterministically; with real 500ms sleeps it equals the budget.
     """
-    max_polls = max(1, int(_settle_budget_s() * 1000 / SETTLE_POLL_MS))
+    budget_s = _settle_budget_s()
+    deadline = time.monotonic() + budget_s
+    max_polls = max(1, int(budget_s * 1000 / SETTLE_POLL_MS))
     last: str | None = None
     stable = 0
     for i in range(max_polls):
-        try:
-            text = await page.evaluate(_BODY_TEXT_SCRIPT)
-        except Exception as exc:
-            _log("fetch_settle_aborted", url=url, error_class=type(exc).__name__)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
             break
+        try:
+            text = await asyncio.wait_for(page.evaluate(_BODY_TEXT_SCRIPT), timeout=remaining)
+        except Exception as exc:
+            _log("fetch_settle_retry", url=url, error_class=type(exc).__name__)
+            stable = 0
+            await page.wait_for_timeout(SETTLE_POLL_MS)
+            continue
         if text == last:
             stable += 1
         else:

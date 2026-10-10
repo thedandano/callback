@@ -25,6 +25,52 @@ Non-negotiable principles. These do not change without an explicit design propos
    to the tailoring side (host judgment at graph interrupts). The scorer must never
    silently cover a gap the tailoring loop should see and act on.
 
+## Code Review Rules
+
+The goal of a review here is full coverage, not a highlight reel. We would
+rather read ten real findings than have the two most obvious ones posted and
+the rest dropped. Read every changed file and every hunk before writing
+anything, and keep going after the first findings.
+
+For each change, read enough of the surrounding code to judge it in context:
+the callers of any function whose behavior or signature changed, the tests
+that cover it, and any code that relies on the old behavior. Many of the bugs
+we care about are not visible in the diff alone.
+
+What to look for, in priority order:
+
+1. Correctness: code that does not do what it claims. Wrong conditions,
+   off-by-one errors, unhandled null or empty cases, incorrect async or
+   concurrency handling, wrong types or units, errors swallowed or handled
+   incorrectly, edge cases that crash or return wrong results.
+2. Bad logic: code that runs but whose reasoning is flawed. Unreachable or
+   redundant branches, conditions that are always true or false, state that
+   can become inconsistent, an approach that cannot work for inputs the code
+   is clearly meant to handle.
+3. Regressions: existing behavior this change breaks. Changed defaults,
+   removed or renamed things that are still used elsewhere, altered return
+   shapes, changed ordering or timing, tests deleted or weakened to make the
+   change pass.
+4. Security: injection, missing authentication or authorization checks,
+   secrets in code or logs, unsafe deserialization, path traversal, unvalidated
+   input reaching a sensitive operation, overly broad permissions.
+5. Bad practices that will cause real problems: duplicated logic that will
+   drift, new behavior with no test coverage, dead code, misleading names,
+   functions doing several unrelated things, resource leaks, hardcoded values
+   that should be configuration.
+
+Severity: treat everything in categories 1 to 4 as P1 at minimum, and P0 if
+it could cause data loss, a security breach, or an outage. Treat category 5
+as P1 when it affects maintainability or testability of the changed code.
+Pure style preferences that a formatter or linter would catch are not worth
+a comment.
+
+For each finding, give the file and line, what is wrong, a concrete scenario
+where it fails (the input or state, and the wrong result), and a suggested
+fix. If you are unsure whether something is a bug, say so and post it
+anyway with what you would need to check; an uncertain finding is more
+useful to us than a missing one.
+
 ## Project Context
 
 callback is a standalone LangGraph MCP server (stdio only). It originated as a replacement for go-apply's Go FSM; go-apply is now deprecated — callback's own behavior is the source of truth.
