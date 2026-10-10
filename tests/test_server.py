@@ -187,7 +187,7 @@ def test_run_logs_crash_traceback_before_raising():
 def test_load_jd_rejects_missing_jd_input():
     from callback.server import load_jd
 
-    result = json.loads(load_jd())
+    result = load_jd()
     session_id = result["session_id"]
     uuid.UUID(session_id)
     expected = {
@@ -210,7 +210,7 @@ def test_load_jd_returns_handoff_envelope():
     jd_text = "Python engineer needed"
 
     with patch("callback.server.list_resumes", return_value=["resume"]):
-        result = json.loads(load_jd(jd_raw_text=jd_text))
+        result = load_jd(jd_raw_text=jd_text)
     session_id = result["session_id"]
     uuid.UUID(session_id)
     expected = {
@@ -225,6 +225,27 @@ def test_load_jd_returns_handoff_envelope():
     }
 
     assert result == expected
+
+
+def test_load_jd_returns_dict_envelope():
+    from callback.server import load_jd
+
+    with patch("callback.server.list_resumes", return_value=["resume"]):
+        result = load_jd(jd_raw_text="Python engineer needed")
+
+    assert isinstance(result, dict)
+    assert result["status"] == "ok"
+    assert isinstance(result["session_id"], str)
+
+
+def test_load_jd_error_returns_dict_envelope():
+    from callback.server import load_jd
+
+    result = load_jd()
+
+    assert isinstance(result, dict)
+    assert result["status"] == "error"
+    assert result["error"]["code"] == "missing_input"
 
 
 def test_load_jd_trace_payload_carries_jd_text_and_full_output_data(monkeypatch):
@@ -265,7 +286,7 @@ def test_load_jd_trace_payload_carries_jd_text_and_full_output_data(monkeypatch)
         patch.object(server, "get_apply_graph", return_value=FakeGraph()),
         patch("callback.observability._get_traceable", return_value=fake_traceable),
     ):
-        result = json.loads(load_jd(jd_raw_text="secret jd body"))
+        result = load_jd(jd_raw_text="secret jd body")
 
     # Full business content is present in trace; contact PII is redacted (none here).
     # jd_raw_text survives in inputs; full output data is present (not minimized).
@@ -296,7 +317,7 @@ def test_load_jd_returns_error_when_session_store_is_readonly():
         patch("callback.server.list_resumes", return_value=["resume"]),
         patch("callback.server.get_apply_graph", return_value=ReadonlyGraph()),
     ):
-        result = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+        result = load_jd(jd_raw_text="Python engineer needed")
 
     expected = {
         "session_id": result["session_id"],
@@ -322,7 +343,7 @@ def test_load_jd_returns_error_when_unexpected_exception_escapes_graph():
         patch("callback.server.list_resumes", return_value=["resume"]),
         patch("callback.server.get_apply_graph", return_value=BrokenGraph()),
     ):
-        result = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+        result = load_jd(jd_raw_text="Python engineer needed")
 
     expected = {
         "session_id": result["session_id"],
@@ -386,11 +407,9 @@ def test_load_jd_accepts_url_with_raw_text_fallback():
         patch("callback.apply_nodes.fetch_url_to_markdown", fetch_mock),
         patch("callback.server.list_resumes", return_value=["resume"]),
     ):
-        result = json.loads(
-            load_jd(
-                jd_url=jd_url,
-                jd_raw_text="Python engineer fallback text",
-            )
+        result = load_jd(
+            jd_url=jd_url,
+            jd_raw_text="Python engineer fallback text",
         )
     session_id = result["session_id"]
     uuid.UUID(session_id)
@@ -413,10 +432,10 @@ def test_submit_keywords_stores_jddata_and_routes_missing_wiki_to_onboarding():
     from callback.server import load_jd, submit_keywords
 
     with patch("callback.server.list_resumes", return_value=["resume"]):
-        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+        loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
 
-    result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+    result = submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
     expected = {
         "session_id": session_id,
         "status": "ok",
@@ -465,7 +484,7 @@ def test_submit_keywords_rejects_invalid_jd_json():
         "session_id": session_id,
     }
 
-    assert json.loads(submit_keywords(session_id=session_id, jd_json="[]")) == expected
+    assert submit_keywords(session_id=session_id, jd_json="[]") == expected
 
 
 def test_submit_keywords_rejects_empty_jd_json():
@@ -483,14 +502,14 @@ def test_submit_keywords_rejects_empty_jd_json():
         "session_id": session_id,
     }
 
-    assert json.loads(submit_keywords(session_id=session_id, jd_json="{}")) == expected
+    assert submit_keywords(session_id=session_id, jd_json="{}") == expected
 
 
 def test_submit_keywords_rejects_unknown_session():
     from callback.server import submit_keywords
 
     session_id = "missing-session"
-    result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+    result = submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
     expected = {
         "status": "error",
         "error": {
@@ -509,7 +528,7 @@ def test_submit_keywords_rejects_blank_session_with_session_id():
     from callback.server import submit_keywords
 
     session_id = ""
-    result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+    result = submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
     expected = {
         "status": "error",
         "error": {
@@ -528,7 +547,7 @@ def test_submit_keywords_returns_envelope_when_extractor_raises(tmp_path, monkey
     from callback.server import load_jd, submit_keywords
 
     with patch("callback.server.list_resumes", return_value=["resume"]):
-        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+        loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
 
     def broken_extract(path):
@@ -536,7 +555,7 @@ def test_submit_keywords_returns_envelope_when_extractor_raises(tmp_path, monkey
 
     monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", broken_extract)
     with patch("callback.apply_nodes.get_resume", return_value=str(tmp_path / "resume.pdf")):
-        result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+        result = submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
 
     expected = {
         "status": "error",
@@ -555,7 +574,7 @@ def test_submit_keywords_reports_extractor_value_error_as_unexpected_error(tmp_p
     from callback.server import load_jd, submit_keywords
 
     with patch("callback.server.list_resumes", return_value=["resume"]):
-        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+        loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
 
     def broken_extract(path):
@@ -563,7 +582,7 @@ def test_submit_keywords_reports_extractor_value_error_as_unexpected_error(tmp_p
 
     monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", broken_extract)
     with patch("callback.apply_nodes.get_resume", return_value=str(tmp_path / "resume.pdf")):
-        result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+        result = submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
 
     expected = {
         "status": "error",
@@ -582,7 +601,7 @@ def test_submit_keywords_reports_checkpoint_value_error_as_invalid_session():
     from callback.server import load_jd, submit_keywords
 
     with patch("callback.server.list_resumes", return_value=["resume"]):
-        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+        loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
 
     class FakeSnapshot:
@@ -597,7 +616,7 @@ def test_submit_keywords_reports_checkpoint_value_error_as_invalid_session():
             raise ValueError("checkpoint missing")
 
     with patch("callback.server.get_apply_graph", return_value=FakeGraph()):
-        result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+        result = submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
 
     expected = {
         "status": "error",
@@ -616,11 +635,11 @@ def test_submit_keywords_rejects_session_not_waiting_for_keywords():
     from callback.server import load_jd, submit_keywords
 
     with patch("callback.server.list_resumes", return_value=["resume"]):
-        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+        loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
     submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
 
-    result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+    result = submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
     expected = {
         "status": "error",
         "error": {
@@ -640,10 +659,10 @@ def test_submit_keywords_ats_format_gap_has_three_entries():
     from callback.server import load_jd, submit_keywords
 
     with patch("callback.server.list_resumes", return_value=["resume"]):
-        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+        loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
 
-    result = json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+    result = submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
 
     actual = {
         "entry_count": len(result["data"]["ats_format_gap"]),
@@ -689,8 +708,8 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
     store.write_index(resume_label, "Python evidence in dated experience")
 
     with patch("callback.server.list_resumes", return_value=[resume_label]):
-        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
-    result = json.loads(submit_keywords(session_id=loaded["session_id"], jd_json=PARTIAL_JD_JSON))
+        loaded = load_jd(jd_raw_text="Python engineer needed")
+    result = submit_keywords(session_id=loaded["session_id"], jd_json=PARTIAL_JD_JSON)
 
     instructions = result["data"]["tailor_instructions"]
     actual = {
@@ -839,8 +858,8 @@ story_type: SBI
     )
 
     with patch("callback.server.list_resumes", return_value=[resume_label]):
-        loaded = json.loads(load_jd(jd_raw_text="GenAI engineer needed"))
-        result = json.loads(submit_keywords(session_id=loaded["session_id"], jd_json=jd_json))
+        loaded = load_jd(jd_raw_text="GenAI engineer needed")
+        result = submit_keywords(session_id=loaded["session_id"], jd_json=jd_json)
 
     candidates = result["data"]["project_candidates"]
     recommendation = result["data"]["project_swap_recommendation"]
@@ -937,8 +956,8 @@ story_type: SBI
     )
 
     with patch("callback.server.list_resumes", return_value=[resume_label]):
-        loaded = json.loads(load_jd(jd_raw_text="GenAI engineer needed"))
-        result = json.loads(submit_keywords(session_id=loaded["session_id"], jd_json=jd_json))
+        loaded = load_jd(jd_raw_text="GenAI engineer needed")
+        result = submit_keywords(session_id=loaded["session_id"], jd_json=jd_json)
 
     layout = result["data"]["project_layout_recommendation"]
     trim_candidates = result["data"]["trim_candidates"]
@@ -1040,8 +1059,8 @@ story_type: SBI
     )
 
     with patch("callback.server.list_resumes", return_value=[resume_label]):
-        loaded = json.loads(load_jd(jd_raw_text="GenAI engineer needed"))
-        result = json.loads(submit_keywords(session_id=loaded["session_id"], jd_json=jd_json))
+        loaded = load_jd(jd_raw_text="GenAI engineer needed")
+        result = submit_keywords(session_id=loaded["session_id"], jd_json=jd_json)
 
     layout = result["data"]["project_layout_recommendation"]
     actual = {
@@ -1089,8 +1108,8 @@ def test_submit_keywords_orphaned_required_routes_to_create_story(tmp_path, monk
         patch("callback.server.list_resumes", return_value=[resume_label]),
         patch("callback.apply_nodes.get_resume", return_value=str(resume_path)),
     ):
-        loaded = json.loads(load_jd(jd_raw_text="Kafka engineer needed"))
-        result = json.loads(submit_keywords(session_id=loaded["session_id"], jd_json=jd_json))
+        loaded = load_jd(jd_raw_text="Kafka engineer needed")
+        result = submit_keywords(session_id=loaded["session_id"], jd_json=jd_json)
 
     actual = {
         "next_action": result["next_action"],
@@ -1134,12 +1153,10 @@ def test_get_wiki_pages_returns_submit_tailor_workflow(tmp_path, monkeypatch):
     store.write_page(resume_label, "experience/acme.md", "Built Python services.")
 
     with patch("callback.server.list_resumes", return_value=[resume_label]):
-        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
-    json.loads(submit_keywords(session_id=loaded["session_id"], jd_json=PARTIAL_JD_JSON))
+        loaded = load_jd(jd_raw_text="Python engineer needed")
+    submit_keywords(session_id=loaded["session_id"], jd_json=PARTIAL_JD_JSON)
 
-    result = json.loads(
-        get_wiki_pages(session_id=loaded["session_id"], page_ids=["experience/acme.md"])
-    )
+    result = get_wiki_pages(session_id=loaded["session_id"], page_ids=["experience/acme.md"])
 
     actual = {
         "status": result["status"],
@@ -1183,11 +1200,11 @@ def test_get_wiki_pages_rejects_page_id_outside_wiki_root(tmp_path, monkeypatch)
     secret.write_text("hunter2", encoding="utf-8")
 
     with patch("callback.server.list_resumes", return_value=[resume_label]):
-        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+        loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
-    json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+    submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
 
-    result = json.loads(get_wiki_pages(session_id=session_id, page_ids=["../../secret.txt"]))
+    result = get_wiki_pages(session_id=session_id, page_ids=["../../secret.txt"])
 
     expected = {
         "status": "error",
@@ -1223,11 +1240,11 @@ def test_get_wiki_pages_rejects_embedded_nul(tmp_path, monkeypatch):
     store.write_index(resume_label, "- experience/acme.md")
 
     with patch("callback.server.list_resumes", return_value=[resume_label]):
-        loaded = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+        loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
-    json.loads(submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON))
+    submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
 
-    result = json.loads(get_wiki_pages(session_id=session_id, page_ids=["a\x00b.md"]))
+    result = get_wiki_pages(session_id=session_id, page_ids=["a\x00b.md"])
 
     expected = {
         "status": "error",
@@ -1447,10 +1464,10 @@ class TestSubmitTailorNoCoverage:
         monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
 
         with patch("callback.server.list_resumes", return_value=["resume"]):
-            session_id = json.loads(load_jd(jd_raw_text="Python engineer needed"))["session_id"]
-        json.loads(submit_keywords(session_id=session_id, jd_json=_NO_COVERAGE_JD_JSON))
+            session_id = load_jd(jd_raw_text="Python engineer needed")["session_id"]
+        submit_keywords(session_id=session_id, jd_json=_NO_COVERAGE_JD_JSON)
 
-        result = json.loads(submit_tailor(session_id=session_id, edits=[], no_coverage=True))
+        result = submit_tailor(session_id=session_id, edits=[], no_coverage=True)
 
         actual = {
             "status": result["status"],
@@ -1492,10 +1509,10 @@ class TestSubmitTailorNoCoverage:
         monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
 
         with patch("callback.server.list_resumes", return_value=["resume"]):
-            session_id = json.loads(load_jd(jd_raw_text="Python engineer needed"))["session_id"]
-        json.loads(submit_keywords(session_id=session_id, jd_json=_NO_COVERAGE_JD_JSON))
+            session_id = load_jd(jd_raw_text="Python engineer needed")["session_id"]
+        submit_keywords(session_id=session_id, jd_json=_NO_COVERAGE_JD_JSON)
 
-        result = json.loads(submit_tailor(session_id=session_id, edits=[], no_coverage=True))
+        result = submit_tailor(session_id=session_id, edits=[], no_coverage=True)
 
         report = result["data"]["report"]
         actual = {
@@ -1525,7 +1542,7 @@ def test_load_jd_auto_selects_single_registered_resume():
     from callback.server import load_jd
 
     with patch("callback.server.list_resumes", return_value=["default"]):
-        result = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+        result = load_jd(jd_raw_text="Python engineer needed")
 
     session_id = result["session_id"]
     graph = get_apply_graph()
@@ -1547,7 +1564,7 @@ def test_load_jd_stores_first_registered_resume_when_several():
     from callback.server import load_jd
 
     with patch("callback.server.list_resumes", return_value=["a", "b"]):
-        result = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+        result = load_jd(jd_raw_text="Python engineer needed")
 
     session_id = result["session_id"]
     graph = get_apply_graph()
@@ -1581,7 +1598,7 @@ def test_load_jd_returns_no_resume_registered_error_when_empty():
     from callback.server import load_jd
 
     with patch("callback.server.list_resumes", return_value=[]):
-        result = json.loads(load_jd(jd_raw_text="Python engineer needed"))
+        result = load_jd(jd_raw_text="Python engineer needed")
 
     expected = {
         "session_id": result["session_id"],
@@ -1815,7 +1832,7 @@ def test_onboard_user_returns_envelope_when_extractor_raises(tmp_path, monkeypat
     resume.write_text("Jane Doe\n", encoding="utf-8")
 
     session_id = "onboard-extractor-raises"
-    result = json.loads(server._onboard_user_impl(session_id, str(resume)))
+    result = server._onboard_user_impl(session_id, str(resume))
 
     expected = {
         "status": "error",
@@ -1850,7 +1867,7 @@ async def test_check_update_tool_returns_update_available():
         async with Client(FastMCPTransport(server.mcp)) as client:
             result = await client.call_tool("check_update", {})
 
-    envelope = json.loads(str(result.data))
+    envelope = result.structured_content
     assert envelope == {"session_id": "", "status": "ok", "data": check_result}
 
 
@@ -1871,7 +1888,7 @@ async def test_check_update_tool_returns_already_current():
         async with Client(FastMCPTransport(server.mcp)) as client:
             result = await client.call_tool("check_update", {})
 
-    envelope = json.loads(str(result.data))
+    envelope = result.structured_content
     assert envelope == {"session_id": "", "status": "ok", "data": check_result}
 
 
@@ -1903,18 +1920,18 @@ class TestSearchPreferencesTools:
     def test_set_then_get_round_trip(self):
         from callback.server import get_search_preferences, set_search_preferences
 
-        set_env = json.loads(set_search_preferences(self._valid_payload()))
+        set_env = set_search_preferences(self._valid_payload())
         assert set_env["status"] == "ok"
         stored = set_env["data"]["preferences"]
 
-        get_env = json.loads(get_search_preferences())
+        get_env = get_search_preferences()
         assert get_env["status"] == "ok"
         assert get_env["data"]["preferences"] == stored
 
     def test_set_persists_scan_source_and_pii(self):
         from callback.server import set_search_preferences
 
-        prefs = json.loads(set_search_preferences(self._valid_payload()))["data"]["preferences"]
+        prefs = set_search_preferences(self._valid_payload())["data"]["preferences"]
 
         sent_keys = ("scan_sources", "needs_sponsorship", "work_authorization", "yoe_actual")
         assert {k: prefs[k] for k in sent_keys} == {
@@ -1935,13 +1952,13 @@ class TestSearchPreferencesTools:
     def test_set_stamps_updated_at(self):
         from callback.server import set_search_preferences
 
-        set_env = json.loads(set_search_preferences(self._valid_payload()))
+        set_env = set_search_preferences(self._valid_payload())
         assert set_env["data"]["preferences"]["updated_at"]  # non-empty ISO string
 
     def test_get_when_missing_returns_next_action(self):
         from callback.server import get_search_preferences
 
-        get_env = json.loads(get_search_preferences())
+        get_env = get_search_preferences()
         assert get_env["status"] == "ok"
         assert get_env["next_action"] == "set_search_preferences"
         assert "data" not in get_env
@@ -1949,7 +1966,7 @@ class TestSearchPreferencesTools:
     def test_set_invalid_payload_returns_error(self):
         from callback.server import set_search_preferences
 
-        env = json.loads(set_search_preferences({"work_types": ["remote"]}))  # no home_location
+        env = set_search_preferences({"work_types": ["remote"]})  # no home_location
         assert env["status"] == "error"
         assert env["error"]["code"] == "invalid_preferences"
         assert env["error"]["stage"] == "set_search_preferences"

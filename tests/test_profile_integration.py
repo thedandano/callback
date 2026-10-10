@@ -4,7 +4,6 @@ These tests exercise the full stack (server tools → profile graph → real sto
 using isolated tmp_path state. Run via: pytest -m integration
 """
 
-import json
 from pathlib import Path
 
 import pytest
@@ -50,7 +49,7 @@ class TestProfileToolsEndToEnd:
 
         resume = _make_resume(tmp_path)
 
-        r1 = json.loads(onboard_user(resume_path=str(resume)))
+        r1 = onboard_user(resume_path=str(resume))
         r1_expected = {
             "session_id": r1["session_id"],
             "status": "ok",
@@ -75,7 +74,7 @@ class TestProfileToolsEndToEnd:
         # the registered resume and routes straight to compile_profile. With no
         # stories yet, every resume skill is an orphan, so it pauses before
         # create_story.
-        r2 = json.loads(compile_profile())
+        r2 = compile_profile()
         _skills_sorted = ["Docker", "Kubernetes", "Python"]
         _orphans = r2["data"]["compiled_profile"]["orphaned_skills"]
         orphan_names = {o["skill"] for o in _orphans}
@@ -102,16 +101,14 @@ class TestProfileToolsEndToEnd:
         # create_story() with no session_id: another new thread. primary_skill is
         # pending in intake, so the thread flows straight through create_story and
         # recompiles in the same call. Kubernetes is now covered, Docker remains.
-        r3 = json.loads(
-            create_story(
-                primary_skill="Python",
-                skills=["Python", "Kubernetes"],
-                story_type="STAR",
-                job_title="Software Engineer",
-                situation="Legacy monolith slowed deploys.",
-                behavior="Migrated to Kubernetes microservices.",
-                impact="Deploy time cut by 60%.",
-            )
+        r3 = create_story(
+            primary_skill="Python",
+            skills=["Python", "Kubernetes"],
+            story_type="STAR",
+            job_title="Software Engineer",
+            situation="Legacy monolith slowed deploys.",
+            behavior="Migrated to Kubernetes microservices.",
+            impact="Deploy time cut by 60%.",
         )
         r3_actual = {
             "status": r3["status"],
@@ -133,7 +130,7 @@ class TestProfileToolsEndToEnd:
 
         # compile_profile() again with no session_id: picks up the persisted story —
         # Docker is still the only orphan.
-        r4 = json.loads(compile_profile())
+        r4 = compile_profile()
         r4_actual = {
             "status": r4["status"],
             "next_action": r4.get("next_action"),
@@ -159,7 +156,7 @@ class TestProfileToolsEndToEnd:
         resume = _make_resume(tmp_path)
 
         # onboard: registers resume, returns intake after graph interrupt
-        r1 = json.loads(onboard_user(resume_path=str(resume)))
+        r1 = onboard_user(resume_path=str(resume))
         assert r1 == {
             "session_id": r1["session_id"],
             "status": "ok",
@@ -183,7 +180,7 @@ class TestProfileToolsEndToEnd:
         # skill is an orphan, so the graph flows through compile_profile into
         # check_orphans and pauses before create_story.
         session_id = r1["session_id"]
-        r2 = json.loads(compile_profile(session_id=session_id))
+        r2 = compile_profile(session_id=session_id)
         _skills_sorted = ["Docker", "Kubernetes", "Python"]
         _orphans = r2["data"]["compiled_profile"]["orphaned_skills"]
         orphan_names = {o["skill"] for o in _orphans}
@@ -209,17 +206,15 @@ class TestProfileToolsEndToEnd:
         # create_story: resumes the paused thread, persists a story for Python, and
         # recompiles in the same call. Kubernetes is covered by the story's skills,
         # Docker remains an orphan, so the thread pauses before create_story again.
-        r3 = json.loads(
-            create_story(
-                session_id=session_id,
-                primary_skill="Python",
-                skills=["Python", "Kubernetes"],
-                story_type="STAR",
-                job_title="Software Engineer",
-                situation="Legacy monolith slowed deploys.",
-                behavior="Migrated to Kubernetes microservices.",
-                impact="Deploy time cut by 60%.",
-            )
+        r3 = create_story(
+            session_id=session_id,
+            primary_skill="Python",
+            skills=["Python", "Kubernetes"],
+            story_type="STAR",
+            job_title="Software Engineer",
+            situation="Legacy monolith slowed deploys.",
+            behavior="Migrated to Kubernetes microservices.",
+            impact="Deploy time cut by 60%.",
         )
         r3_actual = {
             "session_id": r3["session_id"],
@@ -242,17 +237,15 @@ class TestProfileToolsEndToEnd:
         assert r3_actual == r3_expected
 
         # create_story again: covers Docker too — no orphans remain, thread ends.
-        r4 = json.loads(
-            create_story(
-                session_id=session_id,
-                primary_skill="Docker",
-                skills=["Docker"],
-                story_type="STAR",
-                job_title="Software Engineer",
-                situation="Manual deploys were slow.",
-                behavior="Containerized the service with Docker.",
-                impact="Deploy time cut further.",
-            )
+        r4 = create_story(
+            session_id=session_id,
+            primary_skill="Docker",
+            skills=["Docker"],
+            story_type="STAR",
+            job_title="Software Engineer",
+            situation="Manual deploys were slow.",
+            behavior="Containerized the service with Docker.",
+            impact="Deploy time cut further.",
         )
         r4_actual = {
             "session_id": r4["session_id"],
@@ -271,7 +264,7 @@ class TestProfileToolsEndToEnd:
     def test_onboard_missing_resume_returns_error(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
 
-        result = json.loads(onboard_user())
+        result = onboard_user()
 
         assert result == {
             "session_id": result["session_id"],

@@ -544,7 +544,7 @@ def _ok(
     next_action: str | None = None,
     data: dict | None = None,
     workflow: dict | None = None,
-) -> str:
+) -> dict:
     """Return a success envelope."""
     env: dict = {"session_id": session_id, "status": "ok"}
     if next_action:
@@ -553,7 +553,7 @@ def _ok(
         env["data"] = data
     if workflow:
         env["workflow"] = workflow
-    return json.dumps(env)
+    return env
 
 
 def _err(
@@ -564,7 +564,7 @@ def _err(
     retriable: bool = False,
     data: dict | None = None,
     host_action: str | None = None,
-) -> str:
+) -> dict:
     """Return an error envelope.
 
     `data` carries explicit nulls for artifacts that were not produced, so the
@@ -588,10 +588,10 @@ def _err(
         env["data"] = data
     if session_id is not None:
         env["session_id"] = session_id
-    return json.dumps(env)
+    return env
 
 
-def _unexpected_error(stage: str, session_id: str) -> str:
+def _unexpected_error(stage: str, session_id: str) -> dict:
     """Log the active exception with traceback and return an unexpected_error envelope."""
     _log_exception({"tool": stage, "session_id": session_id, "event": "unexpected_error"})
     return _err(
@@ -603,7 +603,7 @@ def _unexpected_error(stage: str, session_id: str) -> str:
     )
 
 
-def _submit_keywords_state_error(graph, config, session_id: str) -> str | None:
+def _submit_keywords_state_error(graph, config, session_id: str) -> dict | None:
     """Return an error envelope if submit_keywords cannot resume safely."""
     snapshot = graph.get_state(config)
     if not snapshot.values:
@@ -633,7 +633,7 @@ def _submit_keywords_state_error(graph, config, session_id: str) -> str | None:
 # ============================================================================
 
 
-def _resolve_resume_label(session_id: str) -> tuple[str | None, str | None]:
+def _resolve_resume_label(session_id: str) -> tuple[str | None, dict | None]:
     """Return (label, None) for the registered resume, or (None, error envelope)."""
     registered = list_resumes()
     if not registered:
@@ -661,7 +661,7 @@ def _resolve_resume_label(session_id: str) -> tuple[str | None, str | None]:
 def load_jd(
     jd_url: str | None = None,
     jd_raw_text: str | None = None,
-) -> str:
+) -> dict:
     """Load a job description and return host extraction instructions.
 
     Takes a job description via jd_url, jd_raw_text, or both. At least one is
@@ -678,8 +678,9 @@ def load_jd(
         jd_raw_text: Raw job description text.
 
     Returns:
-        JSON envelope with status, session_id, jd_text, extraction_protocol, and
-        workflow guidance telling the host to call submit_keywords next.
+        Envelope dict (structured content) with status, session_id, jd_text,
+        extraction_protocol, and workflow guidance telling the host to call
+        submit_keywords next.
     """
     session_id = str(uuid.uuid4())
     return _load_jd_impl(
@@ -695,7 +696,7 @@ def _load_jd_impl(  # noqa: C901
     jd_raw_text: str | None,
     *,
     jd_url: str | None = None,
-) -> str:
+) -> dict:
     if not (jd_url or jd_raw_text):
         return _err(
             "load_jd",
@@ -886,7 +887,7 @@ def _submit_tailor_artifacts(final: dict, session_id: str) -> dict:
     }
 
 
-def _resolve_output_dir(output_dir: str | None, session_id: str) -> tuple[str | None, str | None]:
+def _resolve_output_dir(output_dir: str | None, session_id: str) -> tuple[str | None, dict | None]:
     """Validate and create an optional output_dir for the final PDF.
 
     Returns (resolved_abs_dir, None) on success (resolved is None when output_dir
@@ -926,7 +927,7 @@ def _resolve_output_dir(output_dir: str | None, session_id: str) -> tuple[str | 
 
 
 @mcp.tool()
-def submit_keywords(session_id: str, jd_json: str) -> str:
+def submit_keywords(session_id: str, jd_json: str) -> dict:
     """Accept host-extracted JDData and return score gaps plus tailor handoff guidance.
 
     When profile wiki project stories exist, the response also includes ranked
@@ -938,7 +939,7 @@ def submit_keywords(session_id: str, jd_json: str) -> str:
 
 def _submit_keywords_invoke(
     graph, config, keywords: dict, session_id: str
-) -> tuple[dict, None] | tuple[None, str]:
+) -> tuple[dict, None] | tuple[None, dict]:
     """Update graph state with keywords and invoke the graph, mapping raised errors to envelopes."""
     try:
         graph.update_state(config, {"keywords": keywords})
@@ -957,7 +958,7 @@ def _submit_keywords_invoke(
 
 
 @trace_tool("submit_keywords", graph_name="apply")
-def _submit_keywords_impl(session_id: str, jd_json: str) -> str:
+def _submit_keywords_impl(session_id: str, jd_json: str) -> dict:
     _log("INFO", {"tool": "submit_keywords", "session_id": session_id})
 
     try:
@@ -1044,7 +1045,7 @@ def submit_tailor(
     edits: list[dict],
     no_coverage: bool = False,
     output_dir: str | None = None,
-) -> str:
+) -> dict:
     """Apply host-submitted edits to the resume SectionMap and run the graph to finalize.
 
     Accepts a list of port.Edit-style dicts. Each edit must have:
@@ -1067,7 +1068,7 @@ def submit_tailor(
     Applies valid edits (or skips on no_coverage), runs the graph through finalize,
     and returns real score_final and report from final graph state.
 
-    Returns JSON envelope with edits_applied, edits_rejected, uncovered_skills,
+    Returns envelope dict (structured content) with edits_applied, edits_rejected, uncovered_skills,
     pdf_path, archive_path, score_final, report, outcome, and tailor_diagnostics.
     tailor_diagnostics is a per-skill-edit list of {value, applied_to_map,
     present_in_rendered_text, suggested_alternatives} entries; empty for
@@ -1131,7 +1132,7 @@ def _outcome(final: dict) -> dict:
     return {"no_coverage": False, "reason": None}
 
 
-def _submit_tailor_no_coverage(session_id: str, graph, config, resolved_output_dir) -> str:
+def _submit_tailor_no_coverage(session_id: str, graph, config, resolved_output_dir) -> dict:
     """Run the graph for the no_coverage path and build its success/error envelope."""
     _tailor_retry_update(
         graph,
@@ -1198,7 +1199,7 @@ def _submit_tailor_impl(
     *,
     no_coverage: bool = False,
     output_dir: str | None = None,
-) -> str:
+) -> dict:
     _log("INFO", {"tool": "submit_tailor", "session_id": session_id, "edit_count": len(edits)})
 
     graph = get_apply_graph()
@@ -1368,7 +1369,7 @@ def onboard_user(
     resume_path: str | None = None,
     skills_path: str | None = None,
     accomplishments_path: str | None = None,
-) -> str:
+) -> dict:
     """Onboard a new user: register resume, skills, and accomplishments.
 
     Args:
@@ -1377,7 +1378,7 @@ def onboard_user(
         accomplishments_path: Optional path to a plain-text accomplishments file.
 
     Returns:
-        JSON envelope with status ok, next_action=compile_profile, and data
+        Envelope dict (structured content) with status ok, next_action=compile_profile, and data
         containing intake, resume_label, sections, and optional warnings.
     """
     session_id = str(uuid.uuid4())
@@ -1396,7 +1397,7 @@ def _onboard_user_impl(
     *,
     skills_path: str | None = None,
     accomplishments_path: str | None = None,
-) -> str:
+) -> dict:
     _log(
         "INFO",
         {
@@ -1440,7 +1441,7 @@ def _onboard_user_impl(
 
 def _onboard_user_invoke(
     graph, initial_state: ProfileState, config, session_id: str
-) -> tuple[dict, None] | tuple[None, str]:
+) -> tuple[dict, None] | tuple[None, dict]:
     """Invoke the profile graph and fetch its state, mapping raised errors to envelopes."""
     try:
         invoke_graph_without_native_tracing(graph, initial_state, config)
@@ -1449,7 +1450,7 @@ def _onboard_user_invoke(
         return None, _unexpected_error("onboard_user", session_id)
 
 
-def _compile_failed_after_save_error(stage: str, session_id: str) -> str:
+def _compile_failed_after_save_error(stage: str, session_id: str) -> dict:
     """Build the retriable compile_failed envelope for a story saved before compile raised."""
     message = (
         "profile compile failed; call compile_profile again with this session_id"
@@ -1459,7 +1460,7 @@ def _compile_failed_after_save_error(stage: str, session_id: str) -> str:
     return _err(stage, "compile_failed", message, session_id, retriable=True)
 
 
-def _profile_failure_error(graph, config, session_id: str, stage: str) -> str:
+def _profile_failure_error(graph, config, session_id: str, stage: str) -> dict:
     """Classify a failed profile run by the durable checkpoint's pending node.
 
     The checkpoint read is guarded: an unreadable checkpoint falls through to the
@@ -1550,7 +1551,7 @@ def _resume_profile_thread(
     stage: str,
     waiting_for: str,
     update: dict | None,
-) -> str | None:
+) -> dict | None:
     """Validate and resume a checkpointed profile thread; guard the checkpoint I/O.
 
     A locked/read-only/full checkpoint DB must surface as a retriable envelope,
@@ -1575,7 +1576,7 @@ def _resume_profile_thread(
 
 
 @mcp.tool()
-def compile_profile(story_tags: str | None = None, session_id: str | None = None) -> str:
+def compile_profile(story_tags: str | None = None, session_id: str | None = None) -> dict:
     """Recompile the user profile from all stored stories.
 
     Args:
@@ -1585,8 +1586,9 @@ def compile_profile(story_tags: str | None = None, session_id: str | None = None
             start a new profile session.
 
     Returns:
-        JSON envelope with compiled_profile, skill_coverage_warnings, skills_index,
-        and orphaned_skills. next_action is "create_story" when orphans remain.
+        Envelope dict (structured content) with compiled_profile,
+        skill_coverage_warnings, skills_index, and orphaned_skills.
+        next_action is "create_story" when orphans remain.
     """
     resumed = session_id is not None
     session_id = session_id or str(uuid.uuid4())
@@ -1631,7 +1633,7 @@ def _resolve_new_thread_resume_label(stage: str, session_id: str) -> str | None:
 @trace_tool("compile_profile", graph_name="profile")
 def _compile_profile_impl(
     session_id: str, host_tags: list[str], *, resumed: bool, explicit_tags: bool
-) -> str:
+) -> dict:
     graph = get_profile_graph()
     config = make_profile_config(session_id, tool_name="compile_profile")
     if resumed:
@@ -1665,7 +1667,7 @@ def create_story(
     behavior: str,
     impact: str,
     session_id: str | None = None,
-) -> str:
+) -> dict:
     """Create and persist a behavioral story for a skill, then recompile the profile.
 
     Args:
@@ -1680,9 +1682,10 @@ def create_story(
             compile_profile or a previous create_story). Omit to start a new session.
 
     Returns:
-        JSON envelope with story_id, primary_skill, needs_compile (always false: the
-        profile is recompiled in the same call), and orphaned_skills. next_action is
-        "create_story" when orphans remain.
+        Envelope dict (structured content) with story_id, primary_skill,
+        needs_compile (always false: the profile is recompiled in the same
+        call), and orphaned_skills. next_action is "create_story" when orphans
+        remain.
     """
     resumed = session_id is not None
     session_id = session_id or str(uuid.uuid4())
@@ -1728,7 +1731,7 @@ def create_story(
 
 
 @trace_tool("create_story", graph_name="profile")
-def _create_story_impl(session_id: str, intake: dict, *, resumed: bool) -> str:
+def _create_story_impl(session_id: str, intake: dict, *, resumed: bool) -> dict:
     graph = get_profile_graph()
     config = make_profile_config(session_id, tool_name="create_story")
     if resumed:
@@ -1769,7 +1772,7 @@ def _create_story_impl(session_id: str, intake: dict, *, resumed: bool) -> str:
 
 
 @mcp.tool()
-def set_search_preferences(preferences: dict) -> str:
+def set_search_preferences(preferences: dict) -> dict:
     """Persist the user's job-search preferences.
 
     This call fully replaces any stored preferences — omitted optional fields
@@ -1780,7 +1783,7 @@ def set_search_preferences(preferences: dict) -> str:
             required; updated_at is stamped server-side.
 
     Returns:
-        JSON envelope echoing the stored preferences under data.preferences.
+        Envelope dict (structured content) echoing the stored preferences under data.preferences.
     """
     session_id = str(uuid.uuid4())
     _log("INFO", {"tool": "set_search_preferences", "session_id": session_id})
@@ -1802,12 +1805,12 @@ def set_search_preferences(preferences: dict) -> str:
 
 
 @mcp.tool()
-def get_search_preferences() -> str:
+def get_search_preferences() -> dict:
     """Return the user's job-search preferences (slim slice; no profile data).
 
     Returns:
-        JSON envelope with data.preferences, or next_action=set_search_preferences
-        when none are stored.
+        Envelope dict (structured content) with data.preferences, or
+        next_action=set_search_preferences when none are stored.
     """
     session_id = str(uuid.uuid4())
     _log("INFO", {"tool": "get_search_preferences", "session_id": session_id})
@@ -1819,7 +1822,7 @@ def get_search_preferences() -> str:
 
 
 @mcp.tool()
-def get_wiki_pages(session_id: str, page_ids: list[str]) -> str:
+def get_wiki_pages(session_id: str, page_ids: list[str]) -> dict:
     """Batch-fetch wiki pages for a session's resume.
 
     This tool exists because the wiki lives on the server's local filesystem and
@@ -1832,14 +1835,14 @@ def get_wiki_pages(session_id: str, page_ids: list[str]) -> str:
         page_ids: Page paths relative to wiki root (e.g., ['experience/acme.md']).
 
     Returns:
-        JSON envelope with pages dict {page_id: content}.
+        Envelope dict (structured content) with pages dict {page_id: content}.
         Missing pages return empty string.
     """
     return _get_wiki_pages_impl(session_id, page_ids)
 
 
 @trace_tool("get_wiki_pages", graph_name="apply")
-def _get_wiki_pages_impl(session_id: str, page_ids: list[str]) -> str:
+def _get_wiki_pages_impl(session_id: str, page_ids: list[str]) -> dict:
     _log("INFO", {"tool": "get_wiki_pages", "session_id": session_id, "page_count": len(page_ids)})
 
     graph = get_apply_graph()
@@ -1907,7 +1910,7 @@ def _get_wiki_pages_impl(session_id: str, page_ids: list[str]) -> str:
 
 
 @mcp.tool()
-def check_update() -> str:
+def check_update() -> dict:
     """Return current version, latest GitHub release tag, and update_available flag."""
     return _ok("", data=version_check.check_update())
 

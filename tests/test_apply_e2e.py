@@ -103,13 +103,11 @@ def setup_e2e_session(tmp_path, monkeypatch):
     resume_file.write_text(SAMPLE_RESUME)
     save_resume("resume", str(resume_file))
 
-    loaded = json.loads(load_jd(jd_raw_text=SAMPLE_JD))
+    loaded = load_jd(jd_raw_text=SAMPLE_JD)
     assert loaded["status"] == "ok"
     session_id = loaded["session_id"]
 
-    keywords_response = json.loads(
-        submit_keywords(session_id=session_id, jd_json=json.dumps(KEYWORDS))
-    )
+    keywords_response = submit_keywords(session_id=session_id, jd_json=json.dumps(KEYWORDS))
     assert keywords_response["status"] == "ok"
 
     yield session_id
@@ -262,13 +260,11 @@ def setup_m3_session_with_graph(tmp_path, monkeypatch):
     resume_file.write_text(SAMPLE_RESUME)
     save_resume("resume", str(resume_file))
 
-    loaded = json.loads(load_jd(jd_raw_text=SAMPLE_JD))
+    loaded = load_jd(jd_raw_text=SAMPLE_JD)
     assert loaded["status"] == "ok"
     session_id = loaded["session_id"]
 
-    keywords_response = json.loads(
-        submit_keywords(session_id=session_id, jd_json=json.dumps(M3_KEYWORDS))
-    )
+    keywords_response = submit_keywords(session_id=session_id, jd_json=json.dumps(M3_KEYWORDS))
     assert keywords_response["status"] == "ok"
 
     # Inject tailored_sections that adds Redis to a bullet so score_final > score_initial
@@ -368,13 +364,11 @@ class TestRequiredAnyOrGroups:
         resume_file.write_text(SAMPLE_RESUME)
         save_resume("resume", str(resume_file))
 
-        loaded = json.loads(load_jd(jd_raw_text=SAMPLE_JD))
+        loaded = load_jd(jd_raw_text=SAMPLE_JD)
         assert loaded["status"] == "ok"
         session_id = loaded["session_id"]
 
-        result = json.loads(
-            submit_keywords(session_id=session_id, jd_json=json.dumps(REQUIRED_ANY_KEYWORDS))
-        )
+        result = submit_keywords(session_id=session_id, jd_json=json.dumps(REQUIRED_ANY_KEYWORDS))
 
         assert result["status"] == "ok"
         actual = result["data"]["score_gap"]
@@ -409,13 +403,11 @@ class TestPreferredAnyOrGroups:
         resume_file.write_text(SAMPLE_RESUME)
         save_resume("resume", str(resume_file))
 
-        loaded = json.loads(load_jd(jd_raw_text=SAMPLE_JD))
+        loaded = load_jd(jd_raw_text=SAMPLE_JD)
         assert loaded["status"] == "ok"
         session_id = loaded["session_id"]
 
-        result = json.loads(
-            submit_keywords(session_id=session_id, jd_json=json.dumps(PREFERRED_ANY_KEYWORDS))
-        )
+        result = submit_keywords(session_id=session_id, jd_json=json.dumps(PREFERRED_ANY_KEYWORDS))
 
         assert result["status"] == "ok"
         actual = result["data"]["score_gap"]

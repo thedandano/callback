@@ -39,7 +39,7 @@ def _load_phase(jd_url: str | None, jd_text: str) -> dict:
     registered before this phase runs), so no resume_label is passed here.
     """
     load_result = load_jd(jd_url=jd_url) if jd_url else load_jd(jd_raw_text=jd_text)
-    loaded = json.loads(load_result)
+    loaded = load_result
     assert loaded["status"] == "ok", f"load_jd failed: {loaded}"
     assert loaded["next_action"] == "extract_keywords", f"unexpected: {loaded}"
     assert loaded["data"]["extraction_protocol"] == EXTRACTION_PROTOCOL
@@ -98,7 +98,7 @@ def main():
 
         # Phase 2: submit_keywords
         submit_result = submit_keywords(session_id=session_id, jd_json=JD_JSON)
-        submitted = json.loads(submit_result)
+        submitted = submit_result
         assert submitted["status"] == "ok", f"submit_keywords failed: {submitted}"
         assert submitted["next_action"] == "fetch_wiki_then_tailor", (
             f"unexpected next_action: {submitted['next_action']}"
@@ -115,7 +115,7 @@ def main():
             },
         ]
         tailor_result = submit_tailor(session_id=session_id, edits=edits)
-        tailored = json.loads(tailor_result)
+        tailored = tailor_result
         assert tailored["status"] == "ok", f"submit_tailor failed: {tailored}"
         assert "next_action" not in tailored, (
             f"unexpected next_action: {tailored.get('next_action')}"
