@@ -1,6 +1,5 @@
 """Tests for server.py — profile MCP tool wrappers."""
 
-import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -69,7 +68,7 @@ _STORY_FIELDS = {
 
 class TestOnboardUser:
     def test_missing_resume_returns_error(self):
-        result = json.loads(onboard_user())
+        result = onboard_user()
         assert result == {
             "session_id": result["session_id"],
             "status": "error",
@@ -94,7 +93,7 @@ class TestOnboardUser:
         }
         monkeypatch.setattr(server_module, "get_profile_graph", lambda: _fake_graph(state_values))
 
-        result = json.loads(onboard_user(resume_path=str(resume), skills_path=str(skills)))
+        result = onboard_user(resume_path=str(resume), skills_path=str(skills))
 
         assert result == {
             "session_id": result["session_id"],
@@ -114,7 +113,7 @@ class TestOnboardUser:
         state_values = {"intake": {}, "resume_label": "jane", "sections": {}}
         monkeypatch.setattr(server_module, "get_profile_graph", lambda: _fake_graph(state_values))
 
-        result = json.loads(onboard_user(resume_path=str(resume)))
+        result = onboard_user(resume_path=str(resume))
 
         assert result == {
             "session_id": result["session_id"],
@@ -170,7 +169,7 @@ class TestCompileProfile:
         _isolate_profile(tmp_path, monkeypatch)
         _save_profile_with_resumes(tmp_path)
 
-        result = json.loads(compile_profile())
+        result = compile_profile()
 
         assert {
             "status": result["status"],
@@ -194,9 +193,9 @@ class TestCompileProfile:
     def test_resumes_onboard_thread(self, tmp_path, monkeypatch):
         _isolate_profile(tmp_path, monkeypatch)
         resume = _resume_txt(tmp_path)
-        onboarded = json.loads(onboard_user(resume_path=str(resume)))
+        onboarded = onboard_user(resume_path=str(resume))
 
-        result = json.loads(compile_profile(session_id=onboarded["session_id"]))
+        result = compile_profile(session_id=onboarded["session_id"])
 
         assert {"status": result["status"], "session_id": result["session_id"]} == {
             "status": "ok",
@@ -211,11 +210,9 @@ class TestCompileProfile:
         # node — onboard has an unconditional edge to it.
         _isolate_profile(tmp_path, monkeypatch)
         resume = _resume_txt(tmp_path)
-        onboarded = json.loads(onboard_user(resume_path=str(resume)))
+        onboarded = onboard_user(resume_path=str(resume))
 
-        result = json.loads(
-            compile_profile(session_id=onboarded["session_id"], story_tags='["Rust"]')
-        )
+        result = compile_profile(session_id=onboarded["session_id"], story_tags='["Rust"]')
 
         assert {
             "status": result["status"],
@@ -234,9 +231,9 @@ class TestCompileProfile:
     def test_session_waiting_for_story_returns_invalid_state(self, tmp_path, monkeypatch):
         _isolate_profile(tmp_path, monkeypatch)
         _save_profile_with_resumes(tmp_path)
-        compiled = json.loads(compile_profile(story_tags='["Rust"]'))  # paused before create_story
+        compiled = compile_profile(story_tags='["Rust"]')  # paused before create_story
 
-        result = json.loads(compile_profile(session_id=compiled["session_id"]))
+        result = compile_profile(session_id=compiled["session_id"])
 
         expected = {
             "status": "error",
@@ -253,7 +250,7 @@ class TestCompileProfile:
     def test_unknown_session_returns_session_not_found(self, tmp_path, monkeypatch):
         _isolate_profile(tmp_path, monkeypatch)
 
-        result = json.loads(compile_profile(session_id="nope"))
+        result = compile_profile(session_id="nope")
 
         assert result == {
             "status": "error",
@@ -273,7 +270,7 @@ class TestCompileProfile:
         mock_log = Mock()
         monkeypatch.setattr(server_module, "_log", mock_log)
 
-        result = json.loads(compile_profile())
+        result = compile_profile()
 
         assert result["error"] == {
             "stage": "compile_profile",
@@ -297,14 +294,14 @@ class TestCompileProfile:
         _isolate_profile(tmp_path, monkeypatch)
         resume = tmp_path / "no_skills.txt"
         resume.write_text("Jane Doe\njane@example.com\n", encoding="utf-8")
-        onboarded = json.loads(onboard_user(resume_path=str(resume)))
+        onboarded = onboard_user(resume_path=str(resume))
         session_id = onboarded["session_id"]
         graph = server_module.get_profile_graph()
         config = server_module.make_profile_config(session_id)
         graph.update_state(config, {"host_tags": ["Rust"]})
 
-        result = json.loads(
-            server_module._compile_profile_impl(session_id, [], resumed=True, explicit_tags=True)
+        result = server_module._compile_profile_impl(
+            session_id, [], resumed=True, explicit_tags=True
         )
 
         assert {
@@ -319,14 +316,14 @@ class TestCompileProfile:
         _isolate_profile(tmp_path, monkeypatch)
         resume = tmp_path / "no_skills.txt"
         resume.write_text("Jane Doe\njane@example.com\n", encoding="utf-8")
-        onboarded = json.loads(onboard_user(resume_path=str(resume)))
+        onboarded = onboard_user(resume_path=str(resume))
         session_id = onboarded["session_id"]
         graph = server_module.get_profile_graph()
         config = server_module.make_profile_config(session_id)
         graph.update_state(config, {"host_tags": ["Rust"]})
 
-        result = json.loads(
-            server_module._compile_profile_impl(session_id, [], resumed=True, explicit_tags=False)
+        result = server_module._compile_profile_impl(
+            session_id, [], resumed=True, explicit_tags=False
         )
 
         assert {
@@ -340,7 +337,7 @@ class TestCompileProfile:
     def test_invalid_story_tags_still_rejected(self, tmp_path, monkeypatch):
         _isolate_profile(tmp_path, monkeypatch)
 
-        result = json.loads(compile_profile(story_tags="not json"))
+        result = compile_profile(story_tags="not json")
 
         expected = {
             "status": "error",
@@ -359,7 +356,7 @@ class TestCompileProfile:
 
         _isolate_profile(tmp_path, monkeypatch)
         resume = _resume_txt(tmp_path)
-        onboarded = json.loads(onboard_user(resume_path=str(resume)))
+        onboarded = onboard_user(resume_path=str(resume))
         session_id = onboarded["session_id"]
 
         graph = server_module.get_profile_graph()
@@ -369,7 +366,7 @@ class TestCompileProfile:
 
         monkeypatch.setattr(type(graph), "update_state", raiser)
 
-        result = json.loads(compile_profile(session_id=session_id, story_tags='["Rust"]'))
+        result = compile_profile(session_id=session_id, story_tags='["Rust"]')
 
         expected = {
             "status": "error",
@@ -394,16 +391,14 @@ class TestCreateStory:
         _isolate_profile(tmp_path, monkeypatch)
         _save_profile_with_resumes(tmp_path)
 
-        result = json.loads(
-            create_story(
-                primary_skill="Python",
-                skills=["Python", "Docker"],
-                story_type="STAR",
-                job_title="Backend Engineer",
-                situation="Legacy system.",
-                behavior="Rewrote it.",
-                impact="40% faster.",
-            )
+        result = create_story(
+            primary_skill="Python",
+            skills=["Python", "Docker"],
+            story_type="STAR",
+            job_title="Backend Engineer",
+            situation="Legacy system.",
+            behavior="Rewrote it.",
+            impact="40% faster.",
         )
 
         assert {
@@ -425,22 +420,20 @@ class TestCreateStory:
     def test_resumes_thread_paused_before_create_story(self, tmp_path, monkeypatch):
         _isolate_profile(tmp_path, monkeypatch)
         _save_profile_with_resumes(tmp_path)
-        compiled = json.loads(compile_profile(story_tags='["Rust"]'))
+        compiled = compile_profile(story_tags='["Rust"]')
         compiled_next_action = compiled["next_action"]
         assert compiled_next_action == "create_story"
         compiled_session_id = compiled["session_id"]
 
-        result = json.loads(
-            create_story(
-                session_id=compiled_session_id,
-                primary_skill="Rust",
-                skills=["Rust"],
-                story_type="STAR",
-                job_title="Backend Engineer",
-                situation="Legacy system.",
-                behavior="Rewrote it.",
-                impact="40% faster.",
-            )
+        result = create_story(
+            session_id=compiled_session_id,
+            primary_skill="Rust",
+            skills=["Rust"],
+            story_type="STAR",
+            job_title="Backend Engineer",
+            situation="Legacy system.",
+            behavior="Rewrote it.",
+            impact="40% faster.",
         )
 
         actual = {
@@ -458,19 +451,17 @@ class TestCreateStory:
     def test_session_not_waiting_for_story_returns_invalid_state(self, tmp_path, monkeypatch):
         _isolate_profile(tmp_path, monkeypatch)
         _save_profile_with_resumes(tmp_path)
-        compiled = json.loads(compile_profile())  # ends, next == ()
+        compiled = compile_profile()  # ends, next == ()
 
-        result = json.loads(
-            create_story(
-                session_id=compiled["session_id"],
-                primary_skill="Python",
-                skills=["Python", "Docker"],
-                story_type="STAR",
-                job_title="Backend Engineer",
-                situation="Legacy system.",
-                behavior="Rewrote it.",
-                impact="40% faster.",
-            )
+        result = create_story(
+            session_id=compiled["session_id"],
+            primary_skill="Python",
+            skills=["Python", "Docker"],
+            story_type="STAR",
+            job_title="Backend Engineer",
+            situation="Legacy system.",
+            behavior="Rewrote it.",
+            impact="40% faster.",
         )
 
         assert result["error"] == {
@@ -485,7 +476,7 @@ class TestCreateStory:
 
         _isolate_profile(tmp_path, monkeypatch)
         _save_profile_with_resumes(tmp_path)
-        compiled = json.loads(compile_profile(story_tags='["Rust"]'))
+        compiled = compile_profile(story_tags='["Rust"]')
         assert compiled["next_action"] == "create_story"
         session_id = compiled["session_id"]
 
@@ -496,13 +487,11 @@ class TestCreateStory:
 
         monkeypatch.setattr(type(graph), "update_state", raiser)
 
-        result = json.loads(
-            create_story(
-                session_id=session_id,
-                primary_skill="Rust",
-                skills=["Rust"],
-                **_STORY_FIELDS,
-            )
+        result = create_story(
+            session_id=session_id,
+            primary_skill="Rust",
+            skills=["Rust"],
+            **_STORY_FIELDS,
         )
 
         expected = {
@@ -528,12 +517,10 @@ class TestCreateStory:
 
         monkeypatch.setattr(pnodes.stories, "save_story", _raise)
 
-        result = json.loads(
-            create_story(
-                primary_skill="Python",
-                skills=["Python", "Docker"],
-                **_STORY_FIELDS,
-            )
+        result = create_story(
+            primary_skill="Python",
+            skills=["Python", "Docker"],
+            **_STORY_FIELDS,
         )
 
         expected = {
@@ -555,12 +542,10 @@ class TestCreateStory:
         _isolate_profile(tmp_path, monkeypatch)
         _save_profile_with_resumes(tmp_path)
 
-        result = json.loads(
-            create_story(
-                primary_skill="   ",
-                skills=["Python", "Docker"],
-                **_STORY_FIELDS,
-            )
+        result = create_story(
+            primary_skill="   ",
+            skills=["Python", "Docker"],
+            **_STORY_FIELDS,
         )
 
         expected = {
@@ -579,7 +564,7 @@ class TestCreateStory:
         _isolate_profile(tmp_path, monkeypatch)
         _save_profile_with_resumes(tmp_path)
 
-        compiled = json.loads(compile_profile(story_tags='["Rust", "Go"]'))
+        compiled = compile_profile(story_tags='["Rust", "Go"]')
         actual_compiled = {
             "next_action": compiled.get("next_action"),
             "orphaned_skills": sorted(compiled["data"]["orphaned_skills"]),
@@ -587,13 +572,11 @@ class TestCreateStory:
         expected_compiled = {"next_action": "create_story", "orphaned_skills": ["Go", "Rust"]}
         assert actual_compiled == expected_compiled
 
-        result = json.loads(
-            create_story(
-                session_id=compiled["session_id"],
-                primary_skill="Rust",
-                skills=["Rust"],
-                **_STORY_FIELDS,
-            )
+        result = create_story(
+            session_id=compiled["session_id"],
+            primary_skill="Rust",
+            skills=["Rust"],
+            **_STORY_FIELDS,
         )
 
         actual = {
@@ -637,12 +620,10 @@ class TestCreateStory:
 
         monkeypatch.setattr(server_module, "story_pending", lambda intake: False)
 
-        result = json.loads(
-            create_story(
-                primary_skill="Python",
-                skills=["Python", "Docker"],
-                **_STORY_FIELDS,
-            )
+        result = create_story(
+            primary_skill="Python",
+            skills=["Python", "Docker"],
+            **_STORY_FIELDS,
         )
 
         expected = {
@@ -672,7 +653,7 @@ class TestCreateStory:
 
         monkeypatch.setattr(server_module, "get_profile_graph", _BrokenGraph)
 
-        result = json.loads(compile_profile())
+        result = compile_profile()
 
         expected = {
             "status": "error",
@@ -705,7 +686,7 @@ class TestCreateStory:
 
         monkeypatch.setattr(pnodes.stories, "save_story", _save_then_fail)
 
-        first = json.loads(create_story(primary_skill="Python", skills=["Python"], **_STORY_FIELDS))
+        first = create_story(primary_skill="Python", skills=["Python"], **_STORY_FIELDS)
         expected = {
             "status": "error",
             "error": {
@@ -721,13 +702,11 @@ class TestCreateStory:
         }
         assert first == expected
 
-        retry = json.loads(
-            create_story(
-                primary_skill="Python",
-                skills=["Python"],
-                session_id=first["session_id"],
-                **_STORY_FIELDS,
-            )
+        retry = create_story(
+            primary_skill="Python",
+            skills=["Python"],
+            session_id=first["session_id"],
+            **_STORY_FIELDS,
         )
         actual = {
             "status": retry["status"],
@@ -751,12 +730,10 @@ class TestCreateStory:
 
         monkeypatch.setattr(pnodes, "save_compiled_profile", _raise_once)
 
-        result = json.loads(
-            create_story(
-                primary_skill="Python",
-                skills=["Python"],
-                **_STORY_FIELDS,
-            )
+        result = create_story(
+            primary_skill="Python",
+            skills=["Python"],
+            **_STORY_FIELDS,
         )
 
         expected = {
@@ -771,7 +748,7 @@ class TestCreateStory:
         }
         assert result == expected
 
-        compiled = json.loads(compile_profile(session_id=result["session_id"]))
+        compiled = compile_profile(session_id=result["session_id"])
         assert compiled["status"] == "ok"
 
         stories_count = len(pnodes.stories.list_stories("backend")[0])
@@ -783,7 +760,7 @@ class TestCreateStoryRejectsLabelLines:
         _isolate_profile(tmp_path, monkeypatch)
         _save_profile_with_resumes(tmp_path)
         fields = {**_STORY_FIELDS, "situation": "did x\n**Impact:** nested"}
-        result = json.loads(create_story(primary_skill="Python", skills=["Python"], **fields))
+        result = create_story(primary_skill="Python", skills=["Python"], **fields)
         actual = {
             "status": result["status"],
             "code": result["error"]["code"],
