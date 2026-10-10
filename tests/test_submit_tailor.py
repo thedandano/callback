@@ -39,7 +39,7 @@ def fake_pdf_renderer(monkeypatch):
 def test_submit_tailor_rejects_unknown_session():
     from callback.server import submit_tailor
 
-    result = json.loads(submit_tailor(session_id="no-such-session", edits=[]))
+    result = submit_tailor(session_id="no-such-session", edits=[])
     expected = {
         "status": "error",
         "error": {
@@ -61,11 +61,11 @@ def test_submit_tailor_rejects_session_not_at_tailor(tmp_path, monkeypatch):
 
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
     with patch("callback.server.list_resumes", return_value=["resume"]):
-        loaded = json.loads(load_jd(jd_raw_text="Python engineer"))
+        loaded = load_jd(jd_raw_text="Python engineer")
     session_id = loaded["session_id"]
 
     # Session is at keywords_accept (not tailor) — submit_tailor should reject
-    result = json.loads(submit_tailor(session_id=session_id, edits=[]))
+    result = submit_tailor(session_id=session_id, edits=[])
     expected = {
         "status": "error",
         "error": {
@@ -119,7 +119,7 @@ def _run_to_tailor(
     else:
         os.environ["CALLBACK_APPS_DIR"] = apps_dir
     with patch("callback.server.list_resumes", return_value=[resume_label]):
-        loaded = json.loads(load_jd(jd_raw_text="Sample JD"))
+        loaded = load_jd(jd_raw_text="Sample JD")
     session_id = loaded["session_id"]
     submit_keywords(session_id=session_id, jd_json=jd_json_str)
     return session_id
@@ -146,7 +146,7 @@ def test_submit_tailor_applies_valid_edits_and_rescores(tmp_path, monkeypatch):
             "value": "Deployed Kubernetes clusters serving 1M RPS",
         },
     ]
-    result = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    result = submit_tailor(session_id=session_id, edits=edits)
 
     actual = {
         "status": result["status"],
@@ -197,11 +197,9 @@ def test_submit_tailor_pipeline_error_marks_artifacts_null(tmp_path, monkeypatch
 
     monkeypatch.setattr("callback.apply_nodes.render_resume", broken_render)
 
-    result = json.loads(
-        submit_tailor(
-            session_id=session_id,
-            edits=[{"section": "summary", "op": "replace", "value": "Python engineer."}],
-        )
+    result = submit_tailor(
+        session_id=session_id,
+        edits=[{"section": "summary", "op": "replace", "value": "Python engineer."}],
     )
     assert result["status"] == "error"
     assert result["error"]["code"] == "pipeline_error"
@@ -247,7 +245,7 @@ def test_submit_tailor_can_be_retried_after_render_failure(tmp_path, monkeypatch
 
     monkeypatch.setattr("callback.apply_nodes.render_resume", flaky_render)
 
-    first = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    first = submit_tailor(session_id=session_id, edits=edits)
     assert first == {
         "status": "error",
         "error": {
@@ -261,7 +259,7 @@ def test_submit_tailor_can_be_retried_after_render_failure(tmp_path, monkeypatch
         "session_id": session_id,
     }
 
-    second = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    second = submit_tailor(session_id=session_id, edits=edits)
     actual = {
         "status": second["status"],
         "pdf_exists": Path(second["data"]["pdf_path"]).exists(),
@@ -288,7 +286,7 @@ def test_submit_tailor_no_coverage_retry_clears_stale_render_outputs(tmp_path, m
     # render succeeds and sets pdf_path, but parse_final fails (empty extracted text)
     monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", lambda path: "")
 
-    first = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    first = submit_tailor(session_id=session_id, edits=edits)
     assert first == {
         "status": "error",
         "error": {
@@ -302,7 +300,7 @@ def test_submit_tailor_no_coverage_retry_clears_stale_render_outputs(tmp_path, m
         "session_id": session_id,
     }
 
-    second = json.loads(submit_tailor(session_id=session_id, edits=[], no_coverage=True))
+    second = submit_tailor(session_id=session_id, edits=[], no_coverage=True)
     actual_report = second["data"]["report"]
     expected_report = {
         "before": {
@@ -491,7 +489,7 @@ def test_submit_tailor_replaces_project_entry(tmp_path, monkeypatch):
             },
         }
     ]
-    result = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    result = submit_tailor(session_id=session_id, edits=edits)
 
     archive = json.loads(Path(result["data"]["archive_path"]).read_text())
     actual = {
@@ -560,7 +558,7 @@ def test_submit_tailor_removes_weak_bullet_and_adds_second_project(tmp_path, mon
             },
         },
     ]
-    result = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    result = submit_tailor(session_id=session_id, edits=edits)
 
     archive = json.loads(Path(result["data"]["archive_path"]).read_text())
     rendered_text = archive["tailored_resume_text"]
@@ -608,7 +606,7 @@ def test_submit_tailor_rejects_out_of_bounds_target(tmp_path, monkeypatch):
         {"section": "summary", "op": "replace", "value": "Good summary"},
         {"section": "experience", "op": "replace", "target": "exp-5-b0", "value": "New bullet"},
     ]
-    result = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    result = submit_tailor(session_id=session_id, edits=edits)
 
     # Verify the rejection record contains expected index and a reason mentioning out of bounds
     rejection = result["data"]["edits_rejected"][0]
@@ -660,7 +658,7 @@ def test_submit_tailor_flags_uncovered_skill(tmp_path, monkeypatch):
     edits = [
         {"section": "skills", "op": "add", "value": "Apache Kafka"},
     ]
-    result = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    result = submit_tailor(session_id=session_id, edits=edits)
 
     actual = {
         "status": result["status"],
@@ -702,7 +700,7 @@ def test_submit_tailor_does_not_flag_covered_skill(tmp_path, monkeypatch):
             "value": "Managed Kubernetes clusters handling 1M RPS",
         },
     ]
-    result = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    result = submit_tailor(session_id=session_id, edits=edits)
 
     actual = {
         "status": result["status"],
@@ -764,7 +762,7 @@ def test_submit_tailor_project_bullet_replacement_can_match_required_keyword(tmp
             "value": "Built vector search ranking prototype for 250K documents",
         }
     ]
-    result = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    result = submit_tailor(session_id=session_id, edits=edits)
 
     actual = {
         "status": result["status"],
@@ -799,9 +797,7 @@ def test_submit_tailor_redirects_pdf_to_output_dir(tmp_path, monkeypatch):
     output_dir = tmp_path / "sandbox_out"
     apps_dir = tmp_path / "applications"
     edits = [{"section": "summary", "op": "replace", "value": "Python engineer."}]
-    result = json.loads(
-        submit_tailor(session_id=session_id, edits=edits, output_dir=str(output_dir))
-    )
+    result = submit_tailor(session_id=session_id, edits=edits, output_dir=str(output_dir))
 
     pdf_path = Path(result["data"]["pdf_path"])
     archive_path = Path(result["data"]["archive_path"])
@@ -837,8 +833,8 @@ def test_submit_tailor_no_coverage_accepts_output_dir_without_error(tmp_path, mo
     session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
 
     output_dir = tmp_path / "no_cov_out"
-    result = json.loads(
-        submit_tailor(session_id=session_id, edits=[], no_coverage=True, output_dir=str(output_dir))
+    result = submit_tailor(
+        session_id=session_id, edits=[], no_coverage=True, output_dir=str(output_dir)
     )
 
     pdfs_anywhere = list((tmp_path / "applications").glob("*.pdf")) + list(output_dir.glob("*.pdf"))
@@ -868,9 +864,7 @@ def test_submit_tailor_rejects_relative_output_dir(tmp_path, monkeypatch):
     session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
 
     edits = [{"section": "summary", "op": "replace", "value": "Python engineer."}]
-    result = json.loads(
-        submit_tailor(session_id=session_id, edits=edits, output_dir="relative/out")
-    )
+    result = submit_tailor(session_id=session_id, edits=edits, output_dir="relative/out")
 
     actual = {
         "status": result["status"],
@@ -901,7 +895,7 @@ def test_submit_tailor_without_output_dir_writes_to_apps_dir(tmp_path, monkeypat
 
     apps_dir = tmp_path / "applications"
     edits = [{"section": "summary", "op": "replace", "value": "Python engineer."}]
-    result = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    result = submit_tailor(session_id=session_id, edits=edits)
 
     pdf_path = Path(result["data"]["pdf_path"])
     actual = {
@@ -929,9 +923,7 @@ def test_submit_tailor_rejects_unwritable_output_dir(tmp_path, monkeypatch):
     bad_output_dir = blocker / "nested"
 
     edits = [{"section": "summary", "op": "replace", "value": "Python engineer."}]
-    result = json.loads(
-        submit_tailor(session_id=session_id, edits=edits, output_dir=str(bad_output_dir))
-    )
+    result = submit_tailor(session_id=session_id, edits=edits, output_dir=str(bad_output_dir))
 
     actual = {
         "status": result["status"],
@@ -968,7 +960,7 @@ def test_submit_tailor_returns_envelope_when_extractor_raises(tmp_path, monkeypa
 
     monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", broken_extract)
 
-    result = json.loads(submit_tailor(session_id=session_id, edits=[]))
+    result = submit_tailor(session_id=session_id, edits=[])
 
     expected = {
         "status": "error",
@@ -1014,7 +1006,7 @@ def test_submit_tailor_can_be_retried_after_finalize_archive_write_failure(tmp_p
 
     monkeypatch.setattr(apply_nodes_module, "open", flaky_open, raising=False)
 
-    first = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    first = submit_tailor(session_id=session_id, edits=edits)
     assert first == {
         "status": "error",
         "error": {
@@ -1028,7 +1020,7 @@ def test_submit_tailor_can_be_retried_after_finalize_archive_write_failure(tmp_p
         "session_id": session_id,
     }
 
-    second = json.loads(submit_tailor(session_id=session_id, edits=edits))
+    second = submit_tailor(session_id=session_id, edits=edits)
     actual = {
         "status": second["status"],
         "pdf_exists": Path(second["data"]["pdf_path"]).exists(),
