@@ -396,29 +396,28 @@ def test_fetch_url_to_markdown_wires_playwright_and_extracts(monkeypatch):
     assert actual == expected
 
 
-def _scripted_page(texts):
+class _ScriptedPage:
     """Fake page whose body text follows the scripted sequence, then holds."""
-    calls = {"waits": 0}
 
-    class _Page:
-        def __init__(self):
-            self._i = 0
+    def __init__(self, texts, calls):
+        self._texts = texts
+        self._calls = calls
+        self._i = 0
 
-        async def evaluate(self, script):
-            assert script == jd_fetcher._BODY_TEXT_SCRIPT
-            text = texts[min(self._i, len(texts) - 1)]
-            self._i += 1
-            return text
+    async def evaluate(self, script):
+        assert script == jd_fetcher._BODY_TEXT_SCRIPT
+        text = self._texts[min(self._i, len(self._texts) - 1)]
+        self._i += 1
+        return text
 
-        async def wait_for_timeout(self, ms):
-            assert ms == jd_fetcher.SETTLE_POLL_MS
-            calls["waits"] += 1
-
-    return _Page(), calls
+    async def wait_for_timeout(self, ms):
+        assert ms == jd_fetcher.SETTLE_POLL_MS
+        self._calls["waits"] += 1
 
 
 def test_await_settled_body_breaks_once_text_stabilizes():
-    page, calls = _scripted_page(["", "x" * 250, "x" * 250, "x" * 250])
+    calls = {"waits": 0}
+    page = _ScriptedPage(["", "x" * 250, "x" * 250, "x" * 250], calls)
     asyncio.run(jd_fetcher._await_settled_body(page, "https://example.com/job"))
     max_polls = int(jd_fetcher._settle_budget_s() * 1000 / jd_fetcher.SETTLE_POLL_MS)
     assert calls["waits"] == 3
@@ -426,7 +425,8 @@ def test_await_settled_body_breaks_once_text_stabilizes():
 
 
 def test_await_settled_body_ignores_a_stable_empty_shell():
-    page, calls = _scripted_page([""])
+    calls = {"waits": 0}
+    page = _ScriptedPage([""], calls)
     asyncio.run(jd_fetcher._await_settled_body(page, "https://example.com/job"))
     max_polls = int(jd_fetcher._settle_budget_s() * 1000 / jd_fetcher.SETTLE_POLL_MS)
     assert calls["waits"] == max_polls
