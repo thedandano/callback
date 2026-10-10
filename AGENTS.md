@@ -245,7 +245,7 @@ URL fetching uses Playwright plus trafilatura. The fetch surface is controlled b
 - `CALLBACK_FETCH_OUTER_TIMEOUT_S`
 - `CALLBACK_FETCH_SETTLE_BUDGET_S`
 
-`jd_fetch` loads the page with Playwright (Chrome user agent, `domcontentloaded` plus a content-aware settle — body text polled until stable or the settle budget elapses), extracts markdown with trafilatura, falls back to body text when the extraction is thin (and rejects a page that is still under 1,200 characters as `fetch_thin`), and caps `jd_text` at 16,000 characters (about 4,000 tokens), logging `fetch_oversized`. A non-2xx status raises and is logged as `fetch_status`.
+`jd_fetch` loads the page with Playwright (Chrome user agent, `domcontentloaded` plus a content-aware settle — body text polled until stable after a ~2.5 s minimum window, or the settle budget elapses), extracts markdown with trafilatura, falls back to body text when the extraction is thin (and rejects a page that is still under 1,200 characters as `fetch_thin`), and caps `jd_text` at 16,000 characters (about 4,000 tokens), logging `fetch_oversized`. A non-2xx status raises and is logged as `fetch_status`.
 
 Do not add a silent fallback path if URL fetch fails.
 

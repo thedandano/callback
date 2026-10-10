@@ -38,6 +38,10 @@ SETTLE_STABLE_ROUNDS = 2
 # A page that never reaches this keeps polling until the budget is spent and
 # is then rejected downstream by the thin-content guard, as before.
 SETTLE_MIN_CHARS = 200
+# Never accept stability before this many polls have run (~2.5s, the old
+# fixed wait). An SPA shell can be stable while the real content is still in
+# flight; without a floor we'd snapshot the shell sooner than we used to.
+SETTLE_MIN_POLLS = 5
 # Runs before any page script via context.add_init_script. Covers the
 # high-signal headless fingerprints (webdriver flag, missing window.chrome,
 # empty plugins/languages). It will not fool enterprise bot management
@@ -50,7 +54,16 @@ SETTLE_MIN_CHARS = 200
 _STEALTH_INIT_SCRIPT = """
 Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
 if (!window.chrome) { window.chrome = { runtime: {} }; }
-Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+if (navigator.plugins.length === 0) {
+  const fakePlugins = [
+    { name: 'PDF Viewer', description: 'Portable Document Format', filename: 'pdf-viewer' },
+    { name: 'Chrome PDF Viewer', description: '', filename: 'pdf-viewer-2' },
+    { name: 'Native Client', description: '', filename: 'nacl-plugin' },
+  ];
+  fakePlugins.item = (i) => fakePlugins[i] ?? null;
+  fakePlugins.namedItem = (n) => fakePlugins.find((p) => p.name === n) ?? null;
+  Object.defineProperty(navigator, 'plugins', { get: () => fakePlugins });
+}
 Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
 """
 # Bound on each browser/driver cleanup step after a fetch or a timeout.
@@ -263,6 +276,9 @@ async def _await_settled_body(page: Any, url: str) -> None:
     JS-rendered boards often paint a shell on domcontentloaded and inject the
     job content seconds later via XHR. A fixed sleep either wastes time or
     extracts the empty shell; polling for stability adapts to the page.
+    Stability is never accepted before SETTLE_MIN_POLLS polls (~2.5s, the old
+    fixed wait): a shell can be stable while the real content is still in
+    flight, and snapshotting it would regress the old minimum wait.
     A bot-challenge page also stabilizes (on its challenge text) and is then
     rejected downstream by the thin-content guard, as before.
 
@@ -272,7 +288,7 @@ async def _await_settled_body(page: Any, url: str) -> None:
     max_polls = max(1, int(_settle_budget_s() * 1000 / SETTLE_POLL_MS))
     last: str | None = None
     stable = 0
-    for _ in range(max_polls):
+    for i in range(max_polls):
         try:
             text = await page.evaluate(_BODY_TEXT_SCRIPT)
         except Exception as exc:
@@ -280,11 +296,15 @@ async def _await_settled_body(page: Any, url: str) -> None:
             break
         if text == last:
             stable += 1
-            if stable >= SETTLE_STABLE_ROUNDS and len(text) >= SETTLE_MIN_CHARS:
-                break
         else:
             stable = 0
             last = text
+        if (
+            i >= SETTLE_MIN_POLLS
+            and stable >= SETTLE_STABLE_ROUNDS
+            and len(last or "") >= SETTLE_MIN_CHARS
+        ):
+            break
         await page.wait_for_timeout(SETTLE_POLL_MS)
     _log("fetch_settled", url=url, body_chars=len(last or ""), stable_rounds=stable)
 

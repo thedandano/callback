@@ -420,7 +420,9 @@ def test_await_settled_body_breaks_once_text_stabilizes():
     page = _ScriptedPage(["", "x" * 250, "x" * 250, "x" * 250], calls)
     asyncio.run(jd_fetcher._await_settled_body(page, "https://example.com/job"))
     max_polls = int(jd_fetcher._settle_budget_s() * 1000 / jd_fetcher.SETTLE_POLL_MS)
-    assert calls["waits"] == 3
+    # Stability is not accepted before the minimum window (~2.5s): the text
+    # is stable from the 3rd poll, but the break waits for the floor.
+    assert calls["waits"] == jd_fetcher.SETTLE_MIN_POLLS
     assert calls["waits"] < max_polls
 
 
