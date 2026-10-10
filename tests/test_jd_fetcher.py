@@ -463,7 +463,7 @@ def test_await_settled_body_splits_short_budget_with_extraction():
 
 
 def test_await_settled_body_caps_sleep_at_remaining_deadline():
-    calls = {"waits": 0}
+    calls: dict = {"waits": 0}
     page = _ScriptedPage(["x" * 250] * 8, calls)
     # ~0.7s left: after the 0.35s reserve the settle budget is ~0.35s, so the
     # single sleep must be capped below the full 500ms poll interval rather
