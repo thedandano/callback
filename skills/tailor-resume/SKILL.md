@@ -33,7 +33,6 @@ This is a one-job workflow. Do not scan Gmail, Google Jobs, FAANG careers, CSV l
 - If any tool returns `"status": "error"`, the requested artifact or score **does not exist**. Report the error and stop. Never synthesize a substitute: no hand-scoring, no hand-rendering, no "text-based" fallbacks for `score_final`, no estimating missing numbers.
 - Every number you report (scores, coverage, dimensions) must come from a tool response — cite the producing tool and `session_id`. A number without provenance is an invention, not a result.
 - On `pipeline_error` with `"retriable": true` and `"host_action": "report_and_wait"`: you may retry the same tool call with the same `session_id`. You may not invent the missing output while you wait.
-- Transport: tool results arrive as structured data (the envelope dict) — read fields like `status`, `session_id`, and `data` directly. Never `json.loads` a tool result.
 
 ## Tailoring Rules
 
