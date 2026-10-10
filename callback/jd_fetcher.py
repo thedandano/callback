@@ -45,6 +45,10 @@ SETTLE_MIN_POLLS = 5
 # Time reserved for HTML extraction after settling. A slow page load must not
 # let the settle budget consume the outer deadline and starve extraction.
 SETTLE_EXTRACTION_RESERVE_S = 5.0
+# Time reserved for browser teardown after extraction. Cleanup runs after the
+# result is ready; without a reserve, a slow close can push past the outer
+# deadline and convert a successful fetch into a timeout.
+SETTLE_CLEANUP_RESERVE_S = 2.0
 # Runs before any page script via context.add_init_script. Covers the
 # high-signal headless fingerprints (webdriver flag, missing window.chrome,
 # empty plugins/languages). It will not fool enterprise bot management
@@ -80,7 +84,10 @@ if (navigator.plugins.length === 0 && typeof PluginArray !== 'undefined') {
   fakePlugins.refresh = function () {};
   Object.defineProperty(navigator, 'plugins', { get: () => fakePlugins });
 }
-Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+if (!navigator.languages || navigator.languages.length === 0) {
+  const fakeLangs = Object.freeze(['en-US', 'en']);
+  Object.defineProperty(navigator, 'languages', { get: () => fakeLangs });
+}
 """
 # Bound on each browser/driver cleanup step after a fetch or a timeout.
 CLOSE_TIMEOUT_S = 5.0
@@ -286,6 +293,56 @@ async def _cleanup(step: str, coro: Any, url: str, bound: float) -> None:
         _log("browser_cleanup_failed", url=url, step=step, error_class=type(exc).__name__)
 
 
+def _settle_plan(deadline: float) -> tuple[float, int] | None:
+    """Return (settle_deadline, max_polls), or None when no time remains.
+
+    The settle budget is capped so extraction and teardown keep their
+    reserved share of the outer deadline; the reserve never exceeds half
+    the remainder, so a short outer timeout still leaves a brief settle.
+    """
+    budget_s = _settle_budget_s()
+    remaining = deadline - time.monotonic()
+    reserve = min(
+        SETTLE_EXTRACTION_RESERVE_S + SETTLE_CLEANUP_RESERVE_S,
+        max(0.0, remaining / 2),
+    )
+    budget_s = min(budget_s, max(0.0, remaining - reserve))
+    if budget_s <= 0:
+        return None
+    return time.monotonic() + budget_s, max(1, round(budget_s * 1000 / SETTLE_POLL_MS))
+
+
+async def _sleep_capped(page: Any, deadline: float) -> bool:
+    """Sleep up to one poll interval, never past the deadline.
+
+    A slow evaluate can leave less than a full interval; an uncapped sleep
+    would eat into extraction time. Returns False when no time remains.
+    """
+    sleep_ms = min(SETTLE_POLL_MS, int(max(0.0, deadline - time.monotonic()) * 1000))
+    if sleep_ms <= 0:
+        return False
+    await page.wait_for_timeout(sleep_ms)
+    return True
+
+
+def _note_poll(
+    text: str | None, last: str | None, stable: int, i: int
+) -> tuple[str | None, int, bool]:
+    """Fold a poll result into (last, stable); also report whether settled."""
+    if text is None:
+        return last, 0, False
+    if text == last:
+        stable += 1
+    else:
+        last, stable = text, 0
+    settled = (
+        i >= SETTLE_MIN_POLLS
+        and stable >= SETTLE_STABLE_ROUNDS
+        and len(last or "") >= SETTLE_MIN_CHARS
+    )
+    return last, stable, settled
+
+
 async def _await_settled_body(page: Any, url: str, deadline: float) -> None:
     """Wait until the page's body text stops changing, or the budget is spent.
 
@@ -303,18 +360,11 @@ async def _await_settled_body(page: Any, url: str, deadline: float) -> None:
     A bot-challenge page also stabilizes (on its challenge text) and is then
     rejected downstream by the thin-content guard, as before.
     """
-    budget_s = _settle_budget_s()
-    remaining = deadline - time.monotonic()
-    # Split what's left between settling and extraction: reserve extraction
-    # time, but never more than half the remainder, so a short outer timeout
-    # still leaves a usable (if brief) settle window instead of skipping it.
-    reserve = min(SETTLE_EXTRACTION_RESERVE_S, max(0.0, remaining / 2))
-    budget_s = min(budget_s, max(0.0, remaining - reserve))
-    if budget_s <= 0:
+    plan = _settle_plan(deadline)
+    if plan is None:
         _log("fetch_settle_skipped", url=url, reason="no time left before outer deadline")
         return
-    deadline = time.monotonic() + budget_s
-    max_polls = max(1, round(budget_s * 1000 / SETTLE_POLL_MS))
+    deadline, max_polls = plan
     last: str | None = None
     stable = 0
     for i in range(max_polls):
@@ -322,24 +372,19 @@ async def _await_settled_body(page: Any, url: str, deadline: float) -> None:
         if remaining <= 0:
             break
         try:
-            text = await asyncio.wait_for(page.evaluate(_BODY_TEXT_SCRIPT), timeout=remaining)
+            text: str | None = await asyncio.wait_for(
+                page.evaluate(_BODY_TEXT_SCRIPT), timeout=remaining
+            )
         except Exception as exc:
             _log("fetch_settle_retry", url=url, error_class=type(exc).__name__)
-            stable = 0
-            await page.wait_for_timeout(SETTLE_POLL_MS)
-            continue
-        if text == last:
-            stable += 1
-        else:
-            stable = 0
-            last = text
-        if (
-            i >= SETTLE_MIN_POLLS
-            and stable >= SETTLE_STABLE_ROUNDS
-            and len(last or "") >= SETTLE_MIN_CHARS
-        ):
+            text = None
+        last, stable, settled = _note_poll(text, last, stable, i)
+        if settled:
             break
-        await page.wait_for_timeout(SETTLE_POLL_MS)
+        # Never sleep past the deadline: a slow evaluate can leave less than
+        # a full poll interval, and an uncapped sleep would eat extraction time.
+        if not await _sleep_capped(page, deadline):
+            break
     _log("fetch_settled", url=url, body_chars=len(last or ""), stable_rounds=stable)
 
 
@@ -403,8 +448,14 @@ async def _cleanup_all(browser: Any, playwright: Any, url: str) -> None:
 async def _fetch_url_to_markdown_unbounded(url: str, deadline: float) -> str:
     html, body_text, title, cleanup = await _load_page(url, deadline)
     try:
+        # Leave room for teardown — it runs after extraction, and a slow
+        # close must not convert a successful extraction into a timeout —
+        # but never take more than half, so a short outer timeout still
+        # leaves extraction a usable share.
         remaining = deadline - time.monotonic()
-        extracted = await asyncio.to_thread(run_killable, _extract_worker, html, remaining)
+        cleanup_reserve = min(SETTLE_CLEANUP_RESERVE_S, max(0.0, remaining / 2))
+        extract_timeout = max(0.0, remaining - cleanup_reserve)
+        extracted = await asyncio.to_thread(run_killable, _extract_worker, html, extract_timeout)
         markdown = extract_markdown(extracted, body_text, url)
         result = cap_jd_text(_with_title(markdown, title), url)
         empty_sections = find_empty_sections(result)
