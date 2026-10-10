@@ -57,14 +57,27 @@ SETTLE_EXTRACTION_RESERVE_S = 5.0
 _STEALTH_INIT_SCRIPT = """
 Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
 if (!window.chrome) { window.chrome = { runtime: {} }; }
-if (navigator.plugins.length === 0) {
-  const fakePlugins = [
-    { name: 'PDF Viewer', description: 'Portable Document Format', filename: 'pdf-viewer' },
-    { name: 'Chrome PDF Viewer', description: '', filename: 'pdf-viewer-2' },
-    { name: 'Native Client', description: '', filename: 'nacl-plugin' },
+if (navigator.plugins.length === 0 && typeof PluginArray !== 'undefined') {
+  const pluginData = [
+    ['PDF Viewer', 'Portable Document Format', 'pdf-viewer'],
+    ['Chrome PDF Viewer', '', 'pdf-viewer-2'],
+    ['Native Client', '', 'nacl-plugin'],
   ];
-  fakePlugins.item = (i) => fakePlugins[i] ?? null;
-  fakePlugins.namedItem = (n) => fakePlugins.find((p) => p.name === n) ?? null;
+  const fakePlugins = [];
+  for (const [name, description, filename] of pluginData) {
+    const plugin = { name, description, filename, length: 0 };
+    if (typeof Plugin !== 'undefined') Object.setPrototypeOf(plugin, Plugin.prototype);
+    fakePlugins.push(plugin);
+  }
+  // Graft onto the real PluginArray prototype so toString/instanceof checks
+  // pass; define the interface methods as own properties afterwards.
+  Object.setPrototypeOf(fakePlugins, PluginArray.prototype);
+  fakePlugins.item = function (i) { return this[i] ?? null; };
+  fakePlugins.namedItem = function (n) {
+    for (let i = 0; i < this.length; i++) if (this[i].name === n) return this[i];
+    return null;
+  };
+  fakePlugins.refresh = function () {};
   Object.defineProperty(navigator, 'plugins', { get: () => fakePlugins });
 }
 Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
@@ -291,11 +304,15 @@ async def _await_settled_body(page: Any, url: str, deadline: float) -> None:
     rejected downstream by the thin-content guard, as before.
     """
     budget_s = _settle_budget_s()
-    outer_remaining = deadline - time.monotonic() - SETTLE_EXTRACTION_RESERVE_S
-    if outer_remaining <= 0:
+    remaining = deadline - time.monotonic()
+    # Split what's left between settling and extraction: reserve extraction
+    # time, but never more than half the remainder, so a short outer timeout
+    # still leaves a usable (if brief) settle window instead of skipping it.
+    reserve = min(SETTLE_EXTRACTION_RESERVE_S, max(0.0, remaining / 2))
+    budget_s = min(budget_s, max(0.0, remaining - reserve))
+    if budget_s <= 0:
         _log("fetch_settle_skipped", url=url, reason="no time left before outer deadline")
         return
-    budget_s = min(budget_s, outer_remaining)
     deadline = time.monotonic() + budget_s
     max_polls = max(1, round(budget_s * 1000 / SETTLE_POLL_MS))
     last: str | None = None
@@ -326,11 +343,13 @@ async def _await_settled_body(page: Any, url: str, deadline: float) -> None:
     _log("fetch_settled", url=url, body_chars=len(last or ""), stable_rounds=stable)
 
 
-async def _load_page(url: str, deadline: float) -> tuple[str, str, str]:
-    """Return (html, body_text, title) for url using a normal Chrome user agent.
+async def _load_page(url: str, deadline: float) -> tuple[str, str, str, Callable[[], Any]]:
+    """Return (html, body_text, title, cleanup) using a normal Chrome user agent.
 
     deadline is the outer fetch deadline; the settle phase is capped so
-    extraction still gets its reserved share.
+    extraction still gets its reserved share. The caller must await cleanup()
+    in a finally — extraction runs before cleanup so slow browser teardown
+    can't starve it.
     """
     playwright = await async_playwright().start()
     browser = None
@@ -348,9 +367,14 @@ async def _load_page(url: str, deadline: float) -> tuple[str, str, str]:
         html = await page.content()
         body_text = await page.evaluate(_BODY_TEXT_SCRIPT)
         title = await page.title()
-    finally:
+    except BaseException:
         await _cleanup_all(browser, playwright, url)
-    return html, body_text, title
+        raise
+
+    async def cleanup() -> None:
+        await _cleanup_all(browser, playwright, url)
+
+    return html, body_text, title, cleanup
 
 
 async def _cleanup_all(browser: Any, playwright: Any, url: str) -> None:
@@ -377,15 +401,18 @@ async def _cleanup_all(browser: Any, playwright: Any, url: str) -> None:
 
 
 async def _fetch_url_to_markdown_unbounded(url: str, deadline: float) -> str:
-    html, body_text, title = await _load_page(url, deadline)
-    remaining = deadline - time.monotonic()
-    extracted = await asyncio.to_thread(run_killable, _extract_worker, html, remaining)
-    markdown = extract_markdown(extracted, body_text, url)
-    result = cap_jd_text(_with_title(markdown, title), url)
-    empty_sections = find_empty_sections(result)
-    if empty_sections:
-        _log("fetch_truncated", url=url, empty_sections=empty_sections)
-    return result
+    html, body_text, title, cleanup = await _load_page(url, deadline)
+    try:
+        remaining = deadline - time.monotonic()
+        extracted = await asyncio.to_thread(run_killable, _extract_worker, html, remaining)
+        markdown = extract_markdown(extracted, body_text, url)
+        result = cap_jd_text(_with_title(markdown, title), url)
+        empty_sections = find_empty_sections(result)
+        if empty_sections:
+            _log("fetch_truncated", url=url, empty_sections=empty_sections)
+        return result
+    finally:
+        await cleanup()
 
 
 async def fetch_url_to_markdown(url: str) -> str:

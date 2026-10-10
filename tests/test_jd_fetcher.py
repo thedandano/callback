@@ -439,24 +439,24 @@ def test_await_settled_body_ignores_a_stable_empty_shell():
     assert calls["waits"] == max_polls
 
 
-def test_await_settled_body_skips_when_outer_deadline_near():
+def test_await_settled_body_skips_when_outer_deadline_passed():
     calls = {"waits": 0}
     page = _ScriptedPage(["x" * 250] * 8, calls)
-    # The outer deadline leaves no room for the extraction reserve:
-    # settling is skipped entirely rather than starving extraction.
+    # The outer deadline has already passed: settling is skipped entirely
+    # rather than starving extraction.
     asyncio.run(
-        jd_fetcher._await_settled_body(page, "https://example.com/job", time.monotonic() + 1)
+        jd_fetcher._await_settled_body(page, "https://example.com/job", time.monotonic() - 1)
     )
     assert calls["waits"] == 0
 
 
-def test_await_settled_body_caps_budget_by_outer_deadline():
+def test_await_settled_body_splits_short_budget_with_extraction():
     calls = {"waits": 0}
     page = _ScriptedPage(["x" * 250] * 8, calls)
-    # Outer deadline allows ~2s of settling after the extraction reserve;
-    # the 8s budget is capped, so the loop exhausts 4 polls without idling.
+    # 4s left: the 5s extraction reserve is halved to 2s, leaving a 2s
+    # settle budget (4 polls) instead of skipping settling entirely.
     asyncio.run(
-        jd_fetcher._await_settled_body(page, "https://example.com/job", time.monotonic() + 7)
+        jd_fetcher._await_settled_body(page, "https://example.com/job", time.monotonic() + 4)
     )
     assert calls["waits"] == 4
 
