@@ -12,6 +12,19 @@ Every scoring, tailoring, and feedback decision must serve this goal:
 - Never keyword-stuff. Honest signal only.
 - A resume that passes ATS but misrepresents the candidate is a failure.
 
+## Constitution
+
+Non-negotiable principles. These do not change without an explicit design proposal.
+
+1. **Scoring is pure and deterministic.** The scorer (`scorer.py`) performs literal keyword
+   matching only — no synonyms, no semantic expansion, no abbreviation unfolding, no LLM
+   calls. The score measures what the resume literally contains: a conservative,
+   defensible lower bound, not an estimate of what a human reader would infer.
+2. **Scoring measures; tailoring acts.** The scorer's job is to determine the score and
+   report gaps. How to close those gaps — which edits raise the score — belongs entirely
+   to the tailoring side (host judgment at graph interrupts). The scorer must never
+   silently cover a gap the tailoring loop should see and act on.
+
 ## Project Context
 
 callback is a standalone LangGraph MCP server (stdio only). It originated as a replacement for go-apply's Go FSM; go-apply is now deprecated — callback's own behavior is the source of truth.
