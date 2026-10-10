@@ -335,7 +335,9 @@ def _fake_playwright(
 
     context = Mock()
     context.new_page = AsyncMock(return_value=page)
-    context.add_init_script = AsyncMock(side_effect=lambda script: calls.__setitem__("init_script", script))
+    context.add_init_script = AsyncMock(
+        side_effect=lambda script: calls.__setitem__("init_script", script)
+    )
     browser = Mock()
     browser.new_context = AsyncMock(
         side_effect=lambda **kw: calls.__setitem__("new_context", kw) or context
