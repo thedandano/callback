@@ -1100,3 +1100,47 @@ def test_sanitize_tool_output_summarizes_intake():
             },
         },
     }
+
+
+def test_record_decision_stamps_labels_on_the_open_span(decisions):
+    from callback.observability import record_decision
+
+    record_decision("jd_source", "fetched")
+    record_decision("jd_truncated", True)
+
+    assert decisions == {"jd_source": "fetched", "jd_truncated": True}
+
+
+def test_record_decision_does_nothing_without_an_open_span(monkeypatch, caplog):
+    from callback.observability import record_decision
+
+    caplog.set_level(logging.WARNING, logger="callback.observability")
+    monkeypatch.setattr("langsmith.run_helpers.get_current_run_tree", lambda: None)
+
+    record_decision("jd_source", "fetched")
+
+    assert [r.levelname for r in caplog.records] == []
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("jd_source", "We need a Python engineer"),
+        ("jd_source", 3),
+        ("JD Source", "fetched"),
+    ],
+)
+def test_record_decision_rejects_anything_that_is_not_a_token(decisions, caplog, key, value):
+    from callback.observability import record_decision
+
+    caplog.set_level(logging.WARNING, logger="callback.observability")
+
+    record_decision(key, value)
+
+    actual = {
+        "decisions": decisions,
+        "levels": [r.levelname for r in caplog.records],
+        "value_echoed": "Python engineer" in caplog.text,
+    }
+    expected = {"decisions": {}, "levels": ["WARNING"], "value_echoed": False}
+    assert actual == expected

@@ -27,3 +27,19 @@ def isolate_server_db(tmp_path, monkeypatch):
 
     for mod in ("callback.server", "callback.apply_graph", "callback.profile_graph"):
         sys.modules.pop(mod, None)
+
+
+@pytest.fixture
+def decisions(monkeypatch):
+    """Capture record_decision labels.
+
+    Stands in for an open LangSmith span: every accepted label lands in the
+    returned dict, exactly as it would land in the span's metadata.
+    """
+    captured: dict[str, object] = {}
+
+    class _FakeRunTree:
+        metadata = captured
+
+    monkeypatch.setattr("langsmith.run_helpers.get_current_run_tree", lambda: _FakeRunTree())
+    return captured

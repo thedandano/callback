@@ -13,6 +13,7 @@ from typing import Any
 
 # langgraph re-exports langchain_core's RunnableConfig but leaves it out of __all__.
 from langgraph.types import RunnableConfig  # pyright: ignore[reportPrivateImportUsage]
+from langsmith import run_helpers
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,37 @@ def _stamp_thread(session_id: str | None) -> None:
     if rt is not None:
         rt.metadata["session_id"] = session_id
         rt.metadata["thread_id"] = session_id
+
+
+# Decision labels are fixed words chosen by the code: lowercase tokens or
+# booleans. That shape is the privacy guarantee - a label can never carry JD,
+# resume, story, URL, or path text into a trace.
+_DECISION_TOKEN_RE = re.compile(r"[a-z0-9_]{1,48}")
+
+
+def _is_decision_token(value: object) -> bool:
+    return isinstance(value, str) and _DECISION_TOKEN_RE.fullmatch(value) is not None
+
+
+def record_decision(key: str, value: str | bool) -> None:
+    """Stamp one code-path decision onto the open LangSmith span's metadata.
+
+    Call it right where the code picks a path, for example
+    record_decision("jd_source", "pasted"). Inside a node it lands on that
+    node's span; in a tool body it lands on the tool span and on node spans
+    created afterwards. With no open span (tracing off, evals) it does nothing.
+    """
+    if not _is_decision_token(key) or not (isinstance(value, bool) or _is_decision_token(value)):
+        logger.warning(
+            "decision label %r rejected (value type %s): labels must be booleans or "
+            "lowercase [a-z0-9_] tokens of at most 48 characters; nothing was sent to the trace",
+            key,
+            type(value).__name__,
+        )
+        return
+    run_tree = run_helpers.get_current_run_tree()
+    if run_tree is not None:
+        run_tree.metadata[key] = value
 
 
 def _trace_enabled() -> bool:
