@@ -13,6 +13,7 @@ from typing import Any
 
 # langgraph re-exports langchain_core's RunnableConfig but leaves it out of __all__.
 from langgraph.types import RunnableConfig  # pyright: ignore[reportPrivateImportUsage]
+from langsmith import run_helpers
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,41 @@ def _stamp_thread(session_id: str | None) -> None:
     if rt is not None:
         rt.metadata["session_id"] = session_id
         rt.metadata["thread_id"] = session_id
+
+
+# Decision labels are fixed words chosen by the code: lowercase tokens or
+# booleans. That shape is the privacy guarantee - a label can never carry JD,
+# resume, story, URL, or path text into a trace.
+_DECISION_TOKEN_RE = re.compile(r"[a-z0-9_]{1,48}")
+# trace_tool and trace_node name every span "callback.<...>".
+_CALLBACK_SPAN_PREFIX = "callback."
+
+
+def _is_decision_token(value: object) -> bool:
+    return isinstance(value, str) and _DECISION_TOKEN_RE.fullmatch(value) is not None
+
+
+def record_decision(key: str, value: str | bool) -> None:
+    """Stamp one code-path decision onto the open LangSmith span's metadata.
+
+    Call it right where the code picks a path, for example
+    record_decision("jd_source", "pasted"). Inside a node it lands on that
+    node's span; in a tool body it lands on the tool span and on node spans
+    created afterwards. With no open span (tracing off, evals) it does nothing.
+    It also leaves a span that callback did not open alone, so a host program's
+    own LangSmith run never receives callback labels it did not opt in to.
+    """
+    if not _is_decision_token(key) or not (isinstance(value, bool) or _is_decision_token(value)):
+        logger.warning(
+            "decision label %r rejected (value type %s): labels must be booleans or "
+            "lowercase [a-z0-9_] tokens of at most 48 characters; nothing was sent to the trace",
+            key,
+            type(value).__name__,
+        )
+        return
+    run_tree = run_helpers.get_current_run_tree()
+    if run_tree is not None and run_tree.name.startswith(_CALLBACK_SPAN_PREFIX):
+        run_tree.metadata[key] = value
 
 
 def _trace_enabled() -> bool:
@@ -331,15 +367,16 @@ def _sanitize_tool_output(output: Any) -> dict[str, Any]:
     if envelope is None:
         return {"output_type": type(output).__name__}
 
-    # Contact PII is stripped from the envelope. Profile/resume business content
-    # (compiled_profile, sections, intake) is summarized to counts and key names —
-    # story narratives, section text, and resume text never leave the span.
+    # Contact PII is stripped from the envelope. Stored profile content
+    # (compiled_profile, sections, intake, skill fields) is summarized to counts
+    # and key names. Everything else passes through as is, including JD text,
+    # score gaps, and the page text returned by get_wiki_pages.
     return _summarize_profile_content(_redact_pii(dict(envelope)))
 
 
-# Span-summarization contract for LangGraph node traces (CLAUDE.md: "safe
-# booleans/counts and state/update key names" — never resume text, JD text,
-# wiki content, story narratives, or skill names).
+# Span-summarization contract for LangGraph node traces (see the tracing section
+# of AGENTS.md): lengths, key names, booleans, counts and identifiers only -
+# never resume text, JD text, wiki content, story narratives, or skill names.
 _SPAN_MAPPING_EXEMPT_KEYS: frozenset[str] = frozenset(
     {"session_id", "graph_name", "node_name", "transport", "status"}
 )

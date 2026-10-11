@@ -183,7 +183,7 @@ The number is worth what it's worth. It can't see your work authorization, your 
 
 ## What happens to your resume
 
-callback makes three kinds of outbound network calls. It fetches the job posting from the URL you give it. It checks the GitHub releases API for updates. And if you turn on LangSmith tracing, which is off by default, it sends traces that are redacted to exclude your resume text, posting text, story content, your edits, and your file paths.
+callback makes three kinds of outbound network calls. It fetches the job posting from the URL you give it. It checks the GitHub releases API for updates. And if you turn on LangSmith tracing, which is off by default, it sends traces to your own LangSmith project. Those traces include the job URL, the posting text, the extracted keywords, your submitted edits, and output paths. They also include the resume content callback hands to your client for tailoring: resume bullets, the wiki index, project previews, and any wiki pages your client asks for (including story text). Email addresses and phone numbers are masked, the contact block of your resume is replaced with placeholders, and the compiled profile and the full resume sections block are reduced to counts.
 
 Scoring, parsing, and PDF rendering all happen on your machine. callback never calls an AI model itself.
 
@@ -227,9 +227,13 @@ because callback deliberately pauses its graphs to hand control back to the MCP 
 Without that suppression, LangSmith shows a graph run stuck as pending while it waits for
 the next tool call. The sanitized `callback.*` spans are the supported surface.
 
-Spans carry only safe fields: `session_id`, `tool_name`, `graph_name`, `node_name`,
-`resume_label`, counts, and key names. Never resume text, posting text, story content,
-submitted edits, file paths, or API keys.
+Tool spans carry the tool's main arguments and its reply. Emails, phone numbers and the
+resume contact block are masked, and the `sections` and `compiled_profile` blocks are
+reduced to counts. Resume bullets offered for trimming, the wiki index, project previews
+and any wiki pages your client requests are sent as text. Node spans carry only lengths,
+key names, booleans and identifiers. Where the code chose a path, the span also carries a
+short label saying which, such as `jd_source=pasted` or `jd_truncated=true`. API keys are
+never sent.
 
 </details>
 

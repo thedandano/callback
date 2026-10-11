@@ -26,7 +26,7 @@ from pydantic import ValidationError
 from callback import extractor as resume_extractor
 from callback import paths, scorer
 from callback.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError, fetch_url_to_markdown
-from callback.observability import trace_node
+from callback.observability import record_decision, trace_node
 from callback.render import render_resume
 from callback.repository import stories
 from callback.repository.resumes import ResumeNotFoundError, get_resume
@@ -144,6 +144,7 @@ def jd_fetch(state: ApplyState) -> dict:
 
             if state.jd_raw_text:
                 _log_jd_fetch(logging.WARNING, "fallback_used", **error_fields)
+                record_decision("jd_source", "pasted_after_fetch_failed")
                 return {"jd_text": state.jd_raw_text}
 
             _log_jd_fetch(logging.ERROR, "fetch_error", **error_fields)
@@ -163,9 +164,17 @@ def jd_fetch(state: ApplyState) -> dict:
             raise JDFetchError(reason="empty_result", url=state.jd_url)
 
         _log_jd_fetch(logging.INFO, "fetch_ok", **log_fields)
+        record_decision("jd_source", "fetched")
         return {"jd_text": markdown}
 
     if state.jd_raw_text:
+        _log_jd_fetch(
+            logging.INFO,
+            "raw_text_used",
+            session_id=state.session_id,
+            chars=len(state.jd_raw_text),
+        )
+        record_decision("jd_source", "pasted")
         return {"jd_text": state.jd_raw_text}
 
     _log_jd_fetch(logging.ERROR, "no_input", session_id=state.session_id)
@@ -237,6 +246,7 @@ def parse_initial(state: ApplyState) -> dict:
     """Load sections.json from wiki for tailoring; extract original PDF for scoring."""
     _log_enter("parse_initial", state)
     if state.resume_label is None:
+        record_decision("initial_score_source", "none")
         return {"parsed_initial": "<noop:parse:no-source>"}
 
     # The apply path may be the first thing run after an upgrade; legacy story
@@ -266,9 +276,11 @@ def parse_initial(state: ApplyState) -> dict:
                 }
             )
         )
+        record_decision("initial_score_source", "sections_text" if sections_json else "none")
         return {**base, "parsed_initial": fallback}
 
     text = resume_extractor.extract(resume_path)
+    record_decision("initial_score_source", "resume_file")
     return {**base, "parsed_initial": text}
 
 
@@ -276,14 +288,14 @@ def parse_initial(state: ApplyState) -> dict:
 def score_initial(state: ApplyState) -> dict:
     """Score the parsed resume against JD keywords using scorer.py."""
     _log_enter("score_initial", state)
-    return {
-        "score_initial": _run_score(
-            state.parsed_initial,
-            state.keywords,
-            closeable_by="source_pdf",
-            candidate_years=state.candidate_years,
-        )
-    }
+    score = _run_score(
+        state.parsed_initial,
+        state.keywords,
+        closeable_by="source_pdf",
+        candidate_years=state.candidate_years,
+    )
+    record_decision("experience_evaluated", score["experience_evaluated"])
+    return {"score_initial": score}
 
 
 def _build_skills_raw(skills) -> str | None:
@@ -399,7 +411,11 @@ def _candidate_experience_years(experience) -> float | None:
             )
         )
     if not intervals:
+        record_decision("experience_years", "unavailable")
         return None
+    # An entry can also be dropped without counting as skipped (end date before start).
+    usable_all = len(intervals) == len(experience)
+    record_decision("experience_years", "computed" if usable_all else "partial")
     return round(_merge_interval_months(intervals) / 12, 2)
 
 
@@ -560,14 +576,14 @@ def parse_final(state: ApplyState) -> dict:
 def score_final(state: ApplyState) -> dict:
     """Score the extracted PDF text against JD keywords."""
     _log_enter("score_final", state)
-    return {
-        "score_final": _run_score(
-            state.parsed_final,
-            state.keywords,
-            closeable_by="render",
-            candidate_years=state.candidate_years,
-        )
-    }
+    score = _run_score(
+        state.parsed_final,
+        state.keywords,
+        closeable_by="render",
+        candidate_years=state.candidate_years,
+    )
+    record_decision("experience_evaluated", score["experience_evaluated"])
+    return {"score_final": score}
 
 
 _SCORE_DIMS = (

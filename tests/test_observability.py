@@ -1100,3 +1100,112 @@ def test_sanitize_tool_output_summarizes_intake():
             },
         },
     }
+
+
+def test_record_decision_stamps_labels_on_the_open_span(decisions):
+    from callback.observability import record_decision
+
+    record_decision("jd_source", "fetched")
+    record_decision("jd_truncated", True)
+
+    assert decisions == {"jd_source": "fetched", "jd_truncated": True}
+
+
+def test_record_decision_does_nothing_without_an_open_span(monkeypatch, caplog):
+    from callback.observability import record_decision
+
+    caplog.set_level(logging.WARNING, logger="callback.observability")
+    monkeypatch.setattr("langsmith.run_helpers.get_current_run_tree", lambda: None)
+
+    record_decision("jd_source", "fetched")
+
+    assert [r.levelname for r in caplog.records] == []
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("jd_source", "We need a Python engineer"),
+        ("jd_source", 3),
+        ("JD Source", "fetched"),
+    ],
+)
+def test_record_decision_rejects_anything_that_is_not_a_token(decisions, caplog, key, value):
+    from callback.observability import record_decision
+
+    caplog.set_level(logging.WARNING, logger="callback.observability")
+
+    record_decision(key, value)
+
+    actual = {
+        "decisions": decisions,
+        "levels": [r.levelname for r in caplog.records],
+        "value_echoed": "Python engineer" in caplog.text,
+    }
+    expected = {"decisions": {}, "levels": ["WARNING"], "value_echoed": False}
+    assert actual == expected
+
+
+def test_sanitize_tool_output_sends_wiki_pages_as_text():
+    """get_wiki_pages replies pass through: page content is not cut to counts."""
+    from callback.observability import _sanitize_tool_output
+
+    envelope = {
+        "session_id": "s1",
+        "status": "ok",
+        "data": {"pages": {"experience/story-001.md": "# Cut p95 latency\n\nRebuilt the cache."}},
+    }
+
+    actual = _sanitize_tool_output(envelope)
+
+    expected = {
+        "session_id": "s1",
+        "status": "ok",
+        "data": {"pages": {"experience/story-001.md": "# Cut p95 latency\n\nRebuilt the cache."}},
+    }
+    assert actual == expected
+
+
+def test_sanitize_tool_output_sends_resume_bullets_outside_the_cut_fields():
+    """Only the named profile fields are cut; trim_candidates and the wiki index pass through."""
+    from callback.observability import _sanitize_tool_output
+
+    envelope = {
+        "session_id": "s1",
+        "status": "ok",
+        "data": {
+            "sections": {"experience": [{"company": "ACME", "bullets": ["Built the cache"]}]},
+            "trim_candidates": [{"id": "exp-0-b0", "text": "Built the cache"}],
+            "wiki_index": "# Index\n- story-001: Cut p95 latency",
+        },
+    }
+
+    actual = _sanitize_tool_output(envelope)
+
+    expected = {
+        "session_id": "s1",
+        "status": "ok",
+        "data": {
+            "sections": {"keys": ["experience"]},
+            "trim_candidates": [{"id": "exp-0-b0", "text": "Built the cache"}],
+            "wiki_index": "# Index\n- story-001: Cut p95 latency",
+        },
+    }
+    assert actual == expected
+
+
+def test_record_decision_leaves_a_span_callback_did_not_open_alone(monkeypatch):
+    """A host program's own LangSmith run must not receive callback labels."""
+    from callback.observability import record_decision
+
+    foreign_metadata: dict[str, Any] = {"owner": "host-app"}
+
+    class ForeignRunTree:
+        name = "host_app.pipeline"
+        metadata = foreign_metadata
+
+    monkeypatch.setattr("langsmith.run_helpers.get_current_run_tree", lambda: ForeignRunTree())
+
+    record_decision("jd_source", "fetched")
+
+    assert foreign_metadata == {"owner": "host-app"}

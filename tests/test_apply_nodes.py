@@ -12,6 +12,7 @@ from callback.apply_nodes import (
     parse_final,
     parse_initial,
     render,
+    score_final,
     score_initial,
     tailor,
 )
@@ -379,3 +380,74 @@ def test_parse_initial_migrates_legacy_stories_before_reading_the_wiki(tmp_path,
     actual = {"stories": listed, "warnings": warnings}
     expected = {"stories": [CreatedStory(**legacy)], "warnings": []}
     assert actual == expected
+
+
+class TestDecisionLabels:
+    def test_experience_years_computed(self, decisions):
+        experience = [
+            ExperienceEntry(company="A", role="Eng", start_date="2020-01", end_date="2020-12")
+        ]
+
+        _candidate_experience_years(experience)
+
+        assert decisions == {"experience_years": "computed"}
+
+    def test_experience_years_partial_when_an_entry_is_skipped(self, decisions):
+        experience = [
+            ExperienceEntry(company="A", role="Eng", start_date="2020-01", end_date="2020-12"),
+            ExperienceEntry(company="B", role="Eng", start_date="??", end_date=None),
+        ]
+
+        _candidate_experience_years(experience)
+
+        assert decisions == {"experience_years": "partial"}
+
+    def test_experience_years_unavailable(self, decisions):
+        experience = [ExperienceEntry(company="A", role="Eng", start_date="??", end_date=None)]
+
+        _candidate_experience_years(experience)
+
+        assert decisions == {"experience_years": "unavailable"}
+
+    def test_experience_years_partial_when_an_entry_ends_before_it_starts(self, decisions):
+        experience = [
+            ExperienceEntry(company="A", role="Eng", start_date="2020-01", end_date="2020-12"),
+            ExperienceEntry(company="B", role="Eng", start_date="2022-05", end_date="2021-01"),
+        ]
+
+        _candidate_experience_years(experience)
+
+        assert decisions == {"experience_years": "partial"}
+
+    def test_score_nodes_label_experience_as_not_scored_without_a_years_requirement(
+        self, decisions
+    ):
+        keywords = {"required": ["Python"], "preferred": [], "required_years": 0}
+
+        score_initial(
+            ApplyState(session_id="s", parsed_initial="Python engineer", keywords=keywords)
+        )
+        after_initial = dict(decisions)
+        decisions.clear()
+        score_final(ApplyState(session_id="s", parsed_final="Python engineer", keywords=keywords))
+
+        actual = {"initial": after_initial, "final": decisions}
+        expected = {
+            "initial": {"experience_evaluated": False},
+            "final": {"experience_evaluated": False},
+        }
+        assert actual == expected
+
+    def test_score_nodes_label_experience_as_scored_with_a_years_requirement(self, decisions):
+        keywords = {"required": ["Python"], "preferred": [], "required_years": 3}
+
+        score_initial(
+            ApplyState(
+                session_id="s",
+                parsed_initial="Python engineer",
+                keywords=keywords,
+                candidate_years=5.0,
+            )
+        )
+
+        assert decisions == {"experience_evaluated": True}

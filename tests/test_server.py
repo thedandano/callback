@@ -4,6 +4,7 @@ import json
 import sqlite3
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -1661,6 +1662,103 @@ MINIMAL_SECTIONS_JSON = json.dumps(
         "awards": [],
     }
 )
+
+
+def test_parse_initial_labels_the_resume_file_as_score_source(tmp_path, decisions):
+    from callback.apply_nodes import parse_initial
+    from callback.state import ApplyState
+
+    resume = tmp_path / "resume.txt"
+    resume.write_text("Lead Engineer with Python and Kubernetes experience")
+
+    with patch("callback.apply_nodes.get_resume", return_value=str(resume)):
+        parse_initial(ApplyState(session_id="s1", resume_label="lead"))
+
+    assert decisions == {"initial_score_source": "resume_file"}
+
+
+def test_parse_initial_labels_sections_text_when_the_resume_file_is_missing(decisions):
+    from callback.apply_nodes import parse_initial
+    from callback.repository.resumes import ResumeNotFoundError
+    from callback.state import ApplyState
+
+    with (
+        patch(
+            "callback.apply_nodes._load_wiki_sections",
+            return_value=(MINIMAL_SECTIONS_JSON, "index", "sections text"),
+        ),
+        patch("callback.apply_nodes.get_resume", side_effect=ResumeNotFoundError("ghost")),
+    ):
+        result = parse_initial(ApplyState(session_id="s1", resume_label="ghost"))
+
+    actual = {"parsed_initial": result["parsed_initial"], "decisions": decisions}
+    expected = {
+        "parsed_initial": "sections text",
+        "decisions": {"experience_years": "unavailable", "initial_score_source": "sections_text"},
+    }
+    assert actual == expected
+
+
+def test_parse_initial_labels_no_source_when_nothing_is_available(decisions):
+    from callback.apply_nodes import parse_initial
+    from callback.repository.resumes import ResumeNotFoundError
+    from callback.state import ApplyState
+
+    parse_initial(ApplyState(session_id="s1"))
+    no_label = dict(decisions)
+    decisions.clear()
+    with patch("callback.apply_nodes.get_resume", side_effect=ResumeNotFoundError("ghost")):
+        parse_initial(ApplyState(session_id="s1", resume_label="ghost"))
+
+    actual = {"no_label": no_label, "resume_not_found": decisions}
+    expected = {
+        "no_label": {"initial_score_source": "none"},
+        "resume_not_found": {"initial_score_source": "none"},
+    }
+    assert actual == expected
+
+
+def test_resolve_resume_label_labels_the_pick(decisions):
+    import callback.server as server
+
+    with patch("callback.server.list_resumes", return_value=["a"]):
+        server._resolve_resume_label("sess-1")
+    one = dict(decisions)
+    with patch("callback.server.list_resumes", return_value=["a", "b"]):
+        server._resolve_resume_label("sess-1")
+
+    actual = {"one": one, "several": decisions}
+    expected = {"one": {"resume_pick": "only_one"}, "several": {"resume_pick": "first_of_many"}}
+    assert actual == expected
+
+
+class _FakeApplyGraph:
+    def __init__(self, values: dict) -> None:
+        self._values = values
+        self.updates: list[dict] = []
+
+    def get_state(self, config):
+        return SimpleNamespace(values=self._values)
+
+    def update_state(self, config, update, as_node):
+        self.updates.append(update)
+
+
+def test_tailor_retry_update_labels_the_attempt(decisions):
+    import callback.server as server
+
+    server._tailor_retry_update(_FakeApplyGraph({}), {}, {"no_coverage": True}, "sess-1")
+    first = dict(decisions)
+    server._tailor_retry_update(
+        _FakeApplyGraph({"error": "render: boom"}), {}, {"no_coverage": True}, "sess-1"
+    )
+
+    actual = {"first": first, "retry": decisions}
+    expected = {
+        "first": {"tailor_attempt": "first"},
+        "retry": {"tailor_attempt": "retry_after_error"},
+    }
+    assert actual == expected
 
 
 def test_parse_initial_wiki_hit_uses_pdf_for_parsed_initial(tmp_path):

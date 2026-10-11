@@ -79,7 +79,12 @@ def test_jd_fetch_raw_text_passthrough_unchanged(caplog, fake_fetch):
 
     assert result == {"jd_text": raw_text}
     assert calls == []
-    assert jd_log_payloads(caplog) == []
+    assert jd_log_payloads(caplog) == [
+        (
+            logging.INFO,
+            {"event": "raw_text_used", "session_id": "session-123", "chars": 34},
+        )
+    ]
 
 
 def test_jd_fetch_io_failure_with_raw_text_falls_back_and_logs_warning(caplog, fake_fetch):
@@ -214,3 +219,36 @@ def test_jd_fetch_no_input_raises_value_error_and_logs(caplog, fake_fetch):
     assert len(logs) == 1
     assert logs[0][0] == logging.ERROR
     assert logs[0][1] == {"event": "no_input", "session_id": state.session_id}
+
+
+def test_jd_fetch_labels_a_fetched_source(fake_fetch, decisions):
+    apply_nodes.jd_fetch(make_state(jd_url="https://example.com/job"))
+
+    assert decisions == {"jd_source": "fetched"}
+
+
+def test_jd_fetch_labels_a_pasted_source(fake_fetch, decisions):
+    apply_nodes.jd_fetch(make_state(jd_raw_text="Python engineer needed"))
+
+    assert decisions == {"jd_source": "pasted"}
+
+
+def test_jd_fetch_labels_pasted_text_used_after_a_failed_fetch(fake_fetch, decisions):
+    _, result = fake_fetch
+    result["value"] = OSError("network down")
+
+    apply_nodes.jd_fetch(
+        make_state(jd_url="https://example.com/job", jd_raw_text="Python engineer needed")
+    )
+
+    assert decisions == {"jd_source": "pasted_after_fetch_failed"}
+
+
+def test_jd_fetch_failure_without_raw_text_writes_no_source_label(fake_fetch, decisions):
+    _, result = fake_fetch
+    result["value"] = OSError("network down")
+
+    with pytest.raises(JDFetchError):
+        apply_nodes.jd_fetch(make_state(jd_url="https://example.com/job"))
+
+    assert decisions == {}
