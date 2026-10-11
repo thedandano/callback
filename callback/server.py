@@ -50,7 +50,7 @@ from callback.apply_graph import (
 from callback.apply_nodes import _detect_uncovered_skills
 from callback.jd_data import EXTRACTION_PROTOCOL, JDDataError, parse_jd_json
 from callback.jd_fetcher import JDFetchError
-from callback.observability import invoke_graph_without_native_tracing, trace_tool
+from callback.observability import invoke_graph_without_native_tracing, record_decision, trace_tool
 from callback.preferences import SearchPreferences
 from callback.profile_graph import get_profile_graph, story_pending
 from callback.profile_graph import make_config as make_profile_config
@@ -654,6 +654,7 @@ def _resolve_resume_label(session_id: str) -> tuple[str | None, dict | None]:
                 "registered": registered,
             },
         )
+    record_decision("resume_pick", "first_of_many" if len(registered) > 1 else "only_one")
     return registered[0], None
 
 
@@ -1116,7 +1117,9 @@ def _tailor_retry_update(graph, config, values: dict, session_id: str) -> None:
     """
     snapshot = graph.get_state(config)
     update = values
-    if snapshot.values.get("error"):
+    retrying = bool(snapshot.values.get("error"))
+    record_decision("tailor_attempt", "retry_after_error" if retrying else "first")
+    if retrying:
         _log(
             "INFO",
             {"tool": "submit_tailor", "session_id": session_id, "event": "retry_after_error"},

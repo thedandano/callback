@@ -246,6 +246,7 @@ def parse_initial(state: ApplyState) -> dict:
     """Load sections.json from wiki for tailoring; extract original PDF for scoring."""
     _log_enter("parse_initial", state)
     if state.resume_label is None:
+        record_decision("initial_score_source", "none")
         return {"parsed_initial": "<noop:parse:no-source>"}
 
     # The apply path may be the first thing run after an upgrade; legacy story
@@ -275,9 +276,11 @@ def parse_initial(state: ApplyState) -> dict:
                 }
             )
         )
+        record_decision("initial_score_source", "sections_text" if sections_json else "none")
         return {**base, "parsed_initial": fallback}
 
     text = resume_extractor.extract(resume_path)
+    record_decision("initial_score_source", "resume_file")
     return {**base, "parsed_initial": text}
 
 
@@ -285,14 +288,14 @@ def parse_initial(state: ApplyState) -> dict:
 def score_initial(state: ApplyState) -> dict:
     """Score the parsed resume against JD keywords using scorer.py."""
     _log_enter("score_initial", state)
-    return {
-        "score_initial": _run_score(
-            state.parsed_initial,
-            state.keywords,
-            closeable_by="source_pdf",
-            candidate_years=state.candidate_years,
-        )
-    }
+    score = _run_score(
+        state.parsed_initial,
+        state.keywords,
+        closeable_by="source_pdf",
+        candidate_years=state.candidate_years,
+    )
+    record_decision("experience_evaluated", score["experience_evaluated"])
+    return {"score_initial": score}
 
 
 def _build_skills_raw(skills) -> str | None:
@@ -408,7 +411,9 @@ def _candidate_experience_years(experience) -> float | None:
             )
         )
     if not intervals:
+        record_decision("experience_years", "unavailable")
         return None
+    record_decision("experience_years", "partial" if skipped else "computed")
     return round(_merge_interval_months(intervals) / 12, 2)
 
 
@@ -569,14 +574,14 @@ def parse_final(state: ApplyState) -> dict:
 def score_final(state: ApplyState) -> dict:
     """Score the extracted PDF text against JD keywords."""
     _log_enter("score_final", state)
-    return {
-        "score_final": _run_score(
-            state.parsed_final,
-            state.keywords,
-            closeable_by="render",
-            candidate_years=state.candidate_years,
-        )
-    }
+    score = _run_score(
+        state.parsed_final,
+        state.keywords,
+        closeable_by="render",
+        candidate_years=state.candidate_years,
+    )
+    record_decision("experience_evaluated", score["experience_evaluated"])
+    return {"score_final": score}
 
 
 _SCORE_DIMS = (

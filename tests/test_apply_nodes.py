@@ -12,6 +12,7 @@ from callback.apply_nodes import (
     parse_final,
     parse_initial,
     render,
+    score_final,
     score_initial,
     tailor,
 )
@@ -379,3 +380,50 @@ def test_parse_initial_migrates_legacy_stories_before_reading_the_wiki(tmp_path,
     actual = {"stories": listed, "warnings": warnings}
     expected = {"stories": [CreatedStory(**legacy)], "warnings": []}
     assert actual == expected
+
+
+class TestDecisionLabels:
+    def test_experience_years_computed(self, decisions):
+        experience = [
+            ExperienceEntry(company="A", role="Eng", start_date="2020-01", end_date="2020-12")
+        ]
+
+        _candidate_experience_years(experience)
+
+        assert decisions == {"experience_years": "computed"}
+
+    def test_experience_years_partial_when_an_entry_is_skipped(self, decisions):
+        experience = [
+            ExperienceEntry(company="A", role="Eng", start_date="2020-01", end_date="2020-12"),
+            ExperienceEntry(company="B", role="Eng", start_date="??", end_date=None),
+        ]
+
+        _candidate_experience_years(experience)
+
+        assert decisions == {"experience_years": "partial"}
+
+    def test_experience_years_unavailable(self, decisions):
+        experience = [ExperienceEntry(company="A", role="Eng", start_date="??", end_date=None)]
+
+        _candidate_experience_years(experience)
+
+        assert decisions == {"experience_years": "unavailable"}
+
+    def test_score_nodes_label_whether_experience_was_scored(self, decisions):
+        keywords = {"required": ["Python"], "preferred": [], "required_years": 0}
+
+        initial = score_initial(
+            ApplyState(session_id="s", parsed_initial="Python engineer", keywords=keywords)
+        )
+        after_initial = dict(decisions)
+        decisions.clear()
+        final = score_final(
+            ApplyState(session_id="s", parsed_final="Python engineer", keywords=keywords)
+        )
+
+        actual = {"initial": after_initial, "final": decisions}
+        expected = {
+            "initial": {"experience_evaluated": initial["score_initial"]["experience_evaluated"]},
+            "final": {"experience_evaluated": final["score_final"]["experience_evaluated"]},
+        }
+        assert actual == expected
