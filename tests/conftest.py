@@ -42,6 +42,7 @@ def decisions(monkeypatch):
     captured: dict[str, object] = {}
 
     class _FakeRunTree:
+        name = "callback.apply.test"
         metadata = captured
 
     monkeypatch.setattr("langsmith.run_helpers.get_current_run_tree", lambda: _FakeRunTree())

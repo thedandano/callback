@@ -1192,3 +1192,20 @@ def test_sanitize_tool_output_sends_resume_bullets_outside_the_cut_fields():
         },
     }
     assert actual == expected
+
+
+def test_record_decision_leaves_a_span_callback_did_not_open_alone(monkeypatch):
+    """A host program's own LangSmith run must not receive callback labels."""
+    from callback.observability import record_decision
+
+    foreign_metadata: dict[str, Any] = {"owner": "host-app"}
+
+    class ForeignRunTree:
+        name = "host_app.pipeline"
+        metadata = foreign_metadata
+
+    monkeypatch.setattr("langsmith.run_helpers.get_current_run_tree", lambda: ForeignRunTree())
+
+    record_decision("jd_source", "fetched")
+
+    assert foreign_metadata == {"owner": "host-app"}

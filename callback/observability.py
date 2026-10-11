@@ -168,6 +168,8 @@ def _stamp_thread(session_id: str | None) -> None:
 # booleans. That shape is the privacy guarantee - a label can never carry JD,
 # resume, story, URL, or path text into a trace.
 _DECISION_TOKEN_RE = re.compile(r"[a-z0-9_]{1,48}")
+# trace_tool and trace_node name every span "callback.<...>".
+_CALLBACK_SPAN_PREFIX = "callback."
 
 
 def _is_decision_token(value: object) -> bool:
@@ -181,6 +183,8 @@ def record_decision(key: str, value: str | bool) -> None:
     record_decision("jd_source", "pasted"). Inside a node it lands on that
     node's span; in a tool body it lands on the tool span and on node spans
     created afterwards. With no open span (tracing off, evals) it does nothing.
+    It also leaves a span that callback did not open alone, so a host program's
+    own LangSmith run never receives callback labels it did not opt in to.
     """
     if not _is_decision_token(key) or not (isinstance(value, bool) or _is_decision_token(value)):
         logger.warning(
@@ -191,7 +195,7 @@ def record_decision(key: str, value: str | bool) -> None:
         )
         return
     run_tree = run_helpers.get_current_run_tree()
-    if run_tree is not None:
+    if run_tree is not None and run_tree.name.startswith(_CALLBACK_SPAN_PREFIX):
         run_tree.metadata[key] = value
 
 
