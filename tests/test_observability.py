@@ -1164,3 +1164,31 @@ def test_sanitize_tool_output_sends_wiki_pages_as_text():
         "data": {"pages": {"experience/story-001.md": "# Cut p95 latency\n\nRebuilt the cache."}},
     }
     assert actual == expected
+
+
+def test_sanitize_tool_output_sends_resume_bullets_outside_the_cut_fields():
+    """Only the named profile fields are cut; trim_candidates and the wiki index pass through."""
+    from callback.observability import _sanitize_tool_output
+
+    envelope = {
+        "session_id": "s1",
+        "status": "ok",
+        "data": {
+            "sections": {"experience": [{"company": "ACME", "bullets": ["Built the cache"]}]},
+            "trim_candidates": [{"id": "exp-0-b0", "text": "Built the cache"}],
+            "wiki_index": "# Index\n- story-001: Cut p95 latency",
+        },
+    }
+
+    actual = _sanitize_tool_output(envelope)
+
+    expected = {
+        "session_id": "s1",
+        "status": "ok",
+        "data": {
+            "sections": {"keys": ["experience"]},
+            "trim_candidates": [{"id": "exp-0-b0", "text": "Built the cache"}],
+            "wiki_index": "# Index\n- story-001: Cut p95 latency",
+        },
+    }
+    assert actual == expected

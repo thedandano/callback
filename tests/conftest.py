@@ -36,6 +36,9 @@ def decisions(monkeypatch):
     Stands in for an open LangSmith span: every accepted label lands in the
     returned dict, exactly as it would land in the span's metadata.
     """
+    # With tracing switched on in the shell, trace_node would run the real langsmith
+    # traceable, which calls the function patched below and gets the fake.
+    monkeypatch.delenv("CALLBACK_TRACE_BACKEND", raising=False)
     captured: dict[str, object] = {}
 
     class _FakeRunTree:

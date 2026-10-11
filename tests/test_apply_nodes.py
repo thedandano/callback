@@ -409,21 +409,45 @@ class TestDecisionLabels:
 
         assert decisions == {"experience_years": "unavailable"}
 
-    def test_score_nodes_label_whether_experience_was_scored(self, decisions):
+    def test_experience_years_partial_when_an_entry_ends_before_it_starts(self, decisions):
+        experience = [
+            ExperienceEntry(company="A", role="Eng", start_date="2020-01", end_date="2020-12"),
+            ExperienceEntry(company="B", role="Eng", start_date="2022-05", end_date="2021-01"),
+        ]
+
+        _candidate_experience_years(experience)
+
+        assert decisions == {"experience_years": "partial"}
+
+    def test_score_nodes_label_experience_as_not_scored_without_a_years_requirement(
+        self, decisions
+    ):
         keywords = {"required": ["Python"], "preferred": [], "required_years": 0}
 
-        initial = score_initial(
+        score_initial(
             ApplyState(session_id="s", parsed_initial="Python engineer", keywords=keywords)
         )
         after_initial = dict(decisions)
         decisions.clear()
-        final = score_final(
-            ApplyState(session_id="s", parsed_final="Python engineer", keywords=keywords)
-        )
+        score_final(ApplyState(session_id="s", parsed_final="Python engineer", keywords=keywords))
 
         actual = {"initial": after_initial, "final": decisions}
         expected = {
-            "initial": {"experience_evaluated": initial["score_initial"]["experience_evaluated"]},
-            "final": {"experience_evaluated": final["score_final"]["experience_evaluated"]},
+            "initial": {"experience_evaluated": False},
+            "final": {"experience_evaluated": False},
         }
         assert actual == expected
+
+    def test_score_nodes_label_experience_as_scored_with_a_years_requirement(self, decisions):
+        keywords = {"required": ["Python"], "preferred": [], "required_years": 3}
+
+        score_initial(
+            ApplyState(
+                session_id="s",
+                parsed_initial="Python engineer",
+                keywords=keywords,
+                candidate_years=5.0,
+            )
+        )
+
+        assert decisions == {"experience_evaluated": True}

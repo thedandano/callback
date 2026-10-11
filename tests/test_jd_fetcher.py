@@ -840,3 +840,16 @@ def test_fetch_url_to_markdown_labels_a_truncated_page(monkeypatch, decisions):
     asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
 
     assert decisions == {"jd_capped": False, "jd_truncated": True}
+
+
+def test_fetch_url_to_markdown_labels_a_complete_page(monkeypatch, decisions):
+    _fake_playwright(monkeypatch)
+    monkeypatch.setattr(
+        jd_fetcher,
+        "extract_markdown",
+        lambda *_: "**Minimum Qualifications:**\n\n- Python\n",
+    )
+
+    asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
+
+    assert decisions == {"jd_capped": False, "jd_truncated": False}

@@ -413,7 +413,9 @@ def _candidate_experience_years(experience) -> float | None:
     if not intervals:
         record_decision("experience_years", "unavailable")
         return None
-    record_decision("experience_years", "partial" if skipped else "computed")
+    # An entry can also be dropped without counting as skipped (end date before start).
+    usable_all = len(intervals) == len(experience)
+    record_decision("experience_years", "computed" if usable_all else "partial")
     return round(_merge_interval_months(intervals) / 12, 2)
 
 

@@ -173,14 +173,22 @@ Tracing is opt-in. What a trace contains depends on the span type:
   `jd_url`, `jd_raw_text`, `jd_json`, `edits`, `page_ids`, `no_coverage`,
   `resume_label`, `output_dir`. Other arguments (resume and file paths passed to
   the profile tools, story intake, host tags) are not sent. The tool's reply is
-  sent whole, with two cuts:
+  sent as text except for two cuts:
   - `email` and `phone` fields become placeholders anywhere, and email- and
     phone-shaped text is masked inside any string. Name, location, address and
     links become placeholders only inside a structured contact block; a name
     written inside free text or a wiki page is not caught.
-  - Stored profile content (`compiled_profile`, `sections`, `intake`, skill
-    lists, `primary_skill`, `story_id`) becomes counts and key names. Pages
-    returned by `get_wiki_pages` are the exception: they are sent as text.
+  - A fixed set of profile fields is cut when it appears at the top level of a
+    reply's `data`: `compiled_profile`, `sections` and `intake` become counts
+    and key names, the skill lists (`skills_index`, `orphaned_skills`,
+    `skill_coverage_warnings`) become counts, and `primary_skill` and
+    `story_id` become `<redacted>`.
+
+  Resume and profile content outside those fields still goes out. That includes
+  resume bullet text (`trim_candidates` in the `submit_keywords` reply), the
+  wiki index, project page previews (`project_candidates`), score gaps and
+  keyword names, pages returned by `get_wiki_pages`, and the `submit_tailor`
+  report, which names skills and states the candidate's years of experience.
 - **Node spans** (`trace_node`) send lengths, key names, booleans, the two
   page-count numbers, and identifiers (`session_id`, graph and node names,
   status, error stage and code, exception class name). Never content.
@@ -199,10 +207,13 @@ API keys never go into a trace. Do not widen what node spans send.
 | `jd_capped` | true/false | Job text was cut at the 16,000-character cap |
 | `jd_truncated` | true/false | Headings with no text under them: the page looks cut off |
 | `initial_score_source` | `resume_file`, `sections_text`, `none` | Which text the first score was computed from |
-| `experience_years` | `computed`, `partial`, `unavailable` | Whether every job entry's dates could be read |
+| `experience_years` | `computed`, `partial`, `unavailable` | Whether every job entry gave a usable date range |
 | `experience_evaluated` | true/false | False means the total was renormalized without ExperienceFit |
 | `resume_pick` | `only_one`, `first_of_many` | Several resumes registered: the first was used |
-| `tailor_attempt` | `first`, `retry_after_error` | Whether this `submit_tailor` call is a retry |
+| `tailor_attempt` | `first`, `retry_after_error` | `retry_after_error` means the session's last attempt ended in a pipeline error |
+
+`jd_extraction`, `jd_capped` and `jd_truncated` describe the fetched page only.
+Ignore them unless `jd_source=fetched`.
 
 Use `callback trace-check` to verify import/auth/project reachability before a demo.
 MCP graph invokes suppress native LangChain/LangGraph auto-tracing because
