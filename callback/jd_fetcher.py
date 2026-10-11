@@ -21,6 +21,8 @@ from typing import Any
 
 from playwright.async_api import ViewportSize, async_playwright
 
+from callback.observability import record_decision
+
 logger = logging.getLogger("callback.jd_fetcher")
 
 DEFAULT_PAGE_TIMEOUT_MS = 30_000
@@ -205,6 +207,7 @@ def extract_markdown(extracted: str, body_text: str, url: str) -> str:
     jd_fetch reports as a fetch failure. Both decisions are logged.
     """
     result = extracted
+    extraction = "clean"
     if len(extracted) < MIN_EXTRACT_CHARS and len(body_text) >= MIN_EXTRACT_CHARS:
         _log(
             "fetch_thin_extraction",
@@ -213,6 +216,7 @@ def extract_markdown(extracted: str, body_text: str, url: str) -> str:
             body_chars=len(body_text),
         )
         result = body_text
+        extraction = "body_text"
     if len(result) < MIN_EXTRACT_CHARS:
         _log(
             "fetch_thin",
@@ -222,6 +226,7 @@ def extract_markdown(extracted: str, body_text: str, url: str) -> str:
             min_chars=MIN_EXTRACT_CHARS,
         )
         raise RuntimeError(f"thin page: {len(result)} chars, under the {MIN_EXTRACT_CHARS} minimum")
+    record_decision("jd_extraction", extraction)
     return result
 
 
@@ -253,6 +258,7 @@ def find_empty_sections(markdown: str) -> list[str]:
 def cap_jd_text(text: str, url: str) -> str:
     """Hard-cap the JD at MAX_JD_CHARS, cutting at the last newline when one exists."""
     if len(text) <= MAX_JD_CHARS:
+        record_decision("jd_capped", False)
         return text
     cut = text.rfind("\n", MAX_JD_CHARS - CAP_LINE_SLACK_CHARS, MAX_JD_CHARS)
     capped = text[: cut if cut > 0 else MAX_JD_CHARS]
@@ -263,6 +269,7 @@ def cap_jd_text(text: str, url: str) -> str:
         cap_chars=MAX_JD_CHARS,
         kept_chars=len(capped),
     )
+    record_decision("jd_capped", True)
     return capped
 
 
@@ -461,6 +468,7 @@ async def _fetch_url_to_markdown_unbounded(url: str, deadline: float) -> str:
         empty_sections = find_empty_sections(result)
         if empty_sections:
             _log("fetch_truncated", url=url, empty_sections=empty_sections)
+        record_decision("jd_truncated", bool(empty_sections))
         return result
     finally:
         await cleanup()

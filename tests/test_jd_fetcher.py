@@ -796,3 +796,47 @@ def test_importing_jd_fetcher_does_not_import_trafilatura():
         [sys.executable, "-c", code], capture_output=True, text=True, check=True
     ).stdout.strip()
     assert out == "False"
+
+
+def test_extract_markdown_labels_a_clean_extraction(decisions):
+    jd_fetcher.extract_markdown("x" * jd_fetcher.MIN_EXTRACT_CHARS, "", "https://example.com/job")
+
+    assert decisions == {"jd_extraction": "clean"}
+
+
+def test_extract_markdown_labels_the_body_text_fallback(decisions):
+    jd_fetcher.extract_markdown(
+        "thin", "y" * jd_fetcher.MIN_EXTRACT_CHARS, "https://example.com/job"
+    )
+
+    assert decisions == {"jd_extraction": "body_text"}
+
+
+def test_extract_markdown_writes_no_label_when_the_page_is_rejected(decisions):
+    with pytest.raises(RuntimeError):
+        jd_fetcher.extract_markdown("thin", "also thin", "https://example.com/job")
+
+    assert decisions == {}
+
+
+def test_cap_jd_text_labels_whether_it_cut(decisions):
+    jd_fetcher.cap_jd_text("short", "https://example.com/job")
+    under_cap = dict(decisions)
+    jd_fetcher.cap_jd_text("x" * (jd_fetcher.MAX_JD_CHARS + 5), "https://example.com/job")
+
+    actual = {"under_cap": under_cap, "over_cap": decisions}
+    expected = {"under_cap": {"jd_capped": False}, "over_cap": {"jd_capped": True}}
+    assert actual == expected
+
+
+def test_fetch_url_to_markdown_labels_a_truncated_page(monkeypatch, decisions):
+    _fake_playwright(monkeypatch)
+    monkeypatch.setattr(
+        jd_fetcher,
+        "extract_markdown",
+        lambda *_: "**Minimum Qualifications:**\n\n**Preferred Qualifications:**\n\n- Python\n",
+    )
+
+    asyncio.run(jd_fetcher.fetch_url_to_markdown("https://example.com/job"))
+
+    assert decisions == {"jd_capped": False, "jd_truncated": True}

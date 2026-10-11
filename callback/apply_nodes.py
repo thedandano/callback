@@ -26,7 +26,7 @@ from pydantic import ValidationError
 from callback import extractor as resume_extractor
 from callback import paths, scorer
 from callback.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError, fetch_url_to_markdown
-from callback.observability import trace_node
+from callback.observability import record_decision, trace_node
 from callback.render import render_resume
 from callback.repository import stories
 from callback.repository.resumes import ResumeNotFoundError, get_resume
@@ -144,6 +144,7 @@ def jd_fetch(state: ApplyState) -> dict:
 
             if state.jd_raw_text:
                 _log_jd_fetch(logging.WARNING, "fallback_used", **error_fields)
+                record_decision("jd_source", "pasted_after_fetch_failed")
                 return {"jd_text": state.jd_raw_text}
 
             _log_jd_fetch(logging.ERROR, "fetch_error", **error_fields)
@@ -163,9 +164,17 @@ def jd_fetch(state: ApplyState) -> dict:
             raise JDFetchError(reason="empty_result", url=state.jd_url)
 
         _log_jd_fetch(logging.INFO, "fetch_ok", **log_fields)
+        record_decision("jd_source", "fetched")
         return {"jd_text": markdown}
 
     if state.jd_raw_text:
+        _log_jd_fetch(
+            logging.INFO,
+            "raw_text_used",
+            session_id=state.session_id,
+            chars=len(state.jd_raw_text),
+        )
+        record_decision("jd_source", "pasted")
         return {"jd_text": state.jd_raw_text}
 
     _log_jd_fetch(logging.ERROR, "no_input", session_id=state.session_id)
