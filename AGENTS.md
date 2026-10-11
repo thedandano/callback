@@ -165,14 +165,46 @@ host's config file. Use `callback config langsmith` or `callback config env
 ...` to write it, and `callback config status` to inspect it (read-only; also
 warns about a legacy `callback` entry left in `~/.claude.json` or
 `~/.codex/config.toml` by an old `setup-mcp` install — run `callback
-uninstall` to remove it). Restart the MCP host after config changes. Tracing
-is opt-in; trace metadata must stay safe and compact:
-`session_id`, `tool_name`, `resume_label`, `graph_name`, and `transport` only.
-Do not include resume text, JD body text, wiki page content, API keys, or edits
-in trace metadata.
-LangSmith decorator spans may additionally include safe booleans/counts and
-state/update key names, but never raw values or file paths. Use
-`callback trace-check` to verify import/auth/project reachability before a demo.
+uninstall` to remove it). Restart the MCP host after config changes.
+
+Tracing is opt-in. What a trace contains depends on the span type:
+
+- **Tool spans** (`trace_tool`) send these arguments when present: `session_id`,
+  `jd_url`, `jd_raw_text`, `jd_json`, `edits`, `page_ids`, `no_coverage`,
+  `resume_label`, `output_dir`. Other arguments (resume and file paths passed to
+  the profile tools, story intake, host tags) are not sent. The tool's reply is
+  sent whole, with two cuts:
+  - `email` and `phone` fields become placeholders anywhere, and email- and
+    phone-shaped text is masked inside any string. Name, location, address and
+    links become placeholders only inside a structured contact block; a name
+    written inside free text or a wiki page is not caught.
+  - Stored profile content (`compiled_profile`, `sections`, `intake`, skill
+    lists, `primary_skill`, `story_id`) becomes counts and key names. Pages
+    returned by `get_wiki_pages` are the exception: they are sent as text.
+- **Node spans** (`trace_node`) send lengths, key names, booleans, the two
+  page-count numbers, and identifiers (`session_id`, graph and node names,
+  status, error stage and code, exception class name). Never content.
+- **Decision labels** (`record_decision`) say which path the code took, as span
+  metadata, for example `jd_source=pasted`. Labels are booleans or lowercase
+  `[a-z0-9_]` tokens, never content. A label set inside a node appears on that
+  node's span. A label set in a tool body appears on the tool span and on every
+  node span created after it.
+
+API keys never go into a trace. Do not widen what node spans send.
+
+| Label | Values | Meaning |
+|---|---|---|
+| `jd_source` | `fetched`, `pasted`, `pasted_after_fetch_failed` | Where the job text came from |
+| `jd_extraction` | `clean`, `body_text` | Clean extraction, or whole-page text because the extraction was too short |
+| `jd_capped` | true/false | Job text was cut at the 16,000-character cap |
+| `jd_truncated` | true/false | Headings with no text under them: the page looks cut off |
+| `initial_score_source` | `resume_file`, `sections_text`, `none` | Which text the first score was computed from |
+| `experience_years` | `computed`, `partial`, `unavailable` | Whether every job entry's dates could be read |
+| `experience_evaluated` | true/false | False means the total was renormalized without ExperienceFit |
+| `resume_pick` | `only_one`, `first_of_many` | Several resumes registered: the first was used |
+| `tailor_attempt` | `first`, `retry_after_error` | Whether this `submit_tailor` call is a retry |
+
+Use `callback trace-check` to verify import/auth/project reachability before a demo.
 MCP graph invokes suppress native LangChain/LangGraph auto-tracing because
 callback pauses graphs at host handoff points; rely on sanitized `callback.*`
 tool/node spans for LangSmith demos.

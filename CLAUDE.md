@@ -131,11 +131,35 @@ a legacy `callback` entry is still sitting in `~/.claude.json` or
 `~/.codex/config.toml` from an old `setup-mcp` install — run `callback
 uninstall` to remove it). Restart the MCP host after config changes, since it
 only reloads env vars at startup.
-Tracing metadata must stay safe: `session_id`, `tool_name`, `resume_label`,
-`graph_name`, and `transport` only. Never include resume text, JD body text,
-wiki content, API keys, or proposed edits in trace metadata.
-LangSmith decorator spans may also include safe booleans/counts and state/update
-key names. Use `callback trace-check` to verify import/auth/project reachability
+
+Tracing is opt-in. What a trace contains depends on the span type:
+
+- **Tool spans** (`trace_tool`) send these arguments when present: `session_id`,
+  `jd_url`, `jd_raw_text`, `jd_json`, `edits`, `page_ids`, `no_coverage`,
+  `resume_label`, `output_dir`. Other arguments (resume and file paths passed to
+  the profile tools, story intake, host tags) are not sent. The tool's reply is
+  sent whole, with two cuts:
+  - `email` and `phone` fields become placeholders anywhere, and email- and
+    phone-shaped text is masked inside any string. Name, location, address and
+    links become placeholders only inside a structured contact block; a name
+    written inside free text or a wiki page is not caught.
+  - Stored profile content (`compiled_profile`, `sections`, `intake`, skill
+    lists, `primary_skill`, `story_id`) becomes counts and key names. Pages
+    returned by `get_wiki_pages` are the exception: they are sent as text.
+- **Node spans** (`trace_node`) send lengths, key names, booleans, the two
+  page-count numbers, and identifiers (`session_id`, graph and node names,
+  status, error stage and code, exception class name). Never content.
+- **Decision labels** (`record_decision`) say which path the code took, as span
+  metadata, for example `jd_source=pasted`. Labels are booleans or lowercase
+  `[a-z0-9_]` tokens, never content. A label set inside a node appears on that
+  node's span. A label set in a tool body appears on the tool span and on every
+  node span created after it.
+
+API keys never go into a trace. Do not widen what node spans send.
+
+The list of decision labels is in `AGENTS.md`, in the same section.
+
+Use `callback trace-check` to verify import/auth/project reachability
 before a demo.
 MCP graph invokes suppress native LangChain/LangGraph auto-tracing because
 callback pauses graphs at host handoff points; rely on sanitized `callback.*`

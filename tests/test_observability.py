@@ -1144,3 +1144,23 @@ def test_record_decision_rejects_anything_that_is_not_a_token(decisions, caplog,
     }
     expected = {"decisions": {}, "levels": ["WARNING"], "value_echoed": False}
     assert actual == expected
+
+
+def test_sanitize_tool_output_sends_wiki_pages_as_text():
+    """get_wiki_pages replies pass through: page content is not cut to counts."""
+    from callback.observability import _sanitize_tool_output
+
+    envelope = {
+        "session_id": "s1",
+        "status": "ok",
+        "data": {"pages": {"experience/story-001.md": "# Cut p95 latency\n\nRebuilt the cache."}},
+    }
+
+    actual = _sanitize_tool_output(envelope)
+
+    expected = {
+        "session_id": "s1",
+        "status": "ok",
+        "data": {"pages": {"experience/story-001.md": "# Cut p95 latency\n\nRebuilt the cache."}},
+    }
+    assert actual == expected

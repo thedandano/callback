@@ -363,15 +363,16 @@ def _sanitize_tool_output(output: Any) -> dict[str, Any]:
     if envelope is None:
         return {"output_type": type(output).__name__}
 
-    # Contact PII is stripped from the envelope. Profile/resume business content
-    # (compiled_profile, sections, intake) is summarized to counts and key names —
-    # story narratives, section text, and resume text never leave the span.
+    # Contact PII is stripped from the envelope. Stored profile content
+    # (compiled_profile, sections, intake, skill fields) is summarized to counts
+    # and key names. Everything else passes through as is, including JD text,
+    # score gaps, and the page text returned by get_wiki_pages.
     return _summarize_profile_content(_redact_pii(dict(envelope)))
 
 
-# Span-summarization contract for LangGraph node traces (CLAUDE.md: "safe
-# booleans/counts and state/update key names" — never resume text, JD text,
-# wiki content, story narratives, or skill names).
+# Span-summarization contract for LangGraph node traces (see the tracing section
+# of AGENTS.md): lengths, key names, booleans, counts and identifiers only -
+# never resume text, JD text, wiki content, story narratives, or skill names.
 _SPAN_MAPPING_EXEMPT_KEYS: frozenset[str] = frozenset(
     {"session_id", "graph_name", "node_name", "transport", "status"}
 )
