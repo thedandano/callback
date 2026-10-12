@@ -433,7 +433,7 @@ class TestDecisionLabels:
 
         actual = {"initial": after_initial, "final": decisions}
         expected = {
-            "initial": {"experience_evaluated": False},
+            "initial": {"experience_evaluated": False, "no_section_headers": True},
             "final": {"experience_evaluated": False},
         }
         assert actual == expected
@@ -450,4 +450,12 @@ class TestDecisionLabels:
             )
         )
 
-        assert decisions == {"experience_evaluated": True}
+        assert decisions == {"experience_evaluated": True, "no_section_headers": True}
+
+    def test_score_initial_labels_a_resume_with_section_headers(self, decisions):
+        keywords = {"required": ["Python"], "preferred": [], "required_years": 0}
+        resume = "Experience\nPython engineer\n\nEducation\nBS\n\nSkills\nPython\n"
+
+        score_initial(ApplyState(session_id="s", parsed_initial=resume, keywords=keywords))
+
+        assert decisions == {"experience_evaluated": False, "no_section_headers": False}

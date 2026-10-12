@@ -295,6 +295,7 @@ def score_initial(state: ApplyState) -> dict:
         candidate_years=state.candidate_years,
     )
     record_decision("experience_evaluated", score["experience_evaluated"])
+    record_decision("no_section_headers", score["ats_input_suspect"])
     return {"score_initial": score}
 
 
