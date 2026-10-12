@@ -126,7 +126,7 @@ wheels = [
 
 [[package]]
 name = "callback"
-version = "1.6.1"
+version = "1.8.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
