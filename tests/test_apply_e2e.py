@@ -379,6 +379,7 @@ class TestRequiredAnyOrGroups:
             "preferred_missing_any": [],
             "required_coverage": pytest.approx(66.7),
             "preferred_coverage": None,
+            "ats_input_suspect": False,
         }
         assert actual == expected
 
@@ -419,5 +420,57 @@ class TestPreferredAnyOrGroups:
             "preferred_missing_any": [["Datadog", "Grafana"]],
             "required_coverage": 100.0,
             "preferred_coverage": 50.0,
+            "ats_input_suspect": False,
+        }
+        assert actual == expected
+
+
+class TestAtsInputSuspectHandoff:
+    """The real pre-tailoring handoff must expose malformed resume input."""
+
+    @pytest.mark.parametrize(
+        ("resume_text", "expected_suspect"),
+        [
+            ("Jane Doe\nSenior Software Engineer\nBuilt Python microservices on AWS.\n", True),
+            (SAMPLE_RESUME, False),
+        ],
+        ids=["headerless", "recognized-headers"],
+    )
+    def test_submit_keywords_surfaces_suspect_flag(
+        self, tmp_path, monkeypatch, resume_text, expected_suspect
+    ):
+        from callback.apply_graph import get_apply_graph, make_config
+        from callback.repository.resumes import save_resume
+        from callback.server import load_jd, submit_keywords
+
+        monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+
+        resume_file = tmp_path / "resume.txt"
+        resume_file.write_text(resume_text)
+        save_resume("resume", str(resume_file))
+
+        loaded = load_jd(jd_raw_text=SAMPLE_JD)
+        session_id = loaded["session_id"]
+
+        result = submit_keywords(session_id=session_id, jd_json=json.dumps(KEYWORDS))
+
+        # This warning is available before any tailoring or final score exists.
+        snapshot = get_apply_graph().get_state(make_config(session_id))
+        actual = {
+            "load_status": loaded["status"],
+            "status": result["status"],
+            "handoff_suspect": result["data"]["score_gap"]["ats_input_suspect"],
+            "next": snapshot.next,
+            "state_suspect": snapshot.values["score_initial"]["ats_input_suspect"],
+            "has_final_score": bool(snapshot.values.get("score_final")),
+        }
+        expected = {
+            "load_status": "ok",
+            "status": "ok",
+            "handoff_suspect": expected_suspect,
+            "next": ("tailor",),
+            "state_suspect": expected_suspect,
+            "has_final_score": False,
         }
         assert actual == expected

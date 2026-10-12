@@ -450,6 +450,7 @@ def test_submit_keywords_stores_jddata_and_routes_missing_wiki_to_onboarding():
                 "preferred_missing_any": result["data"]["score_gap"]["preferred_missing_any"],
                 "required_coverage": result["data"]["score_gap"]["required_coverage"],
                 "preferred_coverage": result["data"]["score_gap"]["preferred_coverage"],
+                "ats_input_suspect": True,
             },
             "ats_format_gap": _missing_ats_format_gap(),
             "orphaned_required": result["data"]["orphaned_required"],
@@ -2179,4 +2180,34 @@ def test_rank_project_candidates_skips_an_undecodable_page(tmp_path, monkeypatch
         "warned": any("story-001.md" in r.message for r in caplog.records),
     }
     expected = {"names": ["Good"], "warned": True}
+    assert actual == expected
+
+
+@pytest.mark.parametrize(
+    ("score", "expected_suspect"),
+    [
+        ({"total": 42.0, "ats_input_suspect": True}, True),
+        ({"total": 42.0, "ats_input_suspect": False}, False),
+        ({"total": 42.0}, False),
+    ],
+    ids=["suspect", "normal", "legacy-score"],
+)
+def test_submit_keywords_propagates_ats_input_suspect(score, expected_suspect):
+    from callback.server import submit_keywords
+
+    state = {"keywords": EXPECTED_PARTIAL_KEYWORDS, "score_initial": score}
+    original_score = score.copy()
+    with (
+        patch("callback.server.get_apply_graph"),
+        patch("callback.server._submit_keywords_state_error", return_value=None),
+        patch("callback.server._submit_keywords_invoke", return_value=(state, None)),
+    ):
+        result = submit_keywords(session_id="session-123", jd_json=PARTIAL_JD_JSON)
+
+    actual = {
+        "status": result["status"],
+        "ats_input_suspect": result["data"]["score_gap"]["ats_input_suspect"],
+        "score_unchanged": score == original_score,
+    }
+    expected = {"status": "ok", "ats_input_suspect": expected_suspect, "score_unchanged": True}
     assert actual == expected

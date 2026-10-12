@@ -1003,6 +1003,7 @@ def _submit_keywords_impl(session_id: str, jd_json: str) -> dict:
             "preferred_missing_any": score.get("pref_group_unmatched", []),
             "required_coverage": score.get("required_coverage"),
             "preferred_coverage": score.get("preferred_coverage"),
+            "ats_input_suspect": score.get("ats_input_suspect", False),
         }
         data["ats_format_gap"] = score.get("ats_diagnostics", [])
         orphaned_required = _detect_orphaned_required(
