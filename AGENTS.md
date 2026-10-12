@@ -209,6 +209,7 @@ API keys never go into a trace. Do not widen what node spans send.
 | `initial_score_source` | `resume_file`, `sections_text`, `none` | Which text the first score was computed from |
 | `experience_years` | `computed`, `partial`, `unavailable` | Whether every job entry gave a usable date range |
 | `experience_evaluated` | true/false | False means the total was renormalized without ExperienceFit |
+| `no_section_headers` | true/false | The resume scored first has no recognized section header: the input may not be a resume |
 | `resume_pick` | `only_one`, `first_of_many` | Several resumes registered: the first was used |
 | `tailor_attempt` | `first`, `retry_after_error` | `retry_after_error` means the session's last attempt ended in a pipeline error |
 
