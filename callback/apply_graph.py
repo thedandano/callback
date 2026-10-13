@@ -9,15 +9,13 @@ Finish point: finalize
 Interrupts after jd_fetch and keywords_accept so the host can extract and
 submit JDData before later milestones parse and score resumes.
 
-State is persisted in SQLite checkpointer at the path returned by
-callback.paths.apply_db_path().
+State is persisted in a SQLite checkpointer at paths.apply_db_path() (the per-user temp
+folder); sessions idle more than 24 h are pruned when the DB is opened.
 """
 
 import functools
-import sqlite3
 from pathlib import Path
 
-from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, StateGraph
 
 # langgraph re-exports langchain_core's RunnableConfig but leaves it out of __all__.
@@ -37,6 +35,7 @@ from callback.apply_nodes import (
     tailor,
 )
 from callback.observability import build_graph_config
+from callback.session_store import open_checkpointer
 from callback.state import ApplyState
 
 JD_FETCH_NODE = "jd_fetch"
@@ -100,18 +99,7 @@ def build_apply_graph(db_path: Path | None = None):
         Compiled LangGraph StateGraph for ApplyState. The graph interrupts after
         jd_fetch and keywords_accept for host-owned keyword extraction.
     """
-    if db_path is None:
-        # One-time migration: earlier callback versions kept this checkpoint DB
-        # under data_dir() (XDG_DATA_HOME); it belongs under state_dir()
-        # (XDG_STATE_HOME). Only for the default path — an explicit db_path is
-        # the caller's own database, never something to migrate out from under it.
-        paths.move_legacy_file(paths.data_dir() / "apply-sessions.db", paths.apply_db_path())
-        db_path = paths.apply_db_path()
-    # Initialize checkpointer with SQLite backend
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path), check_same_thread=False)
-    checkpointer = SqliteSaver(conn)
-    checkpointer.setup()
+    checkpointer = open_checkpointer(db_path or paths.apply_db_path())
 
     # Build state graph with ApplyState schema
     builder = StateGraph(ApplyState)
