@@ -1,11 +1,14 @@
 """Tests for real parse_initial and score_initial node implementations."""
 
 import json
+from datetime import date
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 
+from callback import apply_nodes
 from callback.apply_nodes import (
     _candidate_experience_years,
     finalize,
@@ -83,6 +86,7 @@ def test_score_initial_succeeds_with_only_preferred_keywords(tmp_path):
 
 def test_render_produces_pdf_from_tailored_resume(tmp_path, monkeypatch):
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
+    monkeypatch.setattr("callback.apply_nodes._today", lambda: date(2026, 10, 12))
     state = ApplyState(
         session_id="s1",
         tailored=TailoredResume(name="Jane Doe", summary="Experienced engineer"),
@@ -90,13 +94,14 @@ def test_render_produces_pdf_from_tailored_resume(tmp_path, monkeypatch):
     result = render(state)
     assert "pdf_path" in result
     assert "error" not in result
-    pdf_file = tmp_path / "Jane_Doe_Company_Resume.pdf"
+    pdf_file = tmp_path / "2026-10-12" / "job" / "Jane_Doe_Company_Resume.pdf"
     assert pdf_file.exists()
     assert pdf_file.read_bytes()[:4] == b"%PDF"
 
 
 def test_render_names_pdf_from_candidate_and_company(tmp_path, monkeypatch):
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
+    monkeypatch.setattr("callback.apply_nodes._today", lambda: date(2026, 10, 12))
     calls: list[str] = []
 
     def fake_render_resume(_tailored: dict, output_path: str) -> dict:
@@ -111,15 +116,22 @@ def test_render_names_pdf_from_candidate_and_company(tmp_path, monkeypatch):
         tailored=TailoredResume(name="Jane Doe", summary="Experienced engineer"),
     )
 
-    expected_path = str(tmp_path / "Jane_Doe_Brain_Corp_Robotics_Resume.pdf")
+    folder = tmp_path / "2026-10-12" / "brain-corp-robotics"
+    expected_path = str(folder / "Jane_Doe_Brain_Corp_Robotics_Resume.pdf")
     result = render(state)
 
     assert calls == [expected_path]
-    assert result == {"pdf_path": expected_path, "render_page_count": 1, "render_warnings": []}
+    assert result == {
+        "pdf_path": expected_path,
+        "render_page_count": 1,
+        "render_warnings": [],
+        "artifact_dir": str(folder),
+    }
 
 
 def test_render_proper_cases_uppercase_name_and_company(tmp_path, monkeypatch):
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
+    monkeypatch.setattr("callback.apply_nodes._today", lambda: date(2026, 10, 12))
 
     def fake_render_resume(_tailored: dict, output_path: str) -> dict:
         Path(output_path).write_bytes(b"%PDF fake")
@@ -132,10 +144,16 @@ def test_render_proper_cases_uppercase_name_and_company(tmp_path, monkeypatch):
         tailored=TailoredResume(name="JANE DOE", summary="Engineer"),
     )
 
-    expected_path = str(tmp_path / "Jane_Doe_Google_Resume.pdf")
+    folder = tmp_path / "2026-10-12" / "google"
+    expected_path = str(folder / "Jane_Doe_Google_Resume.pdf")
     result = render(state)
 
-    assert result == {"pdf_path": expected_path, "render_page_count": 1, "render_warnings": []}
+    assert result == {
+        "pdf_path": expected_path,
+        "render_page_count": 1,
+        "render_warnings": [],
+        "artifact_dir": str(folder),
+    }
 
 
 def test_render_redirects_to_output_dir(tmp_path, monkeypatch):
@@ -158,7 +176,12 @@ def test_render_redirects_to_output_dir(tmp_path, monkeypatch):
     expected_path = str(output_dir / "Jane_Doe_Acme_Corp_Resume.pdf")
     result = render(state)
 
-    assert result == {"pdf_path": expected_path, "render_page_count": 1, "render_warnings": []}
+    assert result == {
+        "pdf_path": expected_path,
+        "render_page_count": 1,
+        "render_warnings": [],
+        "artifact_dir": str(output_dir),
+    }
     assert Path(expected_path).exists()
     assert not apps_dir.exists()
 
@@ -231,16 +254,18 @@ def test_finalize_returns_error_when_apps_dir_unwritable(tmp_path, monkeypatch):
     blocker.write_text("not a directory", encoding="utf-8")
     unwritable_apps_dir = blocker / "apps"
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(unwritable_apps_dir))
+    monkeypatch.setattr("callback.apply_nodes._today", lambda: date(2026, 10, 12))
+    unwritable_folder = unwritable_apps_dir / "2026-10-12" / "job"
 
     try:
-        unwritable_apps_dir.mkdir(parents=True, exist_ok=True)
+        unwritable_folder.mkdir(parents=True, exist_ok=True)
         raise AssertionError("expected mkdir under a regular file to raise OSError")
     except OSError as exc:
         expected_reason = exc
 
     state = ApplyState(session_id="s3")
     actual = finalize(state)
-    expected_message = f"finalize: cannot create apps dir {unwritable_apps_dir}: {expected_reason}"
+    expected_message = f"finalize: cannot create apps dir {unwritable_folder}: {expected_reason}"
     expected = {"error": expected_message}
     assert actual == expected
 
@@ -459,3 +484,45 @@ class TestDecisionLabels:
         score_initial(ApplyState(session_id="s", parsed_initial=resume, keywords=keywords))
 
         assert decisions == {"experience_evaluated": False, "no_section_headers": False}
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected_suffix"),
+    [
+        ({}, "apps/2026-10-12/expertvoice-frontend-ai-engineer"),
+        ({"output_dir": "OUT"}, "OUT"),
+        ({"output_dir": "OUT", "artifact_dir": "STORED"}, "STORED"),
+    ],
+)
+def test_artifact_dir_prefers_stored_then_output_dir_then_dated_default(
+    fields, expected_suffix, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "apps"))
+    monkeypatch.setattr(apply_nodes, "_today", lambda: date(2026, 10, 12))
+    absolute: dict[str, Any] = {k: str(tmp_path / v) for k, v in fields.items()}
+    state = ApplyState(
+        session_id="s1",
+        keywords={"company": "ExpertVoice", "title": "Frontend AI Engineer"},
+        **absolute,
+    )
+    assert apply_nodes._artifact_dir(state) == tmp_path / expected_suffix
+
+
+def test_render_stores_the_folder_it_used(tmp_path, monkeypatch):
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
+    monkeypatch.setattr(apply_nodes, "_today", lambda: date(2026, 10, 12))
+    monkeypatch.setattr(
+        apply_nodes, "render_resume", lambda data, path: {"success": True, "page_count": 1}
+    )
+    state = ApplyState(
+        session_id="s1",
+        keywords={"company": "Acme", "title": "Engineer"},
+        tailored=TailoredResume(name="Jane Doe"),
+    )
+    folder = tmp_path / "2026-10-12" / "acme-engineer"
+    assert apply_nodes.render(state) == {
+        "pdf_path": str(folder / "Jane_Doe_Acme_Resume.pdf"),
+        "render_page_count": 1,
+        "render_warnings": [],
+        "artifact_dir": str(folder),
+    }

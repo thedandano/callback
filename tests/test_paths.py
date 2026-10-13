@@ -506,3 +506,15 @@ def test_write_text_atomic_cleans_up_temp_file_on_rename_failure(tmp_path: Path,
     actual = {"raised": raised, "entries": sorted(p.name for p in tmp_path.iterdir())}
     expected = {"raised": "rename refused", "entries": []}
     assert actual == expected
+
+
+@pytest.mark.parametrize(
+    ("parts", "expected"),
+    [
+        (("ExpertVoice", "Frontend AI Engineer"), "expertvoice-frontend-ai-engineer"),
+        (("AT&T", "Sr. Engineer, Platform"), "at-t-sr-engineer-platform"),
+        ((None, None), "job"),
+    ],
+)
+def test_slug_matches_the_skill_folder_names(parts, expected):
+    assert paths.slug(*parts) == expected

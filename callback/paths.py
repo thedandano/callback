@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import tempfile
 import time
@@ -269,3 +270,9 @@ def config_dir() -> Path:
 
 def env_file() -> Path:
     return config_dir() / "env.json"
+
+
+def slug(*parts: str | None) -> str:
+    """Folder-safe name: lowercase words joined by hyphens, e.g. 'acme-senior-engineer'."""
+    joined = " ".join(p for p in parts if p)
+    return re.sub(r"[^a-z0-9]+", "-", joined.lower()).strip("-") or "job"

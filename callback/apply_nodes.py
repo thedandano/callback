@@ -17,7 +17,7 @@ import asyncio
 import json
 import logging
 import re
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from time import perf_counter
 
@@ -510,9 +510,24 @@ def _resolve_tailored_text(state: ApplyState) -> str:
     return ""
 
 
+def _today() -> date:
+    return date.today()  # local date, matching the skills' <YYYY-MM-DD> folders
+
+
 def _artifact_dir(state: ApplyState) -> Path:
-    """Where the PDF and JSON archive both go: output_dir if set, else the default apps dir."""
-    return Path(state.output_dir) if state.output_dir else paths.apps_dir()
+    """Folder for this run's PDF: the one render already chose, else the caller's
+    output_dir, else apps_dir/<local date>/<company-role-slug>/.
+
+    render stores its choice in state.artifact_dir, so a retry that crosses midnight
+    keeps using the same folder.
+    """
+    if state.artifact_dir:
+        return Path(state.artifact_dir)
+    if state.output_dir:
+        return Path(state.output_dir)
+    keywords = state.keywords or {}
+    folder = paths.slug(keywords.get("company"), keywords.get("title"))
+    return paths.apps_dir() / _today().isoformat() / folder
 
 
 @trace_node("apply", "render")
@@ -539,6 +554,7 @@ def render(state: ApplyState) -> dict:
             "pdf_path": output_path,
             "render_page_count": result.get("page_count"),
             "render_warnings": result.get("warnings") or [],
+            "artifact_dir": str(base_dir),
         }
     else:
         logger.error(
@@ -754,4 +770,4 @@ def finalize(state: ApplyState) -> dict:
         )
         return {"error": f"finalize: cannot write archive: {exc}"}
 
-    return {"finalized_at": finalized_at}
+    return {"finalized_at": finalized_at, "artifact_dir": str(artifact_dir)}

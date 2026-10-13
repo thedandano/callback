@@ -875,12 +875,10 @@ def _complete_workflow() -> dict:
 def _submit_tailor_artifacts(final: dict, session_id: str) -> dict:
     """Resolve this run's artifact paths from final graph state.
 
-    archive_path mirrors apply_nodes._artifact_dir: output_dir from state when the
-    caller set one (same directory finalize actually wrote the archive into), else
-    the default apps dir.
+    archive_path sits in the folder render chose (state.artifact_dir). The fallback
+    covers runs where render never succeeded.
     """
-    output_dir = final.get("output_dir")
-    artifact_dir = Path(output_dir) if output_dir else paths.apps_dir()
+    artifact_dir = Path(final.get("artifact_dir") or final.get("output_dir") or paths.apps_dir())
     archive_path = str(artifact_dir / f"{session_id}.json")
     return {
         "pdf_path": final.get("pdf_path"),
@@ -1059,7 +1057,7 @@ def submit_tailor(
       category: str (optional, for categorized skills)
 
     output_dir (optional): an absolute directory to write the final PDF and JSON archive into
-    instead of the default applications dir. Recommended for sandboxed hosts (Claude/Codex)
+    instead of callback's default dated folder. Recommended for sandboxed hosts (Claude/Codex)
     whose filesystem cannot reach callback's default output. Both artifacts are written there
     directly (a redirect, not a copy); data.pdf_path and data.archive_path point inside it. An
     unwritable path returns an invalid_output_dir error rather than silently falling back.

@@ -883,7 +883,7 @@ def test_submit_tailor_rejects_relative_output_dir(tmp_path, monkeypatch):
 
 
 def test_submit_tailor_without_output_dir_writes_to_apps_dir(tmp_path, monkeypatch):
-    """Default (no output_dir): PDF lands in apps_dir, unchanged from prior behavior."""
+    """Default (no output_dir): PDF lands in apps_dir/<date>/<slug>/."""
     from callback.server import submit_tailor
 
     resume_label = "default_dir_resume"
@@ -900,10 +900,10 @@ def test_submit_tailor_without_output_dir_writes_to_apps_dir(tmp_path, monkeypat
     pdf_path = Path(result["data"]["pdf_path"])
     actual = {
         "status": result["status"],
-        "pdf_in_apps_dir": pdf_path.parent == apps_dir,
+        "pdf_in_dated_folder": pdf_path.parent.parent.parent == apps_dir,
         "pdf_exists": pdf_path.exists(),
     }
-    assert actual == {"status": "ok", "pdf_in_apps_dir": True, "pdf_exists": True}
+    assert actual == {"status": "ok", "pdf_in_dated_folder": True, "pdf_exists": True}
 
 
 def test_submit_tailor_rejects_unwritable_output_dir(tmp_path, monkeypatch):
