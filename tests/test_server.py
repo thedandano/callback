@@ -1,7 +1,6 @@
 """Tests for callback.server MCP tool registration and routing."""
 
 import json
-import logging
 import sqlite3
 import uuid
 from pathlib import Path
@@ -12,7 +11,6 @@ import pytest
 from fastmcp import Client
 from fastmcp.client.transports import FastMCPTransport
 
-from callback import server
 from callback.jd_data import EXTRACTION_PROTOCOL
 
 PARTIAL_JD_JSON = """
@@ -375,6 +373,10 @@ def test_configure_logging_writes_server_log(tmp_path):
 
 
 def test_configure_logging_rotates_a_large_log_at_startup(tmp_path, monkeypatch):
+    import logging
+
+    from callback import server
+
     log_path = tmp_path / "server.log"
     log_path.write_text("x" * 20, encoding="utf-8")
     monkeypatch.setattr(server, "_LOG_ROTATE_BYTES", 10)
