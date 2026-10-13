@@ -78,7 +78,19 @@ except ValueError as exc:
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 _LOG_FORMAT = "%(message)s"  # messages are already JSON strings
+_LOG_ROTATE_BYTES = 10 * 1024 * 1024  # 10 MB; one previous log is kept as server.log.1
 _LOG_PATH: Path | None = None
+
+
+def _rotate_if_large(path: Path) -> None:
+    """Move an oversized log aside before opening it.
+
+    ponytail: rotates only at startup, not mid-run, because several `callback serve`
+    processes can share one log and RotatingFileHandler breaks when they do. A process
+    that runs for weeks can still grow its log; switch to a per-process log if that happens.
+    """
+    if path.exists() and path.stat().st_size > _LOG_ROTATE_BYTES:
+        path.replace(path.with_name(f"{path.name}.1"))
 
 
 def configure_logging(log_path: str | Path | None = None) -> None:
@@ -102,6 +114,7 @@ def configure_logging(log_path: str | Path | None = None) -> None:
 
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
+        _rotate_if_large(path)
         handler = logging.FileHandler(path, encoding="utf-8")
     except OSError as exc:
         _LOG_PATH = None

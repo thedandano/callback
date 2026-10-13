@@ -1,6 +1,7 @@
 """Tests for callback.server MCP tool registration and routing."""
 
 import json
+import logging
 import sqlite3
 import uuid
 from pathlib import Path
@@ -11,6 +12,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.client.transports import FastMCPTransport
 
+from callback import server
 from callback.jd_data import EXTRACTION_PROTOCOL
 
 PARTIAL_JD_JSON = """
@@ -370,6 +372,22 @@ def test_configure_logging_writes_server_log(tmp_path):
     logging.getLogger("callback.server").info("test log line")
 
     assert "test log line" in log_path.read_text(encoding="utf-8")
+
+
+def test_configure_logging_rotates_a_large_log_at_startup(tmp_path, monkeypatch):
+    log_path = tmp_path / "server.log"
+    log_path.write_text("x" * 20, encoding="utf-8")
+    monkeypatch.setattr(server, "_LOG_ROTATE_BYTES", 10)
+    try:
+        server.configure_logging(log_path)
+        actual = ((tmp_path / "server.log.1").read_text(encoding="utf-8"), log_path.exists())
+    finally:
+        root = logging.getLogger()
+        for handler in list(root.handlers):
+            if getattr(handler, "_callback_log_path", None) == str(log_path):
+                root.removeHandler(handler)
+                handler.close()
+    assert actual == ("x" * 20, True)
 
 
 def test_log_writes_one_line_per_event(tmp_path):
