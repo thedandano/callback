@@ -2010,7 +2010,17 @@ def _contact_note(url: str | None, note: str | None) -> str | None:
     contact = (url or "").strip()
     if not contact or ledger.url_or_none(contact):
         return note
-    return " | ".join(part for part in (f"Contact: {contact}", note) if part)
+    method, rest = _split_contact_method(note)
+    return " | ".join(part for part in (method, f"Contact: {contact}", rest) if part)
+
+
+def _split_contact_method(note: str | None) -> tuple[str | None, str | None]:
+    """('Contact method: X', rest) when the note leads with it, so the EDD filter still sees it."""
+    text = (note or "").strip()
+    if not text.casefold().startswith("contact method:"):
+        return None, note
+    method, _, rest = text.partition(" | ")
+    return method, rest or None
 
 
 def _ledger_error(exc: Exception) -> dict:
@@ -2029,9 +2039,11 @@ def find_job(url: str | None = None, company: str | None = None, title: str | No
     url without http:// or https:// (e.g. a recruiter thread) is ignored for the lookup. A job
     seen under a different URL is still found when company and title match, but that is a
     weaker match (the same title can be two real postings): check matched_by ('key',
-    'company_title', or null) before skipping. Returns found, job_key, company, title, and the
-    latest status with its date. To record a status on the job found by company+title, pass its
-    job_key to record_status. Error codes: missing_job_identity, ledger_error.
+    'key_title_mismatch' when the URL matches but the stored title differs, 'company_title', or
+    null) and confirm anything but 'key' before skipping. Returns found, job_key, company,
+    title, and the latest status with its date. To record a status on the job found by
+    company+title, pass its job_key to record_status.
+    Error codes: missing_job_identity, ledger_error.
     """
     url = ledger.url_or_none(url)
     if error := _identity_error(url, company, title):

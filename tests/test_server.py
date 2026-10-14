@@ -2585,3 +2585,26 @@ async def test_export_ledger_contacts_mode_keeps_only_reportable_events(tmp_path
             "2026-10-01,A,Dev,https://a.com/0,Applied,,mcp",
         ],
     )
+
+
+@pytest.mark.parametrize(
+    ("url", "note", "expected"),
+    [
+        (
+            "Gmail thread: Jane",
+            "Contact method: Email | replied",
+            "Contact method: Email | Contact: Gmail thread: Jane | replied",
+        ),
+        (
+            "Gmail thread: Jane",
+            "Contact method: Phone",
+            "Contact method: Phone | Contact: Gmail thread: Jane",
+        ),
+        ("Gmail thread: Jane", "replied", "Contact: Gmail thread: Jane | replied"),
+        ("https://a.com/1", "Contact method: Online", "Contact method: Online"),
+    ],
+)
+def test_contact_note_keeps_the_contact_method_first(url, note, expected):
+    import callback.server as server
+
+    assert server._contact_note(url, note) == expected

@@ -654,7 +654,7 @@ def record_status(conn: sqlite3.Connection, update: StatusUpdate) -> bool:
             conn.execute(
                 "UPDATE jobs SET salary_range = COALESCE(NULLIF(salary_range, ''), ?) "
                 "WHERE job_key = ?",
-                (_optional_text(update.salary_range), key),
+                (clean_salary(update.salary_range) or None, key),
             )
         else:
             key = _upsert_job(
@@ -720,6 +720,7 @@ ORDER BY s.recorded_at DESC, j.job_key
 EVENT_COLUMNS = ["Date", "Company", "Title", "URL", "Status", "Notes", "Source"]
 # An EDD-reportable event: a contact note, or an application or its confirmation.
 _CONTACT_FILTER = """
+  AND NOT ifnull(norm_text(e.note), '') LIKE 'not reportable |%'
   AND (norm_text(e.note) LIKE 'contact method:%'
        OR norm_text(e.status) LIKE 'applied%'
        OR norm_text(e.status) LIKE 'already applied%')
@@ -804,7 +805,8 @@ def export_contacts(
     """export_events limited to EDD-reportable events.
 
     Keeps events whose note starts with 'Contact method:' and events whose status starts with
-    'Applied' or 'Already applied' (Unicode case-insensitive). Same columns and filters.
+    'Applied' or 'Already applied' (Unicode case-insensitive), except notes starting
+    'Not reportable |' (legacy contacts the user marked non-reportable). Same columns and filters.
     """
     return _event_rows(conn, _events_sql(_CONTACT_FILTER), status_prefix, since)
 
@@ -829,6 +831,18 @@ def _find_row(conn: sqlite3.Connection, where: tuple[str, str], params: tuple) -
     return conn.execute(_FIND_SQL.format(where=where[0], order=where[1]), params).fetchone()
 
 
+def _key_match_kind(row: tuple | None, title: str | None) -> str:
+    """'key', or 'key_title_mismatch' when the stored and given titles both exist and differ.
+
+    One careers page can hold several postings behind #anchors that the key drops, so a key
+    match with another title may be a different job: callers confirm it like a name match.
+    """
+    stored = row[_FIND_KEYS.index("title")] if row else None
+    if stored and title and _norm_text(stored) != _norm_text(title):
+        return "key_title_mismatch"
+    return "key"
+
+
 def find_job(
     conn: sqlite3.Connection, *, url: str | None, company: str | None, title: str | None
 ) -> dict:
@@ -836,10 +850,11 @@ def find_job(
 
     Looks up by URL (or company + title when there is no URL) first. A posting seen under a
     different URL is still found when company and title match, ignoring case, Unicode case, and
-    spacing. Includes the latest run's score totals when a run exists.
+    spacing. Includes the latest run's score totals when a run exists. A key match whose stored
+    title differs from `title` reports matched_by='key_title_mismatch'.
     """
     row = _find_row(conn, _BY_KEY, (job_key(url, company, title),))
-    matched_by = "key"
+    matched_by = _key_match_kind(row, title)
     if row is None and company and title:
         row = _find_row(conn, _BY_NAME, (company, title))
         matched_by = "company_title"
