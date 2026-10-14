@@ -51,6 +51,8 @@ If no full source is found, record `Needs source - manual lookup` with attempted
 
 ## Paths
 
+If `.callback/config.json` still has a `record_csv` or `ledger_db` key and that file exists, stop before any dedupe. Tell the user to run `callback ledger import --csv <record_csv> --contacts-db <ledger_db>` once from a normal terminal (leave out the flag for a file they do not have), then remove those keys from `.callback/config.json`. Until then the ledger does not know the jobs they already applied to, and every one of them would look new.
+
 Dedupe every lead with `find_job(url=<URL>, company=<company>, title=<title>)`; skip leads where `data.found` is true, and leads whose title is similar to one in `data.company_jobs`. Do not read or write a record CSV.
 
 ## Output

@@ -25,7 +25,8 @@ Also read the compiled profile (via `get_wiki_pages` or the profile summary) for
 
 ## Workflow
 
-1. Dedupe: call `find_job(url=<job URL>, company=<company>, title=<title>)` (pass `company` and `title` too, so a job seen under another URL is still found). If `data.found` is true, show the user the existing status and stop unless they confirm a re-apply. `matched_by` of `company_title` is a weaker match: confirm before skipping. If not found, check `data.company_jobs` for a similar title at the same company and treat a match as already seen (pass that `job_key` to `record_status`). 
+1. Old records: If `.callback/config.json` still has a `record_csv` or `ledger_db` key and that file exists, stop before any dedupe. Tell the user to run `callback ledger import --csv <record_csv> --contacts-db <ledger_db>` once from a normal terminal (leave out the flag for a file they do not have), then remove those keys from `.callback/config.json`. Until then the ledger does not know the jobs they already applied to, and every one of them would look new.
+   Dedupe: call `find_job(url=<job URL>, company=<company>, title=<title>)` (pass `company` and `title` too, so a job seen under another URL is still found). If `data.found` is true, show the user the existing status and stop unless they confirm a re-apply. `matched_by` of `company_title` is a weaker match: confirm before skipping. If not found, check `data.company_jobs` for a similar title at the same company and treat a match as already seen (pass that `job_key` to `record_status`). 
 2. Validate the source exposes the complete current JD.
 3. Run callback directly:
    - `load_jd`
