@@ -830,7 +830,7 @@ def ledger_import_cmd(
     """Import old run archives, a record CSV, and a contact ledger. Safe to run twice."""
     try:
         _run_ledger_imports(archives or [], record_csv, contacts_db)
-    except (ValueError, sqlite3.Error) as exc:
+    except (ValueError, sqlite3.Error, OSError) as exc:
         typer.echo(f"error: {exc} (the import is safe to re-run)", err=True)
         raise typer.Exit(1) from exc
 

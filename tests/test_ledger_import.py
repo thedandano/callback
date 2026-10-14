@@ -348,3 +348,128 @@ def test_contact_dates_and_urls_are_validated(tmp_path):
         ImportReport(imported=1, skipped=["entry 1", "entry 3"]),
         [("2026-09-02",)],
     )
+
+
+_SCORE_HEADER = (
+    "Company,Title,Recorded Date,URL,Status,Notes,Resume score before tailoring,"
+    "Resume score after tailoring,{resume},Link to cover letter used"
+)
+
+
+@pytest.mark.parametrize("resume_column", ["Link to resume used", "Link resume used"])
+def test_csv_scores_and_links_go_into_the_note(tmp_path, resume_column):
+    path = _csv(
+        tmp_path,
+        "Acme,Eng,2026-10-01,,Applied,hi,62,81,/r/acme.pdf,/r/acme-cl.pdf\n"
+        "Beta,Dev,2026-10-02,,Applied,,,90,,\n",
+        header=_SCORE_HEADER.format(resume=resume_column),
+    )
+
+    result = _import_csv(tmp_path, path)
+
+    assert result == (
+        ImportReport(imported=2, skipped=[]),
+        [("pasted:acme-eng",), ("pasted:beta-dev",)],
+        [
+            (
+                "pasted:acme-eng",
+                "2026-10-01",
+                "hi | Score before: 62 | Score after: 81 | Resume: /r/acme.pdf | "
+                "Cover letter: /r/acme-cl.pdf",
+            ),
+            ("pasted:beta-dev", "2026-10-02", "Score after: 90"),
+        ],
+    )
+
+
+def test_csv_row_with_notes_but_no_status_becomes_a_note_event(tmp_path):
+    path = _csv(
+        tmp_path,
+        "Acme,Eng,2026-10-01,,,called back\nBeta,Dev,,,,no date\nGamma,Dev,2026-10-03,,,\n",
+    )
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        report = import_record_csv(conn, path)
+        events = [
+            tuple(r)
+            for r in conn.execute("SELECT job_key, status, recorded_at, note FROM status_events")
+        ]
+        jobs = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+
+    assert (report, events, jobs) == (
+        ImportReport(imported=1, skipped=["line 3"]),
+        [("pasted:acme-eng", "Note", "2026-10-01", "called back")],
+        3,
+    )
+
+
+def test_csv_iso_dates_with_a_time_part_dedupe_with_plain_dates(tmp_path):
+    path = _csv(tmp_path, "Acme,Eng,2026-06-16T10:00:00,,Applied,\nAcme,Eng,2026-06-16,,Applied,\n")
+
+    result = _import_csv(tmp_path, path)
+
+    assert result == (
+        ImportReport(imported=1, skipped=[]),
+        [("pasted:acme-eng",)],
+        [("pasted:acme-eng", "2026-06-16", None)],
+    )
+
+
+def test_contact_ledger_path_with_a_hash_opens_the_right_file(tmp_path):
+    folder = tmp_path / "a#b"
+    folder.mkdir()
+    src = folder / "c.sqlite3"
+    _contacts_db(src)
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        report = import_contact_ledger(conn, src)
+
+    assert report == ImportReport(imported=2, skipped=["entry 3"])
+
+
+def _write_run(folder, session_id, timestamp, total):
+    folder.mkdir(parents=True, exist_ok=True)
+    data = {
+        "session_id": session_id,
+        "timestamp": timestamp,
+        "jd_url": "https://a.com/1",
+        "scores": {"final": {"total": total}},
+    }
+    (folder / f"{session_id}.json").write_text(json.dumps(data))
+
+
+def test_repeated_session_keeps_the_newest_copy_and_warns(tmp_path, caplog):
+    apps = tmp_path / "apps"
+    _write_run(apps / "a", "s1", "2026-10-01T10:00:00+00:00", 10)
+    _write_run(apps / "b", "s1", "2026-10-12T10:00:00+00:00", 90)
+
+    with caplog.at_level(logging.WARNING), closing(ledger.connect(tmp_path / "l.db")) as conn:
+        report = import_archives(conn, apps)
+        stored = conn.execute("SELECT finalized_at, scores FROM runs").fetchall()
+
+    warnings = [json.loads(r.message) for r in caplog.records]
+    assert (report, [tuple(r) for r in stored], warnings) == (
+        ImportReport(imported=1, skipped=[]),
+        [("2026-10-12T10:00:00+00:00", '{"final": {"total": 90}}')],
+        [
+            {
+                "event": "ledger_import_duplicate_session",
+                "session_id": "s1",
+                "kept": "b/s1.json",
+                "dropped": "a/s1.json",
+            }
+        ],
+    )
+
+
+def test_repeated_session_compares_timestamps_across_utc_offsets(tmp_path):
+    apps = tmp_path / "apps"
+    # 01:00-08:00 is 09:00 UTC: later than 05:00 UTC, though it sorts first as text.
+    _write_run(apps / "a", "s1", "2026-10-12T05:00:00+00:00", 10)
+    _write_run(apps / "b", "s1", "2026-10-12T01:00:00-08:00", 90)
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        import_archives(conn, apps)
+        stored = conn.execute("SELECT finalized_at FROM runs").fetchall()
+
+    assert [tuple(r) for r in stored] == [("2026-10-12T01:00:00-08:00",)]
