@@ -835,3 +835,32 @@ def test_run_import_reuses_a_runless_scan_job_by_name(tmp_path):
         jobs = conn.execute("SELECT count(*) FROM jobs").fetchone()
 
     assert ([tuple(r) for r in runs], tuple(jobs)) == ([(scanned,)], (1,))
+
+
+def test_contact_prefers_the_job_url_over_a_url_contact_detail(tmp_path):
+    src = tmp_path / "old.sqlite3"
+    _contacts_db_with_metadata(src, reportable=1)
+    with closing(sqlite3.connect(src)) as db, db:
+        db.execute(
+            "UPDATE job_search_entries SET contact_detail = 'https://linkedin.com/in/recruiter'"
+        )
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        import_contact_ledger(conn, src)
+        jobs = [tuple(r) for r in conn.execute("SELECT job_key FROM jobs")]
+        notes = [r[0] for r in conn.execute("SELECT note FROM status_events")]
+
+    assert (jobs, ["https://linkedin.com/in/recruiter" in n for n in notes]) == (
+        [("https://acme.com/j/9",)],
+        [True],
+    )
+
+
+def test_archive_with_a_blank_session_id_is_skipped(tmp_path):
+    apps = _archive(tmp_path, "  ", "https://jobs.example.com/a")
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        report = import_archives(conn, apps)
+        counts = _counts(conn)
+
+    assert (report.imported, report.skipped, tuple(counts)) == (0, ["  .json"], (0, 0, 0))

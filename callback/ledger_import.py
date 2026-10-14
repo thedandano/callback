@@ -169,6 +169,9 @@ def _read_archives(archive_dir: Path, report: ImportReport, *, qualify: bool) ->
         if _run_time(run) is None:
             _skip(report, label, "timestamp is not ISO 8601")
             continue
+        if not run.session_id.strip():
+            _skip(report, label, "session_id is blank")
+            continue
         runs.append(_Archive(label, path, run, archive_dir))
     return runs
 
@@ -390,10 +393,13 @@ def _contact_note(row: sqlite3.Row, url: str | None, extras: dict[str, str]) -> 
 
 
 def _contact_url(row: sqlite3.Row, extras: dict[str, str]) -> str | None:
-    """The contact detail when it is a URL, else the first usable metadata URL."""
-    url = _url_or_none(_text(row["contact_detail"]))
+    """The first usable posting URL from metadata, else the contact detail when it is a URL.
+
+    A contact detail can be a recruiter profile or a thread, so an explicit job URL wins; the
+    detail is still kept in the note.
+    """
     candidates = (_url_or_none(extras.get(key)) for key in _URL_KEYS)
-    return url or next((c for c in candidates if c), None)
+    return next((c for c in candidates if c), None) or _url_or_none(_text(row["contact_detail"]))
 
 
 def _import_contact(
