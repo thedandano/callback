@@ -112,7 +112,7 @@ def test_render_names_pdf_from_candidate_and_company(tmp_path, monkeypatch):
     monkeypatch.setattr("callback.apply_nodes.render_resume", fake_render_resume)
     state = ApplyState(
         session_id="legacy-session-id",
-        keywords={"company": "Brain Corp / Robotics"},
+        keywords={"company": "Brain Corp Robotics"},
         tailored=TailoredResume(name="Jane Doe", summary="Experienced engineer"),
     )
 
@@ -270,6 +270,7 @@ def test_finalize_returns_error_when_archive_write_raises_oserror(tmp_path, monk
     import callback.apply_nodes as apply_nodes_module
 
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
+    monkeypatch.setattr("callback.apply_nodes._today", lambda: date(2026, 10, 12))
 
     def raising_open(*args, **kwargs):
         raise OSError("disk full")
@@ -278,7 +279,10 @@ def test_finalize_returns_error_when_archive_write_raises_oserror(tmp_path, monk
 
     state = ApplyState(session_id="s3")
     actual = finalize(state)
-    expected = {"error": "finalize: cannot write archive: disk full"}
+    expected = {
+        "error": "finalize: cannot write archive: disk full",
+        "artifact_dir": str(tmp_path / "2026-10-12" / "job"),
+    }
     assert actual == expected
 
 
@@ -299,8 +303,43 @@ def test_finalize_returns_error_when_apps_dir_unwritable(tmp_path, monkeypatch):
     state = ApplyState(session_id="s3")
     actual = finalize(state)
     expected_message = f"finalize: cannot create apps dir {unwritable_folder}: {expected_reason}"
-    expected = {"error": expected_message}
+    expected = {"error": expected_message, "artifact_dir": str(unwritable_folder)}
     assert actual == expected
+
+
+def test_render_failure_still_pins_the_dated_folder(tmp_path, monkeypatch):
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
+    monkeypatch.setattr("callback.apply_nodes._today", lambda: date(2026, 10, 12))
+    monkeypatch.setattr(
+        "callback.apply_nodes.render_resume",
+        lambda _tailored, _output_path: {"success": False, "error": "chromium crashed"},
+    )
+    state = ApplyState(
+        session_id="s4",
+        keywords={"company": "Acme", "title": "Engineer"},
+        tailored=TailoredResume(name="Jane Doe", summary="Experienced engineer"),
+    )
+
+    actual = render(state)
+
+    assert actual == {
+        "error": "render: chromium crashed",
+        "artifact_dir": str(tmp_path / "2026-10-12" / "acme-engineer"),
+    }
+
+
+def test_render_failure_with_explicit_output_dir_stores_nothing(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "callback.apply_nodes.render_resume",
+        lambda _tailored, _output_path: {"success": False, "error": "chromium crashed"},
+    )
+    state = ApplyState(
+        session_id="s5",
+        output_dir=str(tmp_path / "out"),
+        tailored=TailoredResume(name="Jane Doe", summary="Experienced engineer"),
+    )
+
+    assert render(state) == {"error": "render: chromium crashed"}
 
 
 def test_finalize_writes_archive_to_output_dir(tmp_path, monkeypatch):

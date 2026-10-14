@@ -552,7 +552,10 @@ def render(state: ApplyState) -> dict:
     try:
         base_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        return {"error": f"render: cannot create output dir {base_dir}: {exc}"}
+        return {
+            "error": f"render: cannot create output dir {base_dir}: {exc}",
+            **_dated_dir_update(state, base_dir),
+        }
     company_name = state.keywords.get("company") if state.keywords else None
     output_path = str(base_dir / _resume_pdf_filename(state.tailored.name, company_name))
 
@@ -571,7 +574,10 @@ def render(state: ApplyState) -> dict:
         logger.error(
             json.dumps({"node": "render", "session_id": state.session_id, "error": result["error"]})
         )
-        return {"error": f"render: {result['error']}"}
+        return {
+            "error": f"render: {result['error']}",
+            **_dated_dir_update(state, base_dir),
+        }
 
 
 @trace_node("apply", "parse_final")
@@ -739,7 +745,10 @@ def finalize(state: ApplyState) -> dict:
         logger.error(
             json.dumps({"node": "finalize", "session_id": state.session_id, "error": str(exc)})
         )
-        return {"error": f"finalize: cannot create apps dir {artifact_dir}: {exc}"}
+        return {
+            "error": f"finalize: cannot create apps dir {artifact_dir}: {exc}",
+            **_dated_dir_update(state, artifact_dir),
+        }
 
     # Derive tailored resume text from sections or tailored object
     tailored_text = _resolve_tailored_text(state)
@@ -779,6 +788,9 @@ def finalize(state: ApplyState) -> dict:
         logger.error(
             json.dumps({"node": "finalize", "session_id": state.session_id, "error": str(exc)})
         )
-        return {"error": f"finalize: cannot write archive: {exc}"}
+        return {
+            "error": f"finalize: cannot write archive: {exc}",
+            **_dated_dir_update(state, artifact_dir),
+        }
 
     return {"finalized_at": finalized_at, **_dated_dir_update(state, artifact_dir)}
