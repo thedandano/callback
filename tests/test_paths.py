@@ -229,3 +229,9 @@ def test_slug_bounds_long_names_and_keeps_distinct_ones_distinct():
     actual = (len(first) <= paths.SLUG_MAX_LENGTH, len(second) <= paths.SLUG_MAX_LENGTH)
     assert actual == (True, True)
     assert first != second
+
+
+def test_ledger_lives_in_the_data_dir(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(paths, "ledger_path", paths.__dict__["_ledger_path_impl"])
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    assert paths.ledger_path() == tmp_path / "callback" / "ledger.db"

@@ -43,6 +43,13 @@ def state_dir() -> Path:
     return _xdg_root("XDG_STATE_HOME", Path.home() / ".local" / "state") / "callback"
 
 
+def _ledger_path_impl() -> Path:
+    return data_dir() / "ledger.db"
+
+
+ledger_path = _ledger_path_impl  # tests swap ledger_path; this keeps the real one reachable
+
+
 def inputs_dir() -> Path:
     return data_dir() / "inputs"
 

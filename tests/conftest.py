@@ -31,6 +31,12 @@ def isolate_server_db(tmp_path, monkeypatch):
         sys.modules.pop(mod, None)
 
 
+@pytest.fixture(autouse=True)
+def isolate_ledger(tmp_path, monkeypatch):
+    """Point the global ledger at a throwaway file so no test touches the real one."""
+    monkeypatch.setattr(paths, "ledger_path", lambda: tmp_path / "ledger.db")
+
+
 @pytest.fixture
 def decisions(monkeypatch):
     """Capture record_decision labels.

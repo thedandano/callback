@@ -307,6 +307,7 @@ committed and public, so there is nothing to withhold.
 | `repository/stories.py` | Story pages: read, write, migrate legacy JSON stories to OKF pages |
 | `wikirenderer.py`    | Renders `index.md` |
 | `paths.py`           | Every data directory and the atomic writers |
+| `ledger.py`          | Global application ledger in SQLite (`paths.ledger_path()`): jobs, runs, append-only status events |
 | `observability.py`   | Trace config port and LangSmith adapter |
 | `evals/`             | Eval checks, fixtures, runner; see Evals |
 

@@ -406,6 +406,7 @@ committed and public, so there is nothing to withhold.
 | `wikirenderer.py` | Renders `index.md` |
 | `render/` | HTML + Playwright resume rendering |
 | `paths.py` | Every data directory and the atomic writers |
+| `ledger.py` | Global application ledger in SQLite (`paths.ledger_path()`): jobs, runs, append-only status events |
 | `cli.py` | `callback` CLI entry point |
 | `plugin_install.py` | Plugin installation functions (replaces `HarnessTarget` dataclass) |
 | `observability.py` | Trace config port and LangSmith adapter |
