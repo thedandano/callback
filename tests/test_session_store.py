@@ -108,3 +108,21 @@ def _uuid6_at(moment: datetime) -> str:
     ticks = int((moment - datetime(1582, 10, 15, tzinfo=UTC)).total_seconds() * 10_000_000)
     high = ((ticks >> 12) << 16) | (6 << 12) | (ticks & 0xFFF)
     return str(uuid.UUID(int=(high << 64) | (0x8000 << 48) | 1))
+
+
+def test_open_moves_recent_legacy_threads_and_removes_the_old_db(tmp_path):
+    legacy = tmp_path / "state" / "s.db"
+    old_saver = open_checkpointer(legacy)
+    fresh, stale = empty_checkpoint(), empty_checkpoint()
+    stale["id"] = _uuid6_at(datetime.now(UTC) - timedelta(hours=48))
+    old_saver.put(_cfg("fresh"), fresh, {}, {})
+    old_saver.put(_cfg("stale"), stale, {}, {})
+    old_saver.conn.close()
+
+    saver = open_checkpointer(tmp_path / "new" / "s.db", legacy_path=legacy)
+
+    assert (
+        saver.get_tuple(_cfg("fresh")) is not None,
+        saver.get_tuple(_cfg("stale")) is None,
+        legacy.exists(),
+    ) == (True, True, False)

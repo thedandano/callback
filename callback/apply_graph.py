@@ -99,7 +99,11 @@ def build_apply_graph(db_path: Path | None = None):
         Compiled LangGraph StateGraph for ApplyState. The graph interrupts after
         jd_fetch and keywords_accept for host-owned keyword extraction.
     """
-    checkpointer = open_checkpointer(db_path or paths.apply_db_path())
+    if db_path is None:
+        default = paths.apply_db_path()
+        checkpointer = open_checkpointer(default, legacy_path=paths.state_dir() / default.name)
+    else:
+        checkpointer = open_checkpointer(db_path)
 
     # Build state graph with ApplyState schema
     builder = StateGraph(ApplyState)

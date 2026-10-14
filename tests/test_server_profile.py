@@ -808,3 +808,24 @@ def test_compile_profile_reports_an_unsafe_session_dir_as_an_error(tmp_path, mon
         "retriable": False,
         "mentions_dir": True,
     }
+
+
+@pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX only")
+def test_compile_profile_reports_a_corrupt_session_store_as_an_error(tmp_path, monkeypatch):
+    _isolate_profile(tmp_path, monkeypatch)
+    _save_profile_with_resumes(tmp_path)
+    folder = tmp_path / "sessions"
+    folder.mkdir(mode=0o700)
+    (folder / "profile-sessions.db").write_bytes(b"not a sqlite database" * 100)
+    monkeypatch.setattr(paths, "session_dir", lambda: folder)
+    get_profile_graph.cache_clear()
+    try:
+        result = compile_profile()
+    finally:
+        get_profile_graph.cache_clear()
+
+    assert (result["status"], result["error"]["code"], result["error"]["retriable"]) == (
+        "error",
+        "session_store_error",
+        True,
+    )

@@ -88,7 +88,11 @@ def build_profile_graph(db_path: Path | None = None):
         Compiled LangGraph StateGraph for ProfileState with an interrupt
         after onboard and an interrupt before create_story.
     """
-    checkpointer = open_checkpointer(db_path or paths.profile_db_path())
+    if db_path is None:
+        default = paths.profile_db_path()
+        checkpointer = open_checkpointer(default, legacy_path=paths.state_dir() / default.name)
+    else:
+        checkpointer = open_checkpointer(db_path)
 
     # Build state graph with ProfileState schema
     builder = StateGraph(ProfileState)

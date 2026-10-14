@@ -609,7 +609,7 @@ def _err(
 
 
 def _graph_or_err(factory: Callable[[], Any], session_id: str | None) -> tuple[Any, dict | None]:
-    """Build a graph, or return the error envelope when the session folder is unsafe."""
+    """Build a graph, or return an error envelope when the session store cannot be opened."""
     try:
         return factory(), None
     except PermissionError as exc:
@@ -620,6 +620,16 @@ def _graph_or_err(factory: Callable[[], Any], session_id: str | None) -> tuple[A
             message=str(exc),
             session_id=session_id,
             retriable=False,
+        )
+    except (sqlite3.Error, OSError) as exc:
+        # Locked, corrupt, read-only, or full session store: report it, don't leak a raw error.
+        _log_exception({"event": "session_store_error", "session_id": session_id})
+        return None, _err(
+            stage="session_store",
+            code="session_store_error",
+            message=f"unable to open session store: {exc}",
+            session_id=session_id,
+            retriable=True,
         )
 
 

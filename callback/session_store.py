@@ -103,8 +103,68 @@ def _ensure_private_dir(folder: Path) -> None:
     raise PermissionError(f"refusing unsafe session dir {folder}: {reason}")
 
 
-def open_checkpointer(db_path: Path, now: datetime | None = None) -> SqliteSaver:
+def _migrate_legacy(conn: sqlite3.Connection, legacy_path: Path, now: datetime) -> None:
+    """Move recent threads from a pre-temp-folder DB, then delete the old file.
+
+    Releases before the move kept the DBs in state_dir(). Threads active within
+    SESSION_MAX_AGE are copied so a session paused across the upgrade still resumes;
+    older ones are dropped with the file.
+    """
+    if not legacy_path.is_file():
+        return
+    try:
+        conn.execute("ATTACH DATABASE ? AS legacy", (str(legacy_path),))
+        try:
+            tables = {
+                r[0]
+                for r in conn.execute("SELECT name FROM legacy.sqlite_master WHERE type='table'")
+            }
+            moved: list[str] = []
+            if "checkpoints" in tables:
+                rows = conn.execute(
+                    "SELECT thread_id, MAX(checkpoint_id) FROM legacy.checkpoints "
+                    "GROUP BY thread_id"
+                ).fetchall()
+                moved = [t for t, c in rows if now - checkpoint_time(c) <= SESSION_MAX_AGE]
+            with conn:
+                for tid in moved:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO main.checkpoints "
+                        "SELECT * FROM legacy.checkpoints WHERE thread_id = ?",
+                        (tid,),
+                    )
+                    if "writes" in tables:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO main.writes "
+                            "SELECT * FROM legacy.writes WHERE thread_id = ?",
+                            (tid,),
+                        )
+        finally:
+            conn.execute("DETACH DATABASE legacy")
+    except sqlite3.Error as exc:
+        # Leave the old file in place so nothing is lost; the next open retries.
+        logger.warning(
+            json.dumps(
+                {"event": "session_migrate_failed", "db": str(legacy_path), "error": str(exc)}
+            )
+        )
+        return
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        Path(f"{legacy_path}{suffix}").unlink(missing_ok=True)
+    logger.info(
+        json.dumps(
+            {"event": "session_migrate", "db": str(legacy_path), "threads_moved": len(moved)}
+        )
+    )
+
+
+def open_checkpointer(
+    db_path: Path, now: datetime | None = None, legacy_path: Path | None = None
+) -> SqliteSaver:
     """Open the session DB, allowlist callback's types, and prune threads idle over 24 h.
+
+    legacy_path, when given, is the DB's pre-temp-folder location; its recent threads are
+    moved in and the old file is removed.
 
     ponytail: get_apply_graph() and get_profile_graph() are cached for the life of the
     process, so this prune runs once per server start. If a long-lived server grows,
@@ -118,5 +178,8 @@ def open_checkpointer(db_path: Path, now: datetime | None = None) -> SqliteSaver
     saver = SqliteSaver(conn, serde=serde)
     saver.setup()
     logger.info(json.dumps({"event": "session_db_open", "db": str(db_path)}))
-    _prune(saver, conn, db_path, now or datetime.now(UTC))
+    now = now or datetime.now(UTC)
+    if legacy_path is not None:
+        _migrate_legacy(conn, legacy_path, now)
+    _prune(saver, conn, db_path, now)
     return saver
