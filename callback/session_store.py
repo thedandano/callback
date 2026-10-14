@@ -141,11 +141,17 @@ def _migrate_legacy(conn: sqlite3.Connection, legacy_path: Path, now: datetime) 
                         )
         finally:
             conn.execute("DETACH DATABASE legacy")
-    except sqlite3.Error as exc:
-        # Leave the old file in place so nothing is lost; the next open retries.
+    except (sqlite3.Error, ValueError) as exc:
+        # ValueError: a checkpoint id that is not a uuid. Keep the old file so nothing is
+        # lost; the next open retries.
         logger.warning(
             json.dumps(
-                {"event": "session_migrate_failed", "db": str(legacy_path), "error": str(exc)}
+                {
+                    "event": "session_migrate_failed",
+                    "db": str(legacy_path),
+                    "kept": True,
+                    "error": str(exc),
+                }
             )
         )
         return

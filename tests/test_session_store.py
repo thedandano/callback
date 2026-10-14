@@ -141,3 +141,37 @@ def test_open_moves_threads_from_the_original_data_dir_too(tmp_path):
         saver.get_tuple(_cfg("from-data")) is not None,
         data_legacy.exists(),
     ) == (True, False)
+
+
+def test_malformed_legacy_checkpoint_id_keeps_the_old_db_and_opens(tmp_path):
+    legacy = tmp_path / "state" / "s.db"
+    old_saver = open_checkpointer(legacy)
+    old_saver.put(_cfg("bad"), empty_checkpoint(), {}, {})
+    old_saver.conn.execute("UPDATE checkpoints SET checkpoint_id = 'not-a-uuid'")
+    old_saver.conn.commit()
+    old_saver.conn.close()
+
+    saver = open_checkpointer(tmp_path / "new" / "s.db", legacy_paths=(legacy,))
+
+    assert (
+        saver.get_tuple(_cfg("bad")),
+        legacy.exists(),
+    ) == (None, True)
+
+
+def test_threads_from_state_and_data_legacy_dbs_both_move(tmp_path):
+    state_legacy = tmp_path / "state" / "s.db"
+    data_legacy = tmp_path / "data" / "s.db"
+    for path, thread in ((state_legacy, "from-state"), (data_legacy, "from-data")):
+        old_saver = open_checkpointer(path)
+        old_saver.put(_cfg(thread), empty_checkpoint(), {}, {})
+        old_saver.conn.close()
+
+    saver = open_checkpointer(tmp_path / "new" / "s.db", legacy_paths=(state_legacy, data_legacy))
+
+    assert (
+        saver.get_tuple(_cfg("from-state")) is not None,
+        saver.get_tuple(_cfg("from-data")) is not None,
+        state_legacy.exists(),
+        data_legacy.exists(),
+    ) == (True, True, False, False)
