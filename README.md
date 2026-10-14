@@ -141,7 +141,7 @@ Your profile is a set of behavioral stories: short write-ups of things you actua
 Tailor my resume for https://example.com/careers/some-job
 ```
 
-You get a scored gap report, a tailored PDF, and a JSON archive of the whole run. By default these land in `~/.local/share/callback/applications/`.
+You get a scored gap report and a tailored PDF; each run is also recorded in callback's ledger (`~/.local/share/callback/ledger.db`). By default PDFs land in `~/.local/share/callback/applications/`.
 
 If your assistant runs in a sandbox that can't reach your home directory, tell it where to put the PDF instead and it will pass that path through.
 
@@ -257,7 +257,7 @@ uv tool uninstall callback      # remove the tool
 ```
 
 Adding `--purge` to the first step also deletes `~/.local/share/callback/`, which holds your
-PDFs and JSON archives, along with `~/.local/state/callback/` for logs. Session databases live in the temp folder, not there.
+PDFs and the ledger, along with `~/.local/state/callback/` for logs. Session databases live in the temp folder, not there.
 You can't undo that.
 
 ---

@@ -6,6 +6,8 @@ fetcher, write <board>.md, and record the recall of the committed expected terms
 against the fetched text back into sources.json so the CI test can assert it
 byte-for-byte. A board with no <board>.expected.json yet is seeded from the
 archived application named by archived_session (a private local file).
+This reads pre-ledger <session>.json run files only; runs after the ledger change are in
+the ledger instead.
 
 Usage: uv run python scripts/build_fetch_fixtures.py [board ...]
 """

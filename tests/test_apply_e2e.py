@@ -1,10 +1,12 @@
 """End-to-end apply graph test: drives the graph from JD text through finalize."""
 
 import json
+from contextlib import closing
 from pathlib import Path
 
 import pytest
 
+from callback import ledger, paths
 from callback.state import TailoredResume
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -290,7 +292,7 @@ def setup_m3_session_with_graph(tmp_path, monkeypatch):
 
 
 class TestM3ScoreDelta:
-    """M3 scenario: real score delta, archive contains scores.delta."""
+    """M3 scenario: real score delta, ledger contains scores.delta."""
 
     def test_m3_both_scores_have_six_dimensions(self, setup_m3_session_with_graph):
         """Both score dicts have all six dimensional keys after finalize."""
@@ -325,12 +327,15 @@ class TestM3ScoreDelta:
         delta = state["report"]["delta"]
         assert delta["keyword_match"] > 0
 
-    def test_m3_archive_contains_scores_delta(self, setup_m3_session_with_graph):
-        """Archive JSON has scores.delta mirroring report.delta."""
+    def test_m3_ledger_contains_scores_delta(self, setup_m3_session_with_graph):
+        """The ledger run has scores.delta mirroring report.delta."""
         session_id, graph, config, tmp_path = setup_m3_session_with_graph
         state = graph.get_state(config).values
-        archive_path = Path(state["artifact_dir"]) / f"{session_id}.json"
-        archive = json.loads(archive_path.read_text())
+        with closing(ledger.connect(paths.ledger_path())) as conn:
+            (scores,) = conn.execute(
+                "SELECT scores FROM runs WHERE session_id = ?", (session_id,)
+            ).fetchone()
+        archive = {"scores": json.loads(scores)}
 
         actual = {
             "scores_delta_equals_report_delta": (

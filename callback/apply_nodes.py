@@ -10,13 +10,15 @@ Implements the 10 nodes of the linear apply pipeline:
 - parse_final: extracts text from the rendered PDF for final scoring
 - score_final: scores the rendered PDF text against JD keywords
 - report: generates a before/after comparison report
-- finalize: archives the application PDF and JSON record to CALLBACK_APPS_DIR
+- finalize: records the run in the ledger (paths.ledger_path())
 """
 
 import asyncio
 import json
 import logging
 import re
+import sqlite3
+from contextlib import closing
 from datetime import UTC, date, datetime
 from pathlib import Path
 from time import perf_counter
@@ -24,7 +26,7 @@ from time import perf_counter
 from pydantic import ValidationError
 
 from callback import extractor as resume_extractor
-from callback import paths, scorer
+from callback import ledger, paths, scorer
 from callback.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError, fetch_url_to_markdown
 from callback.observability import record_decision, trace_node
 from callback.render import render_resume
@@ -731,66 +733,39 @@ def report(state: ApplyState) -> dict:
 
 @trace_node("apply", "finalize")
 def finalize(state: ApplyState) -> dict:
-    """Archive the complete application record.
-
-    Writes a JSON archive to apps_dir/<session_id>.json containing all
-    required fields per spec.
-    """
+    """Record the finished run in the ledger (one row per session; a retry overwrites it)."""
     _log_enter("finalize", state)
 
-    artifact_dir = _artifact_dir(state)
-    try:
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        logger.error(
-            json.dumps({"node": "finalize", "session_id": state.session_id, "error": str(exc)})
-        )
-        return {
-            "error": f"finalize: cannot create apps dir {artifact_dir}: {exc}",
-            **_dated_dir_update(state, artifact_dir),
-        }
-
-    # Derive tailored resume text from sections or tailored object
-    tailored_text = _resolve_tailored_text(state)
-
     finalized_at = datetime.now(UTC).isoformat()
-
-    # Build archive record with all required fields
-    archive = {
-        "session_id": state.session_id,
-        "timestamp": finalized_at,
-        "jd_url": state.jd_url,
-        "jd_text": state.jd_text,
-        "keywords": state.keywords,
-        "tailored_resume_text": tailored_text,
-        "pdf_path": state.pdf_path,
-        "render_page_count": state.render_page_count,
-        "render_warnings": state.render_warnings or [],
-        "scores": {
+    run = ledger.RunRecord(
+        session_id=state.session_id,
+        timestamp=finalized_at,
+        jd_url=state.jd_url,
+        jd_text=state.jd_text,
+        keywords=state.keywords,
+        tailored_resume_text=_resolve_tailored_text(state),
+        pdf_path=state.pdf_path,
+        render_page_count=state.render_page_count,
+        render_warnings=state.render_warnings or [],
+        scores={
             "initial": state.score_initial,
             "final": state.score_initial if state.no_coverage else state.score_final,
             "delta": (state.report or {}).get("delta"),
             "scoring_engine_version": scorer.SCORING_ENGINE_VERSION,
         },
-        "uncovered_skills": state.uncovered_skills or [],
-        "outcome": {
+        uncovered_skills=state.uncovered_skills or [],
+        outcome={
             "no_coverage": bool(state.no_coverage),
             "reason": "no wiki stories cover required keywords" if state.no_coverage else None,
         },
-    }
-
-    # Write archive JSON
-    archive_path = artifact_dir / f"{state.session_id}.json"
+    )
     try:
-        with open(archive_path, "w") as f:
-            json.dump(archive, f, indent=2)
-    except OSError as exc:
+        with closing(ledger.connect()) as conn:
+            ledger.record_run(conn, run)
+    except (sqlite3.Error, OSError) as exc:
         logger.error(
             json.dumps({"node": "finalize", "session_id": state.session_id, "error": str(exc)})
         )
-        return {
-            "error": f"finalize: cannot write archive: {exc}",
-            **_dated_dir_update(state, artifact_dir),
-        }
+        return {"error": f"finalize: cannot write ledger: {exc}"}
 
-    return {"finalized_at": finalized_at, **_dated_dir_update(state, artifact_dir)}
+    return {"finalized_at": finalized_at}

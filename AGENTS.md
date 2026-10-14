@@ -147,7 +147,7 @@ uv run pytest -m local evals/                          # E1 + E2 checks over the
 
 - `LOG_LEVEL`: Server log level.
 - `CALLBACK_LOG_PATH`: Override the server log file path.
-- `CALLBACK_APPS_DIR`: Override the root where application PDFs and JSON archives are written; each run gets `<root>/<YYYY-MM-DD>/<company-role-slug>/`. It moves only these two outputs, not the other data roots. `submit_tailor`'s `output_dir` argument overrides it per call for both the PDF and the JSON archive.
+- `CALLBACK_APPS_DIR`: Override the root where application PDFs are written; each run gets `<root>/<YYYY-MM-DD>/<company-role-slug>/`. It moves only the PDFs, not the other data roots or the ledger. `submit_tailor`'s `output_dir` argument overrides it per call.
 - `CALLBACK_FETCH_PAGE_TIMEOUT_MS`: Override the Playwright page-load timeout in milliseconds. Default: `30000`.
 - `CALLBACK_FETCH_OUTER_TIMEOUT_S`: Override the outer fetch timeout in seconds. Default: `35`.
 - `CALLBACK_TRACE_BACKEND`: Optional tracing backend. Set to `langsmith` to enable the LangSmith adapter.
@@ -155,7 +155,7 @@ uv run pytest -m local evals/                          # E1 + E2 checks over the
 - `LANGSMITH_ENDPOINT`: LangSmith API endpoint. Defaults to `https://api.smith.langchain.com`.
 - `LANGSMITH_API_KEY`: Required for LangSmith tracing; also gates eval experiment recording. The runner logs a WARNING and skips recording when unset.
 - `LANGSMITH_PROJECT`: LangSmith project name. Defaults to `Callback` when tracing is enabled.
-- `XDG_DATA_HOME`: Moves the whole data root (resumes, wiki, compiled profile, applications archive) from `~/.local/share/callback` to `$XDG_DATA_HOME/callback`.
+- `XDG_DATA_HOME`: Moves the whole data root (resumes, wiki, compiled profile, ledger, default PDF folder) from `~/.local/share/callback` to `$XDG_DATA_HOME/callback`.
 - `XDG_STATE_HOME`: Moves the state root (server log) from `~/.local/state/callback` to `$XDG_STATE_HOME/callback`.
 - `XDG_CONFIG_HOME`: Moves the settings file from `~/.config/callback/env.json` to `$XDG_CONFIG_HOME/callback/env.json`.
 
@@ -281,7 +281,7 @@ When the user asks to use callback for a job, the host should follow the workflo
 4. If `workflow.next_tool` is `get_wiki_pages`, use `data.wiki_index` to fetch relevant evidence pages, then call `submit_tailor`.
 5. If `workflow.next_tool` is `submit_tailor`, create honest edits from `data.sections`, `data.score_gap`, wiki evidence, and `data.tailor_instructions`.
 6. If `workflow.next_tool` is `onboard_user` or `create_story`, collect the missing profile evidence, compile the profile, then restart the job flow with `load_jd`.
-7. After `submit_tailor`, return `data.pdf_path`, `data.archive_path`, `data.report`, and `data.outcome` to the user.
+7. After `submit_tailor`, return `data.pdf_path`, `data.ledger_path`, `data.report`, and `data.outcome` to the user.
 
 The host owns keyword extraction and tailoring judgment. callback owns state, validation, rendering, scoring, and archival.
 

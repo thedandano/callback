@@ -1,8 +1,10 @@
-"""Tests for score delta computation and finalize archive (M3)."""
+"""Tests for score delta computation and finalize ledger record (M3)."""
 
 import json
 import re
+from contextlib import closing
 
+from callback import ledger, paths
 from callback.apply_nodes import _sections_to_text, finalize, report
 from callback.scorer import ATS_SECTION_PATTERNS
 from callback.section_map import EducationEntry, ExperienceEntry, SectionMap, SkillsSection
@@ -163,7 +165,15 @@ def test_report_includes_render_warnings_as_notes():
     assert result["report"]["notes"] == [warning["message"]]
 
 
-def test_finalize_archive_includes_scores_delta(tmp_path, monkeypatch):
+def _ledger_run(session_id: str) -> dict:
+    with closing(ledger.connect(paths.ledger_path())) as conn:
+        scores, outcome = conn.execute(
+            "SELECT scores, outcome FROM runs WHERE session_id = ?", (session_id,)
+        ).fetchone()
+    return {"scores": json.loads(scores), "outcome": json.loads(outcome)}
+
+
+def test_finalize_ledger_includes_scores_delta(tmp_path, monkeypatch):
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
     report_data = {
         "delta": _DELTA,
@@ -183,17 +193,18 @@ def test_finalize_archive_includes_scores_delta(tmp_path, monkeypatch):
     result = finalize(state)
     assert result == {"finalized_at": result["finalized_at"]}
 
-    archive = json.loads((tmp_path / "r4.json").read_text())
-    assert archive["scores"] == {
-        "initial": _SCORE_INITIAL,
-        "final": _SCORE_FINAL,
-        "delta": _DELTA,
-        "scoring_engine_version": "v2",
+    assert _ledger_run("r4") == {
+        "scores": {
+            "initial": _SCORE_INITIAL,
+            "final": _SCORE_FINAL,
+            "delta": _DELTA,
+            "scoring_engine_version": "v2",
+        },
+        "outcome": {"no_coverage": False, "reason": None},
     }
-    assert archive["outcome"] == {"no_coverage": False, "reason": None}
 
 
-def test_finalize_archive_scoring_engine_version(tmp_path, monkeypatch):
+def test_finalize_ledger_scoring_engine_version(tmp_path, monkeypatch):
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
     state = ApplyState(
         session_id="r5",
@@ -206,8 +217,7 @@ def test_finalize_archive_scoring_engine_version(tmp_path, monkeypatch):
         parsed_final="text",
     )
     finalize(state)
-    archive = json.loads((tmp_path / "r5.json").read_text())
-    assert archive["scores"] == {
+    assert _ledger_run("r5")["scores"] == {
         "initial": _SCORE_INITIAL,
         "final": _SCORE_FINAL,
         "delta": _DELTA,
@@ -251,7 +261,7 @@ def test_report_no_coverage_path():
     }
 
 
-def test_finalize_archive_outcome_field(tmp_path, monkeypatch):
+def test_finalize_ledger_outcome_field(tmp_path, monkeypatch):
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
     state = ApplyState(
         session_id="r7",
@@ -263,8 +273,7 @@ def test_finalize_archive_outcome_field(tmp_path, monkeypatch):
         parsed_initial="text",
     )
     finalize(state)
-    archive = json.loads((tmp_path / "r7.json").read_text())
-    assert {k: archive[k] for k in ("outcome", "scores")} == {
+    assert _ledger_run("r7") == {
         "outcome": {
             "no_coverage": True,
             "reason": "no wiki stories cover required keywords",

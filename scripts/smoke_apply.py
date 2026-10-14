@@ -9,11 +9,13 @@ import os
 import shutil
 import sys
 import tempfile
+from contextlib import closing
 from pathlib import Path
 
 # Add current directory to path for running via uv
 sys.path.insert(0, os.getcwd())
 
+from callback import ledger, paths
 from callback.jd_data import EXTRACTION_PROTOCOL
 from callback.jd_fetcher import MIN_MARKDOWN_CHARS
 from callback.repository.resumes import save_resume
@@ -55,7 +57,7 @@ def main():
     jd_url = sys.argv[1] if len(sys.argv) > 1 else None
 
     # Run under isolated data and state roots so the temp resume is the only one
-    # registered and nothing here touches the real wiki, archive, or session
+    # registered and nothing here touches the real wiki, ledger, or session
     # checkpoint DBs (callback.paths).
     data_root = tempfile.mkdtemp(prefix="callback-smoke-")
     state_root = tempfile.mkdtemp(prefix="callback-smoke-state-")
@@ -123,12 +125,15 @@ def main():
         assert tailored["data"]["score_final"] is not None, "score_final missing"
         assert "total" in tailored["data"]["score_final"], "score_final missing total"
 
-        # Phase 4: read archive JSON for score delta
-        archive_path = Path(tailored["data"]["archive_path"])
-        assert archive_path.exists(), f"archive not written: {archive_path}"
-        archive = json.loads(archive_path.read_text())
-        delta = archive["scores"]["delta"]
-        assert delta is not None, "scores.delta missing from archive"
+        # Phase 4: read the score delta from the ledger
+        with closing(ledger.connect()) as conn:
+            row = conn.execute(
+                "SELECT json_extract(scores, '$.delta') FROM runs WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        assert row is not None, f"run not recorded in ledger {paths.ledger_path()}"
+        delta = json.loads(row[0]) if row[0] else None
+        assert delta is not None, "scores.delta missing from ledger"
         assert delta["keyword_match"] > 0, (
             f"delta.keyword_match <= 0: {delta['keyword_match']}"
             " — tailor did not improve keyword coverage"

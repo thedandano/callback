@@ -1,6 +1,8 @@
 """Tests for real parse_initial and score_initial node implementations."""
 
 import json
+import sqlite3
+from contextlib import closing
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -8,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from callback import apply_nodes
+from callback import apply_nodes, ledger, paths
 from callback.apply_nodes import (
     _candidate_experience_years,
     finalize,
@@ -266,45 +268,52 @@ def test_parse_final_returns_error_when_stat_raises(tmp_path, monkeypatch):
     assert actual == expected
 
 
-def test_finalize_returns_error_when_archive_write_raises_oserror(tmp_path, monkeypatch):
-    import callback.apply_nodes as apply_nodes_module
+def _final_state(tmp_path) -> ApplyState:
+    return ApplyState(
+        session_id="s1",
+        jd_url="https://Jobs.example.com/a/",
+        keywords={"company": "Acme", "title": "Engineer"},
+        pdf_path="/x.pdf",
+        score_initial={"total": 50.0},
+        score_final={"total": 70.0},
+        artifact_dir=str(tmp_path),
+    )
 
-    monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
-    monkeypatch.setattr("callback.apply_nodes._today", lambda: date(2026, 10, 12))
 
-    def raising_open(*args, **kwargs):
-        raise OSError("disk full")
+def test_finalize_records_one_run_even_when_retried(tmp_path):
+    state = _final_state(tmp_path)
+    apply_nodes.finalize(state)
+    apply_nodes.finalize(state)
+    with closing(ledger.connect(paths.ledger_path())) as conn:
+        rows = conn.execute(
+            "SELECT r.session_id, j.job_key, j.company, r.pdf_path, "
+            "json_extract(r.scores, '$.final.total') "
+            "FROM runs r JOIN jobs j ON j.job_key = r.job_key"
+        ).fetchall()
+    assert (rows, list(tmp_path.glob("*.json"))) == (
+        [("s1", "https://jobs.example.com/a", "Acme", "/x.pdf", 70.0)],
+        [],
+    )
 
-    monkeypatch.setattr(apply_nodes_module, "open", raising_open, raising=False)
 
-    state = ApplyState(session_id="s3")
-    actual = finalize(state)
-    expected = {
-        "error": "finalize: cannot write archive: disk full",
-        "artifact_dir": str(tmp_path / "2026-10-12" / "job"),
+def test_finalize_returns_a_retriable_error_when_the_ledger_is_locked(tmp_path, monkeypatch):
+    def locked(path=None):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(ledger, "connect", locked)
+    assert apply_nodes.finalize(_final_state(tmp_path)) == {
+        "error": "finalize: cannot write ledger: database is locked"
     }
-    assert actual == expected
 
 
-def test_finalize_returns_error_when_apps_dir_unwritable(tmp_path, monkeypatch):
-    blocker = tmp_path / "blocker"
-    blocker.write_text("not a directory", encoding="utf-8")
-    unwritable_apps_dir = blocker / "apps"
-    monkeypatch.setenv("CALLBACK_APPS_DIR", str(unwritable_apps_dir))
-    monkeypatch.setattr("callback.apply_nodes._today", lambda: date(2026, 10, 12))
-    unwritable_folder = unwritable_apps_dir / "2026-10-12" / "job"
+def test_finalize_returns_a_retriable_error_when_the_data_dir_is_unwritable(tmp_path, monkeypatch):
+    def denied(path=None):
+        raise PermissionError("denied")
 
-    try:
-        unwritable_folder.mkdir(parents=True, exist_ok=True)
-        raise AssertionError("expected mkdir under a regular file to raise OSError")
-    except OSError as exc:
-        expected_reason = exc
-
-    state = ApplyState(session_id="s3")
-    actual = finalize(state)
-    expected_message = f"finalize: cannot create apps dir {unwritable_folder}: {expected_reason}"
-    expected = {"error": expected_message, "artifact_dir": str(unwritable_folder)}
-    assert actual == expected
+    monkeypatch.setattr(ledger, "connect", denied)
+    assert apply_nodes.finalize(_final_state(tmp_path)) == {
+        "error": "finalize: cannot write ledger: denied"
+    }
 
 
 def test_render_failure_still_pins_the_dated_folder(tmp_path, monkeypatch):
@@ -342,27 +351,13 @@ def test_render_failure_with_explicit_output_dir_stores_nothing(tmp_path, monkey
     assert render(state) == {"error": "render: chromium crashed"}
 
 
-def test_finalize_writes_archive_to_output_dir(tmp_path, monkeypatch):
-    """finalize writes the JSON archive under output_dir when set, not the default apps dir."""
+def test_finalize_does_not_create_or_pin_an_output_folder(tmp_path, monkeypatch):
     apps_dir = tmp_path / "apps"
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(apps_dir))
-    output_dir = tmp_path / "sandbox_out"
-    output_dir.mkdir()
 
-    state = ApplyState(session_id="redirect-session", output_dir=str(output_dir))
-    result = finalize(state)
+    result = finalize(ApplyState(session_id="no-folder"))
 
-    expected_archive = output_dir / "redirect-session.json"
-    actual = {
-        "has_error": "error" in result,
-        "archive_in_output_dir": expected_archive.exists(),
-        "no_archive_in_apps_dir": not (apps_dir / "redirect-session.json").exists(),
-    }
-    assert actual == {
-        "has_error": False,
-        "archive_in_output_dir": True,
-        "no_archive_in_apps_dir": True,
-    }
+    assert (list(result), apps_dir.exists()) == (["finalized_at"], False)
 
 
 class TestTailorNode:

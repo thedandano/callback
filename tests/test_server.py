@@ -3,6 +3,7 @@
 import json
 import sqlite3
 import uuid
+from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
@@ -11,6 +12,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.client.transports import FastMCPTransport
 
+from callback import ledger, paths
 from callback.jd_data import EXTRACTION_PROTOCOL
 
 PARTIAL_JD_JSON = """
@@ -1399,6 +1401,13 @@ def test_rank_project_candidates_matches_body_and_tags_not_raw_frontmatter(tmp_p
     assert actual == expected
 
 
+def _ledger_has_run(ledger_path: str, session_id: str) -> bool:
+    with closing(ledger.connect(Path(ledger_path))) as conn:
+        return conn.execute(
+            "SELECT 1 FROM runs WHERE session_id = ?", (session_id,)
+        ).fetchone() == (1,)
+
+
 class TestOrphanDetection:
     """Tests for _detect_orphaned_required orphan classification logic."""
 
@@ -1499,7 +1508,8 @@ class TestSubmitTailorNoCoverage:
             "edits_rejected": result["data"]["edits_rejected"],
             "uncovered_skills": result["data"]["uncovered_skills"],
             "pdf_path": result["data"]["pdf_path"],
-            "archive_exists": Path(result["data"]["archive_path"]).exists(),
+            "ledger_path": result["data"]["ledger_path"],
+            "ledger_has_run": _ledger_has_run(result["data"]["ledger_path"], session_id),
             "workflow_phase": result["workflow"]["phase"],
             "workflow_next_tool": result["workflow"]["next_tool"],
             "score_final_is_none_or_dict": result["data"]["score_final"] is None
@@ -1515,7 +1525,8 @@ class TestSubmitTailorNoCoverage:
             "edits_rejected": [],
             "uncovered_skills": [],
             "pdf_path": None,
-            "archive_exists": True,
+            "ledger_path": str(paths.ledger_path()),
+            "ledger_has_run": True,
             "workflow_phase": "complete",
             "workflow_next_tool": None,
             "score_final_is_none_or_dict": True,
