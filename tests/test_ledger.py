@@ -806,8 +806,15 @@ def test_find_job_returns_latest_status_or_not_found(tmp_path):
         half_name = ledger.find_job(conn, url="https://a.com/3", company="A", title=None)
 
     hit = {"found": True, "company": "A", "title": "Dev", "status": "Rejected"}
-    hit = {**hit, "status_date": "2026-10-05"}
-    none = {"found": False, "company": None, "title": None, "status": None, "status_date": None}
+    hit = {**hit, "status_date": "2026-10-05", "job_key": "https://a.com/1"}
+    none = {
+        "found": False,
+        "company": None,
+        "title": None,
+        "status": None,
+        "status_date": None,
+        "job_key": None,
+    }
     assert (found, by_name, missing, half_name) == (
         {**hit, "matched_by": "key"},
         {**hit, "matched_by": "company_title"},
@@ -839,3 +846,28 @@ def test_spreadsheet_safe_defuses_formulas_only():
         "h": "'+1",
         "i": "'\rx",
     }
+
+
+def test_export_rows_status_filter_ignores_empty_and_escapes_wildcards(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        for url, status in (("https://a.com/1", "Applied"), ("https://a.com/2", "A_plied")):
+            key = ledger.upsert_job(conn, url=url, company="C", title=url, seen_at="2026-10-01")
+            _status(conn, key, status, "2026-10-01")
+        bare = ledger.upsert_job(
+            conn, url="https://a.com/3", company="C", title="none", seen_at="2026-10-01"
+        )
+        everything = ledger.export_rows(conn, status_prefix="")
+        underscore = ledger.export_rows(conn, status_prefix="A_p")
+        percent = ledger.export_rows(conn, status_prefix="%")
+
+    assert (
+        [r["URL"] for r in everything],
+        [r["URL"] for r in underscore],
+        percent,
+        bare,
+    ) == (
+        ["https://a.com/1", "https://a.com/2", "https://a.com/3"],
+        ["https://a.com/2"],
+        [],
+        "https://a.com/3",
+    )

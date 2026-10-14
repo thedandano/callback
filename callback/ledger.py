@@ -602,13 +602,13 @@ LEFT JOIN latest_run r ON r.job_key = j.job_key AND r.rn = 1
 WHERE (:status IS NULL AND :since IS NULL) OR EXISTS (
     SELECT 1 FROM status_events e
     WHERE e.job_key = j.job_key
-      AND (:status IS NULL OR e.status LIKE :status || '%')
+      AND (:status IS NULL OR e.status LIKE :status || '%' ESCAPE '\\')
       AND (:since IS NULL OR e.recorded_at >= :since)
 )
 ORDER BY s.recorded_at DESC, j.job_key
 """
 _FIND_SQL = (
-    "SELECT j.company, j.title, s.status, s.recorded_at FROM jobs j "
+    "SELECT j.company, j.title, s.status, s.recorded_at, j.job_key FROM jobs j "
     "LEFT JOIN status_events s ON s.job_key = j.job_key WHERE {where} "
     "ORDER BY {order} s.recorded_at DESC, s.id DESC LIMIT 1"
 )
@@ -617,7 +617,7 @@ _BY_NAME = (
     "lower(trim(j.company)) = lower(trim(?)) AND lower(trim(j.title)) = lower(trim(?))",
     "j.first_seen DESC,",
 )
-_FIND_KEYS = ["company", "title", "status", "status_date"]
+_FIND_KEYS = ["company", "title", "status", "status_date", "job_key"]
 
 
 def spreadsheet_safe(row: dict) -> dict:
@@ -635,11 +635,18 @@ def export_rows(
 
     status_prefix and since match ANY status event of the job (so a job once 'Applied' still
     shows after it is 'Rejected'); the row shows the latest status. status_prefix matches the
-    start of the status text, so 'Applied' also matches 'Applied - confirmed'. since compares
+    start of the status text (case-insensitive, wildcards taken literally; empty means no
+    filter), so 'Applied' also matches 'Applied - confirmed'. since compares
     as text, so pass YYYY-MM-DD.
     """
-    cursor = conn.execute(_EXPORT_SQL, {"status": status_prefix, "since": since})
+    prefix = (status_prefix or "").strip()
+    escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    cursor = conn.execute(_EXPORT_SQL, {"status": escaped or None, "since": since})
     return [dict(zip(EXPORT_COLUMNS, row, strict=True)) for row in cursor]
+
+
+def job_exists(conn: sqlite3.Connection, key: str) -> bool:
+    return conn.execute("SELECT 1 FROM jobs WHERE job_key = ?", (key,)).fetchone() is not None
 
 
 def _find_row(conn: sqlite3.Connection, where: tuple[str, str], params: tuple) -> tuple | None:

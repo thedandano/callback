@@ -2296,6 +2296,7 @@ async def test_ledger_tools_record_find_and_export(tmp_path):
             "title": "Dev",
             "status": "Applied",
             "status_date": "2026-10-01",
+            "job_key": "https://a.com/1",
             "matched_by": "key",
         },
         "company_title",
@@ -2334,12 +2335,19 @@ async def test_ledger_tools_reject_bad_input(tmp_path):
         ("record_status", {"status": "  ", "url": "https://a.com/1"}),
         ("record_status", {"status": "Applied", "url": "https://a.com/1", "date": "10/1/2026"}),
         ("record_status", {"status": "Applied", "url": "https://a.com/1", "date": "20261001"}),
+        ("record_status", {"status": "Applied", "url": "https://a.com/1", "date": "2026-W40-1"}),
+        ("export_ledger", {"output_path": str(tmp_path / "x.csv"), "since": "2026-W40-1"}),
+        ("export_ledger", {"output_path": str(tmp_path / "x.txt")}),
+        ("export_ledger", {"output_path": str(tmp_path / "x.CSVX")}),
+        ("export_ledger", {"output_path": str(tmp_path / "dir.csv")}),
+        ("record_status", {"status": "Applied", "job_key": "https://nope.com/1"}),
         ("find_job", {}),
         ("find_job", {"company": "A"}),
         ("export_ledger", {"output_path": "x.csv"}),
         ("export_ledger", {"output_path": str(tmp_path / "x.csv"), "since": "10/1/2026"}),
         ("export_ledger", {"output_path": str(tmp_path)}),
     ]
+    (tmp_path / "dir.csv").mkdir()
     async with Client(FastMCPTransport(server.mcp)) as client:
         results = [await client.call_tool(name, args) for name, args in calls]
 
@@ -2349,6 +2357,12 @@ async def test_ledger_tools_reject_bad_input(tmp_path):
         "invalid_status",
         "invalid_date",
         "invalid_date",
+        "invalid_date",
+        "invalid_date",
+        "invalid_output_path",
+        "invalid_output_path",
+        "invalid_output_path",
+        "unknown_job",
         "missing_job_identity",
         "missing_job_identity",
         "invalid_output_path",
@@ -2369,3 +2383,36 @@ async def test_ledger_tools_report_unwritable_ledger_as_retriable_error(tmp_path
 
     error = _envelope(result)["error"]
     assert (error["code"], error["retriable"]) == ("ledger_error", True)
+
+
+@pytest.mark.anyio
+async def test_record_status_on_job_found_by_company_title_uses_job_key(tmp_path):
+    import callback.server as server
+
+    out = tmp_path / "export.csv"
+    async with Client(FastMCPTransport(server.mcp)) as client:
+        await client.call_tool(
+            "record_status",
+            {
+                "status": "Applied",
+                "url": "https://a.com/1",
+                "company": "A",
+                "title": "Dev",
+                "date": "2026-10-01",
+            },
+        )
+        found = await client.call_tool(
+            "find_job", {"url": "https://z.com/9", "company": "A", "title": "Dev"}
+        )
+        key = _envelope(found)["data"]["job_key"]
+        recorded = await client.call_tool(
+            "record_status", {"status": "Rejected", "job_key": key, "date": "2026-10-05"}
+        )
+        exported = await client.call_tool("export_ledger", {"output_path": str(out)})
+
+    assert (key, _envelope(recorded)["data"], _envelope(exported)["data"]["rows"]) == (
+        "https://a.com/1",
+        {"recorded": True},
+        1,
+    )
+    assert out.read_text().splitlines()[1] == "A,Dev,https://a.com/1,,Rejected,2026-10-05,,,,"
