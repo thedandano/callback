@@ -275,7 +275,7 @@ def env_file() -> Path:
 
 SLUG_MAX_LENGTH = 80
 _SLUG_HASH_LENGTH = 8
-_SLUG_LOSSY_CHARS = re.compile(r"[^A-Za-z0-9\s-]")
+_SLUG_LOSSY_CHARS = re.compile(r"[^A-Za-z0-9\s\-.,&/'():]")
 
 
 def slug(*parts: str | None) -> str:

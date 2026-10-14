@@ -512,7 +512,7 @@ def test_write_text_atomic_cleans_up_temp_file_on_rename_failure(tmp_path: Path,
     ("parts", "expected"),
     [
         (("ExpertVoice", "Frontend AI Engineer"), "expertvoice-frontend-ai-engineer"),
-        (("AT&T", "Sr. Engineer, Platform"), "at-t-sr-engineer-platform-c31b5285"),
+        (("AT&T", "Sr. Engineer, Platform"), "at-t-sr-engineer-platform"),
         (("Acme", "Senior Engineer"), "acme-senior-engineer"),
         ((None, None), "job"),
     ],

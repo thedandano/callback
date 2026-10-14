@@ -112,7 +112,7 @@ def test_render_names_pdf_from_candidate_and_company(tmp_path, monkeypatch):
     monkeypatch.setattr("callback.apply_nodes.render_resume", fake_render_resume)
     state = ApplyState(
         session_id="legacy-session-id",
-        keywords={"company": "Brain Corp Robotics"},
+        keywords={"company": "Brain Corp / Robotics"},
         tailored=TailoredResume(name="Jane Doe", summary="Experienced engineer"),
     )
 
