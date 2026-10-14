@@ -1043,7 +1043,7 @@ def test_canonical_timestamp_keeps_unparseable_value_and_warns(caplog):
         result = ledger.canonical_timestamp("not a time")
     assert (result, [json.loads(r.message)["event"] for r in caplog.records]) == (
         "not a time",
-        ["ledger_timestamp_unparseable"],
+        ["ledger_timestamp_unparsed"],
     )
 
 
