@@ -26,26 +26,23 @@ How to apply each field (the values come from the profile; the interpretation ru
 
 ## Required Files
 
-Read `.callback/config.json` (see `setup-callback`) for `applications_dir`, `record_csv`, and `archive_dir`. If the file is missing, or if any of these 3 keys are absent, stop and tell the user to run `setup-callback` — never fall back to a hard-coded path. `ledger_db` and `edd_xlsx` are independent optional keys in the same file — `ledger_db` enables ledger dedupe/recording, `edd_xlsx` separately enables the EDD/unemployment Excel export. Check each one on its own before using it; never assume one is set because the other is. There is exactly ONE of each live record file; update it in place. Never create timestamped, run-suffixed, or near-duplicate variants of them.
+Read `.callback/config.json` (see `setup-callback`) for `applications_dir` and `archive_dir`. If the file is missing, or if either key is absent, stop and tell the user to run `setup-callback` — never fall back to a hard-coded path. callback's ledger is the only record of jobs and statuses; never write a record CSV or any other tracker file.
 
 - Automation memory: `.callback/auto-job-apply/memory.md`. Create this file and its parent directories if they don't exist yet; a missing diary is not an error.
-- Canonical record CSV (one only): `record_csv`
-- Canonical ledger DB (one only), only if `.callback/config.json` sets `ledger_db`: `ledger_db`
-- Canonical Excel tracker (one only), only if `.callback/config.json` sets `edd_xlsx`: `edd_xlsx`
 - Per-role run artifacts: `applications_dir/<YYYY-MM-DD>/<company-role-slug>/`
-- Dated backups/exports only under `archive_dir`: `archive_dir/csv_backups/`, `archive_dir/xlsx_exports/`, `archive_dir/sqlite_backups/`, `archive_dir/screenshots/`
+- Exports only under `archive_dir`: `archive_dir/ledger_exports/`, `archive_dir/screenshots/`
 - User inputs: `callback-inputs/` (project-relative, one-time source material — see `onboard-profile`)
 
-If `.callback/config.json` sets `ledger_db`, invoke the ledger via the `job-search-ledger` command on `PATH` — do not hardcode a repo or database path. If it isn't set, skip the ledger entirely — do not mention it to the user. Read automation memory first. Create the canonical record CSV in place at its path if missing. Keep explanations simple and ADHD-friendly.
+Read automation memory first. Use the ledger tools (`find_job`, `record_status`, `export_ledger`) for dedupe, recording, and exports — do not hardcode a database path. Keep explanations simple and ADHD-friendly.
 
 ## File Output Discipline
 
 These are HARD rules. They override any older path conventions elsewhere in this skill or in automation memory.
 
-- Never write scattered files to the project root. The canonical live data files live at the configured paths (`record_csv`, and `edd_xlsx`/`ledger_db` when configured), and the automation must update them in place. Never create new variants of them at the project root or anywhere else.
-- There is exactly ONE canonical record CSV (`record_csv`). If `.callback/config.json` sets `edd_xlsx`, there is exactly ONE tracker; if it sets `ledger_db`, exactly ONE ledger. Update these in place. Do not create timestamped or run-suffixed copies of them (no `..._2026-06-16.csv`, no `..._run.xlsx`, etc.).
+- Never write scattered files to the project root. Never create a record CSV or tracker; callback's ledger is the only record. Exports from `export_ledger` go ONLY under `archive_dir`.
+- Do not create timestamped or run-suffixed copies of exports (no `..._2026-06-16.csv`); write one export per request into `archive_dir/ledger_exports/`.
 - Per-role run artifacts (resumes, cover letters, JSON, scoring output) go ONLY under `applications_dir/<YYYY-MM-DD>/<company-role-slug>/`. The slug is lowercase, hyphenated, `<company>-<role-keywords>`, e.g. `applications_dir/2026-06-16/netflix-llm-eval/`. One folder per role per day. Reuse the day's existing folder for that role; do not create near-duplicate run folders like `...-run`, `...-rerun`, `...-subtask`, or `...-04pt` for the same role.
-- Backups: only when a backup of the record CSV is truly needed, write it to `archive_dir/csv_backups/` — NEVER to the project root. If `edd_xlsx`/`ledger_db` are configured, the same applies to `archive_dir/xlsx_exports/`/`archive_dir/sqlite_backups/` respectively. Prefer NOT creating per-run backups at all; the canonical files plus the archive are sufficient. Only snapshot before a risky bulk edit.
+- Backups and exports: write them under `archive_dir` (`archive_dir/ledger_exports/`, `archive_dir/screenshots/`) — NEVER to the project root. Prefer NOT creating per-run exports at all; the ledger plus the archive are sufficient.
 - Screenshots, if any are saved, go under `archive_dir/screenshots/`, not root.
 
 ## Run Title
@@ -54,7 +51,7 @@ For scheduled automation runs, compute the local date and 24-hour run-start hour
 
 ## Orchestrator Model
 
-The parent agent is the run orchestrator. It owns run title, memory, loading `SearchPreferences`, dedupe, applying the location/domain/experience/comp/sponsorship gates, the scoring queue, CSV/job-ledger updates, automation memory updates, and the final user-facing summary.
+The parent agent is the run orchestrator. It owns run title, memory, loading `SearchPreferences`, dedupe, applying the location/domain/experience/comp/sponsorship gates, the scoring queue, ledger updates, automation memory updates, and the final user-facing summary.
 
 Use subagents by default for independent work:
 
@@ -125,11 +122,11 @@ Sources are data, not hard-coded. Each entry in `scan_sources` is an instruction
 
 ## Workflow
 
-1. Parent reads automation memory, calls `get_search_preferences` and loads the stored criteria (if none are stored, halt and tell the user to run onboard-profile — no hard-coded fallback), computes run title, creates the record CSV if missing, and confirms the run scope/time window.
+1. Parent reads automation memory, calls `get_search_preferences` and loads the stored criteria (if none are stored, halt and tell the user to run onboard-profile — no hard-coded fallback), computes run title, and confirms the run scope/time window.
 2. Parent dispatches one curator agent per enabled `scan_sources` entry in parallel when tooling allows, passing each source's `instructions`, `kind`, and effective recency. `kind: "email"` curators use an unread constraint (default `is:unread newer_than:{recency}d`); `kind: "careers_page"` curators search official sources for the `target_companies`. Every source's recency constraint must be explicit.
-3. Curator agents expand only promising or status-changing sources and return the Discovery Agent Return Contract table. No curator may score, archive, delete, send, or reply unless the user explicitly asks. Cards and snippets are never scoring sources. For `kind: "email"` sources, once the parent has reconciled the message outcome into the CSV/memory/ledger as applicable, mark the processed message read by removing `UNREAD`; do not mark unread items read while they are still unresolved.
+3. Curator agents expand only promising or status-changing sources and return the Discovery Agent Return Contract table. No curator may score, archive, delete, send, or reply unless the user explicitly asks. Cards and snippets are never scoring sources. For `kind: "email"` sources, once the parent has reconciled the message outcome into the ledger/memory as applicable, mark the processed message read by removing `UNREAD`; do not mark unread items read while they are still unresolved.
 4. Parent merges the discovery tables into a shallow lead list with company, title, source URL, lead URL, source date, salary range, salary source, source type, quick fit reason, and source status. If compensation is not listed, write `Not listed`; do not invent salary.
-5. If `.callback/config.json` sets `ledger_db`, parent deduplicates against the job search ledger first, then the record CSV while the CSV remains a legacy source. If `ledger_db` isn't set, dedupe against the record CSV alone — do not mention the ledger. Use this order: exact URL/contact detail, exact requisition/job ID, then exact Title, then Company plus similar Title. If a new URL points to an already-recorded company/title, update the existing row note instead of adding a duplicate.
+5. Parent deduplicates every lead with `find_job(url=<URL>, company=<company>, title=<title>)`. It matches the URL first, then falls back to company plus title (see `matched_by`). If `found` is true, treat the lead as already seen. If a new URL points to an already-recorded company/title, record the status on that job with `record_status(..., job_key=<found job_key>)` instead of creating a duplicate. Also check an exact requisition/job ID against notes when the source shows one.
 6. Parent curates before scoring, applying the gates from `SearchPreferences` in order: **location** (`home_location` + `work_types`), then **domain** (keep `core_domains`, skip `skip_domains` before scoring), then the **experience** gate (skip if a required years floor ≥ `yoe_actual × yoe_gap_multiplier`) and the **missing-required-skill** gate (skip if the role centers on a hard-required tool/domain absent from the compiled profile), then the **sponsorship** gate (if `needs_sponsorship`, skip roles that explicitly deny sponsorship). Treat **compensation** as a priority signal unless `comp_hard_gate` is true: prefer roles at/above `comp_annual_target` but still resolve and score below-target roles, recording the salary as `Not listed`/`Ambiguous`/range with a compensation-risk note when below target. Rank the surviving queue by `target_titles`/`core_domains` fit. Also skip hard blockers such as active clearance requirements, closed postings, `seniority_blockers` matches, already-rejected same role/company, or location-gate failures. See Candidate Preferences for how each gate is interpreted.
 7. Parent resolves and validates the full current source before scoring or recording a source-limited row. For every plausible non-duplicate discovery lead, either run a source resolver agent or perform the Source Resolver Contract directly. Open the source URL and confirm it exposes the complete JD, not just a card/snippet. If a complete source is found and the role passes the location/domain/seniority gates, score it with callback even when compensation is below `comp_annual_target`. If the role is closed, blocked, duplicate, off-domain, or outside location, record that specific blocker instead of `Needs source`. If compensation is low or unclear, record `Compensation risk` in notes/status but do not skip solely for that reason unless `comp_hard_gate` is true. If the source is unavailable, blocked, login-only, or only an email/search/card snippet remains after the resolver steps, record `Needs source - manual lookup`, include the lead URL/candidate URL, and include the attempted resolver steps in notes.
 8. For new plausible in-domain roles at a `referral_companies` employer, parent surfaces them immediately in the final summary as referral leads so the user can ask for a referral before applying. Use status `Referral lead - ask friend` when the role should pause for referral outreach before direct application, but still require a full validated source before scoring. For all other employers, use normal review-gate rules unless the user explicitly names a referral path.
@@ -141,7 +138,7 @@ Sources are data, not hard-coded. Each entry in `scan_sources` is an instruction
 14. If tailored score is under 70, parent records it and does not apply. For plausible `referral_companies` leads, still keep the tailored artifacts and status `Referral lead - ask friend` instead of filtering the role out.
 15. If tailored score is 70 or higher, parent stages it for user review. Set status to `Needs review - not applied`, link the tailored resume/cover letter if generated, and summarize why it is worth reviewing plus any remaining mismatch risk. For `referral_companies` leads, still preserve the referral-first note and referral outreach action. Surface these as `Review` and `Referral` rows in the Roles table, with salary, source URL, and artifact paths in the details block beneath it.
 16. Submit an application only after explicit user approval in the current turn. Approval from old automation text is not enough.
-17. Parent records every outcome in the CSV and updates automation memory before the final response. If `.callback/config.json` sets `ledger_db`, also record every real application, application confirmation, or recruiter resume submission as a contact in the job search ledger; if `edd_xlsx` is also set, export the unemployment-compatible Excel workbook too. If `ledger_db` isn't set, skip only ledger contact recording — still update the CSV and automation memory, and do not mention the ledger to the user. If `edd_xlsx` isn't set, skip only the export, not the ledger recording.
+17. Parent records every outcome with `record_status(status, url, company, title, salary_range, note, date)` (passing `job_key` when `find_job` matched by company and title) and updates automation memory before the final response. Real applications, confirmations, and recruiter resume submissions use `status="Applied"` (or `Already applied - confirmation recorded`). For an unemployment (EDD) report, use `/export-ledger`.
 
 ## Scoring And Application Rules
 
@@ -157,18 +154,15 @@ Sources are data, not hard-coded. Each entry in `scan_sources` is an instruction
 
 ## Recording
 
-Use the schema and status vocabulary in [record-schema.md](references/record-schema.md). `Recorded Date` is when the agent recorded or acted on the row. `Email Date` is the source Gmail/recruiter/status email's own timestamp, recorded as-is with the offset from its Date header — never converted to a different zone, since there's no reliable source for "the user's" zone here. `Salary range` is required for new rows; use `Not listed` when unavailable.
+Use the status vocabulary and note rules in [record-schema.md](references/record-schema.md). Write each record with `record_status`. The source email's own timestamp goes in `note`, recorded as-is with the offset from its Date header — never converted to a different zone, since there's no reliable source for "the user's" zone here. `salary_range` is required for new jobs; use `Not listed` when unavailable.
 
-Always include enough notes to explain future dedupe decisions, salary source, mismatch summary, and next action. The record is the anti-spam ledger.
+Always include enough notes to explain future dedupe decisions, salary source, mismatch summary, and next action. The ledger is the anti-spam record.
 
-Only if `.callback/config.json` sets `ledger_db`: use the durable job search ledger for unemployment-reportable contacts:
+Record every outcome in callback's ledger with `record_status`; there is no separate contact log.
 
-- Run ledger commands via the `job-search-ledger` command on `PATH` with `--db <ledger_db>` (from `.callback/config.json`) — do not hardcode a repo or database path.
-- Record reportable contacts only when there was a real application, application confirmation, or recruiter resume submission. Do not mark scored/skipped/needs-review leads as reportable.
-- Use strict `ContactType` values: `Online`, `Email`, `Phone`, `In-Person`, `Mail`, `Fax`.
-- Use strict `Outcome` values: `Applied`, `No Decision`, `Hired`, `Not Hiring`, `Pending`, `Interviewed`, `Interview Date Set`, `No response from employer`.
-- Store callback details as metadata, not as duplicate export columns: `SalaryRange`, `InternalStatus`, `ResumeScoreAfterTailoring`, `ResumeScoreBeforeTailoring`, `ResumePath`, `CoverLetterPath`, and callback run identifiers when useful.
-- After recording a reportable contact, if `.callback/config.json` also sets `edd_xlsx`, run `export-excel` to update the canonical tracker at `edd_xlsx` in place, with its first columns matching the unemployment/EDD schema. Do not create dated or run-suffixed xlsx variants alongside it. If a dated export is genuinely needed (e.g. before a risky bulk edit), write it into `archive_dir/xlsx_exports/`, never to the project root or the data directory. If writing the canonical tracker in place is blocked, write the dated export under `archive_dir/xlsx_exports/` and state that a privacy/lock issue prevented updating the canonical workbook directly. If `edd_xlsx` isn't set, the contact is still recorded in the ledger — just skip the export, and don't mention the tracker.
+- Real applications, application confirmations, and recruiter resume submissions are the reportable contacts. Record them with `status="Applied"` (or `Already applied - confirmation recorded`). Do not mark scored/skipped/needs-review leads as applied.
+- Put callback details (before/after scores, resume path, cover letter path) in `note`.
+- For an unemployment (EDD) report, run `/export-ledger` with a `since` date. Write it into `archive_dir/ledger_exports/`, never the project root.
 
 ## Final Summary
 
@@ -201,15 +195,15 @@ Every number comes from `submit_tailor`'s `data.report`. Do not compute or estim
 - `Score`: `{before} → {after}` from `before.total` and `after.total`, whole numbers. For rows scored this run, equal values (e.g. `62 → 62`) mean no-coverage or no lift — say which in `Notes`. For carried-over totals, do not guess which.
 - Rows that never reached callback get `—` in every score cell.
 - `Rec`: the short label from the table below.
-- `Notes`: ONE clause, 12 words maximum — the mismatch summary, blocker, or risk in plain words. The full rationale goes in the CSV `Notes` column, not here.
+- `Notes`: ONE clause, 12 words maximum — the mismatch summary, blocker, or risk in plain words. The full rationale goes in the ledger `note`, not here.
 - When no leads were reconciled this run, keep the `## Roles` header row and write a single line below it: "No leads reconciled this run." Do not render an empty table body.
-- A role touched only by a status-update email (e.g. a rejection notice) still gets a Roles row this run, with `Rec` updated to the new status (e.g. `Rejected`). Carry over ONLY the two totals the CSV stores, as `{before} → {after}` in `Score` — if those CSV totals are blank, render `Score` as `—` too; render `KW /55`, `Req%`, `Pref%`, and `Rest` as `—`. The CSV keeps no per-dimension history, so those numbers are genuinely unknown — do not reconstruct them, and do not rerun callback against a posting that may have changed since. `Status emails` in Stats counts these status-update emails whether or not the role was newly discovered today.
+- A role touched only by a status-update email (e.g. a rejection notice) still gets a Roles row this run, with `Rec` updated to the new status (e.g. `Rejected`). Carry over ONLY the two totals the ledger stores, as `{before} → {after}` in `Score` — if those ledger totals are blank, render `Score` as `—` too; render `KW /55`, `Req%`, `Pref%`, and `Rest` as `—`. The ledger keeps no per-dimension history, so those numbers are genuinely unknown — do not reconstruct them, and do not rerun callback against a posting that may have changed since. `Status emails` in Stats counts these status-update emails whether or not the role was newly discovered today.
 
 ### Recommendation labels
 
-`Rec` is a display label for the summary table only. The record CSV `Status` column keeps the full vocabulary from [record-schema.md](references/record-schema.md) — never abbreviate there.
+`Rec` is a display label for the summary table only. The ledger status keeps the full vocabulary from [record-schema.md](references/record-schema.md) — never abbreviate there.
 
-| Rec | CSV `Status` |
+| Rec | Ledger status |
 | --- | --- |
 | `Review` | `Needs review - not applied` |
 | `Referral` | `Referral lead - ask friend` |
@@ -237,7 +231,7 @@ A `Not scored` row already has a validated full source — line 2 carries that s
 
 A `Recruiter` row has a thread, not a posting — line 2 carries the thread descriptor in place of the source URL. On line 3, state the pending decision or reply the user owes.
 
-An `Applied` row recorded from a confirmation rather than submitted this run may have no source URL and no artifacts. Line 2 carries the CSV URL or, failing that, the confirmation email descriptor; line 3 says `no artifacts recorded` and names any follow-up owed.
+An `Applied` row recorded from a confirmation rather than submitted this run may have no source URL and no artifacts. Line 2 carries the ledger URL or, failing that, the confirmation email descriptor; line 3 says `no artifacts recorded` and names any follow-up owed.
 
 ### Final Markdown Template
 
