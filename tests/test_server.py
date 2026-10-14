@@ -2407,8 +2407,19 @@ async def test_ledger_tools_record_find_and_export(tmp_path):
         by_name = await client.call_tool(
             "find_job", {"url": "https://z.com/9", "company": "a", "title": "dev"}
         )
+        similar = await client.call_tool(
+            "find_job", {"url": "https://z.com/8", "company": "a", "title": "developer"}
+        )
         exported = await client.call_tool("export_ledger", {"output_path": str(out)})
 
+    assert _envelope(similar)["data"]["company_jobs"] == [
+        {
+            "job_key": "https://a.com/1",
+            "title": "Dev",
+            "status": "Applied",
+            "status_date": "2026-10-01",
+        }
+    ]
     assert (
         _envelope(recorded)["data"],
         _envelope(repeat)["data"],
@@ -2429,6 +2440,7 @@ async def test_ledger_tools_record_find_and_export(tmp_path):
             "score_before": None,
             "score_after": None,
             "matched_by": "key",
+            "company_jobs": [],
         },
         "company_title",
         {"path": str(out), "rows": 1},

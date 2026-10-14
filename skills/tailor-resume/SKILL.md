@@ -11,7 +11,7 @@ Use callback to produce one honest, ATS-aware tailored resume for one validated 
 
 ## Scope
 
-This is a one-job workflow. Do not scan Gmail, Google Jobs, FAANG careers, CSV ledgers, unemployment trackers, or application forms. Do not submit applications.
+This is a one-job workflow. Do not scan Gmail, Google Jobs, FAANG careers, the job ledger, unemployment trackers, or application forms. Do not submit applications.
 
 ## MCP Flow
 

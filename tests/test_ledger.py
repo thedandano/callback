@@ -930,6 +930,11 @@ def test_find_job_returns_latest_status_or_not_found(tmp_path):
         by_name = ledger.find_job(conn, url="https://other.com/9", company="a", title=" dev ")
         missing = ledger.find_job(conn, url="https://a.com/2", company=None, title=None)
         half_name = ledger.find_job(conn, url="https://a.com/3", company="A", title=None)
+        other = ledger.upsert_job(
+            conn, url="https://a.com/req-7", company="a ", title="Dev II", seen_at="2026-10-03"
+        )
+        _status(conn, other, "Skipped - not fit", "2026-10-03")
+        similar = ledger.find_job(conn, url="https://a.com/4", company="A", title="Developer")
 
     hit = {"found": True, "company": "A", "title": "Dev", "status": "Rejected"}
     hit = {
@@ -949,11 +954,16 @@ def test_find_job_returns_latest_status_or_not_found(tmp_path):
         "score_before": None,
         "score_after": None,
     }
-    assert (found, by_name, missing, half_name) == (
-        {**hit, "matched_by": "key"},
-        {**hit, "matched_by": "company_title"},
-        {**none, "matched_by": None},
-        {**none, "matched_by": None},
+    mine = {"job_key": "https://a.com/1", "title": "Dev", "status": "Rejected"}
+    mine = {**mine, "status_date": "2026-10-05"}
+    req7 = {"job_key": "https://a.com/req-7", "title": "Dev II", "status": "Skipped - not fit"}
+    req7 = {**req7, "status_date": "2026-10-03"}
+    assert (found, by_name, missing, half_name, similar) == (
+        {**hit, "matched_by": "key", "company_jobs": []},
+        {**hit, "matched_by": "company_title", "company_jobs": []},
+        {**none, "matched_by": None, "company_jobs": []},
+        {**none, "matched_by": None, "company_jobs": [mine]},
+        {**none, "matched_by": None, "company_jobs": [req7, mine]},
     )
 
 
@@ -982,6 +992,7 @@ def test_find_job_normalizes_unicode_and_whitespace_and_returns_run_scores(tmp_p
         "score_before": 50.0,
         "score_after": 70.0,
         "matched_by": "company_title",
+        "company_jobs": [],
     }
 
 

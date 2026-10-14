@@ -915,6 +915,15 @@ _FIND_KEYS = [
     "score_before",
     "score_after",
 ]
+_COMPANY_JOBS_LIMIT = 20
+_COMPANY_JOBS_SQL = (
+    "SELECT j.job_key, j.title, s.status, s.recorded_at FROM jobs j "
+    "LEFT JOIN status_events s ON s.id = ("
+    "SELECT e.id FROM status_events e WHERE e.job_key = j.job_key "
+    "ORDER BY e.recorded_at DESC, e.id DESC LIMIT 1) "
+    "WHERE norm_text(j.company) = norm_text(?) "
+    f"ORDER BY j.first_seen DESC, j.job_key LIMIT {_COMPANY_JOBS_LIMIT}"
+)
 
 
 def spreadsheet_safe(row: dict) -> dict:
@@ -1028,7 +1037,8 @@ def find_job(
     than one job shares the company and title, returns found=False with
     matched_by='company_title_ambiguous' and candidate_job_keys for the caller to disambiguate —
     including when a URL-less lookup would otherwise hit a pasted key while a URL-keyed twin
-    exists.
+    exists. When nothing is found and a company is given, company_jobs lists that company's other
+    jobs (up to 20, newest first) so the caller can spot a similar title or requisition id.
     """
     cleaned = _clean_url(url)
     derived = job_key(url, company, title)
@@ -1054,4 +1064,13 @@ def find_job(
         "found": row is not None,
         **dict(zip(_FIND_KEYS, values, strict=True)),
         "matched_by": matched_by if row else None,
+        "company_jobs": [] if row or not company else _company_jobs(conn, company),
     }
+
+
+def _company_jobs(conn: sqlite3.Connection, company: str) -> list[dict]:
+    keys = ("job_key", "title", "status", "status_date")
+    return [
+        dict(zip(keys, values, strict=True))
+        for values in conn.execute(_COMPANY_JOBS_SQL, (company,))
+    ]
