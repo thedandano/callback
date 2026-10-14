@@ -1188,6 +1188,7 @@ def test_export_contacts_keeps_contact_notes_and_applications_only(tmp_path):
         ("Rejected", None),
         ("Needs review - not applied", None),
         ("Applied", "Not reportable | Contact: Email"),
+        ("Applied", "  NOT REPORTABLE  "),
     ]
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
         for i, (status, note) in enumerate(events):
@@ -1228,6 +1229,24 @@ def test_find_job_flags_a_key_match_with_a_different_title(tmp_path):
     assert kinds == ["key_title_mismatch", "key", "key"]
 
 
+def test_find_job_flags_a_key_match_with_a_missing_stored_title(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.upsert_job(
+            conn,
+            url="https://acme.com/careers#unlabeled",
+            company="Acme",
+            title=None,
+            seen_at="2026-10-01",
+        )
+        found = ledger.find_job(
+            conn,
+            url="https://acme.com/careers#backend",
+            company="Acme",
+            title="Backend Engineer",
+        )
+    assert found["matched_by"] == "key_title_mismatch"
+
+
 def test_record_status_by_job_key_ignores_a_placeholder_salary(tmp_path):
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
         key = ledger.upsert_job(
@@ -1240,3 +1259,26 @@ def test_record_status_by_job_key_ignores_a_placeholder_salary(tmp_path):
             )
         stored = conn.execute("SELECT salary_range FROM jobs").fetchall()
     assert stored == [("$150K-$180K",)]
+
+
+def test_record_status_by_pasted_job_key_fills_blank_job_metadata(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        key = ledger.job_key(None, "Acme", "Engineer")
+        ledger.record_status(
+            conn,
+            _update(company="Acme", title="Engineer", recorded_at="2026-10-01"),
+        )
+        ledger.record_status(
+            conn,
+            _update(
+                job_key=key,
+                url="https://jobs.acme.com/engineer/",
+                company="Acme",
+                title="Engineer",
+                recorded_at="2026-10-02",
+            ),
+        )
+        stored = conn.execute(
+            "SELECT job_key, url, company, title FROM jobs WHERE job_key = ?", (key,)
+        ).fetchone()
+    assert stored == (key, "https://jobs.acme.com/engineer", "Acme", "Engineer")
