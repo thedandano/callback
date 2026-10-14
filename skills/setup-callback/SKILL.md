@@ -67,7 +67,7 @@ Then call `set_search_preferences(...)` with all answers. Note: this fully repla
 
 ### 4. Job history (optional)
 
-Job history lives in callback's global ledger. If the user has an old record CSV or an old `job_search_ledger.sqlite3`, they run `callback ledger import --csv <path> --contacts-db <path>` once, from a normal terminal. For an unemployment (EDD) report, they use `/export-ledger`.
+Job history lives in callback's global ledger. Build one `callback ledger import` command from only the legacy sources that actually exist: add `--archives <folder>` for run archives, `--csv <path>` for an old record CSV, and `--contacts-db <path>` for an old `job_search_ledger.sqlite3`. Do not pass an absent source as a flag. After the import succeeds, remove `record_csv`, `ledger_db`, and `edd_xlsx` from `.callback/config.json`; keep them until success so a failed import can be retried. For an unemployment (EDD) report, use `/export-ledger`.
 
 ## Rules
 
