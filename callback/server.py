@@ -2039,7 +2039,8 @@ def find_job(url: str | None = None, company: str | None = None, title: str | No
     url without http:// or https:// (e.g. a recruiter thread) is ignored for the lookup. A job
     seen under a different URL is still found when company and title match, but that is a
     weaker match (the same title can be two real postings): check matched_by ('key',
-    'key_title_mismatch' when the URL matches but the stored title differs, 'company_title', or
+    'key_title_mismatch' when the URL matches but the stored title differs or is missing,
+    'company_title', or
     null) and confirm anything but 'key' before skipping. Returns found, job_key, company,
     title, and the latest status with its date. To record a status on the job found by
     company+title, pass its job_key to record_status.
@@ -2088,8 +2089,9 @@ def record_status(
     'Contact: <value>' and the job is keyed by company and title (or job_key). To record on a
     job that find_job found by company+title, pass its job_key instead (URL, company, title
     are then not needed); an unknown job_key is an error. With job_key, salary_range only
-    fills an empty one. History is never overwritten; the same status on the same date is
-    recorded once (recorded: false). date is YYYY-MM-DD and defaults to today.
+    fills empty fields. History is never overwritten; only an exact repeat (same job, status,
+    date, source, and note) is ignored (recorded: false). date is YYYY-MM-DD and defaults to
+    today.
     Error codes: missing_job_identity, invalid_status, invalid_date, unknown_job, ledger_error.
     """
     web_url = ledger.url_or_none(url)

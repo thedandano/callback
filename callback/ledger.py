@@ -645,16 +645,26 @@ def _existing_job_key(conn: sqlite3.Connection, update: StatusUpdate) -> str | N
 def record_status(conn: sqlite3.Connection, update: StatusUpdate) -> bool:
     """Write the job and its status event in one transaction; True if the event is new.
 
-    With a job_key, the job must exist; a salary_range only fills an empty one. With no URL, an
-    existing job with the same company and title (ignoring case and spacing) is reused.
+    With a job_key, the job must exist; URL, company, title, and salary_range only fill empty
+    fields. With no URL, an existing job with the same company and title (ignoring case and
+    spacing) is reused.
     Otherwise the job is created or merged from url / company + title.
     """
     with conn:
         if key := _existing_job_key(conn, update):
             conn.execute(
-                "UPDATE jobs SET salary_range = COALESCE(NULLIF(salary_range, ''), ?) "
+                "UPDATE jobs SET url = COALESCE(NULLIF(url, ''), ?), "
+                "company = COALESCE(NULLIF(company, ''), ?), "
+                "title = COALESCE(NULLIF(title, ''), ?), "
+                "salary_range = COALESCE(NULLIF(salary_range, ''), ?) "
                 "WHERE job_key = ?",
-                (clean_salary(update.salary_range) or None, key),
+                (
+                    _clean_url(update.url),
+                    _optional_text(update.company),
+                    _optional_text(update.title),
+                    clean_salary(update.salary_range) or None,
+                    key,
+                ),
             )
         else:
             key = _upsert_job(
@@ -720,7 +730,8 @@ ORDER BY s.recorded_at DESC, j.job_key
 EVENT_COLUMNS = ["Date", "Company", "Title", "URL", "Status", "Notes", "Source"]
 # An EDD-reportable event: a contact note, or an application or its confirmation.
 _CONTACT_FILTER = """
-  AND NOT ifnull(norm_text(e.note), '') LIKE 'not reportable |%'
+  AND NOT (ifnull(norm_text(e.note), '') = 'not reportable'
+           OR ifnull(norm_text(e.note), '') LIKE 'not reportable |%')
   AND (norm_text(e.note) LIKE 'contact method:%'
        OR norm_text(e.status) LIKE 'applied%'
        OR norm_text(e.status) LIKE 'already applied%')
@@ -806,7 +817,8 @@ def export_contacts(
 
     Keeps events whose note starts with 'Contact method:' and events whose status starts with
     'Applied' or 'Already applied' (Unicode case-insensitive), except notes starting
-    'Not reportable |' (legacy contacts the user marked non-reportable). Same columns and filters.
+    'Not reportable' or 'Not reportable |' (legacy contacts the user marked non-reportable). Same
+    columns and filters.
     """
     return _event_rows(conn, _events_sql(_CONTACT_FILTER), status_prefix, since)
 
@@ -832,13 +844,14 @@ def _find_row(conn: sqlite3.Connection, where: tuple[str, str], params: tuple) -
 
 
 def _key_match_kind(row: tuple | None, title: str | None) -> str:
-    """'key', or 'key_title_mismatch' when the stored and given titles both exist and differ.
+    """'key', or 'key_title_mismatch' when a given title differs from or fills a missing one.
 
     One careers page can hold several postings behind #anchors that the key drops, so a key
     match with another title may be a different job: callers confirm it like a name match.
     """
-    stored = row[_FIND_KEYS.index("title")] if row else None
-    if stored and title and _norm_text(stored) != _norm_text(title):
+    stored = _optional_text(row[_FIND_KEYS.index("title")]) if row else None
+    given = _optional_text(title)
+    if given and (not stored or _norm_text(stored) != _norm_text(given)):
         return "key_title_mismatch"
     return "key"
 
@@ -851,7 +864,7 @@ def find_job(
     Looks up by URL (or company + title when there is no URL) first. A posting seen under a
     different URL is still found when company and title match, ignoring case, Unicode case, and
     spacing. Includes the latest run's score totals when a run exists. A key match whose stored
-    title differs from `title` reports matched_by='key_title_mismatch'.
+    title differs from `title` or is missing reports matched_by='key_title_mismatch'.
     """
     row = _find_row(conn, _BY_KEY, (job_key(url, company, title),))
     matched_by = _key_match_kind(row, title)
