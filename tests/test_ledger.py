@@ -1,3 +1,5 @@
+import logging
+import sqlite3
 from contextlib import closing
 
 import pytest
@@ -39,6 +41,12 @@ def _run(session_id="s1", url="https://jobs.example.com/a", pdf="/p.pdf") -> led
             "https://www.ziprecruiter.com/job-redirect?match_token=abc",
         ),
         ("HTTP://jobs.example.com/a", "https://jobs.example.com/a"),
+        ("http://jobs.example.com:80/a", "https://jobs.example.com/a"),
+        ("https://jobs.example.com:443/a", "https://jobs.example.com/a"),
+        ("https://jobs.example.com:8443/a", "https://jobs.example.com:8443/a"),
+        ("https://x.com/#/job/1", "https://x.com#/job/1"),
+        ("https://x.com/#!/job/2", "https://x.com#!/job/2"),
+        ("jobs.Example.com/a/", "https://jobs.example.com/a"),
         ("https://jobs.example.com/a", "https://jobs.example.com/a"),
     ],
 )
@@ -52,6 +60,7 @@ def test_normalize_url_drops_tracking_noise_but_keeps_job_ids(raw, expected):
         (("https://jobs.example.com/a/", "Acme", "Eng"), "https://jobs.example.com/a"),
         ((None, "Acme", "Senior Engineer"), "pasted:acme-senior-engineer"),
         ((None, None, None), "pasted:job"),
+        (("   ", "Acme", "Eng"), "pasted:acme-eng"),
     ],
 )
 def test_job_key_uses_url_or_falls_back_to_company_and_title(args, expected):
@@ -122,3 +131,62 @@ def test_add_status_is_append_only_and_ignores_exact_repeats(tmp_path):
         [True, False, True],
         [("Applied", "2026-10-01"), ("Rejected", "2026-10-05")],
     )
+
+
+def test_unparseable_url_is_logged_and_kept_as_typed(caplog):
+    with caplog.at_level(logging.WARNING, logger="callback.ledger"):
+        actual = ledger.normalize_url("  http://[bad  ")
+    messages = [r.getMessage() for r in caplog.records]
+    assert (actual, len(messages), '"ledger_url_unparsed"' in messages[0]) == (
+        "http://[bad",
+        1,
+        True,
+    )
+
+
+def test_blank_url_is_stored_as_null(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.upsert_job(conn, url="  ", company="Acme", title="Eng", seen_at="2026-10-01")
+        rows = conn.execute("SELECT job_key, url FROM jobs").fetchall()
+    assert rows == [("pasted:acme-eng", None)]
+
+
+def test_a_failed_run_leaves_no_job_behind(tmp_path):
+    bad = _run().model_copy(update={"outcome": {"x": object()}})
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        with pytest.raises(TypeError):
+            ledger.record_run(conn, bad)
+        jobs = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()
+    assert jobs == (0,)
+
+
+def test_missing_keywords_are_stored_as_sql_null(tmp_path):
+    run = _run().model_copy(update={"keywords": None})
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_run(conn, run)
+        rows = conn.execute("SELECT keywords FROM runs").fetchall()
+    assert rows == [(None,)]
+
+
+def test_company_and_title_ignore_non_text_values():
+    run = _run().model_copy(update={"keywords": {"company": ["Acme"], "title": "  Eng  "}})
+    assert (run.company, run.title) == (None, "Eng")
+
+
+def test_connect_closes_and_logs_when_setup_fails(tmp_path, caplog):
+    path = tmp_path / "l.db"
+    path.write_bytes(b"this is not a sqlite database" * 100)
+    with (
+        caplog.at_level(logging.WARNING, logger="callback.ledger"),
+        pytest.raises(sqlite3.DatabaseError),
+    ):
+        ledger.connect(path)
+    messages = [r.getMessage() for r in caplog.records]
+    assert (len(messages), '"ledger_open_failed"' in messages[0]) == (1, True)
+
+
+def test_add_status_for_an_unknown_job_is_rejected(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn, pytest.raises(sqlite3.IntegrityError):
+        ledger.add_status(
+            conn, job_key="nope", status="Applied", recorded_at="d", note=None, source="t"
+        )

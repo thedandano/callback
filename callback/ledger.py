@@ -7,6 +7,7 @@ writer, and status events are append-only: a repeat of the same event is ignored
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -15,7 +16,11 @@ from pydantic import BaseModel, ConfigDict
 
 from callback import paths
 
+_log = logging.getLogger(__name__)
+
 _BUSY_TIMEOUT_S = 5.0
+_DEFAULT_PORTS = {"http": ":80", "https": ":443"}
+_ROUTE_FRAGMENT_PREFIXES = ("/", "!")
 # Query parameters that name the posting itself (Greenhouse, Indeed, Workday/Phenom, Lever-style,
 # ZipRecruiter). Everything else in the query string is tracking noise.
 _JOB_ID_PARAMS = frozenset(
@@ -110,23 +115,54 @@ class RunRecord(BaseModel):
 
     @property
     def company(self) -> str | None:
-        return (self.keywords or {}).get("company")
+        return _text_field(self.keywords, "company")
 
     @property
     def title(self) -> str | None:
-        return (self.keywords or {}).get("title")
+        return _text_field(self.keywords, "title")
+
+
+def _text_field(keywords: dict | None, name: str) -> str | None:
+    value = (keywords or {}).get(name)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
 
 
 def normalize_url(url: str) -> str:
-    """Canonical form of a posting URL: https, lowercase host, no fragment or trailing slash.
+    """Canonical form of a posting URL: https, lowercase host, no default port, no trailing slash.
 
     Keeps only the query parameters that name the posting (`_JOB_ID_PARAMS`). A board that
-    names its job id in another parameter needs that name added there.
+    names its job id in another parameter needs that name added there. Fragments are dropped
+    unless they look like a route ("#/job/1", "#!/job/1"). A value that cannot be parsed is
+    logged and kept as typed.
+
+    ponytail: `www.` is kept, so "www.x.com/a" and "x.com/a" get two keys. Strip it here if
+    that ever splits one posting in two.
     """
-    parts = urlsplit(url.strip())
-    scheme = "https" if parts.scheme.lower() in ("http", "https") else parts.scheme.lower()
+    stripped = url.strip()
+    candidate = stripped if "://" in stripped else f"https://{stripped}"
+    try:
+        parts = urlsplit(candidate)
+    except ValueError as exc:
+        _log.warning(
+            json.dumps({"event": "ledger_url_unparsed", "url": stripped, "error": str(exc)})
+        )
+        return stripped
+    scheme = parts.scheme.lower()
+    netloc = parts.netloc.lower().removesuffix(_DEFAULT_PORTS.get(scheme, "\0"))
+    if scheme == "http":
+        scheme = "https"
     query = urlencode(sorted((k, v) for k, v in parse_qsl(parts.query) if k in _JOB_ID_PARAMS))
-    return urlunsplit((scheme, parts.netloc.lower(), parts.path.rstrip("/"), query, ""))
+    fragment = parts.fragment if parts.fragment.startswith(_ROUTE_FRAGMENT_PREFIXES) else ""
+    return urlunsplit((scheme, netloc, parts.path.rstrip("/"), query, fragment))
+
+
+def _clean_url(url: str | None) -> str | None:
+    """Normalized URL, or None when there is no URL (missing or blank)."""
+    if url is None or not url.strip():
+        return None
+    return normalize_url(url)
 
 
 def job_key(url: str | None, company: str | None, title: str | None) -> str:
@@ -136,19 +172,43 @@ def job_key(url: str | None, company: str | None, title: str | None) -> str:
     ponytail: two different pasted postings with the same company and title share one job.
     Add a JD-text hash here if that ever merges postings that should stay apart.
     """
-    if url:
-        return normalize_url(url)
+    cleaned = _clean_url(url)
+    if cleaned:
+        return cleaned
     return f"pasted:{paths.slug(company, title)}"
 
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
+    """Open the ledger. WAL needs a local filesystem; a network drive will fail here."""
     path = path or paths.ledger_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path), timeout=_BUSY_TIMEOUT_S)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    conn.executescript(_SCHEMA)
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.executescript(_SCHEMA)
+    except sqlite3.Error as exc:
+        conn.close()
+        _log.warning(
+            json.dumps({"event": "ledger_open_failed", "path": str(path), "error": str(exc)})
+        )
+        raise
     return conn
+
+
+def _upsert_job(
+    conn: sqlite3.Connection,
+    *,
+    url: str | None,
+    company: str | None,
+    title: str | None,
+    seen_at: str,
+    salary_range: str | None,
+) -> str:
+    """Insert or merge a job row without committing; callers own the transaction."""
+    key = job_key(url, company, title)
+    conn.execute(_UPSERT_JOB, (key, _clean_url(url), company, title, salary_range, seen_at))
+    return key
 
 
 def upsert_job(
@@ -160,18 +220,44 @@ def upsert_job(
     seen_at: str,
     salary_range: str | None = None,
 ) -> str:
-    key = job_key(url, company, title)
-    stored_url = normalize_url(url) if url else None
     with conn:
-        conn.execute(_UPSERT_JOB, (key, stored_url, company, title, salary_range, seen_at))
-    return key
+        return _upsert_job(
+            conn,
+            url=url,
+            company=company,
+            title=title,
+            seen_at=seen_at,
+            salary_range=salary_range,
+        )
+
+
+def _json_or_null(value: object) -> str | None:
+    return None if value is None else json.dumps(value)
 
 
 def record_run(conn: sqlite3.Connection, run: RunRecord) -> None:
-    key = upsert_job(
-        conn, url=run.jd_url, company=run.company, title=run.title, seen_at=run.timestamp
+    """Save a run and its job in one transaction.
+
+    ponytail: a retry whose URL, company or title changed re-points the run to a new job and
+    can leave the old job with no runs. Harmless for dedupe; prune orphans if it ever matters.
+    """
+    # Serialize first so bad data fails before anything is written.
+    blobs = (
+        _json_or_null(run.keywords),
+        json.dumps(run.render_warnings),
+        json.dumps(run.scores),
+        json.dumps(run.uncovered_skills),
+        json.dumps(run.outcome),
     )
     with conn:
+        key = _upsert_job(
+            conn,
+            url=run.jd_url,
+            company=run.company,
+            title=run.title,
+            seen_at=run.timestamp,
+            salary_range=None,
+        )
         conn.execute(
             _UPSERT_RUN,
             (
@@ -179,14 +265,11 @@ def record_run(conn: sqlite3.Connection, run: RunRecord) -> None:
                 key,
                 run.timestamp,
                 run.jd_text,
-                json.dumps(run.keywords),
+                blobs[0],
                 run.tailored_resume_text,
                 run.pdf_path,
                 run.render_page_count,
-                json.dumps(run.render_warnings),
-                json.dumps(run.scores),
-                json.dumps(run.uncovered_skills),
-                json.dumps(run.outcome),
+                *blobs[1:],
             ),
         )
 
