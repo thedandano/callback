@@ -1282,3 +1282,27 @@ def test_record_status_by_pasted_job_key_fills_blank_job_metadata(tmp_path):
             "SELECT job_key, url, company, title FROM jobs WHERE job_key = ?", (key,)
         ).fetchone()
     assert stored == (key, "https://jobs.acme.com/engineer", "Acme", "Engineer")
+
+
+def test_find_job_by_url_finds_a_pasted_job_that_later_got_that_url(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        key = ledger.upsert_job(conn, url=None, company="Acme", title="Eng", seen_at="2026-10-01")
+        ledger.record_status(
+            conn,
+            _update(job_key=key, url="https://acme.com/jobs/9", status="Seen"),
+        )
+        found = ledger.find_job(
+            conn, url="https://acme.com/jobs/9/?utm_source=x", company=None, title=None
+        )
+    assert (found["found"], found["job_key"], found["matched_by"]) == (True, key, "key")
+
+
+def test_record_status_by_url_lands_on_the_pasted_job_that_has_that_url(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        key = ledger.upsert_job(conn, url=None, company="Acme", title="Eng", seen_at="2026-10-01")
+        ledger.record_status(
+            conn, _update(job_key=key, url="https://acme.com/jobs/9", status="Seen")
+        )
+        ledger.record_status(conn, _update(url="https://acme.com/jobs/9", status="Applied"))
+        rows = conn.execute("SELECT job_key, status FROM status_events ORDER BY id").fetchall()
+    assert rows == [(key, "Seen"), (key, "Applied")]
