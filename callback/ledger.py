@@ -416,6 +416,23 @@ def upsert_job(
         )
 
 
+def canonical_timestamp(value: str) -> str:
+    """UTC `YYYY-MM-DDTHH:MM:SS+00:00` (naive means UTC); an unparseable value is kept and logged.
+
+    One form makes text order equal time order, whatever offset or ISO shape the writer used.
+    """
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        _log.warning(
+            json.dumps({"event": "ledger_timestamp_unparseable", "value": value, "kept": True})
+        )
+        return value
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC).isoformat()
+
+
 def _json_or_null(value: object) -> str | None:
     return None if value is None else json.dumps(value)
 
@@ -441,7 +458,7 @@ def record_run(conn: sqlite3.Connection, run: RunRecord) -> None:
             (
                 run.session_id,
                 key,
-                run.timestamp,
+                canonical_timestamp(run.timestamp),
                 run.jd_text,
                 blobs[0],
                 run.tailored_resume_text,
@@ -523,21 +540,17 @@ def _run_exists(conn: sqlite3.Connection, session_id: str) -> bool:
     return row is not None
 
 
-def _name_form(text: str) -> str:
-    return " ".join(text.split()).casefold()
-
-
 def job_key_by_name(conn: sqlite3.Connection, company: str, title: str) -> str | None:
     """The one job whose company and title match ignoring case and spacing, else None.
 
     None when nothing matches or several jobs match; the caller then keeps its own key.
     """
-    wanted = (_name_form(company), _name_form(title))
     rows = conn.execute(
-        "SELECT job_key, company, title FROM jobs WHERE company IS NOT NULL AND title IS NOT NULL"
-    )
-    matches = [key for key, name, role in rows if (_name_form(name), _name_form(role)) == wanted]
-    return matches[0] if len(matches) == 1 else None
+        "SELECT job_key FROM jobs WHERE norm_text(company) = norm_text(?) "
+        "AND norm_text(title) = norm_text(?)",
+        (company, title),
+    ).fetchall()
+    return rows[0][0] if len(rows) == 1 else None
 
 
 def _run_blobs(run: RunRecord) -> tuple[str | None, str, str, str, str]:
@@ -554,7 +567,7 @@ def _run_values(run: RunRecord, key: str, blobs: tuple[str | None, str, str, str
     return (
         run.session_id,
         key,
-        run.timestamp,
+        canonical_timestamp(run.timestamp),
         run.jd_text,
         blobs[0],
         run.tailored_resume_text,
@@ -636,15 +649,25 @@ class StatusUpdate(BaseModel):
     salary_range: str | None = None
 
 
+def _existing_job_key(conn: sqlite3.Connection, update: StatusUpdate) -> str | None:
+    """The job a status names: its job_key, or the one job matching company + title sans URL."""
+    if update.job_key:
+        return update.job_key
+    company, title = _optional_text(update.company), _optional_text(update.title)
+    if _clean_url(update.url) or not (company and title):
+        return None
+    return job_key_by_name(conn, company, title)
+
+
 def record_status(conn: sqlite3.Connection, update: StatusUpdate) -> bool:
     """Write the job and its status event in one transaction; True if the event is new.
 
-    With a job_key, the job must exist; a salary_range only fills an empty one.
-    Without one, the job is created or merged from url / company + title.
+    With a job_key, the job must exist; a salary_range only fills an empty one. With no URL, an
+    existing job with the same company and title (ignoring case and spacing) is reused.
+    Otherwise the job is created or merged from url / company + title.
     """
     with conn:
-        if update.job_key:
-            key = update.job_key
+        if key := _existing_job_key(conn, update):
             conn.execute(
                 "UPDATE jobs SET salary_range = COALESCE(NULLIF(salary_range, ''), ?) "
                 "WHERE job_key = ?",
@@ -682,7 +705,12 @@ EXPORT_COLUMNS = [
     "Resume PDF",
 ]
 _FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r", "\n")
-_EXPORT_SQL = """
+# Unicode case-insensitive prefix; no LIKE, so wildcards in the prefix are literal.
+_STATUS_MATCH = (
+    "(:status IS NULL OR "
+    "substr(norm_text(e.status), 1, length(norm_text(:status))) = norm_text(:status))"
+)
+_EXPORT_SQL = f"""
 WITH latest_status AS (
     SELECT job_key, status, recorded_at, note,
            ROW_NUMBER() OVER (PARTITION BY job_key ORDER BY recorded_at DESC, id DESC) AS rn
@@ -701,20 +729,31 @@ LEFT JOIN latest_run r ON r.job_key = j.job_key AND r.rn = 1
 WHERE (:status IS NULL AND :since IS NULL) OR EXISTS (
     SELECT 1 FROM status_events e
     WHERE e.job_key = j.job_key
-      AND (:status IS NULL OR e.status LIKE :status || '%' ESCAPE '\\')
+      AND {_STATUS_MATCH}
       AND (:since IS NULL OR e.recorded_at >= :since)
 )
 ORDER BY s.recorded_at DESC, j.job_key
 """
 EVENT_COLUMNS = ["Date", "Company", "Title", "URL", "Status", "Notes", "Source"]
-_EVENTS_SQL = """
+# An EDD-reportable event: a contact note, or an application or its confirmation.
+_CONTACT_FILTER = """
+  AND (norm_text(e.note) LIKE 'contact method:%'
+       OR norm_text(e.status) LIKE 'applied%'
+       OR norm_text(e.status) LIKE 'already applied%')
+"""
+
+
+def _events_sql(extra: str = "") -> str:
+    return f"""
 SELECT e.recorded_at, j.company, j.title, j.url, e.status, e.note, e.source
 FROM status_events e
 JOIN jobs j ON j.job_key = e.job_key
-WHERE (:status IS NULL OR e.status LIKE :status || '%' ESCAPE '\\')
-  AND (:since IS NULL OR e.recorded_at >= :since)
+WHERE {_STATUS_MATCH}
+  AND (:since IS NULL OR e.recorded_at >= :since){extra}
 ORDER BY e.recorded_at DESC, e.id DESC
 """
+
+
 _FIND_SQL = (
     "SELECT j.company, j.title, s.status, s.recorded_at, j.job_key, "
     "(SELECT json_extract(r.scores, '$.initial.total') FROM runs r "
@@ -755,11 +794,11 @@ def export_rows(
 
     status_prefix and since match ANY status event of the job (so a job once 'Applied' still
     shows after it is 'Rejected'); the row shows the latest status. status_prefix matches the
-    start of the status text (case-insensitive, wildcards taken literally; empty means no
+    start of the status text (Unicode case-insensitive, wildcards taken literally; empty means no
     filter), so 'Applied' also matches 'Applied - confirmed'. since compares
     as text, so pass YYYY-MM-DD.
     """
-    params = {"status": _like_prefix(status_prefix), "since": since}
+    params = {"status": _status_prefix(status_prefix), "since": since}
     return [
         dict(zip(EXPORT_COLUMNS, row, strict=True)) for row in conn.execute(_EXPORT_SQL, params)
     ]
@@ -773,15 +812,30 @@ def export_events(
     Unlike export_rows, status_prefix and since filter the event itself, so an 'Applied' event
     keeps its own date even after the job is 'Rejected'. Same matching rules as export_rows.
     """
-    params = {"status": _like_prefix(status_prefix), "since": since}
-    return [dict(zip(EVENT_COLUMNS, row, strict=True)) for row in conn.execute(_EVENTS_SQL, params)]
+    return _event_rows(conn, _events_sql(), status_prefix, since)
 
 
-def _like_prefix(status_prefix: str | None) -> str | None:
-    """A status prefix escaped for LIKE (wildcards taken literally), or None for no filter."""
-    prefix = (status_prefix or "").strip()
-    escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return escaped or None
+def export_contacts(
+    conn: sqlite3.Connection, *, status_prefix: str | None = None, since: str | None = None
+) -> list[dict]:
+    """export_events limited to EDD-reportable events.
+
+    Keeps events whose note starts with 'Contact method:' and events whose status starts with
+    'Applied' or 'Already applied' (Unicode case-insensitive). Same columns and filters.
+    """
+    return _event_rows(conn, _events_sql(_CONTACT_FILTER), status_prefix, since)
+
+
+def _event_rows(
+    conn: sqlite3.Connection, sql: str, status_prefix: str | None, since: str | None
+) -> list[dict]:
+    params = {"status": _status_prefix(status_prefix), "since": since}
+    return [dict(zip(EVENT_COLUMNS, row, strict=True)) for row in conn.execute(sql, params)]
+
+
+def _status_prefix(status_prefix: str | None) -> str | None:
+    """A status prefix with outer spaces trimmed, or None for no filter."""
+    return (status_prefix or "").strip() or None
 
 
 def job_exists(conn: sqlite3.Connection, key: str) -> bool:
