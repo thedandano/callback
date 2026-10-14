@@ -741,3 +741,101 @@ def test_placeholder_salary_is_stored_as_no_salary(tmp_path):
         )
         stored = conn.execute("SELECT salary_range FROM jobs").fetchone()
     assert tuple(stored) == (None,)
+
+
+def _status(conn, key, status, day):
+    ledger.add_status(conn, job_key=key, status=status, recorded_at=day, note=None, source="t")
+
+
+def test_export_rows_shows_latest_status_and_latest_run_per_job(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_run(conn, _run("s1", pdf="/a.pdf"))
+        key = ledger.upsert_job(
+            conn, url="https://jobs.example.com/a", company=None, title=None, seen_at="2026-10-01"
+        )
+        ledger.add_status(
+            conn, job_key=key, status="Applied", recorded_at="2026-10-02", note="n1", source="t"
+        )
+        _status(conn, key, "Rejected", "2026-10-09")
+        other = ledger.upsert_job(
+            conn, url="https://b.com/1", company="B", title="Dev", seen_at="2026-10-03"
+        )
+        _status(conn, other, "Applied - confirmed", "2026-10-03")
+
+        everything = ledger.export_rows(conn)
+        applied_since = ledger.export_rows(conn, status_prefix="Applied", since="2026-10-03")
+        applied_from_oct_1 = ledger.export_rows(conn, status_prefix="Applied", since="2026-10-01")
+
+    acme = {
+        "Company": "Acme",
+        "Title": "Engineer",
+        "URL": "https://jobs.example.com/a",
+        "Salary range": None,
+        "Status": "Rejected",
+        "Status date": "2026-10-09",
+        "Notes": None,
+        "Score before": 50.0,
+        "Score after": 70.0,
+        "Resume PDF": "/a.pdf",
+    }
+    b = {
+        "Company": "B",
+        "Title": "Dev",
+        "URL": "https://b.com/1",
+        "Salary range": None,
+        "Status": "Applied - confirmed",
+        "Status date": "2026-10-03",
+        "Notes": None,
+        "Score before": None,
+        "Score after": None,
+        "Resume PDF": None,
+    }
+    assert (everything, applied_since, applied_from_oct_1) == ([acme, b], [b], [acme, b])
+
+
+def test_find_job_returns_latest_status_or_not_found(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        key = ledger.upsert_job(
+            conn, url="https://a.com/1", company="A", title="Dev", seen_at="2026-10-01"
+        )
+        _status(conn, key, "Applied", "2026-10-01")
+        _status(conn, key, "Rejected", "2026-10-05")
+        found = ledger.find_job(conn, url="https://a.com/1/?utm_source=x", company=None, title=None)
+        by_name = ledger.find_job(conn, url="https://other.com/9", company="a", title=" dev ")
+        missing = ledger.find_job(conn, url="https://a.com/2", company=None, title=None)
+        half_name = ledger.find_job(conn, url="https://a.com/3", company="A", title=None)
+
+    hit = {"found": True, "company": "A", "title": "Dev", "status": "Rejected"}
+    hit = {**hit, "status_date": "2026-10-05"}
+    none = {"found": False, "company": None, "title": None, "status": None, "status_date": None}
+    assert (found, by_name, missing, half_name) == (
+        {**hit, "matched_by": "key"},
+        {**hit, "matched_by": "company_title"},
+        {**none, "matched_by": None},
+        {**none, "matched_by": None},
+    )
+
+
+def test_spreadsheet_safe_defuses_formulas_only():
+    row = {
+        "a": "=HYPERLINK(1)",
+        "b": "Applied - confirmed",
+        "c": "-5",
+        "d": "\tx",
+        "e": 3.5,
+        "f": None,
+        "g": "@x",
+        "h": "+1",
+        "i": "\rx",
+    }
+    assert ledger.spreadsheet_safe(row) == {
+        "a": "'=HYPERLINK(1)",
+        "b": "Applied - confirmed",
+        "c": "'-5",
+        "d": "'\tx",
+        "e": 3.5,
+        "f": None,
+        "g": "'@x",
+        "h": "'+1",
+        "i": "'\rx",
+    }
