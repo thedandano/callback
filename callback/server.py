@@ -1,6 +1,6 @@
 """MCP server for callback: host handoff and profile management.
 
-Exposes eight tools:
+Exposes thirteen tools:
 1. load_jd — loads JD markdown and returns host extraction instructions
 2. submit_keywords — accepts host-extracted JDData and returns score/tailor context
 3. submit_tailor — accepts host edits and finalizes PDF/report artifacts
@@ -9,6 +9,8 @@ Exposes eight tools:
 6. compile_profile — enters profile graph at compile_profile node
 7. create_story — enters profile graph at create_story node
 8. check_update — returns current version, latest release, and update_available flag
+9. get_search_preferences, 10. set_search_preferences — job-search preferences
+11. find_job, 12. record_status, 13. export_ledger — the application ledger
 """
 
 import asyncio
@@ -2094,8 +2096,6 @@ def check_update() -> dict:
 # Ledger tools
 # ============================================================================
 
-_ISO_DATE_LENGTH = len("YYYY-MM-DD")
-
 
 def _today_iso() -> str:
     return datetime.date.today().isoformat()  # local date, like the skills' folders
@@ -2103,13 +2103,10 @@ def _today_iso() -> str:
 
 def _is_iso_date(value: str) -> bool:
     """True only for a real YYYY-MM-DD; text comparison of dates breaks on other shapes."""
-    if len(value) != _ISO_DATE_LENGTH:
-        return False
     try:
-        datetime.date.fromisoformat(value)
+        return datetime.date.fromisoformat(value).isoformat() == value
     except ValueError:
         return False
-    return True
 
 
 def _date_error(name: str, value: str | None) -> dict | None:
@@ -2139,9 +2136,11 @@ def find_job(url: str | None = None, company: str | None = None, title: str | No
     """Check whether a job is already in callback's ledger (for dedupe before scoring or applying).
 
     Pass the posting URL, or company and title for a pasted job description with no URL. A job
-    seen under a different URL is still found when company and title match.
-    Returns found, company, title, the latest status with its date, and matched_by
-    ('key', 'company_title', or null). Error codes: missing_job_identity, ledger_error.
+    seen under a different URL is still found when company and title match, but that is a
+    weaker match (the same title can be two real postings): check matched_by ('key',
+    'company_title', or null) before skipping. Returns found, job_key, company, title, and the
+    latest status with its date. To record a status on the job found by company+title, pass its
+    job_key to record_status. Error codes: missing_job_identity, ledger_error.
     """
     if error := _identity_error(url, company, title):
         return error
@@ -2153,9 +2152,14 @@ def find_job(url: str | None = None, company: str | None = None, title: str | No
 
 
 def _record_status_error(
-    status: str, url: str | None, company: str | None, title: str | None, date: str | None
+    status: str,
+    url: str | None,
+    company: str | None,
+    title: str | None,
+    date: str | None,
+    job_key: str | None,
 ) -> dict | None:
-    if error := _identity_error(url, company, title):
+    if not job_key and (error := _identity_error(url, company, title)):
         return error
     if not status.strip():
         return _err("ledger", "invalid_status", "status must not be empty.")
@@ -2171,20 +2175,25 @@ def record_status(
     salary_range: str | None = None,
     note: str | None = None,
     date: str | None = None,
+    job_key: str | None = None,
 ) -> dict:
     """Add a status event (e.g. 'Applied', 'Rejected', 'Skipped - not fit') to a job in the ledger.
 
-    Give a URL, or a company and title. Creates the job if it is new. History is never
-    overwritten; the same status on the same date is recorded once (recorded: false).
-    date is YYYY-MM-DD and defaults to today.
-    Error codes: missing_job_identity, invalid_status, invalid_date, ledger_error.
+    Give a URL, or a company and title. Creates the job if it is new. To record on a job that
+    find_job found by company+title, pass its job_key instead (URL, company, title are then
+    not needed); an unknown job_key is an error. History is never overwritten; the same
+    status on the same date is recorded once (recorded: false). date is YYYY-MM-DD and
+    defaults to today.
+    Error codes: missing_job_identity, invalid_status, invalid_date, unknown_job, ledger_error.
     """
-    if error := _record_status_error(status, url, company, title, date):
+    if error := _record_status_error(status, url, company, title, date, job_key):
         return error
     recorded_at = date or _today_iso()
     try:
         with closing(ledger.connect()) as conn:
-            key = ledger.upsert_job(
+            if job_key and not ledger.job_exists(conn, job_key):
+                return _err("ledger", "unknown_job", f"no job with job_key: {job_key!r}")
+            key = job_key or ledger.upsert_job(
                 conn,
                 url=url,
                 company=company,
@@ -2213,18 +2222,29 @@ def _csv_text(rows: list[dict]) -> str:
     return buffer.getvalue()
 
 
+def _output_path_error(target: Path) -> dict | None:
+    if not target.is_absolute():
+        return _err("ledger", "invalid_output_path", f"output_path must be absolute: {target}")
+    if target.suffix.lower() != ".csv":
+        return _err("ledger", "invalid_output_path", f"output_path must end in .csv: {target}")
+    if target.exists() and not target.is_file():
+        return _err("ledger", "invalid_output_path", f"output_path is not a regular file: {target}")
+    return None
+
+
 @mcp.tool()
 def export_ledger(output_path: str, status: str | None = None, since: str | None = None) -> dict:
     """Write one CSV row per job (latest status, latest scores) to output_path (e.g. an EDD report).
 
-    output_path must be absolute. status matches the start of the status text of any of the
-    job's events; since is YYYY-MM-DD and keeps jobs with an event on or after it. Text that a
-    spreadsheet would run as a formula is prefixed with '.
+    output_path must be absolute and end in .csv. status matches the start of the status text
+    of any of the job's events (empty means no filter);
+    since is YYYY-MM-DD and keeps jobs with an event on or after it. Text that a spreadsheet
+    would run as a formula is prefixed with '.
     Error codes: invalid_output_path, invalid_date, ledger_error.
     """
     target = Path(output_path).expanduser()
-    if not target.is_absolute():
-        return _err("ledger", "invalid_output_path", f"output_path must be absolute: {output_path}")
+    if error := _output_path_error(target):
+        return error
     if error := _date_error("since", since):
         return error
     try:
