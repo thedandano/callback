@@ -1122,3 +1122,16 @@ def test_ledger_import_database_error_exits_with_an_error(tmp_path):
         1,
         ["error: locked (the import is safe to re-run)"],
     )
+
+
+def test_ledger_import_file_system_error_exits_with_an_error(tmp_path):
+    csv_path = tmp_path / "r.csv"
+    csv_path.write_text("Company,Title,URL\n")
+
+    with patch("callback.cli.ledger.connect", side_effect=PermissionError("denied")):
+        result = runner.invoke(app, ["ledger", "import", "--csv", str(csv_path)])
+
+    assert (result.exit_code, result.stderr.splitlines()) == (
+        1,
+        ["error: denied (the import is safe to re-run)"],
+    )
