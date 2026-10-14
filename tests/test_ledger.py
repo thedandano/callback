@@ -43,6 +43,10 @@ def _run(
             "https://www.ziprecruiter.com/job-redirect?match_token=abc&utm_source=x",
             "https://www.ziprecruiter.com/job-redirect?match_token=abc",
         ),
+        (
+            "https://x.taleo.net/jobdetail.ftl?job=111&lang=en&sort=date&page=2",
+            "https://x.taleo.net/jobdetail.ftl?job=111",
+        ),
         ("HTTP://jobs.example.com/a", "https://jobs.example.com/a"),
         ("http://jobs.example.com:80/a", "https://jobs.example.com/a"),
         ("https://jobs.example.com:443/a", "https://jobs.example.com/a"),
@@ -58,25 +62,28 @@ def test_normalize_url_drops_tracking_noise_but_keeps_job_ids(raw, expected):
 
 
 @pytest.mark.parametrize(
-    ("first", "second"),
+    ("raw", "expected"),
     [
         (
             "https://x.taleo.net/careersection/2/jobdetail.ftl?job=111",
-            "https://x.taleo.net/careersection/2/jobdetail.ftl?job=222",
+            "https://x.taleo.net/careersection/2/jobdetail.ftl?job=111",
         ),
         (
             "https://career4.successfactors.com/career?career_job_req_id=5&company=acme",
-            "https://career4.successfactors.com/career?career_job_req_id=6&company=acme",
+            "https://career4.successfactors.com/career?career_job_req_id=5&company=acme",
         ),
         (
             "https://www.linkedin.com/jobs/search/?currentJobId=1&trk=x",
-            "https://www.linkedin.com/jobs/search/?currentJobId=2&trk=x",
+            "https://www.linkedin.com/jobs/search?currentJobId=1",
         ),
-        ("https://jobs.example.com/view?jobid=1", "https://jobs.example.com/view?jobid=2"),
+        (
+            "https://jobs.example.com/view?jobid=1",
+            "https://jobs.example.com/view?jobid=1",
+        ),
     ],
 )
-def test_job_identifying_params_give_distinct_keys(first, second):
-    assert ledger.normalize_url(first) != ledger.normalize_url(second)
+def test_job_identifying_params_are_kept_in_normalized_url(raw, expected):
+    assert ledger.normalize_url(raw) == expected
 
 
 def test_tracking_params_are_dropped_case_insensitively_and_the_rest_sorted():

@@ -53,6 +53,23 @@ _TRACKING_PARAMS = frozenset(
         "_ga",
         "igshid",
         "si",
+        "sort",
+        "page",
+        "lang",
+        "locale",
+        "q",
+        "keywords",
+        "search",
+        "filter",
+        "view",
+        "origin",
+        "refererurl",
+        "referrer",
+        "cmp",
+        "campaign",
+        "medium",
+        "share",
+        "sharedid",
     }
 )
 _JD_HASH_CHARS = 8
