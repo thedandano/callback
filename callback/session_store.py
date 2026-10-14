@@ -40,7 +40,19 @@ def _stale_thread_ids(conn: sqlite3.Connection, now: datetime) -> list[str]:
     rows = conn.execute(
         "SELECT thread_id, MAX(checkpoint_id) FROM checkpoints GROUP BY thread_id"
     ).fetchall()
-    return [tid for tid, cid in rows if now - checkpoint_time(cid) > SESSION_MAX_AGE]
+    stale = []
+    for tid, cid in rows:
+        try:
+            age = now - checkpoint_time(cid)
+        except ValueError as exc:
+            # Pruning is best-effort: a row we cannot date is kept, never a startup failure.
+            logger.warning(
+                json.dumps({"event": "session_prune_skipped", "thread_id": tid, "error": str(exc)})
+            )
+            continue
+        if age > SESSION_MAX_AGE:
+            stale.append(tid)
+    return stale
 
 
 def _delete_if_still_stale(saver: SqliteSaver, thread_id: str, now: datetime) -> bool:

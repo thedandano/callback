@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import stat
@@ -32,6 +33,40 @@ def test_open_prunes_only_threads_idle_past_the_cutoff(tmp_path):
     pruned = open_checkpointer(db, now=created + timedelta(hours=25)).get_tuple(_cfg("t1"))
 
     assert (kept is not None, pruned is None) == (True, True)
+
+
+def test_open_skips_a_thread_with_a_malformed_checkpoint_id_and_prunes_the_rest(tmp_path, caplog):
+    db = tmp_path / "s.db"
+    saver = open_checkpointer(db)
+    checkpoint = empty_checkpoint()
+    saver.put(_cfg("good"), checkpoint, {}, {})
+    saver.put(_cfg("bad"), empty_checkpoint(), {}, {})
+    saver.conn.execute("UPDATE checkpoints SET checkpoint_id = 'not-a-uuid' WHERE thread_id='bad'")
+    saver.conn.commit()
+    saver.conn.close()
+    later = checkpoint_time(checkpoint["id"]) + timedelta(hours=25)
+
+    with caplog.at_level(logging.WARNING):
+        reopened = open_checkpointer(db, now=later)
+
+    skipped = [
+        json.loads(r.message) for r in caplog.records if "session_prune_skipped" in r.message
+    ]
+    assert (
+        reopened.get_tuple(_cfg("good")),
+        reopened.conn.execute("SELECT thread_id FROM checkpoints").fetchall(),
+        skipped,
+    ) == (
+        None,
+        [("bad",)],
+        [
+            {
+                "event": "session_prune_skipped",
+                "thread_id": "bad",
+                "error": "badly formed hexadecimal UUID string",
+            }
+        ],
+    )
 
 
 def test_tailored_resume_round_trips_without_unregistered_type_warning(tmp_path, caplog):
