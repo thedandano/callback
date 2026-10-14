@@ -271,7 +271,7 @@ handoff metadata.
 | `create_story` | profile | Persists a behavioral story and returns orphaned skills; recompiles the profile in the same call. |
 | `check_update` | utility | Returns current version, latest release tag, and update status. |
 | `set_search_preferences` / `get_search_preferences` | utility | Save / read the user's job-search preferences. |
-| `find_job` | ledger | Returns whether a posting is already in the ledger and its latest status (dedupe); returns its `job_key`; falls back to company + title when the URL misses (weaker match, see `matched_by`). A `url` without http(s):// is ignored. |
+| `find_job` | ledger | Returns whether a posting is already in the ledger, its latest status, and latest `score_before` / `score_after` totals (dedupe); returns its `job_key`; falls back to company + title when the URL misses (weaker match, see `matched_by`). A `url` without http(s):// is ignored. |
 | `record_status` | ledger | Adds a status event to a job (by URL, company + title, or the `job_key` from `find_job`); creates the job if new; never overwrites history. A `url` without http(s):// (e.g. a recruiter thread) goes into the note and the job is keyed by company + title. |
 | `export_ledger` | ledger | Writes the ledger as CSV to an absolute `.csv` path: `mode="jobs"` (default) is one row per job (latest status and scores); `mode="events"` is one row per status event with its own date (use for EDD). |
 

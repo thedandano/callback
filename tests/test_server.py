@@ -2426,6 +2426,8 @@ async def test_ledger_tools_record_find_and_export(tmp_path):
             "status": "Applied",
             "status_date": "2026-10-01",
             "job_key": "https://a.com/1",
+            "score_before": None,
+            "score_after": None,
             "matched_by": "key",
         },
         "company_title",
@@ -2452,6 +2454,23 @@ async def test_export_ledger_defuses_formulas_and_replaces_existing_file(tmp_pat
         await client.call_tool("export_ledger", {"output_path": str(out)})
 
     assert out.read_text().splitlines()[1] == "'=SUM(1),Dev,,,Applied,2026-10-01,,,,"
+
+
+def test_export_ledger_returns_invalid_path_when_path_expansion_fails(tmp_path, caplog):
+    import callback.server as server
+
+    with (
+        patch.object(server, "_output_path_error", side_effect=RuntimeError("bad path check")),
+        caplog.at_level("WARNING", logger="callback.server"),
+    ):
+        result = server.export_ledger(str(tmp_path / "x.csv"))
+
+    error = result["error"]
+    logged = any("invalid_output_path" in record.getMessage() for record in caplog.records)
+    assert (error["code"], logged) == (
+        "invalid_output_path",
+        True,
+    )
 
 
 @pytest.mark.anyio

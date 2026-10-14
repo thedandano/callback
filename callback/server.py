@@ -2246,6 +2246,12 @@ def _output_path_error(target: Path) -> dict | None:
     return None
 
 
+def _invalid_output_path_error(exc: OSError | RuntimeError) -> dict:
+    """Log output-path handling failures and return the stable tool error."""
+    _log("WARNING", {"event": "invalid_output_path", "error": str(exc)})
+    return _err("ledger", "invalid_output_path", f"cannot use output_path: {exc}")
+
+
 @mcp.tool()
 def export_ledger(
     output_path: str, status: str | None = None, since: str | None = None, mode: str = "jobs"
@@ -2265,9 +2271,12 @@ def export_ledger(
     """
     if mode not in _EXPORT_MODES:
         return _err("ledger", "invalid_mode", f"mode must be 'jobs' or 'events', got: {mode!r}")
-    target = Path(output_path).expanduser()
-    if error := _output_path_error(target):
-        return error
+    try:
+        target = Path(output_path).expanduser()
+        if error := _output_path_error(target):
+            return error
+    except (OSError, RuntimeError) as exc:
+        return _invalid_output_path_error(exc)
     if error := _date_error("since", since):
         return error
     query, columns = _EXPORT_MODES[mode]
@@ -2279,7 +2288,7 @@ def export_ledger(
     try:
         paths.write_text_atomic(target, _csv_text(rows, columns))
     except OSError as exc:
-        return _err("ledger", "invalid_output_path", f"cannot write {target}: {exc}")
+        return _invalid_output_path_error(exc)
     return _ok("", data={"path": str(target), "rows": len(rows)})
 
 

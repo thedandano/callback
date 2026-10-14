@@ -102,10 +102,10 @@ _UPSERT_JOB = """
 INSERT INTO jobs (job_key, url, company, title, salary_range, first_seen)
 VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT(job_key) DO UPDATE SET
-    url = COALESCE(jobs.url, excluded.url),
-    company = COALESCE(jobs.company, excluded.company),
-    title = COALESCE(jobs.title, excluded.title),
-    salary_range = COALESCE(jobs.salary_range, excluded.salary_range),
+    url = COALESCE(NULLIF(jobs.url, ''), excluded.url),
+    company = COALESCE(NULLIF(jobs.company, ''), excluded.company),
+    title = COALESCE(NULLIF(jobs.title, ''), excluded.title),
+    salary_range = COALESCE(NULLIF(jobs.salary_range, ''), excluded.salary_range),
     first_seen = CASE
         WHEN excluded.first_seen = '' THEN jobs.first_seen
         WHEN jobs.first_seen = '' THEN excluded.first_seen
@@ -282,6 +282,12 @@ def _short_hash(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8")).hexdigest()[:_JD_HASH_CHARS]
 
 
+def _optional_text(value: str | None) -> str | None:
+    """Strip optional metadata, storing blank values as SQL NULL."""
+    text = (value or "").strip()
+    return text or None
+
+
 def job_key(
     url: str | None, company: str | None, title: str | None, jd_text: str | None = None
 ) -> str:
@@ -296,6 +302,8 @@ def job_key(
     ponytail: two different pasted postings with the same company and title share one job.
     """
     cleaned = _clean_url(url)
+    company = _optional_text(company)
+    title = _optional_text(title)
     if cleaned:
         return cleaned
     folded_company, folded_title = _norm_text(company), _norm_text(title)
@@ -314,6 +322,7 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path), timeout=_BUSY_TIMEOUT_S)
     try:
+        conn.create_function("norm_text", 1, _sql_norm_text, deterministic=True)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
         conn.executescript(_SCHEMA)
@@ -325,6 +334,13 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
         )
         raise
     return conn
+
+
+def _sql_norm_text(value: object) -> str | None:
+    """SQL `norm_text`: casefold and collapse text for company/title lookup; non-text gives NULL."""
+    if not isinstance(value, str):
+        return None
+    return _norm_text(value)
 
 
 def canonical_timestamp(value: str) -> str:
@@ -366,9 +382,11 @@ def _upsert_job(
     """Insert or merge a job row without committing; callers own the transaction.
 
     `key` overrides the computed job key; the run recorders use it to attach to an existing job.
+    Blank text and salary placeholders are stored as NULL so a later call can fill them.
     """
-    company = (company or "").strip() or None
-    title = (title or "").strip() or None
+    company = _optional_text(company)
+    title = _optional_text(title)
+    salary_range = clean_salary(salary_range) or None
     key = key or job_key(url, company, title, jd_text)
     conn.execute(
         _UPSERT_JOB,
@@ -377,7 +395,7 @@ def _upsert_job(
             _clean_url(url),
             company,
             title,
-            clean_salary(salary_range),
+            salary_range,
             canonical_timestamp(seen_at),
         ),
     )
@@ -665,8 +683,9 @@ def record_status(conn: sqlite3.Connection, update: StatusUpdate) -> bool:
         if update.job_key:
             key = update.job_key
             conn.execute(
-                "UPDATE jobs SET salary_range = COALESCE(salary_range, ?) WHERE job_key = ?",
-                (update.salary_range, key),
+                "UPDATE jobs SET salary_range = COALESCE(NULLIF(salary_range, ''), ?) "
+                "WHERE job_key = ?",
+                (_optional_text(update.salary_range), key),
             )
         else:
             key = _upsert_job(
@@ -699,7 +718,7 @@ EXPORT_COLUMNS = [
     "Score after",
     "Resume PDF",
 ]
-_FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r")
+_FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r", "\n")
 _EXPORT_SQL = """
 WITH latest_status AS (
     SELECT job_key, status, recorded_at, note,
@@ -707,7 +726,7 @@ WITH latest_status AS (
     FROM status_events
 ), latest_run AS (
     SELECT job_key, scores, pdf_path,
-           ROW_NUMBER() OVER (PARTITION BY job_key ORDER BY finalized_at DESC) AS rn
+           ROW_NUMBER() OVER (PARTITION BY job_key ORDER BY julianday(finalized_at) DESC) AS rn
     FROM runs
 )
 SELECT j.company, j.title, j.url, j.salary_range, s.status, s.recorded_at, s.note,
@@ -734,16 +753,28 @@ WHERE (:status IS NULL OR e.status LIKE :status || '%' ESCAPE '\\')
 ORDER BY e.recorded_at DESC, e.id DESC
 """
 _FIND_SQL = (
-    "SELECT j.company, j.title, s.status, s.recorded_at, j.job_key FROM jobs j "
+    "SELECT j.company, j.title, s.status, s.recorded_at, j.job_key, "
+    "(SELECT json_extract(r.scores, '$.initial.total') FROM runs r "
+    "WHERE r.job_key = j.job_key ORDER BY julianday(r.finalized_at) DESC LIMIT 1), "
+    "(SELECT json_extract(r.scores, '$.final.total') FROM runs r "
+    "WHERE r.job_key = j.job_key ORDER BY julianday(r.finalized_at) DESC LIMIT 1) FROM jobs j "
     "LEFT JOIN status_events s ON s.job_key = j.job_key WHERE {where} "
     "ORDER BY {order} s.recorded_at DESC, s.id DESC LIMIT 1"
 )
 _BY_KEY = ("j.job_key = ?", "")
 _BY_NAME = (
-    "lower(trim(j.company)) = lower(trim(?)) AND lower(trim(j.title)) = lower(trim(?))",
+    "norm_text(j.company) = norm_text(?) AND norm_text(j.title) = norm_text(?)",
     "j.first_seen DESC,",
 )
-_FIND_KEYS = ["company", "title", "status", "status_date", "job_key"]
+_FIND_KEYS = [
+    "company",
+    "title",
+    "status",
+    "status_date",
+    "job_key",
+    "score_before",
+    "score_after",
+]
 
 
 def spreadsheet_safe(row: dict) -> dict:
@@ -804,7 +835,8 @@ def find_job(
     """Is this posting already in the ledger, and what is its latest status? For dedupe.
 
     Looks up by URL (or company + title when there is no URL) first. A posting seen under a
-    different URL is still found when company and title match, ignoring case and spacing.
+    different URL is still found when company and title match, ignoring case, Unicode case, and
+    spacing. Includes the latest run's score totals when a run exists.
     """
     row = _find_row(conn, _BY_KEY, (job_key(url, company, title),))
     matched_by = "key"

@@ -866,6 +866,59 @@ def test_export_rows_shows_latest_status_and_latest_run_per_job(tmp_path):
     assert (everything, applied_since, applied_from_oct_1) == ([acme, b], [b], [acme, b])
 
 
+def test_export_rows_orders_run_timestamps_by_instant_not_text(tmp_path):
+    earlier = _run("earlier").model_copy(
+        update={
+            "timestamp": "2026-10-01T18:00:00+00:00",
+            "pdf_path": "/earlier.pdf",
+            "scores": {"initial": {"total": 10.0}, "final": {"total": 20.0}},
+        }
+    )
+    later = _run("later").model_copy(
+        update={
+            "timestamp": "2026-10-01T12:00:00-07:00",
+            "pdf_path": "/later.pdf",
+            "scores": {"initial": {"total": 30.0}, "final": {"total": 40.0}},
+        }
+    )
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_run(conn, earlier)
+        ledger.record_run(conn, later)
+        row = ledger.export_rows(conn)[0]
+    assert (row["Score before"], row["Score after"], row["Resume PDF"]) == (
+        30.0,
+        40.0,
+        "/later.pdf",
+    )
+
+
+def test_upsert_job_strips_metadata_and_replaces_existing_blanks(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        key = ledger.upsert_job(
+            conn,
+            url="https://a.com/1",
+            company="  Acme  ",
+            title="  Engineer  ",
+            salary_range="  $100k  ",
+            seen_at="2026-10-01",
+        )
+        conn.execute(
+            "UPDATE jobs SET company = '', title = '', salary_range = '' WHERE job_key = ?", (key,)
+        )
+        ledger.upsert_job(
+            conn,
+            url="https://a.com/1",
+            company="Beta",
+            title="Developer",
+            salary_range="$120k",
+            seen_at="2026-10-02",
+        )
+        row = conn.execute(
+            "SELECT company, title, salary_range FROM jobs WHERE job_key = ?", (key,)
+        ).fetchone()
+    assert row == ("Beta", "Developer", "$120k")
+
+
 def test_find_job_returns_latest_status_or_not_found(tmp_path):
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
         key = ledger.upsert_job(
@@ -879,7 +932,13 @@ def test_find_job_returns_latest_status_or_not_found(tmp_path):
         half_name = ledger.find_job(conn, url="https://a.com/3", company="A", title=None)
 
     hit = {"found": True, "company": "A", "title": "Dev", "status": "Rejected"}
-    hit = {**hit, "status_date": "2026-10-05", "job_key": "https://a.com/1"}
+    hit = {
+        **hit,
+        "status_date": "2026-10-05",
+        "job_key": "https://a.com/1",
+        "score_before": None,
+        "score_after": None,
+    }
     none = {
         "found": False,
         "company": None,
@@ -887,6 +946,8 @@ def test_find_job_returns_latest_status_or_not_found(tmp_path):
         "status": None,
         "status_date": None,
         "job_key": None,
+        "score_before": None,
+        "score_after": None,
     }
     assert (found, by_name, missing, half_name) == (
         {**hit, "matched_by": "key"},
@@ -894,6 +955,34 @@ def test_find_job_returns_latest_status_or_not_found(tmp_path):
         {**none, "matched_by": None},
         {**none, "matched_by": None},
     )
+
+
+def test_find_job_normalizes_unicode_and_whitespace_and_returns_run_scores(tmp_path):
+    run = _run().model_copy(
+        update={
+            "keywords": {"company": "MÜNCHEN GmbH", "title": "Senior  Engineer"},
+            "scores": {"initial": {"total": 50.0}, "final": {"total": 70.0}},
+        }
+    )
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_run(conn, run)
+        found = ledger.find_job(
+            conn,
+            url="https://other.example/job",
+            company="münchen gmbh",
+            title="Senior Engineer",
+        )
+    assert found == {
+        "found": True,
+        "company": "MÜNCHEN GmbH",
+        "title": "Senior  Engineer",
+        "status": None,
+        "status_date": None,
+        "job_key": "https://jobs.example.com/a",
+        "score_before": 50.0,
+        "score_after": 70.0,
+        "matched_by": "company_title",
+    }
 
 
 def test_spreadsheet_safe_defuses_formulas_only():
@@ -907,6 +996,7 @@ def test_spreadsheet_safe_defuses_formulas_only():
         "g": "@x",
         "h": "+1",
         "i": "\rx",
+        "j": "\nx",
     }
     assert ledger.spreadsheet_safe(row) == {
         "a": "'=HYPERLINK(1)",
@@ -918,6 +1008,7 @@ def test_spreadsheet_safe_defuses_formulas_only():
         "g": "'@x",
         "h": "'+1",
         "i": "'\rx",
+        "j": "'\nx",
     }
 
 
