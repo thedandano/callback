@@ -1,11 +1,16 @@
 """Tests for server.py — profile MCP tool wrappers."""
 
+import os
 from datetime import UTC, datetime
 from pathlib import Path
+
+import pytest
 
 import callback.profile_nodes as pnodes
 import callback.server as server_module
 import callback.wiki as wiki_module
+from callback import paths
+from callback.profile_graph import get_profile_graph
 from callback.profilecompiler import save_compiled_profile
 from callback.repository.resumes import save_resume
 from callback.server import compile_profile, create_story, onboard_user
@@ -774,3 +779,53 @@ class TestCreateStoryRejectsLabelLines:
             "names_field": True,
         }
         assert actual == expected
+
+
+@pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX only")
+def test_compile_profile_reports_an_unsafe_session_dir_as_an_error(tmp_path, monkeypatch):
+    _isolate_profile(tmp_path, monkeypatch)
+    _save_profile_with_resumes(tmp_path)
+    unsafe = tmp_path / "unsafe"
+    unsafe.mkdir()
+    unsafe.chmod(0o755)
+    monkeypatch.setattr(paths, "session_dir", lambda: unsafe)
+    get_profile_graph.cache_clear()
+    try:
+        result = compile_profile()
+    finally:
+        get_profile_graph.cache_clear()
+
+    assert {
+        "status": result["status"],
+        "stage": result["error"]["stage"],
+        "code": result["error"]["code"],
+        "retriable": result["error"]["retriable"],
+        "mentions_dir": str(unsafe) in result["error"]["message"],
+    } == {
+        "status": "error",
+        "stage": "session_store",
+        "code": "unsafe_session_dir",
+        "retriable": False,
+        "mentions_dir": True,
+    }
+
+
+@pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX only")
+def test_compile_profile_reports_a_corrupt_session_store_as_an_error(tmp_path, monkeypatch):
+    _isolate_profile(tmp_path, monkeypatch)
+    _save_profile_with_resumes(tmp_path)
+    folder = tmp_path / "sessions"
+    folder.mkdir(mode=0o700)
+    (folder / "profile-sessions.db").write_bytes(b"not a sqlite database" * 100)
+    monkeypatch.setattr(paths, "session_dir", lambda: folder)
+    get_profile_graph.cache_clear()
+    try:
+        result = compile_profile()
+    finally:
+        get_profile_graph.cache_clear()
+
+    assert (result["status"], result["error"]["code"], result["error"]["retriable"]) == (
+        "error",
+        "session_store_error",
+        True,
+    )

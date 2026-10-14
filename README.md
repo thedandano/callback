@@ -257,7 +257,7 @@ uv tool uninstall callback      # remove the tool
 ```
 
 Adding `--purge` to the first step also deletes `~/.local/share/callback/`, which holds your
-PDFs and JSON archives, along with `~/.local/state/callback/` for logs and session databases.
+PDFs and JSON archives, along with `~/.local/state/callback/` for logs. Session databases live in the temp folder, not there.
 You can't undo that.
 
 ---

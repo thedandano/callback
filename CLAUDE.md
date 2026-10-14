@@ -20,7 +20,7 @@ behavior is the source of truth.
 Differentiator: defensible LangGraph stateful-agent design for an AI-engineering portfolio.
 Finite maintenance horizon — build only what the walking skeleton needs (see `BRIEF.md`).
 
-State persists via LangGraph SQLite checkpointers under `~/.local/share/callback/`.
+Session state persists via LangGraph SQLite checkpointers in the per-user temp folder.
 
 ## Commands
 
@@ -112,7 +112,7 @@ uv run pytest -m local evals/                          # E1 + E2 checks over the
 ## Env Vars
 
 - `XDG_DATA_HOME`: Moves the whole data root (resumes, wiki, compiled profile, applications archive) from `~/.local/share/callback` to `$XDG_DATA_HOME/callback`.
-- `XDG_STATE_HOME`: Moves the state root (session checkpoint DBs, server log) from `~/.local/state/callback` to `$XDG_STATE_HOME/callback`.
+- `XDG_STATE_HOME`: Moves the state root (server log) from `~/.local/state/callback` to `$XDG_STATE_HOME/callback`.
 - `XDG_CONFIG_HOME`: Moves the settings file from `~/.config/callback/env.json` to `$XDG_CONFIG_HOME/callback/env.json`.
 - `CALLBACK_APPS_DIR`: Override where application PDFs and JSON archives are written; overrides only the archive directory, not the other data roots. `submit_tailor`'s `output_dir` argument overrides this per-call for both the PDF and the JSON archive.
 - `CALLBACK_FETCH_PAGE_TIMEOUT_MS`: Override the Playwright page-load timeout in milliseconds. Default: `30000`.
@@ -212,7 +212,7 @@ jd_fetch → keywords_accept → parse_initial → score_initial → tailor → 
 Errors in `tailor`, `render`, `parse_final`, or `finalize` route back to the `tailor` interrupt; `submit_tailor` returns `pipeline_error` with `retriable: true` and may be called again with the same session to retry.
 `jd_fetch` loads the page with Playwright (Chrome user agent, `domcontentloaded` plus a 2.5 s settle), extracts markdown with trafilatura, falls back to body text when the extraction is thin (and rejects a page that is still under 1,200 characters as `fetch_thin`), and caps `jd_text` at 16,000 characters (about 4,000 tokens), logging `fetch_oversized`.
 
-Checkpointer DB: `~/.local/state/callback/apply-sessions.db` (or `$XDG_STATE_HOME/callback/apply-sessions.db` if `XDG_STATE_HOME` is set). An older DB found at the previous location, `~/.local/share/callback/apply-sessions.db` (or `$XDG_DATA_HOME` equivalent), is migrated in place on first use.
+Checkpointer DB: `<temp folder>/callback-<uid>/apply-sessions.db` (`paths.apply_db_path()`; the temp folder is `tempfile.gettempdir()`). Sessions idle more than 24 h are deleted when the DB is opened.
 State schema: `ApplyState` in `state.py` (single Pydantic model — entire graph state).
 Keyword extraction is host-owned: `callback` returns the JD markdown and extraction protocol, then stores only validated JDData submitted by the host.
 
@@ -239,7 +239,7 @@ story's body survive `compile_profile`. `accomplishments.json` holds only
 `onboard_text`; migration of any legacy stories out of the JSON and onto pages
 runs automatically at the start of the first `onboard` or `compile_profile`.
 
-Checkpointer DB: `~/.local/state/callback/profile-sessions.db` (or `$XDG_STATE_HOME/callback/profile-sessions.db` if `XDG_STATE_HOME` is set). An older DB found at the previous location, `~/.local/share/callback/profile-sessions.db` (or `$XDG_DATA_HOME` equivalent), is migrated in place on first use.
+Checkpointer DB: `<temp folder>/callback-<uid>/profile-sessions.db` (`paths.profile_db_path()`; the temp folder is `tempfile.gettempdir()`). Sessions idle more than 24 h are deleted when the DB is opened.
 State schema: `ProfileState` in `state.py`.
 
 ### Scoring (`scorer.py`)

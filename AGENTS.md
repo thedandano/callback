@@ -78,7 +78,7 @@ Differentiator: defensible LangGraph stateful-agent design for an AI-engineering
 Finite maintenance horizon - build only what the walking skeleton needs.
 `BRIEF.md` is the project charter/history; this file is the active working guide.
 
-State persists via LangGraph SQLite checkpointers under `~/.local/state/callback/`.
+Session state persists via LangGraph SQLite checkpointers in the per-user temp folder.
 Logs default to `~/.local/state/callback/server.log`.
 
 ### Cross-harness plugin packaging
@@ -156,7 +156,7 @@ uv run pytest -m local evals/                          # E1 + E2 checks over the
 - `LANGSMITH_API_KEY`: Required for LangSmith tracing; also gates eval experiment recording. The runner logs a WARNING and skips recording when unset.
 - `LANGSMITH_PROJECT`: LangSmith project name. Defaults to `Callback` when tracing is enabled.
 - `XDG_DATA_HOME`: Moves the whole data root (resumes, wiki, compiled profile, applications archive) from `~/.local/share/callback` to `$XDG_DATA_HOME/callback`.
-- `XDG_STATE_HOME`: Moves the state root (session checkpoint DBs, server log) from `~/.local/state/callback` to `$XDG_STATE_HOME/callback`.
+- `XDG_STATE_HOME`: Moves the state root (server log) from `~/.local/state/callback` to `$XDG_STATE_HOME/callback`.
 - `XDG_CONFIG_HOME`: Moves the settings file from `~/.config/callback/env.json` to `$XDG_CONFIG_HOME/callback/env.json`.
 
 Env var overrides live in `~/.config/callback/env.json`, a settings file
@@ -298,7 +298,7 @@ jd_fetch -> keywords_accept -> parse_initial -> score_initial -> tailor -> rende
 
 Errors in `tailor`, `render`, `parse_final`, or `finalize` route back to the `tailor` interrupt; `submit_tailor` returns `pipeline_error` with `retriable: true` and may be called again with the same session to retry.
 
-Checkpointer DB: `~/.local/state/callback/apply-sessions.db` (or `$XDG_STATE_HOME/callback/apply-sessions.db` if `XDG_STATE_HOME` is set). An older DB found at the previous location, `~/.local/share/callback/apply-sessions.db` (or `$XDG_DATA_HOME` equivalent), is migrated in place on first use.
+Checkpointer DB: `<temp folder>/callback-<uid>/apply-sessions.db` (`paths.apply_db_path()`; the temp folder is `tempfile.gettempdir()`). Sessions idle more than 24 h are deleted when the DB is opened.
 State schema: `ApplyState` in `state.py` (single Pydantic model - entire graph state).
 Keyword extraction is host-owned: `load_jd` returns the JD markdown and extraction protocol, then `submit_keywords` stores only validated JDData submitted by the host.
 
@@ -325,7 +325,7 @@ story's body survive `compile_profile`. `accomplishments.json` holds only
 `onboard_text`; migration of any legacy stories out of the JSON and onto pages
 runs automatically at the start of the first `onboard` or `compile_profile`.
 
-Checkpointer DB: `~/.local/state/callback/profile-sessions.db` (or `$XDG_STATE_HOME/callback/profile-sessions.db` if `XDG_STATE_HOME` is set). An older DB found at the previous location, `~/.local/share/callback/profile-sessions.db` (or `$XDG_DATA_HOME` equivalent), is migrated in place on first use.
+Checkpointer DB: `<temp folder>/callback-<uid>/profile-sessions.db` (`paths.profile_db_path()`; the temp folder is `tempfile.gettempdir()`). Sessions idle more than 24 h are deleted when the DB is opened.
 State schema: `ProfileState` in `state.py`.
 
 ### JD Fetching (`jd_fetcher.py`)
