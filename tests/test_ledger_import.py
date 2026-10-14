@@ -8,6 +8,7 @@ import pytest
 from callback import ledger
 from callback.ledger_import import (
     ImportReport,
+    _iso_date,
     import_archives,
     import_contact_ledger,
     import_record_csv,
@@ -208,11 +209,16 @@ def test_contact_ledger_import_is_idempotent_and_read_only(tmp_path):
         (ImportReport(imported=0, skipped=["entry 3"]), (2, 0, 2)),
         [
             ("https://acme.com/job/1", "Acme", "Engineer"),
-            ("pasted:beta-dev", "Beta", "Dev"),
+            ("pasted:beta-dev-7a3fc084", "Beta", "Dev"),
         ],
         [
-            ("Applied", "2026-09-01", "Contact: Online | via site", "contacts-import"),
-            ("Emailed", "2026-09-02", "Contact: Email | a@b.com | Person: Pat", "contacts-import"),
+            ("Applied", "2026-09-01", "Contact method: Online | via site", "contacts-import"),
+            (
+                "Emailed",
+                "2026-09-02",
+                "Contact method: Email | a@b.com | Person: Pat",
+                "contacts-import",
+            ),
         ],
     )
     assert src.read_bytes() == before
@@ -255,8 +261,8 @@ def test_csv_non_url_goes_to_the_note_and_blank_rows_are_skipped(tmp_path):
 
     assert result == (
         ImportReport(imported=1, skipped=["line 3"], jobs=1, events=1),
-        [("pasted:acme-eng",)],
-        [("pasted:acme-eng", "2026-10-01", "hi | URL: via quick apply")],
+        [("pasted:acme-eng-82da35ff",)],
+        [("pasted:acme-eng-82da35ff", "2026-10-01", "hi | URL: via quick apply")],
     )
 
 
@@ -271,10 +277,10 @@ def test_csv_dates_are_normalized_so_formats_dedupe(tmp_path):
 
     assert result == (
         ImportReport(imported=2, skipped=["line 5"], jobs=1, events=2),
-        [("pasted:acme-eng",)],
+        [("pasted:acme-eng-82da35ff",)],
         [
-            ("pasted:acme-eng", "2026-10-01", None),
-            ("pasted:acme-eng", "2026-10-02", None),
+            ("pasted:acme-eng-82da35ff", "2026-10-01", None),
+            ("pasted:acme-eng-82da35ff", "2026-10-02", None),
         ],
     )
 
@@ -304,7 +310,7 @@ def test_archive_with_a_non_url_jd_url_is_keyed_by_company_and_title(tmp_path):
         import_archives(conn, apps)
         keys = [tuple(r) for r in conn.execute("SELECT job_key FROM jobs")]
 
-    assert keys == [("pasted:acme-engineer-platform",)]
+    assert keys == [("pasted:acme-engineer-platform-789b02b5",)]
 
 
 def test_pdf_name_with_brackets_is_relinked_exactly(tmp_path):
@@ -369,15 +375,15 @@ def test_csv_scores_and_links_go_into_the_note(tmp_path, resume_column):
 
     assert result == (
         ImportReport(imported=2, skipped=[], jobs=2, events=2),
-        [("pasted:acme-eng",), ("pasted:beta-dev",)],
+        [("pasted:acme-eng-82da35ff",), ("pasted:beta-dev-7a3fc084",)],
         [
             (
-                "pasted:acme-eng",
+                "pasted:acme-eng-82da35ff",
                 "2026-10-01",
                 "hi | Score before: 62 | Score after: 81 | Resume: /r/acme.pdf | "
                 "Cover letter: /r/acme-cl.pdf",
             ),
-            ("pasted:beta-dev", "2026-10-02", "Score after: 90"),
+            ("pasted:beta-dev-7a3fc084", "2026-10-02", "Score after: 90"),
         ],
     )
 
@@ -398,7 +404,7 @@ def test_csv_row_with_notes_but_no_status_becomes_a_note_event(tmp_path):
 
     assert (report, events, jobs) == (
         ImportReport(imported=1, skipped=["line 3"], jobs=3, events=1),
-        [("pasted:acme-eng", "Note", "2026-10-01", "called back")],
+        [("pasted:acme-eng-82da35ff", "Note", "2026-10-01", "called back")],
         3,
     )
 
@@ -410,8 +416,8 @@ def test_csv_iso_dates_with_a_time_part_dedupe_with_plain_dates(tmp_path):
 
     assert result == (
         ImportReport(imported=1, skipped=[], jobs=1, events=1),
-        [("pasted:acme-eng",)],
-        [("pasted:acme-eng", "2026-06-16", None)],
+        [("pasted:acme-eng-82da35ff",)],
+        [("pasted:acme-eng-82da35ff", "2026-06-16", None)],
     )
 
 
@@ -514,11 +520,15 @@ def test_invalid_https_values_fall_back_to_identity_and_preserve_raw_url_in_note
 
     assert result == (
         ImportReport(imported=3, skipped=[], jobs=3, events=3),
-        [("pasted:acme-eng",), ("pasted:beta-dev",), ("pasted:gamma-lead",)],
         [
-            ("pasted:acme-eng", "2026-10-01", "hi | URL: https://"),
-            ("pasted:beta-dev", "2026-10-02", "hi | URL: https:///jobs/1"),
-            ("pasted:gamma-lead", "2026-10-03", "hi | URL: https:// not available"),
+            ("pasted:acme-eng-82da35ff",),
+            ("pasted:beta-dev-7a3fc084",),
+            ("pasted:gamma-lead-b09ee459",),
+        ],
+        [
+            ("pasted:acme-eng-82da35ff", "2026-10-01", "hi | URL: https://"),
+            ("pasted:beta-dev-7a3fc084", "2026-10-02", "hi | URL: https:///jobs/1"),
+            ("pasted:gamma-lead-b09ee459", "2026-10-03", "hi | URL: https:// not available"),
         ],
     )
 
@@ -564,4 +574,191 @@ def test_csv_and_contact_events_with_different_notes_are_both_kept(tmp_path):
         import_contact_ledger(conn, src)
         events = conn.execute("SELECT note FROM status_events ORDER BY id").fetchall()
 
-    assert [tuple(row) for row in events] == [("CSV note",), ("Contact: Online | Contact note",)]
+    assert [tuple(row) for row in events] == [
+        ("CSV note",),
+        ("Contact method: Online | Contact note",),
+    ]
+
+
+def _run_dict(session_id, url="https://a.com/1", pdf_path=None):
+    return {
+        "session_id": session_id,
+        "timestamp": "2026-10-01T10:00:00+00:00",
+        "jd_url": url,
+        "keywords": {"company": "Acme", "title": "Eng"},
+        "pdf_path": pdf_path,
+    }
+
+
+def test_existing_run_leaves_its_job_untouched(tmp_path):
+    apps = tmp_path / "apps"
+    apps.mkdir()
+    (apps / "s1.json").write_text(json.dumps(_run_dict("s1", url="https://new.com/2")))
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_run(
+            conn,
+            ledger.RunRecord(
+                session_id="s1", timestamp="2026-10-05T00:00:00+00:00", jd_url="https://a.com/1"
+            ),
+        )
+        report = import_archives(conn, apps)
+        jobs = conn.execute("SELECT job_key FROM jobs").fetchall()
+
+    assert (report, [tuple(j) for j in jobs]) == (
+        ImportReport(imported=0, skipped=["s1.json"]),
+        [("https://a.com/1",)],
+    )
+
+
+def test_csv_url_descriptor_becomes_a_dated_note(tmp_path):
+    path = _csv(tmp_path, "Acme,Eng,2026-10-01,via LinkedIn,,\nBeta,Dev,,not listed,,\n")
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        report = import_record_csv(conn, path)
+        events = conn.execute("SELECT job_key, status, recorded_at, note FROM status_events")
+        stored = [tuple(e) for e in events]
+
+    assert (report, stored) == (
+        ImportReport(imported=1, skipped=["line 3"], jobs=2, events=1),
+        [("pasted:acme-eng-82da35ff", "Note", "2026-10-01", "URL: via LinkedIn")],
+    )
+
+
+def test_csv_undated_url_descriptor_is_reported_as_lost(tmp_path, caplog):
+    path = _csv(tmp_path, "Beta,Dev,,not listed,,\n")
+
+    with caplog.at_level(logging.WARNING), closing(ledger.connect(tmp_path / "l.db")) as conn:
+        import_record_csv(conn, path)
+
+    reasons = [json.loads(r.message)["reason"] for r in caplog.records]
+    assert reasons == [
+        "status or note has no valid Recorded Date or Email Date; "
+        "URL descriptor 'not listed' not kept"
+    ]
+
+
+def test_same_named_archives_in_two_roots_are_told_apart_by_root(tmp_path, caplog):
+    _write_run(tmp_path / "a", "s1", "2026-10-01T10:00:00+00:00", 10)
+    _write_run(tmp_path / "b", "s1", "2026-10-02T10:00:00+00:00", 90)
+
+    with caplog.at_level(logging.WARNING), closing(ledger.connect(tmp_path / "l.db")) as conn:
+        import_archives(conn, [tmp_path / "a", tmp_path / "b"])
+
+    assert [json.loads(r.message) for r in caplog.records] == [
+        {
+            "event": "ledger_import_duplicate_session",
+            "session_id": "s1",
+            "kept": f"{tmp_path / 'b'}/s1.json",
+            "dropped": f"{tmp_path / 'a'}/s1.json",
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("2026-10-01", "2026-10-01"),
+        ("2026-10-01T12:30:00", "2026-10-01"),
+        ("2026-10-01 12:30:00+00:00", "2026-10-01"),
+        ("10/1/2026", "2026-10-01"),
+        ("10/1/26", "2026-10-01"),
+        ("2026-10-01oops", None),
+        ("2026-10-01Tinvalid", None),
+        ("2026-13-01", None),
+    ],
+)
+def test_iso_date_accepts_only_whole_values(raw, expected):
+    assert _iso_date(raw) == expected
+
+
+def test_pdf_next_to_the_archive_json_wins_over_other_matches(tmp_path):
+    apps = tmp_path / "apps"
+    (apps / "one").mkdir(parents=True)
+    (apps / "two").mkdir()
+    (apps / "one" / "s1.json").write_text(json.dumps(_run_dict("s1", pdf_path="/gone/r.pdf")))
+    (apps / "one" / "r.pdf").write_bytes(b"%PDF")
+    (apps / "two" / "r.pdf").write_bytes(b"%PDF")
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        import_archives(conn, apps)
+        stored = _pdf_path(conn, "s1")
+
+    assert stored == str(apps / "one" / "r.pdf")
+
+
+def _contacts_db_with_metadata(path, *, reportable):
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute(
+            "CREATE TABLE job_search_entries (id INTEGER PRIMARY KEY, date TEXT, "
+            "employer_name TEXT, type_of_work TEXT, contact_type TEXT, outcome TEXT, "
+            "contact_detail TEXT, person_contacted TEXT, notes TEXT, reportable INTEGER)"
+        )
+        db.execute("CREATE TABLE job_search_metadata (entry_id INTEGER, key TEXT, value TEXT)")
+        db.execute(
+            "INSERT INTO job_search_entries VALUES "
+            "(1, '2026-09-01', 'Acme', 'Eng', 'Online', 'Applied', '', '', '', ?)",
+            (reportable,),
+        )
+        db.executemany(
+            "INSERT INTO job_search_metadata VALUES (1, ?, ?)",
+            [
+                ("SalaryRange", "100-120"),
+                ("SourceURL", "not a url"),
+                ("JobURL", "https://acme.com/j/9"),
+                ("ReqID", "R-9"),
+                ("Alpha", "x"),
+            ],
+        )
+
+
+_METADATA_NOTE = (
+    "{}: Online | Alpha: x | JobURL: https://acme.com/j/9 | ReqID: R-9 | SourceURL: not a url"
+)
+
+
+@pytest.mark.parametrize(
+    ("reportable", "note"),
+    [
+        (
+            1,
+            _METADATA_NOTE.format("Contact method"),
+        ),
+        (
+            0,
+            _METADATA_NOTE.format("Contact"),
+        ),
+    ],
+)
+def test_contact_metadata_gives_url_salary_and_note_parts(tmp_path, reportable, note):
+    src = tmp_path / "old.sqlite3"
+    _contacts_db_with_metadata(src, reportable=reportable)
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        import_contact_ledger(conn, src)
+        job = conn.execute("SELECT job_key, salary_range FROM jobs").fetchall()
+        events = conn.execute("SELECT note FROM status_events").fetchall()
+
+    assert ([tuple(j) for j in job], [tuple(e) for e in events]) == (
+        [("https://acme.com/j/9", "100-120")],
+        [(note,)],
+    )
+
+
+def test_urlless_contact_attaches_to_the_one_matching_job(tmp_path):
+    src = tmp_path / "old.sqlite3"
+    _contacts_db(src)
+    with closing(sqlite3.connect(src)) as db, db:
+        db.execute(
+            "UPDATE job_search_entries SET employer_name = ' beta ', "
+            "type_of_work = 'DEV' WHERE id = 2"
+        )
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.upsert_job(
+            conn, url="https://beta.com/9", company="Beta", title="Dev", seen_at="2026-09-01"
+        )
+        import_contact_ledger(conn, src)
+        keys = conn.execute("SELECT DISTINCT job_key FROM status_events ORDER BY 1").fetchall()
+
+    assert [tuple(k) for k in keys] == [("https://acme.com/job/1",), ("https://beta.com/9",)]

@@ -54,7 +54,8 @@ def _run(
         ("https://jobs.example.com:443/a", "https://jobs.example.com/a"),
         ("https://jobs.example.com:8443/a", "https://jobs.example.com:8443/a"),
         ("https://x.com/#/job/1", "https://x.com#/job/1"),
-        ("https://x.com/#!/job/2", "https://x.com"),
+        ("https://x.com/#!/job/2", "https://x.com#!/job/2"),
+        ("https://x.com/#!/job/2/?utm_source=a", "https://x.com#!/job/2"),
         ("https://mail.google.com/mail/#all/abc123", "https://mail.google.com/mail#all/abc123"),
         ("jobs.Example.com/a/", "https://jobs.example.com/a"),
         ("https://jobs.example.com/a", "https://jobs.example.com/a"),
@@ -641,3 +642,17 @@ def test_blank_labels_and_seen_at_never_block_later_values(tmp_path):
         ("Acme", "Engineer", "2026-10-01"),
         "2026-10-01",
     )
+
+
+def test_job_key_by_name_matches_one_job_ignoring_case_and_spacing(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.upsert_job(conn, url=None, company="Acme  Co", title="Eng", seen_at="2026-10-01")
+        ledger.upsert_job(conn, url="https://b.com/1", company="Beta", title="Dev", seen_at="")
+        ledger.upsert_job(conn, url="https://b.com/2", company="beta", title="DEV", seen_at="")
+        found = (
+            ledger.job_key_by_name(conn, " acme co ", "ENG"),
+            ledger.job_key_by_name(conn, "Beta", "Dev"),
+            ledger.job_key_by_name(conn, "Gamma", "Dev"),
+        )
+
+    assert found == ("pasted:acme-co-eng-04b335ed", None, None)

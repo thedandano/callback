@@ -181,7 +181,7 @@ def normalize_url(url: str) -> str:
     Drops the query parameters that only track the click (`_TRACKING_PARAMS`, any `utm_*`),
     compared case-insensitively, and keeps the rest in sorted order. A board that adds a new
     tracking parameter needs it added there, or its links split into two keys. Fragments are dropped
-    unless they hold a recognized route ("#/job/1", Gmail "#all/<id>").
+    unless they hold a recognized route ("#/job/1", "#!/job/1", Gmail "#all/<id>").
     A value that cannot be parsed is logged and kept as typed.
 
     ponytail: `www.` is kept, so "www.x.com/a" and "x.com/a" get two keys. Strip it here if
@@ -222,10 +222,12 @@ def _normalized_query(query: str) -> str:
 
 
 def _normalized_route_fragment(fragment: str, hostname: str | None) -> str:
-    """Keep hash routes and Gmail message identifiers; drop descriptive fragments."""
-    route = urlsplit(fragment)
-    if fragment.startswith("/"):
-        return urlunsplit(("", "", route.path.rstrip("/"), _normalized_query(route.query), ""))
+    """Keep hash routes (`#/x`, `#!/x`) and Gmail message ids; drop descriptive fragments."""
+    prefix, body = ("!", fragment[1:]) if fragment.startswith("!/") else ("", fragment)
+    route = urlsplit(body)
+    if body.startswith("/"):
+        path = route.path.rstrip("/")
+        return prefix + urlunsplit(("", "", path, _normalized_query(route.query), ""))
     if hostname != "mail.google.com" or not _is_gmail_message_path(route.path):
         return ""
     return urlunsplit(("", "", route.path, _normalized_query(route.query), ""))
@@ -410,9 +412,16 @@ def record_run(conn: sqlite3.Connection, run: RunRecord) -> None:
 
 
 def record_imported_run_if_absent(conn: sqlite3.Connection, run: RunRecord) -> bool:
-    """Insert an imported run once without changing a live run with the same session id."""
+    """Insert an imported run once without changing a live run with the same session id.
+
+    The check and the insert share one transaction, and a run that exists leaves its job alone.
+    """
     blobs = _run_blobs(run)
     with conn:
+        if not conn.in_transaction:
+            conn.execute("BEGIN IMMEDIATE")
+        if _run_exists(conn, run.session_id):
+            return False
         key = _upsert_job(
             conn,
             url=run.jd_url,
@@ -422,11 +431,30 @@ def record_imported_run_if_absent(conn: sqlite3.Connection, run: RunRecord) -> b
             salary_range=_salary_range(run.keywords),
             jd_text=run.jd_text,
         )
-        cursor = conn.execute(
-            _INSERT_RUN_IF_ABSENT,
-            _run_values(run, key, blobs),
-        )
+        cursor = conn.execute(_INSERT_RUN_IF_ABSENT, _run_values(run, key, blobs))
     return cursor.rowcount == 1
+
+
+def _run_exists(conn: sqlite3.Connection, session_id: str) -> bool:
+    row = conn.execute("SELECT 1 FROM runs WHERE session_id = ?", (session_id,)).fetchone()
+    return row is not None
+
+
+def _name_form(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def job_key_by_name(conn: sqlite3.Connection, company: str, title: str) -> str | None:
+    """The one job whose company and title match ignoring case and spacing, else None.
+
+    None when nothing matches or several jobs match; the caller then keeps its own key.
+    """
+    wanted = (_name_form(company), _name_form(title))
+    rows = conn.execute(
+        "SELECT job_key, company, title FROM jobs WHERE company IS NOT NULL AND title IS NOT NULL"
+    )
+    matches = [key for key, name, role in rows if (_name_form(name), _name_form(role)) == wanted]
+    return matches[0] if len(matches) == 1 else None
 
 
 def _run_blobs(run: RunRecord) -> tuple[str | None, str, str, str, str]:
