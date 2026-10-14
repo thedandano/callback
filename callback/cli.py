@@ -13,13 +13,13 @@ import sys
 import time
 import tomllib
 from collections.abc import Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Annotated, Any
 
 import typer
 
-from callback import paths, settings
+from callback import ledger, ledger_import, paths, settings
 from callback.observability import (
     DEFAULT_LANGSMITH_ENDPOINT,
     DEFAULT_LANGSMITH_PROJECT,
@@ -31,7 +31,9 @@ from callback.settings import ENV_NAME_RE
 app = typer.Typer(no_args_is_help=True)
 config_app = typer.Typer(no_args_is_help=True)
 env_app = typer.Typer(no_args_is_help=True)
+ledger_app = typer.Typer(no_args_is_help=True)
 app.add_typer(config_app, name="config")
+app.add_typer(ledger_app, name="ledger")
 config_app.add_typer(env_app, name="env")
 
 
@@ -792,6 +794,40 @@ def setup_plugin(
         "Restart the session or run /reload-plugins to load MCP servers. "
         "Note: claude and codex must be on PATH."
     )
+
+
+def _print_report(source: Path, report: ledger_import.ImportReport) -> None:
+    typer.echo(f"{source}: imported {report.imported}, skipped {len(report.skipped)}")
+
+
+def _run_ledger_imports(
+    archives: list[Path], record_csv: Path | None, contacts_db: Path | None
+) -> None:
+    with closing(ledger.connect()) as conn:
+        for folder in archives:
+            _print_report(folder, ledger_import.import_archives(conn, folder))
+        if record_csv:
+            _print_report(record_csv, ledger_import.import_record_csv(conn, record_csv))
+        if contacts_db:
+            _print_report(contacts_db, ledger_import.import_contact_ledger(conn, contacts_db))
+
+
+@ledger_app.command("import")
+def ledger_import_cmd(
+    archives: Annotated[
+        list[Path] | None, typer.Option("--archives", help="Folder of <session_id>.json archives.")
+    ] = None,
+    record_csv: Annotated[Path | None, typer.Option("--csv", help="Job-hunt record CSV.")] = None,
+    contacts_db: Annotated[
+        Path | None, typer.Option("--contacts-db", help="Old contact-ledger SQLite file.")
+    ] = None,
+) -> None:
+    """Import old run archives, a record CSV, and a contact ledger. Safe to run twice."""
+    try:
+        _run_ledger_imports(archives or [], record_csv, contacts_db)
+    except ValueError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from exc
 
 
 if __name__ == "__main__":

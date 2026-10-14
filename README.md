@@ -249,6 +249,15 @@ callback update                 # upgrade via uv tool upgrade
 `callback logs` also takes `--project-logs`, which reads `./.callback/server.log`, or
 `--log-path <path>`.
 
+To bring older job-hunt records into the ledger once (safe to run again; your source files are
+only read):
+
+```bash
+callback ledger import --archives <folder> --csv <record.csv> --contacts-db <old.sqlite3>
+```
+
+Each flag is optional, and `--archives` can be repeated.
+
 To uninstall:
 
 ```bash
