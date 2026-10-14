@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import sqlite3
 from contextlib import closing
@@ -7,7 +8,9 @@ import pytest
 from callback import ledger
 
 
-def _run(session_id="s1", url="https://jobs.example.com/a", pdf="/p.pdf") -> ledger.RunRecord:
+def _run(
+    session_id: str = "s1", url: str | None = "https://jobs.example.com/a", pdf: str = "/p.pdf"
+) -> ledger.RunRecord:
     return ledger.RunRecord(
         session_id=session_id,
         timestamp="2026-10-12T10:00:00+00:00",
@@ -55,6 +58,33 @@ def test_normalize_url_drops_tracking_noise_but_keeps_job_ids(raw, expected):
 
 
 @pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        (
+            "https://x.taleo.net/careersection/2/jobdetail.ftl?job=111",
+            "https://x.taleo.net/careersection/2/jobdetail.ftl?job=222",
+        ),
+        (
+            "https://career4.successfactors.com/career?career_job_req_id=5&company=acme",
+            "https://career4.successfactors.com/career?career_job_req_id=6&company=acme",
+        ),
+        (
+            "https://www.linkedin.com/jobs/search/?currentJobId=1&trk=x",
+            "https://www.linkedin.com/jobs/search/?currentJobId=2&trk=x",
+        ),
+        ("https://jobs.example.com/view?jobid=1", "https://jobs.example.com/view?jobid=2"),
+    ],
+)
+def test_job_identifying_params_give_distinct_keys(first, second):
+    assert ledger.normalize_url(first) != ledger.normalize_url(second)
+
+
+def test_tracking_params_are_dropped_case_insensitively_and_the_rest_sorted():
+    raw = "https://jobs.example.com/v?UTM_Source=x&TrackingId=9&b=2&Lever-Source=y&a=1&FBCLID=z"
+    assert ledger.normalize_url(raw) == "https://jobs.example.com/v?a=1&b=2"
+
+
+@pytest.mark.parametrize(
     ("args", "expected"),
     [
         (("https://jobs.example.com/a/", "Acme", "Eng"), "https://jobs.example.com/a"),
@@ -65,6 +95,38 @@ def test_normalize_url_drops_tracking_noise_but_keeps_job_ids(raw, expected):
 )
 def test_job_key_uses_url_or_falls_back_to_company_and_title(args, expected):
     assert ledger.job_key(*args) == expected
+
+
+def _jd_hash(text: str) -> str:
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:8]
+
+
+@pytest.mark.parametrize(
+    ("company", "title", "jd_text", "expected"),
+    [
+        (None, None, "JD one", f"pasted:job-{_jd_hash('JD one')}"),
+        ("Acme", None, "JD one", f"pasted:acme-{_jd_hash('JD one')}"),
+        (None, None, None, "pasted:job"),
+        ("Acme", "Eng", "JD one", "pasted:acme-eng"),
+    ],
+)
+def test_job_key_hashes_jd_text_when_company_or_title_is_missing(company, title, jd_text, expected):
+    assert ledger.job_key(None, company, title, jd_text) == expected
+
+
+def test_unlabeled_pasted_runs_with_different_jd_text_get_separate_jobs(tmp_path):
+    runs = [
+        _run(sid, url=None).model_copy(update={"keywords": None, "jd_text": text})
+        for sid, text in (("s1", "JD one"), ("s2", "JD two"))
+    ]
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        for run in runs:
+            ledger.record_run(conn, run)
+        rows = conn.execute("SELECT session_id, job_key FROM runs ORDER BY session_id").fetchall()
+    assert rows == [
+        ("s1", f"pasted:job-{_jd_hash('JD one')}"),
+        ("s2", f"pasted:job-{_jd_hash('JD two')}"),
+    ]
 
 
 def test_connect_uses_wal_and_creates_tables(tmp_path):

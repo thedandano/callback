@@ -6,6 +6,7 @@ writer, and status events are append-only: a repeat of the same event is ignored
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import sqlite3
@@ -21,11 +22,40 @@ _log = logging.getLogger(__name__)
 _BUSY_TIMEOUT_S = 5.0
 _DEFAULT_PORTS = {"http": ":80", "https": ":443"}
 _ROUTE_FRAGMENT_PREFIXES = ("/", "!")
-# Query parameters that name the posting itself (Greenhouse, Indeed, Workday/Phenom, Lever-style,
-# ZipRecruiter). Everything else in the query string is tracking noise.
-_JOB_ID_PARAMS = frozenset(
-    {"gh_jid", "jk", "jid", "pid", "jobId", "job_id", "jobListingId", "guid", "id", "match_token"}
+# Query parameters that only say where a click came from, compared lowercase. Everything else in
+# the query string is kept, because boards name the posting in many different parameters
+# (Taleo `job`, SuccessFactors `career_job_req_id`, LinkedIn `currentJobId`, ...).
+_TRACKING_PARAM_PREFIXES = ("utm_",)
+_TRACKING_PARAMS = frozenset(
+    {
+        "gh_src",
+        "src",
+        "source",
+        "ref",
+        "refid",
+        "ref_id",
+        "trk",
+        "trackingid",
+        "tracking_id",
+        "lever-source",
+        "lever-origin",
+        "fbclid",
+        "gclid",
+        "mc_cid",
+        "mc_eid",
+        "from",
+        "vjs",
+        "tk",
+        "hl",
+        "domain",
+        "microsite",
+        "location",
+        "_ga",
+        "igshid",
+        "si",
+    }
 )
+_JD_HASH_CHARS = 8
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -132,8 +162,9 @@ def _text_field(keywords: dict | None, name: str) -> str | None:
 def normalize_url(url: str) -> str:
     """Canonical form of a posting URL: https, lowercase host, no default port, no trailing slash.
 
-    Keeps only the query parameters that name the posting (`_JOB_ID_PARAMS`). A board that
-    names its job id in another parameter needs that name added there. Fragments are dropped
+    Drops the query parameters that only track the click (`_TRACKING_PARAMS`, any `utm_*`),
+    compared case-insensitively, and keeps the rest in sorted order. A board that adds a new
+    tracking parameter needs it added there, or its links split into two keys. Fragments are dropped
     unless they look like a route ("#/job/1", "#!/job/1"). A value that cannot be parsed is
     logged and kept as typed.
 
@@ -153,9 +184,14 @@ def normalize_url(url: str) -> str:
     netloc = parts.netloc.lower().removesuffix(_DEFAULT_PORTS.get(scheme, "\0"))
     if scheme == "http":
         scheme = "https"
-    query = urlencode(sorted((k, v) for k, v in parse_qsl(parts.query) if k in _JOB_ID_PARAMS))
+    query = urlencode(sorted((k, v) for k, v in parse_qsl(parts.query) if not _is_tracking(k)))
     fragment = parts.fragment if parts.fragment.startswith(_ROUTE_FRAGMENT_PREFIXES) else ""
     return urlunsplit((scheme, netloc, parts.path.rstrip("/"), query, fragment))
+
+
+def _is_tracking(param: str) -> bool:
+    name = param.lower()
+    return name.startswith(_TRACKING_PARAM_PREFIXES) or name in _TRACKING_PARAMS
 
 
 def _clean_url(url: str | None) -> str | None:
@@ -165,17 +201,26 @@ def _clean_url(url: str | None) -> str | None:
     return normalize_url(url)
 
 
-def job_key(url: str | None, company: str | None, title: str | None) -> str:
+def job_key(
+    url: str | None, company: str | None, title: str | None, jd_text: str | None = None
+) -> str:
     """URL postings key on the normalized URL; pasted job descriptions have none, so use
     company + title.
 
+    When company or title is missing and the JD text is known, a short hash of the text is
+    added so unlabeled pasted jobs do not all merge into one `pasted:job` row.
+
     ponytail: two different pasted postings with the same company and title share one job.
-    Add a JD-text hash here if that ever merges postings that should stay apart.
     """
     cleaned = _clean_url(url)
     if cleaned:
         return cleaned
-    return f"pasted:{paths.slug(company, title)}"
+    slug = paths.slug(company, title)
+    if (company and title) or not jd_text:
+        return f"pasted:{slug}"
+    digest = hashlib.sha1(jd_text.encode("utf-8")).hexdigest()[:_JD_HASH_CHARS]
+    _log.info(json.dumps({"event": "ledger_key_from_jd_text", "slug": slug, "hash": digest}))
+    return f"pasted:{slug}-{digest}"
 
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
@@ -204,9 +249,10 @@ def _upsert_job(
     title: str | None,
     seen_at: str,
     salary_range: str | None,
+    jd_text: str | None = None,
 ) -> str:
     """Insert or merge a job row without committing; callers own the transaction."""
-    key = job_key(url, company, title)
+    key = job_key(url, company, title, jd_text)
     conn.execute(_UPSERT_JOB, (key, _clean_url(url), company, title, salary_range, seen_at))
     return key
 
@@ -257,6 +303,7 @@ def record_run(conn: sqlite3.Connection, run: RunRecord) -> None:
             title=run.title,
             seen_at=run.timestamp,
             salary_range=None,
+            jd_text=run.jd_text,
         )
         conn.execute(
             _UPSERT_RUN,
