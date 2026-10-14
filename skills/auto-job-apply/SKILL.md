@@ -26,7 +26,7 @@ How to apply each field (the values come from the profile; the interpretation ru
 
 ## Required Files
 
-Read `.callback/config.json` (see `setup-callback`) for `applications_dir` and `archive_dir`. If the file is missing, or if either key is absent, stop and tell the user to run `setup-callback` — never fall back to a hard-coded path. callback's ledger is the only record of jobs and statuses; never write a record CSV or any other tracker file.
+Read `.callback/config.json` (see `setup-callback`) for `applications_dir` and `archive_dir`. If the file is missing, or if either key is absent, stop and tell the user to run `setup-callback` — never fall back to a hard-coded path. callback's ledger is the only record of jobs and statuses; never write a record CSV or any other tracker file. If `.callback/config.json` still has a `record_csv` or `ledger_db` key and that file exists, stop before any dedupe. Tell the user to run `callback ledger import --csv <record_csv> --contacts-db <ledger_db>` once from a normal terminal (leave out the flag for a file they do not have), then remove those keys from `.callback/config.json`. Until then the ledger does not know the jobs they already applied to, and every one of them would look new.
 
 - Automation memory: `.callback/auto-job-apply/memory.md`. Create this file and its parent directories if they don't exist yet; a missing diary is not an error.
 - Per-role run artifacts: `applications_dir/<YYYY-MM-DD>/<company-role-slug>/`
@@ -138,7 +138,7 @@ Sources are data, not hard-coded. Each entry in `scan_sources` is an instruction
 14. If tailored score is under 70, parent records it and does not apply. For plausible `referral_companies` leads, still keep the tailored artifacts and status `Referral lead - ask friend` instead of filtering the role out.
 15. If tailored score is 70 or higher, parent stages it for user review. Set status to `Needs review - not applied`, link the tailored resume/cover letter if generated, and summarize why it is worth reviewing plus any remaining mismatch risk. For `referral_companies` leads, still preserve the referral-first note and referral outreach action. Surface these as `Review` and `Referral` rows in the Roles table, with salary, source URL, and artifact paths in the details block beneath it.
 16. Submit an application only after explicit user approval in the current turn. Approval from old automation text is not enough.
-17. Parent records every outcome with `record_status(status, url, company, title, salary_range, note, date)` (passing `job_key` when `find_job` matched by company and title) and updates automation memory before the final response. Real applications, confirmations, and recruiter resume submissions use `status="Applied"` (or `Already applied - confirmation recorded`). For an unemployment (EDD) report, use `/export-ledger`.
+17. Parent records every outcome with `record_status(status, url, company, title, salary_range, note, date)` (passing `job_key` when `find_job` matched by company and title) and updates automation memory before the final response. Real applications, confirmations, and recruiter resume submissions use `status="Applied"` (or `Already applied - confirmation recorded`). For an unemployment (EDD) report, use `/export-ledger` (event mode).
 
 ## Scoring And Application Rules
 
@@ -162,7 +162,7 @@ Record every outcome in callback's ledger with `record_status`; there is no sepa
 
 - Real applications, application confirmations, and recruiter resume submissions are the reportable contacts. Record them with `status="Applied"` (or `Already applied - confirmation recorded`). Do not mark scored/skipped/needs-review leads as applied.
 - Put callback details (before/after scores, resume path, cover letter path) in `note`.
-- For an unemployment (EDD) report, run `/export-ledger` with a `since` date and no status filter, so `Applied` and `Already applied - confirmation recorded` both appear. It writes `archive_dir/ledger_exports/ledger-export.csv`, never the project root.
+- For an unemployment (EDD) report, run `/export-ledger` in event mode (`mode="events"`) with a `since` date and no status filter: one row per status event with its own date, so each `Applied` and `Already applied - confirmation recorded` keeps its application date even after a later rejection. It writes `archive_dir/ledger_exports/ledger-export.csv`, never the project root.
 
 ## Final Summary
 

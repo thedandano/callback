@@ -6,10 +6,10 @@ Field rules:
 
 - `company`: employer or recruiter/client label if company is hidden.
 - `title`: posting title. Keep recruiter-thread inferred titles explicit.
-- `url`: canonical job URL when available. For recruiter-only leads, use a stable thread descriptor.
+- `url`: canonical job URL (`http://` or `https://`) when available. For recruiter-only leads with no posting URL, leave `url` out, pass `company` and `title`, and put a stable thread descriptor in `note`.
 - `salary_range`: posting/recruiter compensation range, for example `$120K-$160K`, `$75/hr W2`, or `Not listed`. Do not invent salary. If multiple sources disagree, use the current employer/recruiter source and explain the conflict in `note`.
 - `status`: one value from the vocabulary below.
-- `note`: dedupe rationale, salary source if useful, fit rationale, mismatch summary, blockers, source email details, before/after scores, resume and cover letter paths, and next action.
+- `note`: recruiter thread descriptor (for leads with no posting URL), dedupe rationale, salary source if useful, fit rationale, mismatch summary, blockers, source email details, before/after scores, resume and cover letter paths, and next action.
 
 Explicit status vocabulary:
 

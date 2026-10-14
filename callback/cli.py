@@ -674,7 +674,12 @@ def uninstall(
     purge: Annotated[
         bool,
         typer.Option(
-            "--purge", help="Also delete application data, state, and settings (incl. API keys)."
+            "--purge",
+            help=(
+                "Also delete application data, state, and settings (incl. API keys). "
+                "This deletes the ledger (ledger.db): your whole job history, every status "
+                "and application record. It cannot be undone."
+            ),
         ),
     ] = False,
 ) -> None:
