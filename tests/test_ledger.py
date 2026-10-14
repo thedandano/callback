@@ -954,9 +954,19 @@ def test_find_job_returns_latest_status_or_not_found(tmp_path):
         "score_before": None,
         "score_after": None,
     }
-    mine = {"job_key": "https://a.com/1", "title": "Dev", "status": "Rejected"}
+    mine = {
+        "job_key": "https://a.com/1",
+        "url": "https://a.com/1",
+        "title": "Dev",
+        "status": "Rejected",
+    }
     mine = {**mine, "status_date": "2026-10-05"}
-    req7 = {"job_key": "https://a.com/req-7", "title": "Dev II", "status": "Skipped - not fit"}
+    req7 = {
+        "job_key": "https://a.com/req-7",
+        "url": "https://a.com/req-7",
+        "title": "Dev II",
+        "status": "Skipped - not fit",
+    }
     req7 = {**req7, "status_date": "2026-10-03"}
     assert (found, by_name, missing, half_name, similar) == (
         {**hit, "matched_by": "key", "company_jobs": []},
@@ -1688,4 +1698,25 @@ def test_find_job_lists_other_company_jobs_on_a_weak_match(tmp_path):
         ["https://acme.com/jobs/1"],
         "key",
         [],
+    )
+
+
+def test_company_jobs_returns_twenty_other_jobs_on_a_weak_match(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        for n in range(22):
+            ledger.upsert_job(
+                conn,
+                url=f"https://acme.com/jobs/{n:02d}",
+                company="Acme",
+                title="Engineer" if n == 21 else f"Role {n}",
+                seen_at=f"2026-09-{n + 1:02d}",
+            )
+        weak = ledger.find_job(
+            conn, url="https://acme.com/jobs/99", company="Acme", title="Engineer"
+        )
+    keys = [job["job_key"] for job in weak["company_jobs"]]
+    assert (weak["job_key"], len(keys), "https://acme.com/jobs/21" in keys) == (
+        "https://acme.com/jobs/21",
+        20,
+        False,
     )

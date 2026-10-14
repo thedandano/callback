@@ -917,11 +917,11 @@ _FIND_KEYS = [
 ]
 _COMPANY_JOBS_LIMIT = 20
 _COMPANY_JOBS_SQL = (
-    "SELECT j.job_key, j.title, s.status, s.recorded_at FROM jobs j "
+    "SELECT j.job_key, j.url, j.title, s.status, s.recorded_at FROM jobs j "
     "LEFT JOIN status_events s ON s.id = ("
     "SELECT e.id FROM status_events e WHERE e.job_key = j.job_key "
     "ORDER BY e.recorded_at DESC, e.id DESC LIMIT 1) "
-    "WHERE norm_text(j.company) = norm_text(?) "
+    "WHERE norm_text(j.company) = norm_text(?) AND j.job_key IS NOT ? "
     f"ORDER BY j.first_seen DESC, j.job_key LIMIT {_COMPANY_JOBS_LIMIT}"
 )
 
@@ -1076,12 +1076,8 @@ def _other_company_jobs(
     if not company or (row and matched_by == "key"):
         return []
     found_key = row[_FIND_KEYS.index("job_key")] if row else None
-    return [job for job in _company_jobs(conn, company) if job["job_key"] != found_key]
-
-
-def _company_jobs(conn: sqlite3.Connection, company: str) -> list[dict]:
-    keys = ("job_key", "title", "status", "status_date")
+    keys = ("job_key", "url", "title", "status", "status_date")
     return [
         dict(zip(keys, values, strict=True))
-        for values in conn.execute(_COMPANY_JOBS_SQL, (company,))
+        for values in conn.execute(_COMPANY_JOBS_SQL, (company, found_key))
     ]

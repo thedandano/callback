@@ -1,13 +1,13 @@
 # Status values and notes
 
-Write each record with `record_status(status, url, company, title, salary_range, note, date)`. Put the email date in `note`, recorded as-is with the offset from its Date header. Never convert it to another time zone.
+Write each record with `record_status(status, url, company, title, salary_range, note, date)`. Pass the email's own date as `date` (`YYYY-MM-DD` from its Date header), so exports and `since` filters use the contact's date, not the processing date. Also put the full Date header in `note`, recorded as-is with its offset. Never convert it to another time zone.
 
 Field rules:
 
 - `company`: employer or recruiter/client label if company is hidden.
 - `title`: posting title. Keep recruiter-thread inferred titles explicit.
 - `url`: canonical job URL (`http://` or `https://`) when available. For recruiter-only leads with no posting URL, leave `url` out, pass `company` and `title`, and put a stable thread descriptor in `note`.
-- `salary_range`: posting/recruiter compensation range, for example `$120K-$160K` or `$75/hr W2`. Omit it when unknown; do not send the literal `Not listed`. Do not invent salary. If multiple sources disagree, use the current employer/recruiter source and explain the conflict in `note`.
+- `salary_range`: posting/recruiter compensation range, for example `$120K-$160K` or `$75/hr W2`. Omit it when unknown; do not send the literal `Not listed`. Do not invent salary. If multiple sources disagree, explain the conflict in `note`. The ledger keeps the first range it stored and never overwrites it, so a newer range goes in `note` only.
 - `status`: one value from the vocabulary below.
 - `note`: recruiter thread descriptor (for leads with no posting URL), dedupe rationale, salary source if useful, fit rationale, mismatch summary, blockers, source email details, before/after scores, resume and cover letter paths, and next action. Every application or contact note starts with `Contact method: <Online|Email|Phone|In person>`.
 

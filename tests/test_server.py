@@ -2415,6 +2415,7 @@ async def test_ledger_tools_record_find_and_export(tmp_path):
     assert _envelope(similar)["data"]["company_jobs"] == [
         {
             "job_key": "https://a.com/1",
+            "url": "https://a.com/1",
             "title": "Dev",
             "status": "Applied",
             "status_date": "2026-10-01",
