@@ -227,3 +227,124 @@ def test_contact_ledger_without_the_table_raises_a_clear_error(tmp_path):
         pytest.raises(ValueError, match="cannot read contact ledger"),
     ):
         import_contact_ledger(conn, src)
+
+
+def _csv(tmp_path, body, header="Company,Title,Recorded Date,URL,Status,Notes"):
+    path = tmp_path / "r.csv"
+    path.write_text(f"{header}\n{body}", encoding="utf-8")
+    return path
+
+
+def _import_csv(tmp_path, csv_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        report = import_record_csv(conn, csv_path)
+        jobs = [tuple(r) for r in conn.execute("SELECT job_key FROM jobs ORDER BY job_key")]
+        events = [
+            tuple(r) for r in conn.execute("SELECT job_key, recorded_at, note FROM status_events")
+        ]
+    return report, jobs, events
+
+
+def test_csv_non_url_goes_to_the_note_and_blank_rows_are_skipped(tmp_path):
+    path = _csv(
+        tmp_path,
+        "Acme,Eng,2026-10-01,via quick apply,Applied,hi\n,,2026-10-02,,Applied,\n",
+    )
+
+    result = _import_csv(tmp_path, path)
+
+    assert result == (
+        ImportReport(imported=1, skipped=["line 3"]),
+        [("pasted:acme-eng",)],
+        [("pasted:acme-eng", "2026-10-01", "hi | URL: via quick apply")],
+    )
+
+
+def test_csv_dates_are_normalized_so_formats_dedupe(tmp_path):
+    path = _csv(
+        tmp_path,
+        "Acme,Eng,10/1/2026,,Applied,\nAcme,Eng,2026-10-01,,Applied,\n"
+        "Acme,Eng,10/2/26,,Seen,\nAcme,Eng,Oct 3,,Seen,\n",
+    )
+
+    result = _import_csv(tmp_path, path)
+
+    assert result == (
+        ImportReport(imported=2, skipped=["line 5"]),
+        [("pasted:acme-eng",)],
+        [
+            ("pasted:acme-eng", "2026-10-01", None),
+            ("pasted:acme-eng", "2026-10-02", None),
+        ],
+    )
+
+
+def test_csv_labels_follow_real_lines_after_multiline_cells(tmp_path):
+    path = _csv(tmp_path, 'Acme,Eng,2026-10-01,,Applied,"two\nlines"\n,,,,Applied,\n')
+
+    report, _, _ = _import_csv(tmp_path, path)
+
+    assert report == ImportReport(imported=1, skipped=["line 4"])
+
+
+def test_csv_missing_columns_raises(tmp_path):
+    path = _csv(tmp_path, "x\n", header="Foo,Bar")
+
+    with (
+        closing(ledger.connect(tmp_path / "l.db")) as conn,
+        pytest.raises(ValueError, match=r"missing columns \['Company', 'Title', 'URL'\]"),
+    ):
+        import_record_csv(conn, path)
+
+
+def test_archive_with_a_non_url_jd_url_is_keyed_by_company_and_title(tmp_path):
+    apps = _archive(tmp_path, "s1", "linkedin.com")
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        import_archives(conn, apps)
+        keys = [tuple(r) for r in conn.execute("SELECT job_key FROM jobs")]
+
+    assert keys == [("pasted:acme-engineer-platform",)]
+
+
+def test_pdf_name_with_brackets_is_relinked_exactly(tmp_path):
+    apps = _archive(tmp_path, "s1", "https://a.com/1", pdf_path="/gone/a [1].pdf")
+    (apps / "a [1].pdf").write_bytes(b"%PDF")
+    (apps / "a 1.pdf").write_bytes(b"%PDF")
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        import_archives(conn, apps)
+        stored = _pdf_path(conn, "s1")
+
+    assert stored == str(apps / "a [1].pdf")
+
+
+def test_ambiguous_pdf_name_is_not_relinked(tmp_path, caplog):
+    apps = _archive(tmp_path, "s1", "https://a.com/1", pdf_path="/gone/r.pdf")
+    for sub in ("x", "y"):
+        (apps / sub).mkdir()
+        (apps / sub / "r.pdf").write_bytes(b"%PDF")
+
+    with caplog.at_level(logging.WARNING), closing(ledger.connect(tmp_path / "l.db")) as conn:
+        import_archives(conn, apps)
+        stored = _pdf_path(conn, "s1")
+
+    events = [json.loads(r.message)["event"] for r in caplog.records]
+    assert (stored, events) == ("/gone/r.pdf", ["ledger_import_pdf_ambiguous"])
+
+
+def test_contact_dates_and_urls_are_validated(tmp_path):
+    src = tmp_path / "old.sqlite3"
+    _contacts_db(src)
+    with closing(sqlite3.connect(src)) as db, db:
+        db.execute("UPDATE job_search_entries SET date = '9/2/2026' WHERE id = 2")
+        db.execute("UPDATE job_search_entries SET date = 'soon' WHERE id = 1")
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        report = import_contact_ledger(conn, src)
+        dates = [tuple(r) for r in conn.execute("SELECT recorded_at FROM status_events")]
+
+    assert (report, dates) == (
+        ImportReport(imported=1, skipped=["entry 1", "entry 3"]),
+        [("2026-09-02",)],
+    )
