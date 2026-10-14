@@ -29,9 +29,6 @@ _TRACKING_PARAM_PREFIXES = ("utm_",)
 _TRACKING_PARAMS = frozenset(
     {
         "gh_src",
-        "src",
-        "source",
-        "ref",
         "refid",
         "ref_id",
         "trk",
@@ -43,32 +40,16 @@ _TRACKING_PARAMS = frozenset(
         "gclid",
         "mc_cid",
         "mc_eid",
-        "from",
         "vjs",
         "tk",
-        "hl",
-        "domain",
-        "microsite",
-        "location",
         "_ga",
         "igshid",
         "si",
-        "sort",
-        "page",
-        "lang",
-        "locale",
-        "q",
-        "keywords",
-        "search",
-        "filter",
-        "view",
-        "origin",
         "refererurl",
         "referrer",
         "cmp",
         "campaign",
         "medium",
-        "share",
         "sharedid",
     }
 )
@@ -103,9 +84,24 @@ CREATE TABLE IF NOT EXISTS status_events (
     status TEXT NOT NULL,
     recorded_at TEXT NOT NULL,
     note TEXT,
-    source TEXT NOT NULL,
-    UNIQUE (job_key, status, recorded_at)
+    source TEXT NOT NULL
 );
+"""
+
+_CREATE_STATUS_EVENT_IDENTITY_INDEX = """
+CREATE UNIQUE INDEX IF NOT EXISTS status_events_identity
+ON status_events (job_key, status, recorded_at, source, ifnull(note, ''))
+"""
+
+_CREATE_STATUS_EVENTS_TABLE = """
+CREATE TABLE status_events (
+    id INTEGER PRIMARY KEY,
+    job_key TEXT NOT NULL REFERENCES jobs(job_key),
+    status TEXT NOT NULL,
+    recorded_at TEXT NOT NULL,
+    note TEXT,
+    source TEXT NOT NULL
+)
 """
 
 _UPSERT_JOB = """
@@ -189,8 +185,13 @@ def normalize_url(url: str) -> str:
     that ever splits one posting in two.
     """
     stripped = url.strip()
-    candidate = stripped if "://" in stripped else f"https://{stripped}"
     try:
+        outer = urlsplit(stripped)
+        candidate = (
+            stripped
+            if outer.scheme.lower() in _DEFAULT_PORTS and outer.netloc
+            else f"https://{stripped}"
+        )
         parts = urlsplit(candidate)
     except ValueError as exc:
         _log.warning(
@@ -201,9 +202,22 @@ def normalize_url(url: str) -> str:
     netloc = parts.netloc.lower().removesuffix(_DEFAULT_PORTS.get(scheme, "\0"))
     if scheme == "http":
         scheme = "https"
-    query = urlencode(sorted((k, v) for k, v in parse_qsl(parts.query) if not _is_tracking(k)))
-    fragment = parts.fragment if parts.fragment.startswith(_ROUTE_FRAGMENT_PREFIXES) else ""
+    query = _normalized_query(parts.query)
+    fragment = _normalized_route_fragment(parts.fragment)
     return urlunsplit((scheme, netloc, parts.path.rstrip("/"), query, fragment))
+
+
+def _normalized_query(query: str) -> str:
+    return urlencode(
+        sorted((key, value) for key, value in parse_qsl(query) if not _is_tracking(key))
+    )
+
+
+def _normalized_route_fragment(fragment: str) -> str:
+    if not fragment.startswith(_ROUTE_FRAGMENT_PREFIXES):
+        return ""
+    route = urlsplit(fragment)
+    return urlunsplit(("", "", route.path.rstrip("/"), _normalized_query(route.query), ""))
 
 
 def _is_tracking(param: str) -> bool:
@@ -249,6 +263,8 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
         conn.executescript(_SCHEMA)
+        _migrate_legacy_status_event_identity(conn)
+        conn.execute(_CREATE_STATUS_EVENT_IDENTITY_INDEX)
     except sqlite3.Error as exc:
         conn.close()
         _log.warning(
@@ -256,6 +272,33 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
         )
         raise
     return conn
+
+
+def _migrate_legacy_status_event_identity(conn: sqlite3.Connection) -> None:
+    if not _has_legacy_status_event_identity(conn):
+        return
+    with conn:
+        conn.execute("ALTER TABLE status_events RENAME TO status_events_legacy")
+        conn.execute(_CREATE_STATUS_EVENTS_TABLE)
+        conn.execute(
+            "INSERT INTO status_events (id, job_key, status, recorded_at, note, source) "
+            "SELECT id, job_key, status, recorded_at, note, source FROM status_events_legacy"
+        )
+        conn.execute("DROP TABLE status_events_legacy")
+    _log.warning(json.dumps({"event": "ledger_status_events_migrated"}))
+
+
+def _has_legacy_status_event_identity(conn: sqlite3.Connection) -> bool:
+    for _, index_name, is_unique, *_ in conn.execute("PRAGMA index_list(status_events)"):
+        if is_unique and _index_columns(conn, index_name) == ["job_key", "status", "recorded_at"]:
+            return True
+    return False
+
+
+def _index_columns(conn: sqlite3.Connection, index_name: str) -> list[str]:
+    escaped_name = index_name.replace("'", "''")
+    rows = conn.execute(f"PRAGMA index_info('{escaped_name}')")
+    return [row[2] for row in rows]
 
 
 def _upsert_job(
@@ -282,6 +325,7 @@ def upsert_job(
     title: str | None,
     seen_at: str,
     salary_range: str | None = None,
+    jd_text: str | None = None,
 ) -> str:
     with conn:
         return _upsert_job(
@@ -291,6 +335,7 @@ def upsert_job(
             title=title,
             seen_at=seen_at,
             salary_range=salary_range,
+            jd_text=jd_text,
         )
 
 
@@ -319,7 +364,7 @@ def record_run(conn: sqlite3.Connection, run: RunRecord) -> None:
             company=run.company,
             title=run.title,
             seen_at=run.timestamp,
-            salary_range=None,
+            salary_range=_salary_range(run.keywords),
             jd_text=run.jd_text,
         )
         conn.execute(
@@ -336,6 +381,25 @@ def record_run(conn: sqlite3.Connection, run: RunRecord) -> None:
                 *blobs[1:],
             ),
         )
+
+
+def _salary_range(keywords: dict | None) -> str | None:
+    minimum = _text_or_number_field(keywords, "pay_range_min")
+    maximum = _text_or_number_field(keywords, "pay_range_max")
+    if minimum and maximum:
+        return f"{minimum}-{maximum}"
+    return minimum or maximum
+
+
+def _text_or_number_field(keywords: dict | None, name: str) -> str | None:
+    value = (keywords or {}).get(name)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    if isinstance(value, int | float) and not isinstance(value, bool):
+        if isinstance(value, float) and value.is_integer():
+            return str(int(value))
+        return str(value)
+    return None
 
 
 def add_status(

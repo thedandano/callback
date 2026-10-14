@@ -6,6 +6,7 @@ from contextlib import closing
 import pytest
 
 from callback import ledger
+from scripts import build_fetch_fixtures
 
 
 def _run(
@@ -33,11 +34,11 @@ def _run(
         ),
         (
             "https://www.indeed.com/viewjob?jk=abc123&from=serp&tk=x&vjs=3",
-            "https://www.indeed.com/viewjob?jk=abc123",
+            "https://www.indeed.com/viewjob?from=serp&jk=abc123",
         ),
         (
             "https://careers.example.com/job?domain=example.com&microsite=x&pid=42&location=SF",
-            "https://careers.example.com/job?pid=42",
+            "https://careers.example.com/job?domain=example.com&location=SF&microsite=x&pid=42",
         ),
         (
             "https://www.ziprecruiter.com/job-redirect?match_token=abc&utm_source=x",
@@ -45,7 +46,7 @@ def _run(
         ),
         (
             "https://x.taleo.net/jobdetail.ftl?job=111&lang=en&sort=date&page=2",
-            "https://x.taleo.net/jobdetail.ftl?job=111",
+            "https://x.taleo.net/jobdetail.ftl?job=111&lang=en&page=2&sort=date",
         ),
         ("HTTP://jobs.example.com/a", "https://jobs.example.com/a"),
         ("http://jobs.example.com:80/a", "https://jobs.example.com/a"),
@@ -89,6 +90,34 @@ def test_job_identifying_params_are_kept_in_normalized_url(raw, expected):
 def test_tracking_params_are_dropped_case_insensitively_and_the_rest_sorted():
     raw = "https://jobs.example.com/v?UTM_Source=x&TrackingId=9&b=2&Lever-Source=y&a=1&FBCLID=z"
     assert ledger.normalize_url(raw) == "https://jobs.example.com/v?a=1&b=2"
+
+
+def test_normalize_url_checks_the_outer_url_before_adding_https():
+    raw = "jobs.example.com/view?next=https://apply.example/id"
+    assert (
+        ledger.normalize_url(raw)
+        == "https://jobs.example.com/view?next=https%3A%2F%2Fapply.example%2Fid"
+    )
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("https://x.com/#/job/1?utm_source=x", "https://x.com#/job/1"),
+        ("https://x.com/#/job/1/", "https://x.com#/job/1"),
+    ],
+)
+def test_normalize_url_normalizes_route_fragments(raw, expected):
+    assert ledger.normalize_url(raw) == expected
+
+
+def test_normalize_url_keeps_ref_values_that_identify_distinct_jobs():
+    first = ledger.normalize_url("https://jobs.example.com/view?ref=REQ-1")
+    second = ledger.normalize_url("https://jobs.example.com/view?ref=REQ-2")
+    assert (first, second) == (
+        "https://jobs.example.com/view?ref=REQ-1",
+        "https://jobs.example.com/view?ref=REQ-2",
+    )
 
 
 @pytest.mark.parametrize(
@@ -136,6 +165,28 @@ def test_unlabeled_pasted_runs_with_different_jd_text_get_separate_jobs(tmp_path
     ]
 
 
+def test_upsert_job_uses_jd_text_to_separate_unlabeled_pasted_jobs(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        first = ledger.upsert_job(
+            conn,
+            url=None,
+            company=None,
+            title=None,
+            seen_at="2026-10-12",
+            jd_text="First pasted job",
+        )
+        second = ledger.upsert_job(
+            conn,
+            url=None,
+            company=None,
+            title=None,
+            seen_at="2026-10-12",
+            jd_text="Second pasted job",
+        )
+        count = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()
+    assert (first != second, count) == (True, (2,))
+
+
 def test_connect_uses_wal_and_creates_tables(tmp_path):
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
         mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
@@ -152,6 +203,41 @@ def test_record_run_twice_keeps_one_run_and_the_latest_values(tmp_path):
             "FROM runs r JOIN jobs j ON j.job_key = r.job_key"
         ).fetchall()
     assert rows == [("s1", "https://jobs.example.com/a", "Acme", "Engineer", "/new.pdf")]
+
+
+def test_record_run_sets_salary_range_from_keyword_pay_bounds(tmp_path):
+    run = _run().model_copy(
+        update={
+            "keywords": {
+                "company": "Acme",
+                "title": "Engineer",
+                "pay_range_min": 150000.0,
+                "pay_range_max": 200000.0,
+            }
+        }
+    )
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_run(conn, run)
+        salary_range = conn.execute("SELECT salary_range FROM jobs").fetchone()
+    assert salary_range == ("150000-200000",)
+
+
+def test_record_run_keeps_an_existing_salary_range(tmp_path):
+    run = _run().model_copy(
+        update={"keywords": {"company": "Acme", "title": "Engineer", "pay_range_min": 150000.0}}
+    )
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.upsert_job(
+            conn,
+            url=run.jd_url,
+            company=run.company,
+            title=run.title,
+            seen_at=run.timestamp,
+            salary_range="180000-220000",
+        )
+        ledger.record_run(conn, run)
+        salary_range = conn.execute("SELECT salary_range FROM jobs").fetchone()
+    assert salary_range == ("180000-220000",)
 
 
 def test_two_runs_for_one_posting_share_one_job(tmp_path):
@@ -199,6 +285,107 @@ def test_add_status_is_append_only_and_ignores_exact_repeats(tmp_path):
     assert (added, rows) == (
         [True, False, True],
         [("Applied", "2026-10-01"), ("Rejected", "2026-10-05")],
+    )
+
+
+def test_add_status_keeps_distinct_sources_and_notes_for_the_same_day(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        key = ledger.upsert_job(
+            conn, url="https://x.com/1", company="X", title="Eng", seen_at="2026-10-01"
+        )
+        added = [
+            ledger.add_status(
+                conn,
+                job_key=key,
+                status="Applied",
+                recorded_at="2026-10-01",
+                note="Email",
+                source="gmail",
+            ),
+            ledger.add_status(
+                conn,
+                job_key=key,
+                status="Applied",
+                recorded_at="2026-10-01",
+                note="Portal",
+                source="csv",
+            ),
+        ]
+        events = conn.execute("SELECT source, note FROM status_events ORDER BY id").fetchall()
+    assert (added, events) == ([True, True], [("gmail", "Email"), ("csv", "Portal")])
+
+
+def test_connect_migrates_legacy_status_event_identity(tmp_path, caplog):
+    path = tmp_path / "l.db"
+    with sqlite3.connect(path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE jobs (
+                job_key TEXT PRIMARY KEY, url TEXT, company TEXT, title TEXT,
+                salary_range TEXT, first_seen TEXT NOT NULL
+            );
+            CREATE TABLE status_events (
+                id INTEGER PRIMARY KEY,
+                job_key TEXT NOT NULL REFERENCES jobs(job_key),
+                status TEXT NOT NULL, recorded_at TEXT NOT NULL, note TEXT,
+                source TEXT NOT NULL,
+                UNIQUE (job_key, status, recorded_at)
+            );
+            INSERT INTO jobs VALUES (
+                'https://x.com/1', 'https://x.com/1', 'X', 'Eng', NULL, '2026-10-01'
+            );
+            INSERT INTO status_events (job_key, status, recorded_at, note, source)
+            VALUES ('https://x.com/1', 'Applied', '2026-10-01', 'Email', 'gmail');
+            """
+        )
+    with (
+        closing(ledger.connect(path)) as conn,
+        caplog.at_level(logging.WARNING, logger="callback.ledger"),
+    ):
+        inserted = ledger.add_status(
+            conn,
+            job_key="https://x.com/1",
+            status="Applied",
+            recorded_at="2026-10-01",
+            note="Portal",
+            source="csv",
+        )
+        events = conn.execute("SELECT source, note FROM status_events ORDER BY id").fetchall()
+    messages = [record.getMessage() for record in caplog.records]
+    assert (
+        inserted,
+        events,
+        any('"ledger_status_events_migrated"' in message for message in messages),
+    ) == (
+        True,
+        [("gmail", "Email"), ("csv", "Portal")],
+        True,
+    )
+
+
+def test_expected_keywords_reads_the_matching_ledger_run_before_legacy_archive(
+    tmp_path, monkeypatch, caplog
+):
+    expected_dir = tmp_path / "extract"
+    expected_dir.mkdir()
+    ledger_path = tmp_path / "ledger.db"
+    monkeypatch.setattr(build_fetch_fixtures, "EXTRACT_DIR", expected_dir)
+    monkeypatch.setattr(build_fetch_fixtures.paths, "ledger_path", lambda: ledger_path)
+    with closing(ledger.connect(ledger_path)) as conn:
+        ledger.record_run(
+            conn, _run("archived-session").model_copy(update={"keywords": {"required": ["Python"]}})
+        )
+    with caplog.at_level(logging.INFO, logger="scripts.build_fetch_fixtures"):
+        actual = build_fetch_fixtures._expected_keywords(
+            "board", {"archived_session": "archived-session"}
+        )
+    messages = [record.getMessage() for record in caplog.records]
+    assert (
+        actual,
+        any('"ledger_expected_keywords_source"' in message for message in messages),
+    ) == (
+        {"required": ["Python"]},
+        True,
     )
 
 

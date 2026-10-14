@@ -5,9 +5,8 @@ For each entry in evals/extract/sources.json: fetch the URL with the production
 fetcher, write <board>.md, and record the recall of the committed expected terms
 against the fetched text back into sources.json so the CI test can assert it
 byte-for-byte. A board with no <board>.expected.json yet is seeded from the
-archived application named by archived_session (a private local file).
-This reads pre-ledger <session>.json run files only; runs after the ledger change are in
-the ledger instead.
+archived application named by archived_session (a private local file). Keywords come from the
+ledger first, with the archive as a legacy fallback.
 
 Usage: uv run python scripts/build_fetch_fixtures.py [board ...]
 """
@@ -16,17 +15,21 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import sqlite3
 import sys
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from callback import paths  # noqa: E402
+from callback import ledger, paths  # noqa: E402
 from callback.jd_fetcher import CHARS_PER_TOKEN, fetch_url_to_markdown  # noqa: E402
 from evals.recall import recall  # noqa: E402
 
 EXTRACT_DIR = Path(__file__).resolve().parent.parent / "evals" / "extract"
+_log = logging.getLogger(__name__)
 
 
 def _expected_keywords(board: str, source: dict) -> dict:
@@ -36,15 +39,44 @@ def _expected_keywords(board: str, source: dict) -> dict:
     if expected_path.exists():
         return json.loads(expected_path.read_text(encoding="utf-8"))
     session = source["archived_session"]
+    keywords = _ledger_keywords(session)
+    if keywords is not None:
+        _log.info(json.dumps({"event": "ledger_expected_keywords_source", "source": "ledger"}))
+        _write_expected(expected_path, keywords)
+        return keywords
     archive = next(paths.apps_dir().rglob(f"{session}.json"), None)
     if archive is None:
         raise FileNotFoundError(f"no archive for session {session} under {paths.apps_dir()}")
     expected = json.loads(archive.read_text())["keywords"]
-    expected_path.write_text(
-        json.dumps(expected, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
-    )
+    _log.info(json.dumps({"event": "ledger_expected_keywords_source", "source": "archive"}))
+    _write_expected(expected_path, expected)
     print(f"{board:11s} seeded expected data from {archive}")
     return expected
+
+
+def _ledger_keywords(session_id: str) -> dict | None:
+    try:
+        with closing(ledger.connect(paths.ledger_path())) as conn:
+            row = conn.execute(
+                "SELECT keywords FROM runs WHERE session_id = ?", (session_id,)
+            ).fetchone()
+    except sqlite3.Error as exc:
+        _log.warning(
+            json.dumps({"event": "ledger_expected_keywords_lookup_failed", "error": str(exc)})
+        )
+        return None
+    if row is None or row[0] is None:
+        return None
+    try:
+        keywords = json.loads(row[0])
+    except json.JSONDecodeError as exc:
+        _log.warning(json.dumps({"event": "ledger_expected_keywords_invalid", "error": str(exc)}))
+        return None
+    return keywords if isinstance(keywords, dict) else None
+
+
+def _write_expected(path: Path, expected: dict) -> None:
+    path.write_text(json.dumps(expected, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def build(board: str, source: dict) -> dict:
