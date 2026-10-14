@@ -633,13 +633,25 @@ class StatusUpdate(BaseModel):
 
 
 def _existing_job_key(conn: sqlite3.Connection, update: StatusUpdate) -> str | None:
-    """The job a status names: its job_key, or the one job matching company + title sans URL."""
+    """The job a status names: its job_key, a pasted job given this URL, or a name match."""
     if update.job_key:
         return update.job_key
+    if cleaned := _clean_url(update.url):
+        return _pasted_job_with_url(conn, cleaned)
     company, title = _optional_text(update.company), _optional_text(update.title)
-    if _clean_url(update.url) or not (company and title):
+    if not (company and title):
         return None
     return job_key_by_name(conn, company, title)
+
+
+def _pasted_job_with_url(conn: sqlite3.Connection, url: str) -> str | None:
+    """A company + title job that was later given this URL (its key stays pasted:), if any."""
+    if job_exists(conn, url):
+        return None
+    row = conn.execute(
+        "SELECT job_key FROM jobs WHERE url = ? ORDER BY first_seen DESC LIMIT 1", (url,)
+    ).fetchone()
+    return row[0] if row else None
 
 
 def record_status(conn: sqlite3.Connection, update: StatusUpdate) -> bool:
@@ -759,6 +771,8 @@ _FIND_SQL = (
     "ORDER BY {order} s.recorded_at DESC, s.id DESC LIMIT 1"
 )
 _BY_KEY = ("j.job_key = ?", "")
+# A job first keyed by company + title keeps its pasted: key after a URL is added to it.
+_BY_STORED_URL = ("j.url = ?", "j.first_seen DESC,")
 _BY_NAME = (
     "norm_text(j.company) = norm_text(?) AND norm_text(j.title) = norm_text(?)",
     "j.first_seen DESC,",
@@ -867,6 +881,8 @@ def find_job(
     title differs from `title` or is missing reports matched_by='key_title_mismatch'.
     """
     row = _find_row(conn, _BY_KEY, (job_key(url, company, title),))
+    if row is None and (cleaned := _clean_url(url)):
+        row = _find_row(conn, _BY_STORED_URL, (cleaned,))
     matched_by = _key_match_kind(row, title)
     if row is None and company and title:
         row = _find_row(conn, _BY_NAME, (company, title))
