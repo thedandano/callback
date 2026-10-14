@@ -930,8 +930,9 @@ def find_job(
     different URL is still found when company and title match, ignoring case, Unicode case, and
     spacing. Includes the latest run's score totals when a run exists. A key match whose stored
     title differs from `title` or is missing reports matched_by='key_title_mismatch'.
-    When nothing is found and a company is given, company_jobs lists that company's other jobs
-    (up to 20, newest first) so the caller can spot a similar title or requisition id.
+    When nothing is found, or the match is weak (not 'key'), and a company is given,
+    company_jobs lists that company's other jobs (up to 20, newest first, the matched job left
+    out) so the caller can spot a similar title or requisition id.
     """
     row = _find_row(conn, _BY_KEY, (job_key(url, company, title),))
     if row is None and (cleaned := _clean_url(url)):
@@ -945,8 +946,18 @@ def find_job(
         "found": row is not None,
         **dict(zip(_FIND_KEYS, values, strict=True)),
         "matched_by": matched_by if row else None,
-        "company_jobs": [] if row or not company else _company_jobs(conn, company),
+        "company_jobs": _other_company_jobs(conn, company, row, matched_by),
     }
+
+
+def _other_company_jobs(
+    conn: sqlite3.Connection, company: str | None, row: tuple | None, matched_by: str
+) -> list[dict]:
+    """The company's other jobs when the match is missing or weak; [] for a confirmed key match."""
+    if not company or (row and matched_by == "key"):
+        return []
+    found_key = row[_FIND_KEYS.index("job_key")] if row else None
+    return [job for job in _company_jobs(conn, company) if job["job_key"] != found_key]
 
 
 def _company_jobs(conn: sqlite3.Connection, company: str) -> list[dict]:
