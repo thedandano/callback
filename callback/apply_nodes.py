@@ -515,16 +515,16 @@ def _today() -> date:
 
 
 def _artifact_dir(state: ApplyState) -> Path:
-    """Folder for this run's PDF: the one render already chose, else the caller's
-    output_dir, else apps_dir/<local date>/<company-role-slug>/.
+    """Folder for this run's PDF: the caller's output_dir, else the dated folder render
+    already chose, else apps_dir/<local date>/<company-role-slug>/.
 
-    render stores its choice in state.artifact_dir, so a retry that crosses midnight
-    keeps using the same folder.
+    An explicit output_dir always wins, so a retry can redirect the output. render stores
+    the dated default in state.artifact_dir, so a retry that crosses midnight keeps it.
     """
-    if state.artifact_dir:
-        return Path(state.artifact_dir)
     if state.output_dir:
         return Path(state.output_dir)
+    if state.artifact_dir:
+        return Path(state.artifact_dir)
     keywords = state.keywords or {}
     folder = paths.slug(keywords.get("company"), keywords.get("title"))
     return paths.apps_dir() / _today().isoformat() / folder

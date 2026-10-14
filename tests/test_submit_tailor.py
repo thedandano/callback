@@ -1027,3 +1027,13 @@ def test_submit_tailor_can_be_retried_after_finalize_archive_write_failure(tmp_p
         "archive_exists": Path(second["data"]["archive_path"]).exists(),
     }
     assert actual == {"status": "ok", "pdf_exists": True, "archive_exists": True}
+
+
+def test_archive_path_follows_explicit_output_dir_over_stored_artifact_dir(tmp_path):
+    from callback import server
+
+    final = {"artifact_dir": str(tmp_path / "old"), "output_dir": str(tmp_path / "new")}
+
+    actual = server._submit_tailor_artifacts(final, "s1")
+
+    assert actual == {"pdf_path": None, "archive_path": str(tmp_path / "new" / "s1.json")}

@@ -491,10 +491,11 @@ class TestDecisionLabels:
     [
         ({}, "apps/2026-10-12/expertvoice-frontend-ai-engineer"),
         ({"output_dir": "OUT"}, "OUT"),
-        ({"output_dir": "OUT", "artifact_dir": "STORED"}, "STORED"),
+        ({"output_dir": "OUT", "artifact_dir": "STORED"}, "OUT"),
+        ({"artifact_dir": "STORED"}, "STORED"),
     ],
 )
-def test_artifact_dir_prefers_stored_then_output_dir_then_dated_default(
+def test_artifact_dir_prefers_output_dir_then_stored_then_dated_default(
     fields, expected_suffix, tmp_path, monkeypatch
 ):
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "apps"))

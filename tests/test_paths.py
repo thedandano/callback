@@ -518,3 +518,12 @@ def test_write_text_atomic_cleans_up_temp_file_on_rename_failure(tmp_path: Path,
 )
 def test_slug_matches_the_skill_folder_names(parts, expected):
     assert paths.slug(*parts) == expected
+
+
+def test_slug_bounds_long_names_and_keeps_distinct_ones_distinct():
+    first = paths.slug("Acme", "Senior Engineer " * 20 + "alpha")
+    second = paths.slug("Acme", "Senior Engineer " * 20 + "beta")
+
+    actual = (len(first) <= paths.SLUG_MAX_LENGTH, len(second) <= paths.SLUG_MAX_LENGTH)
+    assert actual == (True, True)
+    assert first != second

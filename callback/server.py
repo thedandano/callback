@@ -875,10 +875,11 @@ def _complete_workflow() -> dict:
 def _submit_tailor_artifacts(final: dict, session_id: str) -> dict:
     """Resolve this run's artifact paths from final graph state.
 
-    archive_path sits in the folder render chose (state.artifact_dir). The fallback
-    covers runs where render never succeeded.
+    archive_path sits in the same folder _artifact_dir picks: an explicit output_dir,
+    else the folder render chose (state.artifact_dir). The fallback covers runs where
+    render never succeeded.
     """
-    artifact_dir = Path(final.get("artifact_dir") or final.get("output_dir") or paths.apps_dir())
+    artifact_dir = Path(final.get("output_dir") or final.get("artifact_dir") or paths.apps_dir())
     archive_path = str(artifact_dir / f"{session_id}.json")
     return {
         "pdf_path": final.get("pdf_path"),

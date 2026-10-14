@@ -14,7 +14,6 @@ from pathlib import Path
 # Add current directory to path for running via uv
 sys.path.insert(0, os.getcwd())
 
-from callback import paths
 from callback.jd_data import EXTRACTION_PROTOCOL
 from callback.jd_fetcher import MIN_MARKDOWN_CHARS
 from callback.repository.resumes import save_resume
@@ -125,7 +124,7 @@ def main():
         assert "total" in tailored["data"]["score_final"], "score_final missing total"
 
         # Phase 4: read archive JSON for score delta
-        archive_path = paths.apps_dir() / f"{session_id}.json"
+        archive_path = Path(tailored["data"]["archive_path"])
         assert archive_path.exists(), f"archive not written: {archive_path}"
         archive = json.loads(archive_path.read_text())
         delta = archive["scores"]["delta"]
