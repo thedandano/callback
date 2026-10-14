@@ -348,6 +348,92 @@ def test_add_status_keeps_distinct_sources_and_notes_for_the_same_day(tmp_path):
     assert (added, events) == ([True, True], [("gmail", "Email"), ("csv", "Portal")])
 
 
+def test_add_status_canonicalizes_timestamps_before_deduplicating(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        key = ledger.upsert_job(
+            conn, url="https://x.com/1", company="X", title="Eng", seen_at="2026-10-01"
+        )
+        added = [
+            ledger.add_status(
+                conn,
+                job_key=key,
+                status="Applied",
+                recorded_at="2026-10-01T12:00:00-04:00",
+                note="Portal",
+                source="csv",
+            ),
+            ledger.add_status(
+                conn,
+                job_key=key,
+                status="Applied",
+                recorded_at="2026-10-01T16:00:00+00:00",
+                note="Portal",
+                source="csv",
+            ),
+            ledger.add_status(
+                conn,
+                job_key=key,
+                status="Saved",
+                recorded_at="2026-10-01",
+                note="Portal",
+                source="csv",
+            ),
+        ]
+        events = conn.execute(
+            "SELECT status, recorded_at FROM status_events ORDER BY id"
+        ).fetchall()
+    assert (added, events) == (
+        [True, False, True],
+        [("Applied", "2026-10-01T16:00:00+00:00"), ("Saved", "2026-10-01")],
+    )
+
+
+def test_add_status_rejects_null_source_but_ignores_an_exact_repeat(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        key = ledger.upsert_job(
+            conn, url="https://x.com/1", company="X", title="Eng", seen_at="2026-10-01"
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            ledger.add_status(
+                conn,
+                job_key=key,
+                status="Applied",
+                recorded_at="2026-10-01",
+                note=None,
+                source=None,  # type: ignore[arg-type]
+            )
+        added = [
+            ledger.add_status(
+                conn,
+                job_key=key,
+                status="Applied",
+                recorded_at="2026-10-01",
+                note=None,
+                source="csv",
+            ),
+            ledger.add_status(
+                conn,
+                job_key=key,
+                status="Applied",
+                recorded_at="2026-10-01",
+                note=None,
+                source="csv",
+            ),
+        ]
+    assert added == [True, False]
+
+
+def test_job_key_uses_jd_text_when_labels_are_whitespace_only():
+    keys = [
+        ledger.job_key(None, " ", "\t", "First pasted job"),
+        ledger.job_key(None, " ", "\t", "Second pasted job"),
+    ]
+    assert keys == [
+        f"pasted:job-{_jd_hash('First pasted job')}",
+        f"pasted:job-{_jd_hash('Second pasted job')}",
+    ]
+
+
 def test_expected_keywords_reads_the_matching_ledger_run_before_legacy_archive(
     tmp_path, monkeypatch, caplog
 ):

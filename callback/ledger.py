@@ -260,7 +260,7 @@ def job_key(
         return cleaned
     folded_company, folded_title = _norm_text(company), _norm_text(title)
     slug = paths.slug(folded_company, folded_title)
-    if (company and title) or not jd_text:
+    if (folded_company and folded_title) or not jd_text:
         pair = f"{folded_company}{_NAME_SEPARATOR}{folded_title}"
         return f"pasted:{slug}-{_short_hash(pair)}"
     digest = _short_hash(jd_text)
@@ -422,8 +422,8 @@ def add_status(
     """Append a status event. Returns True if a new row was added, False for an exact repeat."""
     with conn:
         cursor = conn.execute(
-            "INSERT OR IGNORE INTO status_events (job_key, status, recorded_at, note, source) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (job_key, status, recorded_at, note, source),
+            "INSERT INTO status_events (job_key, status, recorded_at, note, source) "
+            "VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
+            (job_key, status, canonical_timestamp(recorded_at), note, source),
         )
     return cursor.rowcount == 1
