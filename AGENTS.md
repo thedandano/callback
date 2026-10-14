@@ -249,7 +249,7 @@ Layer rules:
 - Observability adapters live behind `observability.py`; graph code may ask for trace config, but workflow nodes should not know vendor details.
 
 The key boundary: the host owns LLM reasoning and judgment. callback owns state,
-validation, deterministic scoring, rendering, archival, and explicit workflow
+validation, deterministic scoring, rendering, ledger recording, and explicit workflow
 handoff metadata.
 
 ### Two graphs, one server
@@ -283,7 +283,7 @@ When the user asks to use callback for a job, the host should follow the workflo
 6. If `workflow.next_tool` is `onboard_user` or `create_story`, collect the missing profile evidence, compile the profile, then restart the job flow with `load_jd`.
 7. After `submit_tailor`, return `data.pdf_path`, `data.ledger_path`, `data.report`, and `data.outcome` to the user.
 
-The host owns keyword extraction and tailoring judgment. callback owns state, validation, rendering, scoring, and archival.
+The host owns keyword extraction and tailoring judgment. callback owns state, validation, rendering, scoring, and ledger recording.
 
 ### Apply graph (`apply_graph.py`, `apply_nodes.py`)
 

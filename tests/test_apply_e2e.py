@@ -335,13 +335,13 @@ class TestM3ScoreDelta:
             (scores,) = conn.execute(
                 "SELECT scores FROM runs WHERE session_id = ?", (session_id,)
             ).fetchone()
-        archive = {"scores": json.loads(scores)}
+        recorded = {"scores": json.loads(scores)}
 
         actual = {
             "scores_delta_equals_report_delta": (
-                archive["scores"]["delta"] == state["report"]["delta"]
+                recorded["scores"]["delta"] == state["report"]["delta"]
             ),
-            "scoring_engine_version": archive["scores"]["scoring_engine_version"],
+            "scoring_engine_version": recorded["scores"]["scoring_engine_version"],
         }
         assert actual == {
             "scores_delta_equals_report_delta": True,

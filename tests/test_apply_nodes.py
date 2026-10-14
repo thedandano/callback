@@ -306,6 +306,16 @@ def test_finalize_returns_a_retriable_error_when_the_ledger_is_locked(tmp_path, 
     }
 
 
+def test_finalize_returns_a_retriable_error_when_the_record_cannot_be_stored(tmp_path, monkeypatch):
+    def unserializable(conn, run):
+        raise TypeError("not serializable")
+
+    monkeypatch.setattr(ledger, "record_run", unserializable)
+    assert apply_nodes.finalize(_final_state(tmp_path)) == {
+        "error": "finalize: cannot write ledger: not serializable"
+    }
+
+
 def test_finalize_returns_a_retriable_error_when_the_data_dir_is_unwritable(tmp_path, monkeypatch):
     def denied(path=None):
         raise PermissionError("denied")

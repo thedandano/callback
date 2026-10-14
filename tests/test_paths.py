@@ -54,7 +54,7 @@ def test_xdg_data_home_moves_every_data_path(monkeypatch, tmp_path: Path):
     # so changing XDG_DATA_HOME alone must not move them.
 
 
-def test_callback_apps_dir_overrides_only_the_archive(monkeypatch, tmp_path: Path):
+def test_callback_apps_dir_moves_only_the_pdf_folder(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "apps"))
     monkeypatch.delenv("XDG_STATE_HOME", raising=False)
