@@ -86,6 +86,7 @@ def _ensure_private_dir(folder: Path) -> None:
     # An existing folder is fine here: the checks below decide whether it is safe.
     with contextlib.suppress(FileExistsError):
         os.mkdir(folder, 0o700)
+        os.chmod(folder, 0o700)  # a hardened umask can strip the owner's execute bit
     info = os.lstat(folder)
     if not stat.S_ISDIR(info.st_mode):
         reason = "not a real directory (symlink?)"
@@ -95,6 +96,8 @@ def _ensure_private_dir(folder: Path) -> None:
         reason = "owned by another user"
     elif info.st_mode & 0o077:
         reason = f"permissions {stat.S_IMODE(info.st_mode):o} let others in"
+    elif info.st_mode & 0o700 != 0o700:
+        reason = f"permissions {stat.S_IMODE(info.st_mode):o} lock the owner out"
     else:
         return
     raise PermissionError(f"refusing unsafe session dir {folder}: {reason}")

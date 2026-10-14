@@ -99,7 +99,8 @@ def test_config_dir_ignores_a_relative_xdg_config_home(monkeypatch, tmp_path: Pa
 
 def test_session_dbs_live_in_the_session_dir(tmp_path: Path):
     actual = (paths.session_dir(), paths.apply_db_path(), paths.profile_db_path())
-    folder = tmp_path / "tmp" / f"callback-{os.getuid()}"
+    name = f"callback-{os.getuid()}" if hasattr(os, "getuid") else "callback"
+    folder = tmp_path / "tmp" / name
     expected = (folder, folder / "apply-sessions.db", folder / "profile-sessions.db")
     assert actual == expected
 

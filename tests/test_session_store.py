@@ -50,12 +50,14 @@ def test_tailored_resume_round_trips_without_unregistered_type_warning(tmp_path,
     assert (loaded, warnings) == (resume, [])
 
 
+@pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX only")
 def test_open_makes_the_session_folder_private(tmp_path):
     folder = tmp_path / "sessions"
     open_checkpointer(folder / "s.db")
     assert stat.S_IMODE(folder.stat().st_mode) == 0o700
 
 
+@pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX only")
 def test_open_refuses_a_symlinked_session_folder(tmp_path):
     real = tmp_path / "real"
     real.mkdir(mode=0o700)
@@ -65,6 +67,16 @@ def test_open_refuses_a_symlinked_session_folder(tmp_path):
         open_checkpointer(link / "s.db")
 
 
+@pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX only")
+def test_open_refuses_a_session_folder_the_owner_cannot_traverse(tmp_path):
+    folder = tmp_path / "sessions"
+    folder.mkdir()
+    folder.chmod(0o600)
+    with pytest.raises(PermissionError, match="lock the owner out"):
+        open_checkpointer(folder / "s.db")
+
+
+@pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX only")
 def test_open_refuses_a_session_folder_others_can_read(tmp_path):
     folder = tmp_path / "sessions"
     folder.mkdir()
