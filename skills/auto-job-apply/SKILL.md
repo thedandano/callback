@@ -162,7 +162,7 @@ Record every outcome in callback's ledger with `record_status`; there is no sepa
 
 - Real applications, application confirmations, and recruiter resume submissions are the reportable contacts. Start each of their notes with `Contact method: <Online|Email|Phone|In person>`. Record confirmations with `status="Already applied - confirmation recorded"`; use `Applied` for actual submissions and recruiter resume submissions. Do not mark scored/skipped/needs-review leads as applied.
 - Put callback details (before/after scores, resume path, cover letter path) in `note`.
-- For an unemployment (EDD) report, run `/export-ledger` in event mode (`mode="events"`) with a `since` date and no status filter: one row per status event with its own date, so each `Applied` and `Already applied - confirmation recorded` keeps its application date even after a later rejection. It writes `archive_dir/ledger_exports/ledger-export.csv`, never the project root.
+- For an unemployment (EDD) report, run `/export-ledger` in contacts mode (`mode="contacts"`) with a `since` date and no status filter: one row per reportable contact event with its own date (skipped, staged and rejection events are left out), so each `Applied` and `Already applied - confirmation recorded` keeps its application date even after a later rejection. It writes `archive_dir/ledger_exports/ledger-export.csv`, never the project root.
 
 ## Final Summary
 
