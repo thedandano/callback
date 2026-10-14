@@ -147,7 +147,7 @@ uv run pytest -m local evals/                          # E1 + E2 checks over the
 
 - `LOG_LEVEL`: Server log level.
 - `CALLBACK_LOG_PATH`: Override the server log file path.
-- `CALLBACK_APPS_DIR`: Override where application PDFs and JSON archives are written. By default each run gets `<apps dir>/<YYYY-MM-DD>/<company-role-slug>/`. Overrides only the applications archive directory, not the other data roots. `submit_tailor`'s `output_dir` argument overrides this per-call for both the PDF and the JSON archive.
+- `CALLBACK_APPS_DIR`: Override the root where application PDFs and JSON archives are written; each run gets `<root>/<YYYY-MM-DD>/<company-role-slug>/`. It moves only these two outputs, not the other data roots. `submit_tailor`'s `output_dir` argument overrides it per call for both the PDF and the JSON archive.
 - `CALLBACK_FETCH_PAGE_TIMEOUT_MS`: Override the Playwright page-load timeout in milliseconds. Default: `30000`.
 - `CALLBACK_FETCH_OUTER_TIMEOUT_S`: Override the outer fetch timeout in seconds. Default: `35`.
 - `CALLBACK_TRACE_BACKEND`: Optional tracing backend. Set to `langsmith` to enable the LangSmith adapter.
