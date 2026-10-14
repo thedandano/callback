@@ -1,12 +1,15 @@
 import logging
+import os
 import stat
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from langgraph.checkpoint.base import empty_checkpoint
 from langgraph.types import RunnableConfig  # pyright: ignore[reportPrivateImportUsage]
 
-from callback.session_store import checkpoint_time, open_checkpointer
+from callback import paths
+from callback.session_store import _delete_if_still_stale, checkpoint_time, open_checkpointer
 from callback.state import TailoredResume
 
 
@@ -68,3 +71,28 @@ def test_open_refuses_a_session_folder_others_can_read(tmp_path):
     folder.chmod(0o755)
     with pytest.raises(PermissionError, match="refusing unsafe session dir"):
         open_checkpointer(folder / "s.db")
+
+
+def test_delete_skips_a_thread_that_got_a_fresh_checkpoint_after_it_was_picked(tmp_path):
+    db = tmp_path / "s.db"
+    saver = open_checkpointer(db)
+    old = empty_checkpoint()
+    saver.put(_cfg("t1"), old, {}, {})
+    now = checkpoint_time(old["id"]) + timedelta(hours=25)  # t1 looks stale when picked
+    saver.put(_cfg("t1"), {**empty_checkpoint(), "id": _uuid6_at(now)}, {}, {})  # then it resumes
+
+    deleted = _delete_if_still_stale(saver, "t1", now)
+
+    assert (deleted, saver.get_tuple(_cfg("t1")) is not None) == (False, True)
+
+
+def test_session_dir_name_has_no_uid_where_getuid_is_missing(monkeypatch):
+    monkeypatch.delattr(os, "getuid", raising=False)
+
+    assert paths.session_dir().name == "callback"
+
+
+def _uuid6_at(moment: datetime) -> str:
+    ticks = int((moment - datetime(1582, 10, 15, tzinfo=UTC)).total_seconds() * 10_000_000)
+    high = ((ticks >> 12) << 16) | (6 << 12) | (ticks & 0xFFF)
+    return str(uuid.UUID(int=(high << 64) | (0x8000 << 48) | 1))

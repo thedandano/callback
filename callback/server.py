@@ -88,6 +88,9 @@ def _rotate_if_large(path: Path) -> None:
     ponytail: rotates only at startup, not mid-run, because several `callback serve`
     processes can share one log and RotatingFileHandler breaks when they do. A process
     that runs for weeks can still grow its log; switch to a per-process log if that happens.
+    A second server started after the log passes 10 MB renames the file while the first still
+    writes to it, so the first server's lines go to server.log.1 until it restarts. The
+    upgrade path is per-process log files.
     """
     if path.exists() and path.stat().st_size > _LOG_ROTATE_BYTES:
         path.replace(path.with_name(f"{path.name}.1"))

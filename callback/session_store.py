@@ -43,11 +43,30 @@ def _stale_thread_ids(conn: sqlite3.Connection, now: datetime) -> list[str]:
     return [tid for tid, cid in rows if now - checkpoint_time(cid) > SESSION_MAX_AGE]
 
 
+def _delete_if_still_stale(saver: SqliteSaver, thread_id: str, now: datetime) -> bool:
+    """Delete a thread unless another process wrote a fresh checkpoint since it was picked.
+
+    BEGIN IMMEDIATE takes the write lock first, so the re-check and the delete are one step.
+    """
+    with saver.cursor() as cur:
+        cur.execute("BEGIN IMMEDIATE")
+        newest = cur.execute(
+            "SELECT MAX(checkpoint_id) FROM checkpoints WHERE thread_id = ?", (thread_id,)
+        ).fetchone()[0]
+        if newest is not None and now - checkpoint_time(newest) <= SESSION_MAX_AGE:
+            return False
+        cur.execute("DELETE FROM checkpoints WHERE thread_id = ?", (thread_id,))
+        cur.execute("DELETE FROM writes WHERE thread_id = ?", (thread_id,))
+    return True
+
+
 def _prune(saver: SqliteSaver, conn: sqlite3.Connection, db_path: Path, now: datetime) -> None:
-    stale = _stale_thread_ids(conn, now)
-    for thread_id in stale:
-        saver.delete_thread(thread_id)
-    if not stale:
+    deleted = [
+        thread_id
+        for thread_id in _stale_thread_ids(conn, now)
+        if _delete_if_still_stale(saver, thread_id, now)
+    ]
+    if not deleted:
         return
     try:
         conn.execute("VACUUM")
@@ -57,7 +76,7 @@ def _prune(saver: SqliteSaver, conn: sqlite3.Connection, db_path: Path, now: dat
             json.dumps({"event": "session_vacuum_skipped", "db": str(db_path), "error": str(exc)})
         )
     logger.info(
-        json.dumps({"event": "session_prune", "db": str(db_path), "threads_deleted": len(stale)})
+        json.dumps({"event": "session_prune", "db": str(db_path), "threads_deleted": len(deleted)})
     )
 
 
@@ -70,6 +89,8 @@ def _ensure_private_dir(folder: Path) -> None:
     info = os.lstat(folder)
     if not stat.S_ISDIR(info.st_mode):
         reason = "not a real directory (symlink?)"
+    elif not hasattr(os, "getuid"):
+        return  # Windows: the temp folder is already per-user, and there are no uid or mode bits.
     elif info.st_uid != os.getuid():
         reason = "owned by another user"
     elif info.st_mode & 0o077:

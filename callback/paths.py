@@ -63,6 +63,8 @@ def session_dir() -> Path:
     """Session checkpoint DBs. Sessions last minutes (max seen: 1.9 h), so they live in the
     temp folder. The uid suffix and the 0o700 mode set by session_store keep resume text
     private even when TMPDIR is unset and this falls back to the shared /tmp."""
+    if not hasattr(os, "getuid"):  # Windows: the temp folder is already per-user
+        return _temp_root() / "callback"
     return _temp_root() / f"callback-{os.getuid()}"
 
 
