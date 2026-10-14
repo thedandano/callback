@@ -101,7 +101,8 @@ def build_apply_graph(db_path: Path | None = None):
     """
     if db_path is None:
         default = paths.apply_db_path()
-        checkpointer = open_checkpointer(default, legacy_path=paths.state_dir() / default.name)
+        legacy = (paths.state_dir() / default.name, paths.data_dir() / default.name)
+        checkpointer = open_checkpointer(default, legacy_paths=legacy)
     else:
         checkpointer = open_checkpointer(db_path)
 

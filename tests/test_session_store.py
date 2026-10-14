@@ -119,10 +119,25 @@ def test_open_moves_recent_legacy_threads_and_removes_the_old_db(tmp_path):
     old_saver.put(_cfg("stale"), stale, {}, {})
     old_saver.conn.close()
 
-    saver = open_checkpointer(tmp_path / "new" / "s.db", legacy_path=legacy)
+    saver = open_checkpointer(tmp_path / "new" / "s.db", legacy_paths=(legacy,))
 
     assert (
         saver.get_tuple(_cfg("fresh")) is not None,
         saver.get_tuple(_cfg("stale")) is None,
         legacy.exists(),
     ) == (True, True, False)
+
+
+def test_open_moves_threads_from_the_original_data_dir_too(tmp_path):
+    state_legacy = tmp_path / "state" / "s.db"
+    data_legacy = tmp_path / "data" / "s.db"
+    old_saver = open_checkpointer(data_legacy)
+    old_saver.put(_cfg("from-data"), empty_checkpoint(), {}, {})
+    old_saver.conn.close()
+
+    saver = open_checkpointer(tmp_path / "new" / "s.db", legacy_paths=(state_legacy, data_legacy))
+
+    assert (
+        saver.get_tuple(_cfg("from-data")) is not None,
+        data_legacy.exists(),
+    ) == (True, False)

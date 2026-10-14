@@ -159,12 +159,12 @@ def _migrate_legacy(conn: sqlite3.Connection, legacy_path: Path, now: datetime) 
 
 
 def open_checkpointer(
-    db_path: Path, now: datetime | None = None, legacy_path: Path | None = None
+    db_path: Path, now: datetime | None = None, legacy_paths: tuple[Path, ...] = ()
 ) -> SqliteSaver:
     """Open the session DB, allowlist callback's types, and prune threads idle over 24 h.
 
-    legacy_path, when given, is the DB's pre-temp-folder location; its recent threads are
-    moved in and the old file is removed.
+    legacy_paths are the DB's pre-temp-folder locations, newest release first; recent threads
+    are moved in from each and the old files are removed.
 
     ponytail: get_apply_graph() and get_profile_graph() are cached for the life of the
     process, so this prune runs once per server start. If a long-lived server grows,
@@ -179,7 +179,7 @@ def open_checkpointer(
     saver.setup()
     logger.info(json.dumps({"event": "session_db_open", "db": str(db_path)}))
     now = now or datetime.now(UTC)
-    if legacy_path is not None:
+    for legacy_path in legacy_paths:
         _migrate_legacy(conn, legacy_path, now)
     _prune(saver, conn, db_path, now)
     return saver
