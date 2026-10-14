@@ -25,7 +25,7 @@ Also read the compiled profile (via `get_wiki_pages` or the profile summary) for
 
 ## Workflow
 
-1. Dedupe: call `find_job(url=<job URL>, company=<company>, title=<title>)` (pass `company` and `title` too, so a job seen under another URL is still found). If `data.found` is true, show the user the existing status and stop unless they confirm a re-apply. `matched_by` of `company_title` is a weaker match: say so.
+1. Dedupe: call `find_job(url=<job URL>, company=<company>, title=<title>)` (pass `company` and `title` too, so a job seen under another URL is still found). If `data.found` is true, show the user the existing status and stop unless they confirm a re-apply. `matched_by` of `company_title` is a weaker match: confirm before skipping. If not found, check `data.company_jobs` for a similar title at the same company and treat a match as already seen (pass that `job_key` to `record_status`). 
 2. Validate the source exposes the complete current JD.
 3. Run callback directly:
    - `load_jd`

@@ -51,7 +51,7 @@ If no full source is found, record `Needs source - manual lookup` with attempted
 
 ## Paths
 
-Dedupe every lead with `find_job(url=<URL>, company=<company>, title=<title>)`; skip leads where `data.found` is true. Do not read or write a record CSV.
+Dedupe every lead with `find_job(url=<URL>, company=<company>, title=<title>)`; skip leads where `data.found` is true, and leads whose title is similar to one in `data.company_jobs`. Do not read or write a record CSV.
 
 ## Output
 

@@ -156,6 +156,7 @@ Ask for these in plain English or use the slash command.
 | `setup-callback` | Set up everything in one pass: paths, resume, preferences. Start here. |
 | `onboard-profile` | Register a resume, add accomplishments, or write a new story. |
 | `tailor-resume` | Score and tailor for one job posting. |
+| `export-ledger` | Export the ledger to CSV, optionally by status or date. |
 | `scan-job-leads` | Find and dedupe job leads. Doesn't apply to anything. |
 | `apply-to-job` | Score, tailor, stage, and record an application. |
 
