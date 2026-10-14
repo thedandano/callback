@@ -193,7 +193,7 @@ tool/node spans for LangSmith demos.
 
 ### Two graphs, one server
 
-`server.py` (FastMCP) exposes these tools wired to two distinct LangGraph state graphs:
+`server.py` (FastMCP) exposes thirteen tools: eight wired to two distinct LangGraph state graphs, two for search preferences, and three that read and write the application ledger (`ledger.py`):
 
 | Tool             | Graph    | Behavior                                                    |
 |------------------|----------|-------------------------------------------------------------|
@@ -206,6 +206,10 @@ tool/node spans for LangSmith demos.
 | `compile_profile`| profile  | Resumes the profile graph thread (or starts a new one) and returns the recompiled profile with orphaned skills. |
 | `create_story`   | profile  | Persists a behavioral story and returns orphaned skills; recompiles the profile in the same call.      |
 | `check_update`   | utility  | Returns current version, latest release tag, and update status. |
+| `set_search_preferences` / `get_search_preferences` | utility | Save / read the user's job-search preferences. |
+| `find_job`       | ledger   | Returns whether a posting is already in the ledger and its latest status (dedupe); falls back to company + title when the URL misses. |
+| `record_status`  | ledger   | Adds a status event to a job; creates the job if new; never overwrites history. |
+| `export_ledger`  | ledger   | Writes one CSV row per job (latest status and scores) to an absolute path. |
 
 All tools return JSON envelopes via `_ok` / `_err`:
 - Success: `{"session_id", "status": "ok", "next_action"?, "data"?, "workflow"?}`

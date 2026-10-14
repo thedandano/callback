@@ -12,7 +12,9 @@ Exposes eight tools:
 """
 
 import asyncio
+import csv
 import datetime
+import io
 import json
 import logging
 import os
@@ -24,7 +26,7 @@ import time
 import traceback
 import uuid
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +35,7 @@ from pydantic import ValidationError
 
 import callback.scorer as scorer
 import callback.version_check as version_check
-from callback import paths, settings
+from callback import ledger, paths, settings
 from callback.apply_graph import (
     FINALIZE_NODE,
     KEYWORDS_ACCEPT_NODE,
@@ -2086,6 +2088,155 @@ def _get_wiki_pages_impl(session_id: str, page_ids: list[str]) -> dict:
 def check_update() -> dict:
     """Return current version, latest GitHub release tag, and update_available flag."""
     return _ok("", data=version_check.check_update())
+
+
+# ============================================================================
+# Ledger tools
+# ============================================================================
+
+_ISO_DATE_LENGTH = len("YYYY-MM-DD")
+
+
+def _today_iso() -> str:
+    return datetime.date.today().isoformat()  # local date, like the skills' folders
+
+
+def _is_iso_date(value: str) -> bool:
+    """True only for a real YYYY-MM-DD; text comparison of dates breaks on other shapes."""
+    if len(value) != _ISO_DATE_LENGTH:
+        return False
+    try:
+        datetime.date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _date_error(name: str, value: str | None) -> dict | None:
+    if value is None or _is_iso_date(value):
+        return None
+    return _err("ledger", "invalid_date", f"{name} must be YYYY-MM-DD, got: {value!r}")
+
+
+def _identity_error(url: str | None, company: str | None, title: str | None) -> dict | None:
+    if (url or "").strip() or ((company or "").strip() and (title or "").strip()):
+        return None
+    return _err(
+        "ledger", "missing_job_identity", "Give a URL, or a company and title.", retriable=False
+    )
+
+
+def _ledger_error(exc: Exception) -> dict:
+    """Envelope for a ledger that cannot be opened, read, or written. Call from an except."""
+    _log_exception({"tool": "ledger", "event": "ledger_error", "error": str(exc)})
+    return _err(
+        "ledger", "ledger_error", f"could not read or write the ledger: {exc}", retriable=True
+    )
+
+
+@mcp.tool()
+def find_job(url: str | None = None, company: str | None = None, title: str | None = None) -> dict:
+    """Check whether a job is already in callback's ledger (for dedupe before scoring or applying).
+
+    Pass the posting URL, or company and title for a pasted job description with no URL. A job
+    seen under a different URL is still found when company and title match.
+    Returns found, company, title, the latest status with its date, and matched_by
+    ('key', 'company_title', or null). Error codes: missing_job_identity, ledger_error.
+    """
+    if error := _identity_error(url, company, title):
+        return error
+    try:
+        with closing(ledger.connect()) as conn:
+            return _ok("", data=ledger.find_job(conn, url=url, company=company, title=title))
+    except (sqlite3.Error, OSError) as exc:
+        return _ledger_error(exc)
+
+
+def _record_status_error(
+    status: str, url: str | None, company: str | None, title: str | None, date: str | None
+) -> dict | None:
+    if error := _identity_error(url, company, title):
+        return error
+    if not status.strip():
+        return _err("ledger", "invalid_status", "status must not be empty.")
+    return _date_error("date", date)
+
+
+@mcp.tool()
+def record_status(
+    status: str,
+    url: str | None = None,
+    company: str | None = None,
+    title: str | None = None,
+    salary_range: str | None = None,
+    note: str | None = None,
+    date: str | None = None,
+) -> dict:
+    """Add a status event (e.g. 'Applied', 'Rejected', 'Skipped - not fit') to a job in the ledger.
+
+    Give a URL, or a company and title. Creates the job if it is new. History is never
+    overwritten; the same status on the same date is recorded once (recorded: false).
+    date is YYYY-MM-DD and defaults to today.
+    Error codes: missing_job_identity, invalid_status, invalid_date, ledger_error.
+    """
+    if error := _record_status_error(status, url, company, title, date):
+        return error
+    recorded_at = date or _today_iso()
+    try:
+        with closing(ledger.connect()) as conn:
+            key = ledger.upsert_job(
+                conn,
+                url=url,
+                company=company,
+                title=title,
+                seen_at=recorded_at,
+                salary_range=salary_range,
+            )
+            added = ledger.add_status(
+                conn,
+                job_key=key,
+                status=status.strip(),
+                recorded_at=recorded_at,
+                note=note,
+                source="mcp",
+            )
+    except (sqlite3.Error, OSError) as exc:
+        return _ledger_error(exc)
+    return _ok("", data={"recorded": added})
+
+
+def _csv_text(rows: list[dict]) -> str:
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=ledger.EXPORT_COLUMNS)
+    writer.writeheader()
+    writer.writerows(ledger.spreadsheet_safe(row) for row in rows)
+    return buffer.getvalue()
+
+
+@mcp.tool()
+def export_ledger(output_path: str, status: str | None = None, since: str | None = None) -> dict:
+    """Write one CSV row per job (latest status, latest scores) to output_path (e.g. an EDD report).
+
+    output_path must be absolute. status matches the start of the status text of any of the
+    job's events; since is YYYY-MM-DD and keeps jobs with an event on or after it. Text that a
+    spreadsheet would run as a formula is prefixed with '.
+    Error codes: invalid_output_path, invalid_date, ledger_error.
+    """
+    target = Path(output_path).expanduser()
+    if not target.is_absolute():
+        return _err("ledger", "invalid_output_path", f"output_path must be absolute: {output_path}")
+    if error := _date_error("since", since):
+        return error
+    try:
+        with closing(ledger.connect()) as conn:
+            rows = ledger.export_rows(conn, status_prefix=status, since=since)
+    except (sqlite3.Error, OSError) as exc:
+        return _ledger_error(exc)
+    try:
+        paths.write_text_atomic(target, _csv_text(rows))
+    except OSError as exc:
+        return _err("ledger", "invalid_output_path", f"cannot write {target}: {exc}")
+    return _ok("", data={"path": str(target), "rows": len(rows)})
 
 
 def run() -> None:
