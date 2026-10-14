@@ -133,6 +133,13 @@ ON CONFLICT(session_id) DO UPDATE SET
     outcome = excluded.outcome
 """
 
+_INSERT_RUN_IF_ABSENT = """
+INSERT INTO runs (session_id, job_key, finalized_at, jd_text, keywords, tailored_resume_text,
+                  pdf_path, render_page_count, render_warnings, scores, uncovered_skills, outcome)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(session_id) DO NOTHING
+"""
+
 
 class RunRecord(BaseModel):
     """One tailoring run, shaped like the old <session_id>.json archive."""
@@ -174,7 +181,7 @@ def normalize_url(url: str) -> str:
     Drops the query parameters that only track the click (`_TRACKING_PARAMS`, any `utm_*`),
     compared case-insensitively, and keeps the rest in sorted order. A board that adds a new
     tracking parameter needs it added there, or its links split into two keys. Fragments are dropped
-    unless they hold a "/" ("#/job/1", "#!/job/1", Gmail "#all/<id>").
+    unless they hold a recognized route ("#/job/1", Gmail "#all/<id>").
     A value that cannot be parsed is logged and kept as typed.
 
     ponytail: `www.` is kept, so "www.x.com/a" and "x.com/a" get two keys. Strip it here if
@@ -200,7 +207,7 @@ def normalize_url(url: str) -> str:
     if scheme == "http":
         scheme = "https"
     query = _normalized_query(parts.query)
-    fragment = _normalized_route_fragment(parts.fragment)
+    fragment = _normalized_route_fragment(parts.fragment, parts.hostname)
     return urlunsplit((scheme, netloc, parts.path.rstrip("/"), query, fragment))
 
 
@@ -214,13 +221,19 @@ def _normalized_query(query: str) -> str:
     )
 
 
-def _normalized_route_fragment(fragment: str) -> str:
-    if "/" not in fragment:
-        return ""
-    if not fragment.startswith("/"):
-        return fragment
+def _normalized_route_fragment(fragment: str, hostname: str | None) -> str:
+    """Keep hash routes and Gmail message identifiers; drop descriptive fragments."""
     route = urlsplit(fragment)
-    return urlunsplit(("", "", route.path.rstrip("/"), _normalized_query(route.query), ""))
+    if fragment.startswith("/"):
+        return urlunsplit(("", "", route.path.rstrip("/"), _normalized_query(route.query), ""))
+    if hostname != "mail.google.com" or not _is_gmail_message_path(route.path):
+        return ""
+    return urlunsplit(("", "", route.path, _normalized_query(route.query), ""))
+
+
+def _is_gmail_message_path(path: str) -> bool:
+    mailbox, separator, message_id = path.partition("/")
+    return mailbox in {"all", "inbox"} and bool(separator and message_id and "/" not in message_id)
 
 
 def _is_tracking(param: str) -> bool:
@@ -394,6 +407,50 @@ def record_run(conn: sqlite3.Connection, run: RunRecord) -> None:
                 *blobs[1:],
             ),
         )
+
+
+def record_imported_run_if_absent(conn: sqlite3.Connection, run: RunRecord) -> bool:
+    """Insert an imported run once without changing a live run with the same session id."""
+    blobs = _run_blobs(run)
+    with conn:
+        key = _upsert_job(
+            conn,
+            url=run.jd_url,
+            company=run.company,
+            title=run.title,
+            seen_at=run.timestamp,
+            salary_range=_salary_range(run.keywords),
+            jd_text=run.jd_text,
+        )
+        cursor = conn.execute(
+            _INSERT_RUN_IF_ABSENT,
+            _run_values(run, key, blobs),
+        )
+    return cursor.rowcount == 1
+
+
+def _run_blobs(run: RunRecord) -> tuple[str | None, str, str, str, str]:
+    return (
+        _json_or_null(run.keywords),
+        json.dumps(run.render_warnings),
+        json.dumps(run.scores),
+        json.dumps(run.uncovered_skills),
+        json.dumps(run.outcome),
+    )
+
+
+def _run_values(run: RunRecord, key: str, blobs: tuple[str | None, str, str, str, str]) -> tuple:
+    return (
+        run.session_id,
+        key,
+        run.timestamp,
+        run.jd_text,
+        blobs[0],
+        run.tailored_resume_text,
+        run.pdf_path,
+        run.render_page_count,
+        *blobs[1:],
+    )
 
 
 def _salary_range(keywords: dict | None) -> str | None:

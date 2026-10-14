@@ -54,7 +54,7 @@ def _run(
         ("https://jobs.example.com:443/a", "https://jobs.example.com/a"),
         ("https://jobs.example.com:8443/a", "https://jobs.example.com:8443/a"),
         ("https://x.com/#/job/1", "https://x.com#/job/1"),
-        ("https://x.com/#!/job/2", "https://x.com#!/job/2"),
+        ("https://x.com/#!/job/2", "https://x.com"),
         ("https://mail.google.com/mail/#all/abc123", "https://mail.google.com/mail#all/abc123"),
         ("jobs.Example.com/a/", "https://jobs.example.com/a"),
         ("https://jobs.example.com/a", "https://jobs.example.com/a"),
@@ -153,6 +153,17 @@ def test_expected_keywords_falls_back_to_archive_when_ledger_dir_is_unreadable(
         {"required": ["Go"]},
         ["ledger_expected_keywords_lookup_failed", "ledger_expected_keywords_source"],
     )
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "https://jobs.example.com/1#description/requirements",
+        "https://jobs.example.com/1#!details/requirements",
+    ],
+)
+def test_normalize_url_drops_unrecognized_fragments(raw):
+    assert ledger.normalize_url(raw) == "https://jobs.example.com/1"
 
 
 def test_normalize_url_keeps_ref_values_that_identify_distinct_jobs():

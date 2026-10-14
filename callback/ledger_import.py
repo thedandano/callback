@@ -1,6 +1,6 @@
 """One-time import of old run archives, the job-hunt record CSV, and the old contact ledger.
 
-Safe to run again: runs are keyed by session_id, status events by (job, status, date).
+Safe to run again: runs are keyed by session_id, status events by their full identity.
 Source files are only read, never changed.
 """
 
@@ -13,6 +13,7 @@ import logging
 import re
 import sqlite3
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ValidationError
 
@@ -27,7 +28,6 @@ _US_DATE = re.compile(r"^(\d{1,2})/(\d{1,2})/(\d{4}|\d{2})$")
 _TWO_DIGIT_YEAR_BASE = 2000
 _TWO_DIGIT_YEAR_LIMIT = 100
 _ISO_DATE_LENGTH = 10
-_HTTP_PREFIXES = ("http://", "https://")
 NOTE_STATUS = "Note"
 # Extra record-CSV columns kept in the event note: (note label, accepted header names).
 _NOTE_COLUMNS = (
@@ -40,8 +40,13 @@ _OLDEST = datetime.datetime.min.replace(tzinfo=datetime.UTC)
 
 
 class ImportReport(BaseModel):
+    """Counts: imported runs or rows, new job rows, new status events, and skipped labels."""
+
     imported: int = 0
     skipped: list[str] = []
+
+    jobs: int = 0
+    events: int = 0
 
 
 def _info(event: str, **fields: object) -> None:
@@ -51,7 +56,14 @@ def _info(event: str, **fields: object) -> None:
 def _url_or_none(value: str | None) -> str | None:
     """The stripped value if it is an http(s) URL, else None."""
     text = (value or "").strip()
-    return text if text.lower().startswith(_HTTP_PREFIXES) else None
+    try:
+        parts = urlsplit(text)
+    except ValueError:
+        return None
+    hostname = parts.hostname
+    if parts.scheme.lower() not in {"http", "https"} or not hostname:
+        return None
+    return text if not any(character.isspace() for character in hostname) else None
 
 
 def _iso_date(text: str | None) -> str | None:
@@ -82,11 +94,6 @@ def _warn(event: str, **fields: object) -> None:
 def _skip(report: ImportReport, label: str, reason: str) -> None:
     report.skipped.append(label)
     _warn("ledger_import_skip", item=label, reason=reason)
-
-
-def _run_exists(conn: sqlite3.Connection, session_id: str) -> bool:
-    row = conn.execute("SELECT 1 FROM runs WHERE session_id = ?", (session_id,)).fetchone()
-    return row is not None
 
 
 def _find_pdf(archive_dir: Path, name: str) -> list[Path]:
@@ -120,39 +127,45 @@ def _relink_pdf(run: ledger.RunRecord, archive_dir: Path) -> ledger.RunRecord:
     return run
 
 
-def _read_archives(archive_dir: Path, report: ImportReport) -> list[tuple[str, ledger.RunRecord]]:
+def _read_archives(
+    archive_dir: Path, report: ImportReport
+) -> list[tuple[str, ledger.RunRecord, Path]]:
     """Every readable archive as (label, run), in path order; unreadable ones are skipped."""
-    runs = []
+    runs: list[tuple[str, ledger.RunRecord, Path]] = []
     for path in sorted(archive_dir.rglob("*.json")):
         label = str(path.relative_to(archive_dir))
         try:
-            runs.append((label, ledger.RunRecord.model_validate_json(path.read_text("utf-8"))))
+            run = ledger.RunRecord.model_validate_json(path.read_text("utf-8"))
         except (OSError, UnicodeDecodeError, ValidationError) as exc:
             _skip(report, label, str(exc).splitlines()[0])
+            continue
+        if _run_time(run) is None:
+            _skip(report, label, "timestamp is not ISO 8601")
+            continue
+        runs.append((label, run, archive_dir))
     return runs
 
 
-def _run_time(label: str, run: ledger.RunRecord) -> datetime.datetime:
-    """The run's timestamp for picking the newest copy; an unreadable one sorts oldest."""
+def _run_time(run: ledger.RunRecord) -> datetime.datetime | None:
+    """A valid archive timestamp, normalized to UTC when it omitted an offset."""
     try:
         moment = datetime.datetime.fromisoformat(run.timestamp)
     except ValueError:
-        _warn("ledger_import_bad_timestamp", file=label, timestamp=run.timestamp)
-        return _OLDEST
+        return None
     return moment if moment.tzinfo else moment.replace(tzinfo=datetime.UTC)
 
 
 def _newest_per_session(
-    runs: list[tuple[str, ledger.RunRecord]],
-) -> list[tuple[str, ledger.RunRecord]]:
+    runs: list[tuple[str, ledger.RunRecord, Path]],
+) -> list[tuple[str, ledger.RunRecord, Path]]:
     """One copy per session_id: the newest timestamp wins, ties go to the first path."""
-    groups: dict[str, list[tuple[str, ledger.RunRecord]]] = {}
+    groups: dict[str, list[tuple[str, ledger.RunRecord, Path]]] = {}
     for item in runs:
         groups.setdefault(item[1].session_id, []).append(item)
     kept = []
     for session_id, copies in groups.items():
-        newest = max(copies, key=lambda item: _run_time(*item))
-        for label, _ in copies:
+        newest = max(copies, key=lambda item: _run_time(item[1]) or _OLDEST)
+        for label, _, _ in copies:
             if label != newest[0]:
                 _warn(
                     "ledger_import_duplicate_session",
@@ -164,17 +177,28 @@ def _newest_per_session(
     return kept
 
 
-def import_archives(conn: sqlite3.Connection, archive_dir: Path) -> ImportReport:
-    if not archive_dir.is_dir():
-        raise ValueError(f"cannot read archive folder {archive_dir}: not a folder")
+def import_archives(conn: sqlite3.Connection, roots: Path | list[Path]) -> ImportReport:
+    """Import the newest run for every session across all archive roots."""
+    archive_roots = [roots] if isinstance(roots, Path) else roots
+    for archive_dir in archive_roots:
+        if not archive_dir.is_dir():
+            raise ValueError(f"cannot read archive folder {archive_dir}: not a folder")
     report = ImportReport()
-    for label, run in _newest_per_session(_read_archives(archive_dir, report)):
-        if _run_exists(conn, run.session_id):
-            # Expected on a re-run; never overwrite a run the ledger already holds.
-            _info("ledger_import_run_exists", session_id=run.session_id, file=label)
-            continue
+    candidates = [
+        candidate
+        for archive_dir in archive_roots
+        for candidate in _read_archives(archive_dir, report)
+    ]
+    for label, run, archive_dir in _newest_per_session(candidates):
         run = run.model_copy(update={"jd_url": _url_or_none(run.jd_url)})
-        ledger.record_run(conn, _relink_pdf(run, archive_dir))
+        key = ledger.job_key(run.jd_url, run.company, run.title, run.jd_text)
+        job_exists = _job_exists(conn, key)
+        added = ledger.record_imported_run_if_absent(conn, _relink_pdf(run, archive_dir))
+        if not added:
+            _info("ledger_import_run_exists", session_id=run.session_id, file=label)
+            report.skipped.append(label)
+            continue
+        report.jobs += int(not job_exists)
         report.imported += 1
     return report
 
@@ -222,8 +246,9 @@ def _import_row(conn: sqlite3.Connection, row: dict, label: str, report: ImportR
         _skip(report, label, "row has no URL, company, or title")
         return
     recorded_at = _iso_date(_cell(row, "Recorded Date")) or _iso_date(_cell(row, "Email Date"))
-    key = ledger.upsert_job(
+    key = _upsert_import_job(
         conn,
+        report=report,
         url=url,
         company=company,
         title=title,
@@ -246,6 +271,7 @@ def _import_row(conn: sqlite3.Connection, row: dict, label: str, report: ImportR
         source=CSV_SOURCE,
     )
     report.imported += int(added)
+    report.events += int(added)
 
 
 def _read_csv_rows(csv_path: Path) -> list[tuple[int, dict]]:
@@ -311,11 +337,16 @@ def _import_contact(conn: sqlite3.Connection, row: sqlite3.Row, report: ImportRe
         _skip(report, f"entry {row['id']}", "missing outcome or missing/invalid date")
         return
     url = _url_or_none(_text(row["contact_detail"]))
-    key = ledger.upsert_job(
+    company, title = _text(row["employer_name"]) or None, _text(row["type_of_work"]) or None
+    if not (url or company or title):
+        _skip(report, f"entry {row['id']}", "row has no URL, employer, or work type")
+        return
+    key = _upsert_import_job(
         conn,
+        report=report,
         url=url,
-        company=_text(row["employer_name"]) or None,
-        title=_text(row["type_of_work"]) or None,
+        company=company,
+        title=title,
         seen_at=date,
     )
     added = ledger.add_status(
@@ -327,6 +358,36 @@ def _import_contact(conn: sqlite3.Connection, row: sqlite3.Row, report: ImportRe
         source=CONTACTS_SOURCE,
     )
     report.imported += int(added)
+    report.events += int(added)
+
+
+def _upsert_import_job(
+    conn: sqlite3.Connection,
+    *,
+    report: ImportReport,
+    url: str | None,
+    company: str | None,
+    title: str | None,
+    seen_at: str,
+    salary_range: str | None = None,
+) -> str:
+    key = ledger.job_key(url, company, title)
+    existed = _job_exists(conn, key)
+    ledger.upsert_job(
+        conn,
+        url=url,
+        company=company,
+        title=title,
+        seen_at=seen_at,
+        salary_range=salary_range,
+    )
+    report.jobs += int(not existed)
+    return key
+
+
+def _job_exists(conn: sqlite3.Connection, key: str) -> bool:
+    row = conn.execute("SELECT 1 FROM jobs WHERE job_key = ?", (key,)).fetchone()
+    return row is not None
 
 
 def import_contact_ledger(conn: sqlite3.Connection, db_path: Path) -> ImportReport:
