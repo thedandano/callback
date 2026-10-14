@@ -290,12 +290,12 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
 def canonical_timestamp(value: str) -> str:
     """UTC ISO form of a timestamp, so text and time order agree.
 
-    A time with no offset is read as UTC. Plain `YYYY-MM-DD` dates, blanks and text that is
-    not ISO come back as given (the last one logs a warning).
+    A time with no offset is read as UTC. Plain `YYYY-MM-DD` dates and blanks come back stripped;
+    text that is not ISO comes back as given and logs a warning.
     """
     stripped = value.strip()
     if len(stripped) <= _PLAIN_DATE_LENGTH:
-        return value
+        return stripped
     try:
         parsed = datetime.fromisoformat(stripped)
     except ValueError:
@@ -317,6 +317,8 @@ def _upsert_job(
     jd_text: str | None = None,
 ) -> str:
     """Insert or merge a job row without committing; callers own the transaction."""
+    company = (company or "").strip() or None
+    title = (title or "").strip() or None
     key = job_key(url, company, title, jd_text)
     conn.execute(
         _UPSERT_JOB,

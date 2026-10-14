@@ -579,3 +579,16 @@ def test_connect_creates_the_status_event_identity_index_on_a_fresh_ledger(tmp_p
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
         names = [row[1] for row in conn.execute("PRAGMA index_list(status_events)")]
     assert names == ["status_events_identity"]
+
+
+def test_blank_labels_and_seen_at_never_block_later_values(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.upsert_job(conn, url="https://a.com/1", company=" ", title="", seen_at=" ")
+        ledger.upsert_job(
+            conn, url="https://a.com/1", company="Acme", title="Engineer", seen_at="2026-10-01"
+        )
+        row = conn.execute("SELECT company, title, first_seen FROM jobs").fetchone()
+    assert (tuple(row), ledger.canonical_timestamp("  2026-10-01 ")) == (
+        ("Acme", "Engineer", "2026-10-01"),
+        "2026-10-01",
+    )
