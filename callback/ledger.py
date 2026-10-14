@@ -605,3 +605,100 @@ def add_status(
             (job_key, status, canonical_timestamp(recorded_at), note, source),
         )
     return cursor.rowcount == 1
+
+
+EXPORT_COLUMNS = [
+    "Company",
+    "Title",
+    "URL",
+    "Salary range",
+    "Status",
+    "Status date",
+    "Notes",
+    "Score before",
+    "Score after",
+    "Resume PDF",
+]
+_FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r")
+_EXPORT_SQL = """
+WITH latest_status AS (
+    SELECT job_key, status, recorded_at, note,
+           ROW_NUMBER() OVER (PARTITION BY job_key ORDER BY recorded_at DESC, id DESC) AS rn
+    FROM status_events
+), latest_run AS (
+    SELECT job_key, scores, pdf_path,
+           ROW_NUMBER() OVER (PARTITION BY job_key ORDER BY finalized_at DESC) AS rn
+    FROM runs
+)
+SELECT j.company, j.title, j.url, j.salary_range, s.status, s.recorded_at, s.note,
+       json_extract(r.scores, '$.initial.total'), json_extract(r.scores, '$.final.total'),
+       r.pdf_path
+FROM jobs j
+LEFT JOIN latest_status s ON s.job_key = j.job_key AND s.rn = 1
+LEFT JOIN latest_run r ON r.job_key = j.job_key AND r.rn = 1
+WHERE (:status IS NULL AND :since IS NULL) OR EXISTS (
+    SELECT 1 FROM status_events e
+    WHERE e.job_key = j.job_key
+      AND (:status IS NULL OR e.status LIKE :status || '%')
+      AND (:since IS NULL OR e.recorded_at >= :since)
+)
+ORDER BY s.recorded_at DESC, j.job_key
+"""
+_FIND_SQL = (
+    "SELECT j.company, j.title, s.status, s.recorded_at FROM jobs j "
+    "LEFT JOIN status_events s ON s.job_key = j.job_key WHERE {where} "
+    "ORDER BY {order} s.recorded_at DESC, s.id DESC LIMIT 1"
+)
+_BY_KEY = ("j.job_key = ?", "")
+_BY_NAME = (
+    "lower(trim(j.company)) = lower(trim(?)) AND lower(trim(j.title)) = lower(trim(?))",
+    "j.first_seen DESC,",
+)
+_FIND_KEYS = ["company", "title", "status", "status_date"]
+
+
+def spreadsheet_safe(row: dict) -> dict:
+    """Prefix text that a spreadsheet would run as a formula with ', so postings can't inject."""
+    return {
+        name: f"'{value}" if isinstance(value, str) and value.startswith(_FORMULA_STARTS) else value
+        for name, value in row.items()
+    }
+
+
+def export_rows(
+    conn: sqlite3.Connection, *, status_prefix: str | None = None, since: str | None = None
+) -> list[dict]:
+    """One row per job: its latest status and its latest run's scores.
+
+    status_prefix and since match ANY status event of the job (so a job once 'Applied' still
+    shows after it is 'Rejected'); the row shows the latest status. status_prefix matches the
+    start of the status text, so 'Applied' also matches 'Applied - confirmed'. since compares
+    as text, so pass YYYY-MM-DD.
+    """
+    cursor = conn.execute(_EXPORT_SQL, {"status": status_prefix, "since": since})
+    return [dict(zip(EXPORT_COLUMNS, row, strict=True)) for row in cursor]
+
+
+def _find_row(conn: sqlite3.Connection, where: tuple[str, str], params: tuple) -> tuple | None:
+    return conn.execute(_FIND_SQL.format(where=where[0], order=where[1]), params).fetchone()
+
+
+def find_job(
+    conn: sqlite3.Connection, *, url: str | None, company: str | None, title: str | None
+) -> dict:
+    """Is this posting already in the ledger, and what is its latest status? For dedupe.
+
+    Looks up by URL (or company + title when there is no URL) first. A posting seen under a
+    different URL is still found when company and title match, ignoring case and spacing.
+    """
+    row = _find_row(conn, _BY_KEY, (job_key(url, company, title),))
+    matched_by = "key"
+    if row is None and company and title:
+        row = _find_row(conn, _BY_NAME, (company, title))
+        matched_by = "company_title"
+    values = row or (None,) * len(_FIND_KEYS)
+    return {
+        "found": row is not None,
+        **dict(zip(_FIND_KEYS, values, strict=True)),
+        "matched_by": matched_by if row else None,
+    }
