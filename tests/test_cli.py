@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import ANY, MagicMock, Mock, patch
 
@@ -1043,3 +1045,67 @@ def test_setup_plugin_plugin_install_error_exits_nonzero():
 
     assert result.exit_code != 0
     assert "runner failed" in result.stderr
+
+
+def _ledger_sources(tmp_path):
+    apps = tmp_path / "apps"
+    apps.mkdir()
+    (apps / "s1.json").write_text(
+        '{"session_id": "s1", "timestamp": "2026-10-01T00:00:00+00:00", '
+        '"jd_url": "https://a.com/1"}'
+    )
+    csv_path = tmp_path / "r.csv"
+    csv_path.write_text(
+        "Company,Title,Recorded Date,URL,Status\nA,Dev,2026-10-01,https://a.com/1,Applied\n"
+    )
+    return apps, csv_path
+
+
+def test_ledger_import_reports_counts_per_source(tmp_path):
+    apps, csv_path = _ledger_sources(tmp_path)
+    contacts = tmp_path / "old.sqlite3"
+    with closing(sqlite3.connect(contacts)) as db, db:
+        db.execute(
+            "CREATE TABLE job_search_entries (id INTEGER PRIMARY KEY, date TEXT, "
+            "employer_name TEXT, type_of_work TEXT, contact_type TEXT, outcome TEXT, "
+            "contact_detail TEXT, person_contacted TEXT, notes TEXT)"
+        )
+        db.execute(
+            "INSERT INTO job_search_entries VALUES "
+            "(1, '2026-09-01', 'B', 'Dev', 'Email', 'Applied', 'a@b.com', '', '')"
+        )
+
+    result = runner.invoke(
+        app,
+        [
+            "ledger",
+            "import",
+            "--archives",
+            str(apps),
+            "--csv",
+            str(csv_path),
+            "--contacts-db",
+            str(contacts),
+        ],
+    )
+
+    assert (result.exit_code, result.output.splitlines()) == (
+        0,
+        [
+            f"{apps}: imported 1, skipped 0",
+            f"{csv_path}: imported 1, skipped 0",
+            f"{contacts}: imported 1, skipped 0",
+        ],
+    )
+
+
+def test_ledger_import_unreadable_source_exits_with_an_error(tmp_path):
+    missing = tmp_path / "nope.csv"
+
+    result = runner.invoke(app, ["ledger", "import", "--csv", str(missing)])
+
+    assert (result.exit_code, result.stderr.splitlines()) == (
+        1,
+        [f"error: cannot read record CSV {missing}: [Errno 2] No such file or directory: "
+         f"'{missing}'"],
+    )  # fmt: skip
