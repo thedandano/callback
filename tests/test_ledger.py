@@ -656,3 +656,56 @@ def test_job_key_by_name_matches_one_job_ignoring_case_and_spacing(tmp_path):
         )
 
     assert found == ("pasted:acme-co-eng-04b335ed", None, None)
+
+
+def _scanned_job(conn):
+    return ledger.upsert_job(
+        conn,
+        url="https://www.linkedin.com/jobs/view/123",
+        company="Acme",
+        title="Engineer",
+        seen_at="2026-10-01",
+    )
+
+
+def test_urlless_run_joins_the_one_runless_job_with_the_same_name(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        scanned = _scanned_job(conn)
+        ledger.record_run(conn, _run(url=None))
+        keys = conn.execute("SELECT job_key FROM runs").fetchall()
+        jobs = conn.execute("SELECT job_key FROM jobs").fetchall()
+
+    assert ([tuple(k) for k in keys], [tuple(j) for j in jobs]) == (
+        [(scanned,)],
+        [(scanned,)],
+    )
+
+
+def test_urlless_run_keeps_its_own_key_when_the_same_name_job_has_runs(tmp_path, caplog):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        scanned = _scanned_job(conn)
+        ledger.record_run(conn, _run(session_id="s0", url=None))
+        own = ledger.job_key(None, "Acme", "Engineer", "JD")
+        with caplog.at_level(logging.WARNING, logger="callback.ledger"):
+            ledger.record_run(conn, _run(session_id="s1", url=None))
+        keys = conn.execute("SELECT session_id, job_key FROM runs ORDER BY 1").fetchall()
+
+    warnings = [json.loads(r.message) for r in caplog.records if r.levelno == logging.WARNING]
+    assert ([tuple(k) for k in keys], warnings) == (
+        [("s0", scanned), ("s1", own)],
+        [{"event": "ledger_possible_twin_job", "matched_key": scanned, "own_key": own}],
+    )
+
+
+def test_placeholder_salary_is_stored_as_no_salary(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.upsert_job(
+            conn,
+            url="https://acme.com/j/1",
+            company="Acme",
+            title="SWE",
+            seen_at="2026-09-01",
+            salary_range=" N/A ",
+        )
+        stored = conn.execute("SELECT salary_range FROM jobs").fetchone()
+    assert tuple(stored) == (None,)

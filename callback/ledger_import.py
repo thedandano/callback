@@ -30,6 +30,7 @@ _TWO_DIGIT_YEAR_BASE = 2000
 _TWO_DIGIT_YEAR_LIMIT = 100
 _ISO_DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 NOTE_STATUS = "Note"
+NOT_REPORTABLE_PREFIX = "Not reportable"
 # Extra record-CSV columns kept in the event note: (note label, accepted header names).
 _NOTE_COLUMNS = (
     ("Score before", ("Resume score before tailoring",)),
@@ -279,14 +280,8 @@ def _import_row(conn: sqlite3.Connection, row: dict, label: str, report: ImportR
         _skip(report, label, "row has no URL, company, or title")
         return
     recorded_at = _iso_date(_cell(row, "Recorded Date")) or _iso_date(_cell(row, "Email Date"))
-    key = _upsert_import_job(
-        conn,
-        report=report,
-        url=url,
-        company=company,
-        title=title,
-        seen_at=recorded_at or "",
-        salary_range=_cell(row, "Salary range"),
+    key = _import_job(
+        conn, report, (url, company, title), recorded_at or "", _cell(row, "Salary range")
     )
     bad_url = None if url else raw_url
     status = _event_status(row, bad_url)
@@ -375,9 +370,10 @@ def _is_reportable(row: sqlite3.Row) -> bool:
 
 def _contact_prefix(row: sqlite3.Row) -> str:
     contact_type = _text(row["contact_type"])
-    if not contact_type:
-        return ""
-    return f"Contact method: {contact_type}" if _is_reportable(row) else f"Contact: {contact_type}"
+    if _is_reportable(row):
+        return f"Contact method: {contact_type}" if contact_type else ""
+    parts = [NOT_REPORTABLE_PREFIX, f"Contact: {contact_type}" if contact_type else ""]
+    return " | ".join(part for part in parts if part)
 
 
 def _contact_note(row: sqlite3.Row, url: str | None, extras: dict[str, str]) -> str | None:
@@ -412,7 +408,7 @@ def _import_contact(
     if not (url or company or title):
         _skip(report, f"entry {row['id']}", "row has no URL, employer, or work type")
         return
-    key = _contact_job(conn, report, (url, company, title), date, extras.get(_SALARY_KEY))
+    key = _import_job(conn, report, (url, company, title), date, extras.get(_SALARY_KEY))
     added = ledger.add_status(
         conn,
         job_key=key,
@@ -425,15 +421,15 @@ def _import_contact(
     report.events += int(added)
 
 
-def _contact_job(
+def _import_job(
     conn: sqlite3.Connection,
     report: ImportReport,
     posting: tuple[str | None, str | None, str | None],
     seen_at: str,
     salary_range: str | None,
 ) -> str:
-    """The job for a contact: an existing job with the same company and title when the contact
-    has no URL, else a new or merged job."""
+    """The job an imported row belongs to: the one existing job with the same company and
+    title when the row has no URL, else a new or merged job."""
     url, company, title = posting
     matched = (
         ledger.job_key_by_name(conn, company, title) if company and title and not url else None
@@ -441,8 +437,9 @@ def _contact_job(
     if matched:
         with conn:
             conn.execute(
-                "UPDATE jobs SET salary_range = COALESCE(salary_range, ?) WHERE job_key = ?",
-                (salary_range, matched),
+                "UPDATE jobs SET salary_range = COALESCE(NULLIF(salary_range, ''), ?)"
+                " WHERE job_key = ?",
+                (ledger.clean_salary(salary_range), matched),
             )
         return matched
     return _upsert_import_job(
