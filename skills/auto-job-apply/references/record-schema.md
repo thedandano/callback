@@ -28,7 +28,7 @@ Explicit status vocabulary:
 - `Skipped - not fit`: role is materially off-track for the user's software/AI target.
 - `Recruiter follow-up`: recruiter thread needs user decision or reply.
 
-Dedupe: call `find_job(url, company, title)`. It matches the URL first, then falls back to company plus title (see `matched_by`). For a `company_title` match, compare URLs and requisition IDs first. Reuse its `job_key` only when they confirm the same posting; otherwise record the new URL with no `job_key`. When the new email is the active source for the latest status, say so in `note`; otherwise append the new email detail to `note`.
+Dedupe: call `find_job(url, company, title)`. It matches the URL first, then falls back to company plus title (see `matched_by`). For a `company_title` or `key_title_mismatch` match, compare URLs and requisition IDs first. Reuse its `job_key` only when they confirm the same posting; otherwise record the new URL with no `job_key`. When the new email is the active source for the latest status, say so in `note`; otherwise append the new email detail to `note`.
 
 Mismatch summary rule:
 
