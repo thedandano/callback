@@ -33,3 +33,50 @@ def test_email_date_preserves_the_source_timestamp():
     expected = {"preserves_source_offset": True, "rejects_time_zone_conversion": True}
 
     assert actual == expected
+
+
+def test_ledger_skills_keep_posting_identity_and_edd_contact_details():
+    apply_skill = (REPO_ROOT / "skills/apply-to-job/SKILL.md").read_text()
+    auto_skill = (REPO_ROOT / "skills/auto-job-apply/SKILL.md").read_text()
+    scan_skill = (REPO_ROOT / "skills/scan-job-leads/SKILL.md").read_text()
+    setup_skill = (REPO_ROOT / "skills/setup-callback/SKILL.md").read_text()
+    export_skill = (REPO_ROOT / "skills/export-ledger/SKILL.md").read_text()
+    schema = (REPO_ROOT / "skills/auto-job-apply/references/record-schema.md").read_text()
+
+    actual = {
+        "apply_non_submission_continues": (
+            "is not a prior application; continue the workflow" in apply_skill
+        ),
+        "company_title_requires_confirmation": (
+            "Reuse its `job_key` only when they confirm the same posting" in auto_skill
+        ),
+        "confirmation_has_distinct_status": (
+            "Already applied - confirmation recorded" in apply_skill
+        ),
+        "status_only_reads_stored_scores": "Read `score_before` and `score_after`" in auto_skill,
+        "unknown_salary_is_omitted": "Omit it when unknown" in schema,
+        "contacts_have_a_method_prefix": (
+            "Contact method: <Online|Email|Phone|In person>" in schema
+        ),
+        "scan_records_classified_outcomes": (
+            "Record each classified outcome with `record_status`" in scan_skill
+        ),
+        "setup_removes_legacy_config_after_success": (
+            "After the import succeeds, remove `record_csv`, `ledger_db`, and `edd_xlsx`"
+            in setup_skill
+        ),
+        "export_explains_contact_method": "that prefix is the contact-method field" in export_skill,
+    }
+    expected = {
+        "apply_non_submission_continues": True,
+        "company_title_requires_confirmation": True,
+        "confirmation_has_distinct_status": True,
+        "status_only_reads_stored_scores": True,
+        "unknown_salary_is_omitted": True,
+        "contacts_have_a_method_prefix": True,
+        "scan_records_classified_outcomes": True,
+        "setup_removes_legacy_config_after_success": True,
+        "export_explains_contact_method": True,
+    }
+
+    assert actual == expected

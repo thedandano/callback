@@ -19,7 +19,7 @@ Call `get_search_preferences` at the start of every run. Apply the returned valu
 
 - **Location / work types** (`home_location`, `work_types`): hard curation gate. Keep only roles workable from the user's configured location or work types. Skip remote roles tied to another metro/state/country.
 - **Core / skip domains** (`core_domains`, `skip_domains`): domain gate. Prefer core-domain roles; skip skip-domain roles unless the user asks to stretch. Match the JD's actual subject matter, not the employer's brand — a security/detection-engineering or telephony-specialist role at an AI-forward company is still a `skip_domains` match if that domain is on the skip list.
-- **Compensation** (`comp_annual_target`): advisory priority, not a hard gate. Record salary when visible; use `Not listed` when missing; add a compensation-risk note when the range starts below the user's target.
+- **Compensation** (`comp_annual_target`): advisory priority, not a hard gate. Record salary when visible; omit `salary_range` when missing and render `Not listed` only in the summary; add a compensation-risk note when the range starts below the user's target.
 - **Target titles / seniority bands / seniority blockers** (`target_titles`, `seniority_bands`, `seniority_blockers`): use for ranking and blocking. Skip roles that match a configured blocker.
 - **Target companies** (`target_companies`): always check and surface leads from these companies.
 - **Referral companies** (`referral_companies`): read the list; surface referral leads for those companies with status `Referral lead - ask friend`.
@@ -47,13 +47,13 @@ Treat email cards, snippets, search cards, LinkedIn alerts, Indeed digests, and 
 - official ATS page
 - directly opened third-party page exposing the complete JD
 
-If no full source is found, record `Needs source - manual lookup` with attempted resolution steps.
+If no full source is found, record `Needs source - manual lookup` with attempted resolution steps through `record_status`.
 
 ## Paths
 
 If `.callback/config.json` still has a `record_csv` or `ledger_db` key and that file exists, stop before any dedupe. Tell the user to run `callback ledger import --csv <record_csv> --contacts-db <ledger_db>` once from a normal terminal (leave out the flag for a file they do not have), then remove those keys from `.callback/config.json`. Until then the ledger does not know the jobs they already applied to, and every one of them would look new.
 
-Dedupe every lead with `find_job(url=<URL>, company=<company>, title=<title>)`; skip leads where `data.found` is true, and leads whose title is similar to one in `data.company_jobs`. Do not read or write a record CSV.
+Dedupe every lead with `find_job(url=<URL>, company=<company>, title=<title>)`; skip leads where `data.found` is true, and leads whose title is similar to one in `data.company_jobs`. Record each classified outcome with `record_status`: `Needs source - manual lookup` for source-limited leads, the appropriate `Skipped ...` status for gated-out leads, and `Needs review - not applied` when a validated lead is staged. Pass `salary_range` only when known. Do not read or write a record CSV.
 
 ## Output
 

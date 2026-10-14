@@ -7,9 +7,9 @@ Field rules:
 - `company`: employer or recruiter/client label if company is hidden.
 - `title`: posting title. Keep recruiter-thread inferred titles explicit.
 - `url`: canonical job URL (`http://` or `https://`) when available. For recruiter-only leads with no posting URL, leave `url` out, pass `company` and `title`, and put a stable thread descriptor in `note`.
-- `salary_range`: posting/recruiter compensation range, for example `$120K-$160K`, `$75/hr W2`, or `Not listed`. Do not invent salary. If multiple sources disagree, use the current employer/recruiter source and explain the conflict in `note`.
+- `salary_range`: posting/recruiter compensation range, for example `$120K-$160K` or `$75/hr W2`. Omit it when unknown; do not send the literal `Not listed`. Do not invent salary. If multiple sources disagree, use the current employer/recruiter source and explain the conflict in `note`.
 - `status`: one value from the vocabulary below.
-- `note`: recruiter thread descriptor (for leads with no posting URL), dedupe rationale, salary source if useful, fit rationale, mismatch summary, blockers, source email details, before/after scores, resume and cover letter paths, and next action.
+- `note`: recruiter thread descriptor (for leads with no posting URL), dedupe rationale, salary source if useful, fit rationale, mismatch summary, blockers, source email details, before/after scores, resume and cover letter paths, and next action. Every application or contact note starts with `Contact method: <Online|Email|Phone|In person>`.
 
 Explicit status vocabulary:
 
@@ -28,7 +28,7 @@ Explicit status vocabulary:
 - `Skipped - not fit`: role is materially off-track for the user's software/AI target.
 - `Recruiter follow-up`: recruiter thread needs user decision or reply.
 
-Dedupe: call `find_job(url, company, title)`. It matches the URL first, then falls back to company plus title (see `matched_by`). When it matches by company and title, pass its `job_key` to `record_status` so the status lands on the existing job. When the new email is the active source for the latest status, say so in `note`; otherwise append the new email detail to `note`.
+Dedupe: call `find_job(url, company, title)`. It matches the URL first, then falls back to company plus title (see `matched_by`). For a `company_title` match, compare URLs and requisition IDs first. Reuse its `job_key` only when they confirm the same posting; otherwise record the new URL with no `job_key`. When the new email is the active source for the latest status, say so in `note`; otherwise append the new email detail to `note`.
 
 Mismatch summary rule:
 
