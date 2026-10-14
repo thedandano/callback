@@ -1187,6 +1187,7 @@ def test_export_contacts_keeps_contact_notes_and_applications_only(tmp_path):
         ("Seen", "just browsing"),
         ("Rejected", None),
         ("Needs review - not applied", None),
+        ("Applied", "Not reportable | Contact: Email"),
     ]
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
         for i, (status, note) in enumerate(events):
@@ -1207,3 +1208,35 @@ def test_export_contacts_keeps_contact_notes_and_applications_only(tmp_path):
         ("already applied", None),
         ("Applied - confirmed", None),
     ]
+
+
+def test_find_job_flags_a_key_match_with_a_different_title(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.upsert_job(
+            conn,
+            url="https://acme.com/careers#backend",
+            company="Acme",
+            title="Backend Engineer",
+            seen_at="2026-10-01",
+        )
+        kinds = [
+            ledger.find_job(
+                conn, url="https://acme.com/careers#designer", company="Acme", title=title
+            )["matched_by"]
+            for title in ("Product Designer", "backend  ENGINEER", None)
+        ]
+    assert kinds == ["key_title_mismatch", "key", "key"]
+
+
+def test_record_status_by_job_key_ignores_a_placeholder_salary(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        key = ledger.upsert_job(
+            conn, url="https://a.com/1", company="A", title="E", seen_at="2026-10-01"
+        )
+        for salary in ("Not listed", "$150K-$180K"):
+            ledger.record_status(
+                conn,
+                _update(job_key=key, salary_range=salary, status="Seen", recorded_at="2026-10-02"),
+            )
+        stored = conn.execute("SELECT salary_range FROM jobs").fetchall()
+    assert stored == [("$150K-$180K",)]
