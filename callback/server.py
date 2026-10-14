@@ -23,9 +23,10 @@ import sys
 import time
 import traceback
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastmcp import FastMCP
 from pydantic import ValidationError
@@ -78,7 +79,22 @@ except ValueError as exc:
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 _LOG_FORMAT = "%(message)s"  # messages are already JSON strings
+_LOG_ROTATE_BYTES = 10 * 1024 * 1024  # 10 MB; one previous log is kept as server.log.1
 _LOG_PATH: Path | None = None
+
+
+def _rotate_if_large(path: Path) -> None:
+    """Move an oversized log aside before opening it.
+
+    ponytail: rotates only at startup, not mid-run, because several `callback serve`
+    processes can share one log and RotatingFileHandler breaks when they do. A process
+    that runs for weeks can still grow its log; switch to a per-process log if that happens.
+    A second server started after the log passes 10 MB renames the file while the first still
+    writes to it, so the first server's lines go to server.log.1 until it restarts. The
+    upgrade path is per-process log files.
+    """
+    if path.exists() and path.stat().st_size > _LOG_ROTATE_BYTES:
+        path.replace(path.with_name(f"{path.name}.1"))
 
 
 def configure_logging(log_path: str | Path | None = None) -> None:
@@ -102,6 +118,7 @@ def configure_logging(log_path: str | Path | None = None) -> None:
 
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
+        _rotate_if_large(path)
         handler = logging.FileHandler(path, encoding="utf-8")
     except OSError as exc:
         _LOG_PATH = None
@@ -591,6 +608,31 @@ def _err(
     return env
 
 
+def _graph_or_err(factory: Callable[[], Any], session_id: str | None) -> tuple[Any, dict | None]:
+    """Build a graph, or return an error envelope when the session store cannot be opened."""
+    try:
+        return factory(), None
+    except PermissionError as exc:
+        _log_exception({"event": "unsafe_session_dir", "session_id": session_id})
+        return None, _err(
+            stage="session_store",
+            code="unsafe_session_dir",
+            message=str(exc),
+            session_id=session_id,
+            retriable=False,
+        )
+    except (sqlite3.Error, OSError) as exc:
+        # Locked, corrupt, read-only, or full session store: report it, don't leak a raw error.
+        _log_exception({"event": "session_store_error", "session_id": session_id})
+        return None, _err(
+            stage="session_store",
+            code="session_store_error",
+            message=f"unable to open session store: {exc}",
+            session_id=session_id,
+            retriable=True,
+        )
+
+
 def _unexpected_error(stage: str, session_id: str) -> dict:
     """Log the active exception with traceback and return an unexpected_error envelope."""
     _log_exception({"tool": stage, "session_id": session_id, "event": "unexpected_error"})
@@ -719,8 +761,10 @@ def _load_jd_impl(  # noqa: C901
         resume_label=resolved_label,
     )
 
+    graph, graph_error = _graph_or_err(get_apply_graph, session_id)
+    if graph_error is not None:
+        return graph_error
     try:
-        graph = get_apply_graph()
         config = make_apply_config(
             session_id,
             tool_name="load_jd",
@@ -957,6 +1001,15 @@ def _submit_keywords_invoke(
         return None, _unexpected_error("submit_keywords", session_id)
 
 
+def _submit_keywords_session(session_id: str) -> tuple[Any, Any, dict | None]:
+    """Open the apply graph and check the session can take keywords; else return the error."""
+    graph, graph_error = _graph_or_err(get_apply_graph, session_id)
+    if graph_error is not None:
+        return None, None, graph_error
+    config = make_apply_config(session_id, tool_name="submit_keywords")
+    return graph, config, _submit_keywords_state_error(graph, config, session_id)
+
+
 @trace_tool("submit_keywords", graph_name="apply")
 def _submit_keywords_impl(session_id: str, jd_json: str) -> dict:
     _log("INFO", {"tool": "submit_keywords", "session_id": session_id})
@@ -972,11 +1025,9 @@ def _submit_keywords_impl(session_id: str, jd_json: str) -> dict:
             retriable=True,
         )
 
-    graph = get_apply_graph()
-    config = make_apply_config(session_id, tool_name="submit_keywords")
-    state_error = _submit_keywords_state_error(graph, config, session_id)
-    if state_error is not None:
-        return state_error
+    graph, config, session_error = _submit_keywords_session(session_id)
+    if session_error is not None:
+        return session_error
 
     state, invoke_error = _submit_keywords_invoke(graph, config, keywords, session_id)
     if invoke_error is not None:
@@ -1205,7 +1256,9 @@ def _submit_tailor_impl(
 ) -> dict:
     _log("INFO", {"tool": "submit_tailor", "session_id": session_id, "edit_count": len(edits)})
 
-    graph = get_apply_graph()
+    graph, graph_error = _graph_or_err(get_apply_graph, session_id)
+    if graph_error is not None:
+        return graph_error
     config = make_apply_config(session_id, tool_name="submit_tailor")
     snapshot = graph.get_state(config)
 
@@ -1432,7 +1485,9 @@ def _onboard_user_impl(
         resume_path=resume_path,
         intake=intake if intake else None,
     )
-    graph = get_profile_graph()
+    graph, graph_error = _graph_or_err(get_profile_graph, session_id)
+    if graph_error is not None:
+        return graph_error
     config = make_profile_config(session_id, tool_name="onboard_user")
     state_values, invoke_error = _onboard_user_invoke(graph, initial_state, config, session_id)
     if invoke_error is not None:
@@ -1637,7 +1692,9 @@ def _resolve_new_thread_resume_label(stage: str, session_id: str) -> str | None:
 def _compile_profile_impl(
     session_id: str, host_tags: list[str], *, resumed: bool, explicit_tags: bool
 ) -> dict:
-    graph = get_profile_graph()
+    graph, graph_error = _graph_or_err(get_profile_graph, session_id)
+    if graph_error is not None:
+        return graph_error
     config = make_profile_config(session_id, tool_name="compile_profile")
     if resumed:
         update = {"host_tags": host_tags} if explicit_tags else None
@@ -1735,7 +1792,9 @@ def create_story(
 
 @trace_tool("create_story", graph_name="profile")
 def _create_story_impl(session_id: str, intake: dict, *, resumed: bool) -> dict:
-    graph = get_profile_graph()
+    graph, graph_error = _graph_or_err(get_profile_graph, session_id)
+    if graph_error is not None:
+        return graph_error
     config = make_profile_config(session_id, tool_name="create_story")
     if resumed:
         error = _resume_profile_thread(
@@ -1848,7 +1907,9 @@ def get_wiki_pages(session_id: str, page_ids: list[str]) -> dict:
 def _get_wiki_pages_impl(session_id: str, page_ids: list[str]) -> dict:
     _log("INFO", {"tool": "get_wiki_pages", "session_id": session_id, "page_count": len(page_ids)})
 
-    graph = get_apply_graph()
+    graph, graph_error = _graph_or_err(get_apply_graph, session_id)
+    if graph_error is not None:
+        return graph_error
     config = make_apply_config(session_id, tool_name="get_wiki_pages")
     snapshot = graph.get_state(config)
 

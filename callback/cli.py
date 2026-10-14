@@ -686,7 +686,12 @@ def uninstall(
         config_error = exc
 
     if purge:
-        for directory in (paths.data_dir(), paths.state_dir(), paths.config_dir()):
+        for directory in (
+            paths.data_dir(),
+            paths.state_dir(),
+            paths.config_dir(),
+            paths.session_dir(),
+        ):
             if directory.exists():
                 shutil.rmtree(directory)
                 typer.echo(f"Deleted: {directory}")

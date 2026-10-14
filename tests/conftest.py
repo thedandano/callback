@@ -2,6 +2,8 @@ import sys
 
 import pytest
 
+from callback import paths
+
 
 @pytest.fixture(autouse=True)
 def isolate_xdg_env(monkeypatch):
@@ -47,3 +49,9 @@ def decisions(monkeypatch):
 
     monkeypatch.setattr("langsmith.run_helpers.get_current_run_tree", lambda: _FakeRunTree())
     return captured
+
+
+@pytest.fixture(autouse=True)
+def isolate_runtime_files(tmp_path, monkeypatch):
+    """Keep session DBs out of the real temp folder in every test."""
+    monkeypatch.setattr(paths, "_temp_root", lambda: tmp_path / "tmp")

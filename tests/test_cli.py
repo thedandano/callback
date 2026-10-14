@@ -765,20 +765,24 @@ def test_uninstall_purge_deletes_data_state_and_config_dirs(tmp_path):
     data_dir = tmp_path / "share"
     state_dir = tmp_path / "state"
     config_dir = tmp_path / "config"
+    session_dir = tmp_path / "sessions"
     data_dir.mkdir()
     state_dir.mkdir()
     config_dir.mkdir()
+    session_dir.mkdir()
 
     with (
         patch("callback.paths.data_dir", lambda: data_dir),
         patch("callback.paths.state_dir", lambda: state_dir),
         patch("callback.paths.config_dir", lambda: config_dir),
+        patch("callback.paths.session_dir", lambda: session_dir),
         patch("callback.cli._remove_server_from_claude"),
         patch("callback.cli._remove_server_from_codex"),
     ):
         result = runner.invoke(app, ["uninstall", "--purge"])
 
     assert result.exit_code == 0
+    assert not session_dir.exists()
     assert not data_dir.exists()
     assert not state_dir.exists()
     assert not config_dir.exists()
@@ -788,6 +792,7 @@ def test_uninstall_purge_deletes_data_when_legacy_config_removal_fails(tmp_path)
     data_dir = tmp_path / "share"
     state_dir = tmp_path / "state"
     config_dir = tmp_path / "config"
+    session_dir = tmp_path / "sessions"
     data_dir.mkdir()
     state_dir.mkdir()
     config_dir.mkdir()
@@ -796,6 +801,7 @@ def test_uninstall_purge_deletes_data_when_legacy_config_removal_fails(tmp_path)
         patch("callback.paths.data_dir", lambda: data_dir),
         patch("callback.paths.state_dir", lambda: state_dir),
         patch("callback.paths.config_dir", lambda: config_dir),
+        patch("callback.paths.session_dir", lambda: session_dir),
         patch(
             "callback.cli._remove_server_from_claude",
             side_effect=ConfigError("invalid Claude config"),
@@ -817,6 +823,7 @@ def test_uninstall_purge_deletes_data_when_codex_config_cannot_be_read(
     data_dir = tmp_path / "share"
     state_dir = tmp_path / "state"
     config_dir = tmp_path / "config"
+    session_dir = tmp_path / "sessions"
     data_dir.mkdir()
     state_dir.mkdir()
     config_dir.mkdir()
@@ -826,6 +833,7 @@ def test_uninstall_purge_deletes_data_when_codex_config_cannot_be_read(
         patch("callback.paths.data_dir", lambda: data_dir),
         patch("callback.paths.state_dir", lambda: state_dir),
         patch("callback.paths.config_dir", lambda: config_dir),
+        patch("callback.paths.session_dir", lambda: session_dir),
     ):
         result = runner.invoke(app, ["uninstall", "--purge"])
 
@@ -851,11 +859,13 @@ def test_uninstall_purge_skips_absent_dirs(tmp_path):
     data_dir = tmp_path / "share"
     state_dir = tmp_path / "state"
     config_dir = tmp_path / "config"
+    session_dir = tmp_path / "sessions"
 
     with (
         patch("callback.paths.data_dir", lambda: data_dir),
         patch("callback.paths.state_dir", lambda: state_dir),
         patch("callback.paths.config_dir", lambda: config_dir),
+        patch("callback.paths.session_dir", lambda: session_dir),
         patch("callback.cli._remove_server_from_claude"),
         patch("callback.cli._remove_server_from_codex"),
     ):
