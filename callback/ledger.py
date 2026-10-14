@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import sqlite3
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -54,6 +55,8 @@ _TRACKING_PARAMS = frozenset(
     }
 )
 _JD_HASH_CHARS = 8
+_NAME_SEPARATOR = "\x1f"
+_PLAIN_DATE_LENGTH = len("2026-10-01")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -93,17 +96,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS status_events_identity
 ON status_events (job_key, status, recorded_at, source, ifnull(note, ''))
 """
 
-_CREATE_STATUS_EVENTS_TABLE = """
-CREATE TABLE status_events (
-    id INTEGER PRIMARY KEY,
-    job_key TEXT NOT NULL REFERENCES jobs(job_key),
-    status TEXT NOT NULL,
-    recorded_at TEXT NOT NULL,
-    note TEXT,
-    source TEXT NOT NULL
-)
-"""
-
 _UPSERT_JOB = """
 INSERT INTO jobs (job_key, url, company, title, salary_range, first_seen)
 VALUES (?, ?, ?, ?, ?, ?)
@@ -115,7 +107,11 @@ ON CONFLICT(job_key) DO UPDATE SET
     first_seen = CASE
         WHEN excluded.first_seen = '' THEN jobs.first_seen
         WHEN jobs.first_seen = '' THEN excluded.first_seen
-        ELSE MIN(jobs.first_seen, excluded.first_seen)
+        WHEN julianday(excluded.first_seen) IS NULL OR julianday(jobs.first_seen) IS NULL
+            THEN MIN(jobs.first_seen, excluded.first_seen)
+        WHEN julianday(excluded.first_seen) < julianday(jobs.first_seen)
+            THEN excluded.first_seen
+        ELSE jobs.first_seen
     END
 """
 
@@ -210,7 +206,11 @@ def normalize_url(url: str) -> str:
 
 def _normalized_query(query: str) -> str:
     return urlencode(
-        sorted((key, value) for key, value in parse_qsl(query) if not _is_tracking(key))
+        sorted(
+            (key, value)
+            for key, value in parse_qsl(query, keep_blank_values=True)
+            if not _is_tracking(key)
+        )
     )
 
 
@@ -233,24 +233,37 @@ def _clean_url(url: str | None) -> str | None:
     return normalize_url(url)
 
 
+def _norm_text(value: str | None) -> str:
+    """Casefolded text with runs of whitespace collapsed, so case and spacing never split keys."""
+    return " ".join((value or "").casefold().split())
+
+
+def _short_hash(text: str) -> str:
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:_JD_HASH_CHARS]
+
+
 def job_key(
     url: str | None, company: str | None, title: str | None, jd_text: str | None = None
 ) -> str:
     """URL postings key on the normalized URL; pasted job descriptions have none, so use
-    company + title.
+    company + title, folded for case and spacing.
 
-    When company or title is missing and the JD text is known, a short hash of the text is
-    added so unlabeled pasted jobs do not all merge into one `pasted:job` row.
+    The key ends in a short hash of the folded pair joined by a separator that cannot be
+    typed in a name, so ("Meta Platforms", "Engineer") and ("Meta", "Platforms Engineer")
+    stay apart. When company or title is missing and the JD text is known, a short hash of
+    the text is used instead, so unlabeled pasted jobs do not all merge into one row.
 
     ponytail: two different pasted postings with the same company and title share one job.
     """
     cleaned = _clean_url(url)
     if cleaned:
         return cleaned
-    slug = paths.slug(company, title)
+    folded_company, folded_title = _norm_text(company), _norm_text(title)
+    slug = paths.slug(folded_company, folded_title)
     if (company and title) or not jd_text:
-        return f"pasted:{slug}"
-    digest = hashlib.sha1(jd_text.encode("utf-8")).hexdigest()[:_JD_HASH_CHARS]
+        pair = f"{folded_company}{_NAME_SEPARATOR}{folded_title}"
+        return f"pasted:{slug}-{_short_hash(pair)}"
+    digest = _short_hash(jd_text)
     _log.info(json.dumps({"event": "ledger_key_from_jd_text", "slug": slug, "hash": digest}))
     return f"pasted:{slug}-{digest}"
 
@@ -264,7 +277,6 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
         conn.executescript(_SCHEMA)
-        _migrate_legacy_status_event_identity(conn)
         conn.execute(_CREATE_STATUS_EVENT_IDENTITY_INDEX)
     except sqlite3.Error as exc:
         conn.close()
@@ -275,31 +287,23 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     return conn
 
 
-def _migrate_legacy_status_event_identity(conn: sqlite3.Connection) -> None:
-    if not _has_legacy_status_event_identity(conn):
-        return
-    with conn:
-        conn.execute("ALTER TABLE status_events RENAME TO status_events_legacy")
-        conn.execute(_CREATE_STATUS_EVENTS_TABLE)
-        conn.execute(
-            "INSERT INTO status_events (id, job_key, status, recorded_at, note, source) "
-            "SELECT id, job_key, status, recorded_at, note, source FROM status_events_legacy"
-        )
-        conn.execute("DROP TABLE status_events_legacy")
-    _log.warning(json.dumps({"event": "ledger_status_events_migrated"}))
+def canonical_timestamp(value: str) -> str:
+    """UTC ISO form of a timestamp, so text and time order agree.
 
-
-def _has_legacy_status_event_identity(conn: sqlite3.Connection) -> bool:
-    for _, index_name, is_unique, *_ in conn.execute("PRAGMA index_list(status_events)"):
-        if is_unique and _index_columns(conn, index_name) == ["job_key", "status", "recorded_at"]:
-            return True
-    return False
-
-
-def _index_columns(conn: sqlite3.Connection, index_name: str) -> list[str]:
-    escaped_name = index_name.replace("'", "''")
-    rows = conn.execute(f"PRAGMA index_info('{escaped_name}')")
-    return [row[2] for row in rows]
+    A time with no offset is read as UTC. Plain `YYYY-MM-DD` dates, blanks and text that is
+    not ISO come back as given (the last one logs a warning).
+    """
+    stripped = value.strip()
+    if len(stripped) <= _PLAIN_DATE_LENGTH:
+        return value
+    try:
+        parsed = datetime.fromisoformat(stripped)
+    except ValueError:
+        _log.warning(json.dumps({"event": "ledger_timestamp_unparsed", "value": value}))
+        return value
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC).isoformat()
 
 
 def _upsert_job(
@@ -314,7 +318,10 @@ def _upsert_job(
 ) -> str:
     """Insert or merge a job row without committing; callers own the transaction."""
     key = job_key(url, company, title, jd_text)
-    conn.execute(_UPSERT_JOB, (key, _clean_url(url), company, title, salary_range, seen_at))
+    conn.execute(
+        _UPSERT_JOB,
+        (key, _clean_url(url), company, title, salary_range, canonical_timestamp(seen_at)),
+    )
     return key
 
 

@@ -156,9 +156,10 @@ def test_normalize_url_keeps_ref_values_that_identify_distinct_jobs():
     ("args", "expected"),
     [
         (("https://jobs.example.com/a/", "Acme", "Eng"), "https://jobs.example.com/a"),
-        ((None, "Acme", "Senior Engineer"), "pasted:acme-senior-engineer"),
-        ((None, None, None), "pasted:job"),
-        (("   ", "Acme", "Eng"), "pasted:acme-eng"),
+        ((None, "Acme", "Senior Engineer"), "pasted:acme-senior-engineer-208d27d4"),
+        ((None, None, None), "pasted:job-953efe8f"),
+        (("   ", "Acme", "Eng"), "pasted:acme-eng-82da35ff"),
+        ((None, "ACME", "  eng "), "pasted:acme-eng-82da35ff"),
     ],
 )
 def test_job_key_uses_url_or_falls_back_to_company_and_title(args, expected):
@@ -174,8 +175,8 @@ def _jd_hash(text: str) -> str:
     [
         (None, None, "JD one", f"pasted:job-{_jd_hash('JD one')}"),
         ("Acme", None, "JD one", f"pasted:acme-{_jd_hash('JD one')}"),
-        (None, None, None, "pasted:job"),
-        ("Acme", "Eng", "JD one", "pasted:acme-eng"),
+        (None, None, None, "pasted:job-953efe8f"),
+        ("Acme", "Eng", "JD one", "pasted:acme-eng-82da35ff"),
     ],
 )
 def test_job_key_hashes_jd_text_when_company_or_title_is_missing(company, title, jd_text, expected):
@@ -347,54 +348,6 @@ def test_add_status_keeps_distinct_sources_and_notes_for_the_same_day(tmp_path):
     assert (added, events) == ([True, True], [("gmail", "Email"), ("csv", "Portal")])
 
 
-def test_connect_migrates_legacy_status_event_identity(tmp_path, caplog):
-    path = tmp_path / "l.db"
-    with sqlite3.connect(path) as conn:
-        conn.executescript(
-            """
-            CREATE TABLE jobs (
-                job_key TEXT PRIMARY KEY, url TEXT, company TEXT, title TEXT,
-                salary_range TEXT, first_seen TEXT NOT NULL
-            );
-            CREATE TABLE status_events (
-                id INTEGER PRIMARY KEY,
-                job_key TEXT NOT NULL REFERENCES jobs(job_key),
-                status TEXT NOT NULL, recorded_at TEXT NOT NULL, note TEXT,
-                source TEXT NOT NULL,
-                UNIQUE (job_key, status, recorded_at)
-            );
-            INSERT INTO jobs VALUES (
-                'https://x.com/1', 'https://x.com/1', 'X', 'Eng', NULL, '2026-10-01'
-            );
-            INSERT INTO status_events (job_key, status, recorded_at, note, source)
-            VALUES ('https://x.com/1', 'Applied', '2026-10-01', 'Email', 'gmail');
-            """
-        )
-    with (
-        closing(ledger.connect(path)) as conn,
-        caplog.at_level(logging.WARNING, logger="callback.ledger"),
-    ):
-        inserted = ledger.add_status(
-            conn,
-            job_key="https://x.com/1",
-            status="Applied",
-            recorded_at="2026-10-01",
-            note="Portal",
-            source="csv",
-        )
-        events = conn.execute("SELECT source, note FROM status_events ORDER BY id").fetchall()
-    messages = [record.getMessage() for record in caplog.records]
-    assert (
-        inserted,
-        events,
-        any('"ledger_status_events_migrated"' in message for message in messages),
-    ) == (
-        True,
-        [("gmail", "Email"), ("csv", "Portal")],
-        True,
-    )
-
-
 def test_expected_keywords_reads_the_matching_ledger_run_before_legacy_archive(
     tmp_path, monkeypatch, caplog
 ):
@@ -436,7 +389,7 @@ def test_blank_url_is_stored_as_null(tmp_path):
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
         ledger.upsert_job(conn, url="  ", company="Acme", title="Eng", seen_at="2026-10-01")
         rows = conn.execute("SELECT job_key, url FROM jobs").fetchall()
-    assert rows == [("pasted:acme-eng", None)]
+    assert rows == [("pasted:acme-eng-82da35ff", None)]
 
 
 def test_a_failed_run_leaves_no_job_behind(tmp_path):
@@ -478,3 +431,65 @@ def test_add_status_for_an_unknown_job_is_rejected(tmp_path):
         ledger.add_status(
             conn, job_key="nope", status="Applied", recorded_at="d", note=None, source="t"
         )
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        (("Acme", "C++ Engineer"), ("ACME", "c++   engineer")),
+        (("Acme", "Engineer \u2013 Backend"), ("acme", "ENGINEER \u2013 backend")),
+    ],
+)
+def test_pasted_job_key_ignores_case_and_spacing_for_lossy_titles(first, second):
+    assert ledger.job_key(None, *first) == ledger.job_key(None, *second)
+
+
+def test_pasted_job_key_keeps_the_company_title_boundary():
+    keys = (
+        ledger.job_key(None, "Meta Platforms", "Engineer"),
+        ledger.job_key(None, "Meta", "Platforms Engineer"),
+    )
+    assert keys == (
+        "pasted:meta-platforms-engineer-be6a1bae",
+        "pasted:meta-platforms-engineer-55afff7e",
+    )
+
+
+def test_normalize_url_keeps_a_blank_valued_param_that_names_the_posting():
+    actual = [
+        ledger.normalize_url("https://jobs.example.com/opening?R1234"),
+        ledger.normalize_url("https://jobs.example.com/opening?R9999"),
+        ledger.normalize_url("https://jobs.example.com/opening?R1234&utm_source=x"),
+    ]
+    assert actual == [
+        "https://jobs.example.com/opening?R1234=",
+        "https://jobs.example.com/opening?R9999=",
+        "https://jobs.example.com/opening?R1234=",
+    ]
+
+
+def test_first_seen_is_the_earliest_moment_across_offsets(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        for stamp in ("2026-10-01T23:00:00-07:00", "2026-10-02T01:00:00+00:00"):
+            ledger.upsert_job(conn, url="https://a.com/1", company=None, title=None, seen_at=stamp)
+        first_seen = conn.execute("SELECT first_seen FROM jobs").fetchall()
+    assert first_seen == [("2026-10-02T01:00:00+00:00",)]
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("2026-10-01T23:00:00-07:00", "2026-10-02T06:00:00+00:00"),
+        ("2026-10-01T10:00:00", "2026-10-01T10:00:00+00:00"),
+        ("2026-10-01", "2026-10-01"),
+        ("", ""),
+    ],
+)
+def test_canonical_timestamp_converts_to_utc_and_keeps_plain_dates(raw, expected):
+    assert ledger.canonical_timestamp(raw) == expected
+
+
+def test_connect_creates_the_status_event_identity_index_on_a_fresh_ledger(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        names = [row[1] for row in conn.execute("PRAGMA index_list(status_events)")]
+    assert names == ["status_events_identity"]
