@@ -18,12 +18,11 @@ Write `.callback/config.json` in the project root. Prompt for each path or accep
 ```json
 {
   "applications_dir": "./applications",
-  "record_csv": "./data/record.csv",
   "archive_dir": "./archive"
 }
 ```
 
-Create the directories: `data/`, `applications/`, `archive/`.
+Create the directories: `applications/`, `archive/`.
 Add `.callback/` to the project's `.gitignore` (append it; never replace the
 existing ignore rules) so automation memory and job-search details stay local.
 
@@ -66,28 +65,9 @@ Ask these questions (skip any the user already answered):
 
 Then call `set_search_preferences(...)` with all answers. Note: this fully replaces stored prefs, so collect everything before calling.
 
-### 4. Ledger install (optional)
+### 4. Job history (optional)
 
-Ask if the user wants unemployment reporting tracking. This is specific to
-California's **EDD** (Employment Development Department) job-search
-contact-reporting requirement for **Unemployment Insurance** claimants — it
-does not apply to Disability Insurance (which covers wage loss while unable to
-work and carries no job-search requirement), and it does not apply outside
-California. Most users should skip it. Ask plainly: "Are you filing a
-California unemployment insurance claim and need to log job-search contacts
-for EDD?"
-
-If yes:
-1. Ask whether they already have the personal `job-search-ledger` command
-   installed. Do not invent an install URL or repository. If they do not, skip
-   ledger setup; callback remains fully functional without it.
-2. Add `ledger_db` and `edd_xlsx` to `.callback/config.json` alongside the keys
-   from step 1, e.g. `"ledger_db": "./data/ledger.sqlite3"` and `"edd_xlsx":
-   "./data/tracker.xlsx"`.
-
-If no, the user is outside California, or the command is not installed, remove
-any existing `ledger_db` and `edd_xlsx` keys from `.callback/config.json`. Every
-other callback feature works fully without them.
+Job history lives in callback's global ledger. If the user has an old record CSV or an old `job_search_ledger.sqlite3`, they run `callback ledger import --csv <path> --contacts-db <path>` once, from a normal terminal. For an unemployment (EDD) report, they use `/export-ledger`.
 
 ## Rules
 
