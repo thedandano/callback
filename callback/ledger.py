@@ -56,6 +56,7 @@ _TRACKING_PARAMS = frozenset(
 )
 _JD_HASH_CHARS = 8
 _NAME_SEPARATOR = "\x1f"
+_SALARY_PLACEHOLDERS = frozenset({"", "not listed", "n/a", "unknown", "ambiguous", "-", "tbd"})
 _PLAIN_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 
 _SCHEMA = """
@@ -323,6 +324,12 @@ def canonical_timestamp(value: str) -> str:
     return parsed.astimezone(UTC).isoformat()
 
 
+def clean_salary(value: str | None) -> str | None:
+    """The salary text, or None when it is blank or a placeholder such as `Not listed`."""
+    folded = _norm_text(value)
+    return None if folded in _SALARY_PLACEHOLDERS else (value or "").strip()
+
+
 def _upsert_job(
     conn: sqlite3.Connection,
     *,
@@ -332,15 +339,25 @@ def _upsert_job(
     seen_at: str,
     salary_range: str | None,
     jd_text: str | None = None,
+    key: str | None = None,
 ) -> str:
-    """Insert or merge a job row without committing; callers own the transaction."""
+    """Insert or merge a job row without committing; callers own the transaction.
+
+    `key` overrides the computed job key; the run recorders use it to attach to an existing job.
+    """
     company = (company or "").strip() or None
     title = (title or "").strip() or None
-    salary_range = (salary_range or "").strip() or None
-    key = job_key(url, company, title, jd_text)
+    key = key or job_key(url, company, title, jd_text)
     conn.execute(
         _UPSERT_JOB,
-        (key, _clean_url(url), company, title, salary_range, canonical_timestamp(seen_at)),
+        (
+            key,
+            _clean_url(url),
+            company,
+            title,
+            clean_salary(salary_range),
+            canonical_timestamp(seen_at),
+        ),
     )
     return key
 
@@ -386,15 +403,7 @@ def record_run(conn: sqlite3.Connection, run: RunRecord) -> None:
         json.dumps(run.outcome),
     )
     with conn:
-        key = _upsert_job(
-            conn,
-            url=run.jd_url,
-            company=run.company,
-            title=run.title,
-            seen_at=run.timestamp,
-            salary_range=_salary_range(run.keywords),
-            jd_text=run.jd_text,
-        )
+        key = _upsert_run_job(conn, run)
         conn.execute(
             _UPSERT_RUN,
             (
@@ -422,17 +431,47 @@ def record_imported_run_if_absent(conn: sqlite3.Connection, run: RunRecord) -> b
             conn.execute("BEGIN IMMEDIATE")
         if _run_exists(conn, run.session_id):
             return False
-        key = _upsert_job(
-            conn,
-            url=run.jd_url,
-            company=run.company,
-            title=run.title,
-            seen_at=run.timestamp,
-            salary_range=_salary_range(run.keywords),
-            jd_text=run.jd_text,
-        )
+        key = _upsert_run_job(conn, run)
         cursor = conn.execute(_INSERT_RUN_IF_ABSENT, _run_values(run, key, blobs))
     return cursor.rowcount == 1
+
+
+def _upsert_run_job(conn: sqlite3.Connection, run: RunRecord) -> str:
+    """Upsert the run's job; a run with no URL may join the one same-name job that has no runs."""
+    return _upsert_job(
+        conn,
+        url=run.jd_url,
+        company=run.company,
+        title=run.title,
+        seen_at=run.timestamp,
+        salary_range=_salary_range(run.keywords),
+        jd_text=run.jd_text,
+        key=_same_name_job_key(conn, run),
+    )
+
+
+def _same_name_job_key(conn: sqlite3.Connection, run: RunRecord) -> str | None:
+    """Key of the one job a URL-less run belongs to (the scan-then-tailor case), else None.
+
+    Joins only when the company and title match exactly one job and that job has no other
+    runs. A job that already has runs may be a different posting, so the run keeps its own
+    pasted key and the possible twin is logged.
+    """
+    if _clean_url(run.jd_url) or not (run.company and run.title):
+        return None
+    matched = job_key_by_name(conn, run.company, run.title)
+    own = job_key(None, run.company, run.title, run.jd_text)
+    if matched is None or matched == own:
+        return None
+    other_runs = conn.execute(
+        "SELECT 1 FROM runs WHERE job_key = ? AND session_id != ?", (matched, run.session_id)
+    ).fetchone()
+    if other_runs is None:
+        return matched
+    _log.warning(
+        json.dumps({"event": "ledger_possible_twin_job", "matched_key": matched, "own_key": own})
+    )
+    return None
 
 
 def _run_exists(conn: sqlite3.Connection, session_id: str) -> bool:

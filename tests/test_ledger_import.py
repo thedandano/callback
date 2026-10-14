@@ -726,7 +726,7 @@ _METADATA_NOTE = (
         ),
         (
             0,
-            _METADATA_NOTE.format("Contact"),
+            "Not reportable | " + _METADATA_NOTE.format("Contact"),
         ),
     ],
 )
@@ -762,3 +762,76 @@ def test_urlless_contact_attaches_to_the_one_matching_job(tmp_path):
         keys = conn.execute("SELECT DISTINCT job_key FROM status_events ORDER BY 1").fetchall()
 
     assert [tuple(k) for k in keys] == [("https://acme.com/job/1",), ("https://beta.com/9",)]
+
+
+def test_urlless_csv_row_attaches_to_the_one_matching_job(tmp_path):
+    csv_path = tmp_path / "record.csv"
+    csv_path.write_text(
+        "Company,Title,Recorded Date,URL,Status\n"
+        "acme,  staff engineer,2026-10-02,Recruiter thread,Interview\n",
+        encoding="utf-8",
+    )
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.upsert_job(
+            conn,
+            url="https://acme.com/jobs/1",
+            company="Acme",
+            title="Staff Engineer",
+            seen_at="2026-10-01",
+        )
+        report = import_record_csv(conn, csv_path)
+        jobs = conn.execute("SELECT job_key FROM jobs").fetchall()
+        events = conn.execute("SELECT job_key, status FROM status_events").fetchall()
+
+    assert (report.jobs, [tuple(j) for j in jobs], [tuple(e) for e in events]) == (
+        0,
+        [("https://acme.com/jobs/1",)],
+        [("https://acme.com/jobs/1", "Interview")],
+    )
+
+
+def test_placeholder_salary_does_not_block_a_real_one(tmp_path):
+    csv_path = tmp_path / "record.csv"
+    csv_path.write_text(
+        "Company,Title,Recorded Date,URL,Salary range,Status\n"
+        "Acme,SWE,2026-09-01,https://acme.com/j/1,Not listed,Skipped\n",
+        encoding="utf-8",
+    )
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        import_record_csv(conn, csv_path)
+        before = conn.execute("SELECT salary_range FROM jobs").fetchall()
+        ledger.upsert_job(
+            conn,
+            url="https://acme.com/j/1",
+            company="Acme",
+            title="SWE",
+            seen_at="2026-09-02",
+            salary_range="$150K-$180K",
+        )
+        after = conn.execute("SELECT salary_range FROM jobs").fetchall()
+
+    assert ([tuple(r) for r in before], [tuple(r) for r in after]) == (
+        [(None,)],
+        [("$150K-$180K",)],
+    )
+
+
+def test_run_import_reuses_a_runless_scan_job_by_name(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        scanned = ledger.upsert_job(
+            conn,
+            url="https://www.linkedin.com/jobs/view/123",
+            company="Acme",
+            title="Staff Engineer",
+            seen_at="2026-10-01",
+        )
+        run = ledger.RunRecord(
+            session_id="s1",
+            timestamp="2026-10-02T10:00:00+00:00",
+            keywords={"company": "Acme", "title": "Staff Engineer"},
+        )
+        ledger.record_imported_run_if_absent(conn, run)
+        runs = conn.execute("SELECT job_key FROM runs").fetchall()
+        jobs = conn.execute("SELECT count(*) FROM jobs").fetchone()
+
+    assert ([tuple(r) for r in runs], tuple(jobs)) == ([(scanned,)], (1,))
