@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 import sqlite3
 from contextlib import closing
@@ -109,6 +110,37 @@ def test_normalize_url_checks_the_outer_url_before_adding_https():
 )
 def test_normalize_url_normalizes_route_fragments(raw, expected):
     assert ledger.normalize_url(raw) == expected
+
+
+def test_protocol_relative_url_matches_the_absolute_url():
+    actual = ledger.normalize_url("//jobs.example.com/a")
+    assert (
+        actual == ledger.normalize_url("https://jobs.example.com/a") == "https://jobs.example.com/a"
+    )
+
+
+def test_expected_keywords_falls_back_to_archive_when_ledger_dir_is_unreadable(
+    tmp_path, monkeypatch, caplog
+):
+    expected_dir = tmp_path / "extract"
+    expected_dir.mkdir()
+    apps_dir = tmp_path / "apps"
+    (apps_dir / "2026-10-01").mkdir(parents=True)
+    (apps_dir / "2026-10-01" / "s1.json").write_text(json.dumps({"keywords": {"required": ["Go"]}}))
+
+    def denied(_path=None):
+        raise PermissionError("data dir not writable")
+
+    monkeypatch.setattr(build_fetch_fixtures, "EXTRACT_DIR", expected_dir)
+    monkeypatch.setattr(build_fetch_fixtures.paths, "apps_dir", lambda: apps_dir)
+    monkeypatch.setattr(build_fetch_fixtures.ledger, "connect", denied)
+    with caplog.at_level(logging.INFO, logger="scripts.build_fetch_fixtures"):
+        actual = build_fetch_fixtures._expected_keywords("board", {"archived_session": "s1"})
+    events = [json.loads(r.getMessage())["event"] for r in caplog.records]
+    assert (actual, events) == (
+        {"required": ["Go"]},
+        ["ledger_expected_keywords_lookup_failed", "ledger_expected_keywords_source"],
+    )
 
 
 def test_normalize_url_keeps_ref_values_that_identify_distinct_jobs():

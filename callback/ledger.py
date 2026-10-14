@@ -187,11 +187,12 @@ def normalize_url(url: str) -> str:
     stripped = url.strip()
     try:
         outer = urlsplit(stripped)
-        candidate = (
-            stripped
-            if outer.scheme.lower() in _DEFAULT_PORTS and outer.netloc
-            else f"https://{stripped}"
-        )
+        if outer.scheme.lower() in _DEFAULT_PORTS and outer.netloc:
+            candidate = stripped
+        elif stripped.startswith("//"):
+            candidate = f"https:{stripped}"
+        else:
+            candidate = f"https://{stripped}"
         parts = urlsplit(candidate)
     except ValueError as exc:
         _log.warning(

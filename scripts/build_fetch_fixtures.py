@@ -60,7 +60,7 @@ def _ledger_keywords(session_id: str) -> dict | None:
             row = conn.execute(
                 "SELECT keywords FROM runs WHERE session_id = ?", (session_id,)
             ).fetchone()
-    except sqlite3.Error as exc:
+    except (sqlite3.Error, OSError) as exc:
         _log.warning(
             json.dumps({"event": "ledger_expected_keywords_lookup_failed", "error": str(exc)})
         )
