@@ -2225,6 +2225,7 @@ def record_status(
 _EXPORT_MODES = {
     "jobs": (ledger.export_rows, ledger.EXPORT_COLUMNS),
     "events": (ledger.export_events, ledger.EVENT_COLUMNS),
+    "contacts": (ledger.export_contacts, ledger.EVENT_COLUMNS),
 }
 
 
@@ -2261,8 +2262,9 @@ def export_ledger(
     mode "jobs" (default): one row per job with its latest status and latest scores; status
     and since keep jobs with ANY matching event. mode "events": one row per status event
     (Date, Company, Title, URL, Status, Notes, Source), newest first; status and since filter
-    the event itself, so each application keeps its own date. Use "events" for an EDD
-    work-search log.
+    the event itself, so each application keeps its own date. mode "contacts": same columns,
+    only EDD-reportable events: notes starting "Contact method:" and statuses starting
+    "Applied" or "Already applied". Use "contacts" for an EDD work-search log.
 
     output_path must be absolute and end in .csv. status matches the start of the status
     text (empty means no filter); since is YYYY-MM-DD (on or after). Text that a spreadsheet
@@ -2270,7 +2272,8 @@ def export_ledger(
     Error codes: invalid_mode, invalid_output_path, invalid_date, ledger_error.
     """
     if mode not in _EXPORT_MODES:
-        return _err("ledger", "invalid_mode", f"mode must be 'jobs' or 'events', got: {mode!r}")
+        allowed = ", ".join(sorted(_EXPORT_MODES))
+        return _err("ledger", "invalid_mode", f"mode must be one of {allowed}, got: {mode!r}")
     try:
         target = Path(output_path).expanduser()
         if error := _output_path_error(target):

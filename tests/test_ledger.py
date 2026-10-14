@@ -1094,3 +1094,116 @@ def test_export_events_filters_on_the_event_itself_newest_first(tmp_path):
         ],
         ["2026-10-10", "2026-10-01", "2026-09-20"],
     )
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("2026-10-01T12:00:00-07:00", "2026-10-01T19:00:00+00:00"),
+        ("2026-10-01T12:00:00", "2026-10-01T12:00:00+00:00"),
+        ("2026-10-01T12:00:00.250000+00:00", "2026-10-01T12:00:00.250000+00:00"),
+        ("20261001T120000+00:00", "2026-10-01T12:00:00+00:00"),
+        ("2026-W40-4T12:00:00+00:00", "2026-10-01T12:00:00+00:00"),
+    ],
+)
+def test_canonical_timestamp_is_utc_iso(raw, expected):
+    assert ledger.canonical_timestamp(raw) == expected
+
+
+def test_canonical_timestamp_keeps_unparseable_value_and_warns(caplog):
+    with caplog.at_level(logging.WARNING, logger="callback.ledger"):
+        result = ledger.canonical_timestamp("not a time")
+    assert (result, [json.loads(r.message)["event"] for r in caplog.records]) == (
+        "not a time",
+        ["ledger_timestamp_unparseable"],
+    )
+
+
+def test_runs_with_basic_and_week_date_timestamps_order_by_instant(tmp_path):
+    basic = _run("basic").model_copy(
+        update={
+            "timestamp": "20261001T120000+00:00",
+            "pdf_path": "/basic.pdf",
+            "scores": {"initial": {"total": 1.0}, "final": {"total": 2.0}},
+        }
+    )
+    week = _run("week").model_copy(
+        update={
+            "timestamp": "2026-W40-4T13:00:00+00:00",
+            "pdf_path": "/week.pdf",
+            "scores": {"initial": {"total": 3.0}, "final": {"total": 4.0}},
+        }
+    )
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_run(conn, basic)
+        ledger.record_run(conn, week)
+        stored = conn.execute("SELECT finalized_at FROM runs ORDER BY session_id").fetchall()
+        row = ledger.export_rows(conn)[0]
+        found = ledger.find_job(conn, url="https://jobs.example.com/a", company=None, title=None)
+    assert (stored, row["Resume PDF"], (found["score_before"], found["score_after"])) == (
+        [("2026-10-01T12:00:00+00:00",), ("2026-10-01T13:00:00+00:00",)],
+        "/week.pdf",
+        (3.0, 4.0),
+    )
+
+
+def test_imported_run_stores_canonical_timestamp(tmp_path):
+    run = _run("imp").model_copy(update={"timestamp": "2026-10-01T12:00:00-07:00"})
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_imported_run_if_absent(conn, run)
+        stored = conn.execute("SELECT finalized_at FROM runs").fetchone()
+    assert stored == ("2026-10-01T19:00:00+00:00",)
+
+
+def test_record_status_without_url_reuses_job_matching_company_and_title(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        for day, company in (("2026-10-01", "MÜNCHEN GmbH"), ("2026-10-02", "münchen gmbh")):
+            ledger.record_status(conn, _update(recorded_at=day, company=company, title="Engineer"))
+        jobs = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()
+        events = conn.execute("SELECT COUNT(*) FROM status_events").fetchone()
+    assert (jobs, events) == ((1,), (2,))
+
+
+def test_status_filter_is_unicode_case_insensitive_prefix(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(
+            conn, _update(status="Überprüft", url="https://a.com/1", company="A", title="E")
+        )
+        rows = ledger.export_rows(conn, status_prefix="über")
+        events = ledger.export_events(conn, status_prefix="über")
+        none = ledger.export_events(conn, status_prefix="x_")
+    assert ([row["Status"] for row in rows], [e["Status"] for e in events], none) == (
+        ["Überprüft"],
+        ["Überprüft"],
+        [],
+    )
+
+
+def test_export_contacts_keeps_contact_notes_and_applications_only(tmp_path):
+    events = [
+        ("Applied - confirmed", None),
+        ("already applied", None),
+        ("Seen", "Contact method: phone | Notes: called"),
+        ("Seen", "just browsing"),
+        ("Rejected", None),
+        ("Needs review - not applied", None),
+    ]
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        for i, (status, note) in enumerate(events):
+            ledger.record_status(
+                conn,
+                _update(
+                    status=status,
+                    note=note,
+                    recorded_at=f"2026-10-0{i + 1}",
+                    url=f"https://a.com/{i}",
+                    company="A",
+                    title="E",
+                ),
+            )
+        rows = ledger.export_contacts(conn)
+    assert [(row["Status"], row["Notes"]) for row in rows] == [
+        ("Seen", "Contact method: phone | Notes: called"),
+        ("already applied", None),
+        ("Applied - confirmed", None),
+    ]

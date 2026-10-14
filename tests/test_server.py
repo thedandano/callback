@@ -2680,3 +2680,37 @@ async def test_record_status_with_job_key_fills_an_empty_salary_only(tmp_path):
         "a,Dev,https://a.com/1,$9,Applied,2026-10-02,,,,",
         "b,Dev,https://b.com/2,$5,Applied,2026-10-02,,,,",
     ]
+
+
+@pytest.mark.anyio
+async def test_export_ledger_contacts_mode_keeps_only_reportable_events(tmp_path):
+    import callback.server as server
+
+    out = tmp_path / "contacts.csv"
+    async with Client(FastMCPTransport(server.mcp)) as client:
+        for i, (status, note) in enumerate(
+            [("Applied", None), ("Seen", None), ("Seen", "Contact method: email")]
+        ):
+            await client.call_tool(
+                "record_status",
+                {
+                    "status": status,
+                    "note": note,
+                    "url": f"https://a.com/{i}",
+                    "company": "A",
+                    "title": "Dev",
+                    "date": f"2026-10-0{i + 1}",
+                },
+            )
+        exported = await client.call_tool(
+            "export_ledger", {"output_path": str(out), "mode": "contacts"}
+        )
+
+    assert (_envelope(exported)["data"], out.read_text().splitlines()) == (
+        {"path": str(out), "rows": 2},
+        [
+            ",".join(ledger.EVENT_COLUMNS),
+            "2026-10-03,A,Dev,https://a.com/2,Seen,Contact method: email,mcp",
+            "2026-10-01,A,Dev,https://a.com/0,Applied,,mcp",
+        ],
+    )

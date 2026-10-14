@@ -273,7 +273,7 @@ handoff metadata.
 | `set_search_preferences` / `get_search_preferences` | utility | Save / read the user's job-search preferences. |
 | `find_job` | ledger | Returns whether a posting is already in the ledger, its latest status, and latest `score_before` / `score_after` totals (dedupe); returns its `job_key`; falls back to company + title when the URL misses (weaker match, see `matched_by`). A `url` without http(s):// is ignored. |
 | `record_status` | ledger | Adds a status event to a job (by URL, company + title, or the `job_key` from `find_job`); creates the job if new; never overwrites history. A `url` without http(s):// (e.g. a recruiter thread) goes into the note and the job is keyed by company + title. |
-| `export_ledger` | ledger | Writes the ledger as CSV to an absolute `.csv` path: `mode="jobs"` (default) is one row per job (latest status and scores); `mode="events"` is one row per status event with its own date (use for EDD). |
+| `export_ledger` | ledger | Writes the ledger as CSV to an absolute `.csv` path: `mode="jobs"` (default) is one row per job (latest status and scores); `mode="events"` is one row per status event with its own date; `mode="contacts"` is those events kept to EDD-reportable ones (notes starting `Contact method:`, statuses starting `Applied` or `Already applied`) - use for EDD. |
 
 All tools return JSON envelopes via `_ok` / `_err`:
 - Success: `{"session_id", "status": "ok", "next_action"?, "data"?, "workflow"?}`
