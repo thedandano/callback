@@ -2545,3 +2545,119 @@ async def test_record_status_on_job_found_by_company_title_uses_job_key(tmp_path
         1,
     )
     assert out.read_text().splitlines()[1] == "A,Dev,https://a.com/1,,Rejected,2026-10-05,,,,"
+
+
+@pytest.mark.anyio
+async def test_non_url_lead_keys_by_company_and_title_and_keeps_the_descriptor_in_the_note(
+    tmp_path,
+):
+    import callback.server as server
+
+    thread = "Gmail thread: Jane re Senior Engineer?"
+    out = tmp_path / "events.csv"
+    async with Client(FastMCPTransport(server.mcp)) as client:
+        recorded = await client.call_tool(
+            "record_status",
+            {
+                "status": "Contacted",
+                "url": thread,
+                "company": "Acme",
+                "title": "Senior Engineer",
+                "note": "replied",
+                "date": "2026-10-01",
+            },
+        )
+        found = await client.call_tool(
+            "find_job", {"url": thread, "company": "Acme", "title": "Senior Engineer"}
+        )
+        no_identity = [
+            await client.call_tool(name, args)
+            for name, args in (
+                ("record_status", {"status": "Applied", "url": thread}),
+                ("find_job", {"url": thread}),
+            )
+        ]
+        await client.call_tool("export_ledger", {"output_path": str(out), "mode": "events"})
+
+    assert (
+        _envelope(recorded)["data"],
+        _envelope(found)["data"]["job_key"],
+        [_envelope(r)["error"]["code"] for r in no_identity],
+        out.read_text().splitlines(),
+    ) == (
+        {"recorded": True},
+        "pasted:acme-senior-engineer-208d27d4",
+        ["missing_job_identity", "missing_job_identity"],
+        [
+            ",".join(ledger.EVENT_COLUMNS),
+            f"2026-10-01,Acme,Senior Engineer,,Contacted,Contact: {thread} | replied,mcp",
+        ],
+    )
+
+
+@pytest.mark.anyio
+async def test_export_ledger_events_mode_keeps_each_event_and_its_own_date(tmp_path):
+    import callback.server as server
+
+    jobs_out, events_out = tmp_path / "jobs.csv", tmp_path / "events.csv"
+    job = {"url": "https://a.com/1", "company": "A", "title": "Dev"}
+    async with Client(FastMCPTransport(server.mcp)) as client:
+        for status, date in (("Applied", "2026-10-01"), ("Rejected", "2026-10-10")):
+            await client.call_tool("record_status", {**job, "status": status, "date": date})
+        await client.call_tool(
+            "export_ledger", {"output_path": str(jobs_out), "since": "2026-10-01"}
+        )
+        events = await client.call_tool(
+            "export_ledger",
+            {"output_path": str(events_out), "since": "2026-10-01", "mode": "events"},
+        )
+        bad_mode = await client.call_tool(
+            "export_ledger", {"output_path": str(events_out), "mode": "rows"}
+        )
+
+    assert (
+        jobs_out.read_text().splitlines()[1:],
+        _envelope(events)["data"],
+        events_out.read_text().splitlines(),
+        _envelope(bad_mode)["error"]["code"],
+    ) == (
+        ["A,Dev,https://a.com/1,,Rejected,2026-10-10,,,,"],
+        {"path": str(events_out), "rows": 2},
+        [
+            ",".join(ledger.EVENT_COLUMNS),
+            "2026-10-10,A,Dev,https://a.com/1,Rejected,,mcp",
+            "2026-10-01,A,Dev,https://a.com/1,Applied,,mcp",
+        ],
+        "invalid_mode",
+    )
+
+
+@pytest.mark.anyio
+async def test_record_status_with_job_key_fills_an_empty_salary_only(tmp_path):
+    import callback.server as server
+
+    out = tmp_path / "jobs.csv"
+    async with Client(FastMCPTransport(server.mcp)) as client:
+        for url in ("https://a.com/1", "https://b.com/2"):
+            await client.call_tool(
+                "record_status",
+                {
+                    "status": "Seen",
+                    "url": url,
+                    "company": url[8],
+                    "title": "Dev",
+                    "date": "2026-10-01",
+                    "salary_range": "$5" if url.startswith("https://b") else None,
+                },
+            )
+        for key in ("https://a.com/1", "https://b.com/2"):
+            await client.call_tool(
+                "record_status",
+                {"status": "Applied", "job_key": key, "salary_range": "$9", "date": "2026-10-02"},
+            )
+        await client.call_tool("export_ledger", {"output_path": str(out)})
+
+    assert sorted(out.read_text().splitlines()[1:]) == [
+        "a,Dev,https://a.com/1,$9,Applied,2026-10-02,,,,",
+        "b,Dev,https://b.com/2,$5,Applied,2026-10-02,,,,",
+    ]

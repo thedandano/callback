@@ -2123,6 +2123,14 @@ def _identity_error(url: str | None, company: str | None, title: str | None) -> 
     )
 
 
+def _contact_note(url: str | None, note: str | None) -> str | None:
+    """A non-URL `url` (e.g. a recruiter thread) is kept in the note as `Contact: <value>`."""
+    contact = (url or "").strip()
+    if not contact or ledger.url_or_none(contact):
+        return note
+    return " | ".join(part for part in (f"Contact: {contact}", note) if part)
+
+
 def _ledger_error(exc: Exception) -> dict:
     """Envelope for a ledger that cannot be opened, read, or written. Call from an except."""
     _log_exception({"tool": "ledger", "event": "ledger_error", "error": str(exc)})
@@ -2135,13 +2143,15 @@ def _ledger_error(exc: Exception) -> dict:
 def find_job(url: str | None = None, company: str | None = None, title: str | None = None) -> dict:
     """Check whether a job is already in callback's ledger (for dedupe before scoring or applying).
 
-    Pass the posting URL, or company and title for a pasted job description with no URL. A job
+    Pass the posting URL, or company and title for a pasted job description with no URL. A
+    url without http:// or https:// (e.g. a recruiter thread) is ignored for the lookup. A job
     seen under a different URL is still found when company and title match, but that is a
     weaker match (the same title can be two real postings): check matched_by ('key',
     'company_title', or null) before skipping. Returns found, job_key, company, title, and the
     latest status with its date. To record a status on the job found by company+title, pass its
     job_key to record_status. Error codes: missing_job_identity, ledger_error.
     """
+    url = ledger.url_or_none(url)
     if error := _identity_error(url, company, title):
         return error
     try:
@@ -2179,44 +2189,48 @@ def record_status(
 ) -> dict:
     """Add a status event (e.g. 'Applied', 'Rejected', 'Skipped - not fit') to a job in the ledger.
 
-    Give a URL, or a company and title. Creates the job if it is new. To record on a job that
-    find_job found by company+title, pass its job_key instead (URL, company, title are then
-    not needed); an unknown job_key is an error. History is never overwritten; the same
-    status on the same date is recorded once (recorded: false). date is YYYY-MM-DD and
-    defaults to today.
+    Give a URL, or a company and title. Creates the job if it is new. A url without http://
+    or https:// (e.g. a recruiter thread) is not a URL: it goes into the note as
+    'Contact: <value>' and the job is keyed by company and title (or job_key). To record on a
+    job that find_job found by company+title, pass its job_key instead (URL, company, title
+    are then not needed); an unknown job_key is an error. With job_key, salary_range only
+    fills an empty one. History is never overwritten; the same status on the same date is
+    recorded once (recorded: false). date is YYYY-MM-DD and defaults to today.
     Error codes: missing_job_identity, invalid_status, invalid_date, unknown_job, ledger_error.
     """
-    if error := _record_status_error(status, url, company, title, date, job_key):
+    web_url = ledger.url_or_none(url)
+    if error := _record_status_error(status, web_url, company, title, date, job_key):
         return error
-    recorded_at = date or _today_iso()
+    update = ledger.StatusUpdate(
+        status=status.strip(),
+        recorded_at=date or _today_iso(),
+        note=_contact_note(url, note),
+        source="mcp",
+        job_key=job_key,
+        url=web_url,
+        company=company,
+        title=title,
+        salary_range=salary_range,
+    )
     try:
         with closing(ledger.connect()) as conn:
             if job_key and not ledger.job_exists(conn, job_key):
                 return _err("ledger", "unknown_job", f"no job with job_key: {job_key!r}")
-            key = job_key or ledger.upsert_job(
-                conn,
-                url=url,
-                company=company,
-                title=title,
-                seen_at=recorded_at,
-                salary_range=salary_range,
-            )
-            added = ledger.add_status(
-                conn,
-                job_key=key,
-                status=status.strip(),
-                recorded_at=recorded_at,
-                note=note,
-                source="mcp",
-            )
+            added = ledger.record_status(conn, update)
     except (sqlite3.Error, OSError) as exc:
         return _ledger_error(exc)
     return _ok("", data={"recorded": added})
 
 
-def _csv_text(rows: list[dict]) -> str:
+_EXPORT_MODES = {
+    "jobs": (ledger.export_rows, ledger.EXPORT_COLUMNS),
+    "events": (ledger.export_events, ledger.EVENT_COLUMNS),
+}
+
+
+def _csv_text(rows: list[dict], columns: list[str]) -> str:
     buffer = io.StringIO()
-    writer = csv.DictWriter(buffer, fieldnames=ledger.EXPORT_COLUMNS)
+    writer = csv.DictWriter(buffer, fieldnames=columns)
     writer.writeheader()
     writer.writerows(ledger.spreadsheet_safe(row) for row in rows)
     return buffer.getvalue()
@@ -2233,27 +2247,37 @@ def _output_path_error(target: Path) -> dict | None:
 
 
 @mcp.tool()
-def export_ledger(output_path: str, status: str | None = None, since: str | None = None) -> dict:
-    """Write one CSV row per job (latest status, latest scores) to output_path (e.g. an EDD report).
+def export_ledger(
+    output_path: str, status: str | None = None, since: str | None = None, mode: str = "jobs"
+) -> dict:
+    """Write the ledger as CSV to output_path.
 
-    output_path must be absolute and end in .csv. status matches the start of the status text
-    of any of the job's events (empty means no filter);
-    since is YYYY-MM-DD and keeps jobs with an event on or after it. Text that a spreadsheet
+    mode "jobs" (default): one row per job with its latest status and latest scores; status
+    and since keep jobs with ANY matching event. mode "events": one row per status event
+    (Date, Company, Title, URL, Status, Notes, Source), newest first; status and since filter
+    the event itself, so each application keeps its own date. Use "events" for an EDD
+    work-search log.
+
+    output_path must be absolute and end in .csv. status matches the start of the status
+    text (empty means no filter); since is YYYY-MM-DD (on or after). Text that a spreadsheet
     would run as a formula is prefixed with '.
-    Error codes: invalid_output_path, invalid_date, ledger_error.
+    Error codes: invalid_mode, invalid_output_path, invalid_date, ledger_error.
     """
+    if mode not in _EXPORT_MODES:
+        return _err("ledger", "invalid_mode", f"mode must be 'jobs' or 'events', got: {mode!r}")
     target = Path(output_path).expanduser()
     if error := _output_path_error(target):
         return error
     if error := _date_error("since", since):
         return error
+    query, columns = _EXPORT_MODES[mode]
     try:
         with closing(ledger.connect()) as conn:
-            rows = ledger.export_rows(conn, status_prefix=status, since=since)
+            rows = query(conn, status_prefix=status, since=since)
     except (sqlite3.Error, OSError) as exc:
         return _ledger_error(exc)
     try:
-        paths.write_text_atomic(target, _csv_text(rows))
+        paths.write_text_atomic(target, _csv_text(rows, columns))
     except OSError as exc:
         return _err("ledger", "invalid_output_path", f"cannot write {target}: {exc}")
     return _ok("", data={"path": str(target), "rows": len(rows)})

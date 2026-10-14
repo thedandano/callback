@@ -311,8 +311,8 @@ own flow.
 | `get_search_preferences` | Read your job-search preferences. |
 | `check_update` | Report the current version, the latest release tag, and whether an update is available. |
 | `find_job` | Check whether a job is already in the ledger, and its latest status (dedupe). |
-| `record_status` | Add a status (Applied, Rejected, ...) to a job in the ledger; never overwrites history. |
-| `export_ledger` | Write one CSV row per job (latest status and scores) to an absolute path. |
+| `record_status` | Add a status (Applied, Rejected, ...) to a job in the ledger; never overwrites history. A non-http(s) `url`, like a recruiter thread, goes into the note. |
+| `export_ledger` | Write the ledger as CSV to an absolute path: one row per job (latest status and scores), or with `mode="events"` one row per status event with its own date (for EDD). |
 
 The client owns keyword extraction and tailoring judgment. callback owns state, validation,
 scoring, rendering, and archival. The full handoff protocol is in

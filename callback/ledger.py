@@ -247,6 +247,20 @@ def _is_gmail_message_path(path: str) -> bool:
     return mailbox in {"all", "inbox"} and bool(separator and message_id and "/" not in message_id)
 
 
+def url_or_none(value: str | None) -> str | None:
+    """The stripped value if it is an http(s) URL with a host, else None (a thread descriptor)."""
+    text = (value or "").strip()
+    try:
+        parts = urlsplit(text)
+    except ValueError as exc:
+        _log.warning(json.dumps({"event": "ledger_url_unparseable", "error": str(exc)}))
+        return None
+    hostname = parts.hostname
+    if parts.scheme.lower() not in {"http", "https"} or not hostname:
+        return None
+    return text if not any(character.isspace() for character in hostname) else None
+
+
 def _is_tracking(param: str) -> bool:
     name = param.lower()
     return name.startswith(_TRACKING_PARAM_PREFIXES) or name in _TRACKING_PARAMS
@@ -588,6 +602,24 @@ def _text_or_number_field(keywords: dict | None, name: str) -> str | None:
     return None
 
 
+def _insert_status(
+    conn: sqlite3.Connection,
+    *,
+    job_key: str,
+    status: str,
+    recorded_at: str,
+    note: str | None,
+    source: str,
+) -> bool:
+    """Append a status event without committing; callers own the transaction."""
+    cursor = conn.execute(
+        "INSERT INTO status_events (job_key, status, recorded_at, note, source) "
+        "VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
+        (job_key, status, canonical_timestamp(recorded_at), note, source),
+    )
+    return cursor.rowcount == 1
+
+
 def add_status(
     conn: sqlite3.Connection,
     *,
@@ -599,12 +631,60 @@ def add_status(
 ) -> bool:
     """Append a status event. Returns True if a new row was added, False for an exact repeat."""
     with conn:
-        cursor = conn.execute(
-            "INSERT INTO status_events (job_key, status, recorded_at, note, source) "
-            "VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
-            (job_key, status, canonical_timestamp(recorded_at), note, source),
+        return _insert_status(
+            conn,
+            job_key=job_key,
+            status=status,
+            recorded_at=recorded_at,
+            note=note,
+            source=source,
         )
-    return cursor.rowcount == 1
+
+
+class StatusUpdate(BaseModel):
+    """One status to record. Name the job by job_key, or by url / company + title."""
+
+    status: str
+    recorded_at: str
+    note: str | None = None
+    source: str
+    job_key: str | None = None
+    url: str | None = None
+    company: str | None = None
+    title: str | None = None
+    salary_range: str | None = None
+
+
+def record_status(conn: sqlite3.Connection, update: StatusUpdate) -> bool:
+    """Write the job and its status event in one transaction; True if the event is new.
+
+    With a job_key, the job must exist; a salary_range only fills an empty one.
+    Without one, the job is created or merged from url / company + title.
+    """
+    with conn:
+        if update.job_key:
+            key = update.job_key
+            conn.execute(
+                "UPDATE jobs SET salary_range = COALESCE(salary_range, ?) WHERE job_key = ?",
+                (update.salary_range, key),
+            )
+        else:
+            key = _upsert_job(
+                conn,
+                url=update.url,
+                company=update.company,
+                title=update.title,
+                seen_at=update.recorded_at,
+                salary_range=update.salary_range,
+            )
+        return _insert_status(
+            conn,
+            job_key=key,
+            status=update.status,
+            recorded_at=update.recorded_at,
+            note=update.note,
+            source=update.source,
+        )
 
 
 EXPORT_COLUMNS = [
@@ -644,6 +724,15 @@ WHERE (:status IS NULL AND :since IS NULL) OR EXISTS (
 )
 ORDER BY s.recorded_at DESC, j.job_key
 """
+EVENT_COLUMNS = ["Date", "Company", "Title", "URL", "Status", "Notes", "Source"]
+_EVENTS_SQL = """
+SELECT e.recorded_at, j.company, j.title, j.url, e.status, e.note, e.source
+FROM status_events e
+JOIN jobs j ON j.job_key = e.job_key
+WHERE (:status IS NULL OR e.status LIKE :status || '%' ESCAPE '\\')
+  AND (:since IS NULL OR e.recorded_at >= :since)
+ORDER BY e.recorded_at DESC, e.id DESC
+"""
 _FIND_SQL = (
     "SELECT j.company, j.title, s.status, s.recorded_at, j.job_key FROM jobs j "
     "LEFT JOIN status_events s ON s.job_key = j.job_key WHERE {where} "
@@ -676,10 +765,29 @@ def export_rows(
     filter), so 'Applied' also matches 'Applied - confirmed'. since compares
     as text, so pass YYYY-MM-DD.
     """
+    params = {"status": _like_prefix(status_prefix), "since": since}
+    return [
+        dict(zip(EXPORT_COLUMNS, row, strict=True)) for row in conn.execute(_EXPORT_SQL, params)
+    ]
+
+
+def export_events(
+    conn: sqlite3.Connection, *, status_prefix: str | None = None, since: str | None = None
+) -> list[dict]:
+    """One row per status event (EVENT_COLUMNS), newest first. For an EDD contact log.
+
+    Unlike export_rows, status_prefix and since filter the event itself, so an 'Applied' event
+    keeps its own date even after the job is 'Rejected'. Same matching rules as export_rows.
+    """
+    params = {"status": _like_prefix(status_prefix), "since": since}
+    return [dict(zip(EVENT_COLUMNS, row, strict=True)) for row in conn.execute(_EVENTS_SQL, params)]
+
+
+def _like_prefix(status_prefix: str | None) -> str | None:
+    """A status prefix escaped for LIKE (wildcards taken literally), or None for no filter."""
     prefix = (status_prefix or "").strip()
     escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    cursor = conn.execute(_EXPORT_SQL, {"status": escaped or None, "since": since})
-    return [dict(zip(EXPORT_COLUMNS, row, strict=True)) for row in cursor]
+    return escaped or None
 
 
 def job_exists(conn: sqlite3.Connection, key: str) -> bool:

@@ -14,7 +14,6 @@ import re
 import sqlite3
 from pathlib import Path
 from typing import NamedTuple
-from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ValidationError
 
@@ -53,19 +52,6 @@ class ImportReport(BaseModel):
 
 def _info(event: str, **fields: object) -> None:
     logger.info(json.dumps({"event": event, **fields}))
-
-
-def _url_or_none(value: str | None) -> str | None:
-    """The stripped value if it is an http(s) URL, else None."""
-    text = (value or "").strip()
-    try:
-        parts = urlsplit(text)
-    except ValueError:
-        return None
-    hostname = parts.hostname
-    if parts.scheme.lower() not in {"http", "https"} or not hostname:
-        return None
-    return text if not any(character.isspace() for character in hostname) else None
 
 
 def _iso_date(text: str | None) -> str | None:
@@ -281,7 +267,7 @@ def _undated_reason(bad_url: str | None) -> str:
 
 def _import_row(conn: sqlite3.Connection, row: dict, label: str, report: ImportReport) -> None:
     raw_url = _cell(row, "URL")
-    url = _url_or_none(raw_url)
+    url = ledger.url_or_none(raw_url)
     company, title = _cell(row, "Company"), _cell(row, "Title")
     if not (url or company or title):
         _skip(report, label, "row has no URL, company, or title")
@@ -417,8 +403,9 @@ def _contact_url(row: sqlite3.Row, extras: dict[str, str]) -> str | None:
     A contact detail can be a recruiter profile or a thread, so an explicit job URL wins; the
     detail is still kept in the note.
     """
-    candidates = (_url_or_none(extras.get(key)) for key in _URL_KEYS)
-    return next((c for c in candidates if c), None) or _url_or_none(_text(row["contact_detail"]))
+    candidates = (ledger.url_or_none(extras.get(key)) for key in _URL_KEYS)
+    job_url = next((c for c in candidates if c), None)
+    return job_url or ledger.url_or_none(_text(row["contact_detail"]))
 
 
 def _import_contact(

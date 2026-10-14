@@ -3,6 +3,7 @@ import json
 import logging
 import sqlite3
 from contextlib import closing
+from unittest.mock import patch
 
 import pytest
 
@@ -942,4 +943,63 @@ def test_export_rows_status_filter_ignores_empty_and_escapes_wildcards(tmp_path)
         ["https://a.com/2"],
         [],
         "https://a.com/3",
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("  https://a.com/1 ", "https://a.com/1"),
+        ("HTTP://a.com/1", "HTTP://a.com/1"),
+        ("Gmail thread: Jane", None),
+        ("linkedin.com", None),
+        ("  ", None),
+        (None, None),
+    ],
+)
+def test_url_or_none_accepts_only_http_urls(value, expected):
+    assert ledger.url_or_none(value) == expected
+
+
+def _update(**fields) -> ledger.StatusUpdate:
+    base = {"status": "Applied", "recorded_at": "2026-10-01", "source": "t"}
+    return ledger.StatusUpdate(**{**base, **fields})
+
+
+def test_record_status_writes_job_and_event_in_one_transaction(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        with (
+            patch.object(ledger, "_insert_status", side_effect=sqlite3.OperationalError("locked")),
+            pytest.raises(sqlite3.OperationalError),
+        ):
+            ledger.record_status(conn, _update(url="https://a.com/1", company="A", title="E"))
+        jobs = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()
+
+    assert jobs == (0,)
+
+
+def test_export_events_filters_on_the_event_itself_newest_first(tmp_path):
+    events = [("Applied", "2026-09-20"), ("Applied", "2026-10-01"), ("Rejected", "2026-10-10")]
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        for i, (status, date) in enumerate(events):
+            url = f"https://a.com/{i % 2}"
+            ledger.record_status(
+                conn, _update(status=status, recorded_at=date, url=url, company="A", title="E")
+            )
+        applied = ledger.export_events(conn, status_prefix="applied", since="2026-09-25")
+        everything = ledger.export_events(conn)
+
+    assert (applied, [row["Date"] for row in everything]) == (
+        [
+            {
+                "Date": "2026-10-01",
+                "Company": "A",
+                "Title": "E",
+                "URL": "https://a.com/1",
+                "Status": "Applied",
+                "Notes": None,
+                "Source": "t",
+            }
+        ],
+        ["2026-10-10", "2026-10-01", "2026-09-20"],
     )
