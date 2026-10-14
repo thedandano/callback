@@ -798,7 +798,10 @@ def setup_plugin(
 
 
 def _print_report(source: Path, report: ledger_import.ImportReport) -> None:
-    typer.echo(f"{source}: imported {report.imported}, skipped {len(report.skipped)}")
+    typer.echo(
+        f"{source}: imported {report.imported}, jobs {report.jobs}, "
+        f"events {report.events}, skipped {len(report.skipped)}"
+    )
     if report.skipped:
         typer.echo(
             f"  skipped items are named in the log: {', '.join(report.skipped[:5])}", err=True
@@ -809,8 +812,8 @@ def _run_ledger_imports(
     archives: list[Path], record_csv: Path | None, contacts_db: Path | None
 ) -> None:
     with closing(ledger.connect()) as conn:
-        for folder in archives:
-            _print_report(folder, ledger_import.import_archives(conn, folder))
+        if archives:
+            _print_report(archives[0], ledger_import.import_archives(conn, archives))
         if record_csv:
             _print_report(record_csv, ledger_import.import_record_csv(conn, record_csv))
         if contacts_db:

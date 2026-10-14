@@ -1092,9 +1092,9 @@ def test_ledger_import_reports_counts_per_source(tmp_path):
     assert (result.exit_code, result.output.splitlines()) == (
         0,
         [
-            f"{apps}: imported 1, skipped 0",
-            f"{csv_path}: imported 1, skipped 0",
-            f"{contacts}: imported 1, skipped 0",
+            f"{apps}: imported 1, jobs 1, events 0, skipped 0",
+            f"{csv_path}: imported 1, jobs 0, events 1, skipped 0",
+            f"{contacts}: imported 1, jobs 1, events 1, skipped 0",
         ],
     )
 

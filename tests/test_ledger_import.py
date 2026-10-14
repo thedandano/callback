@@ -69,12 +69,12 @@ def test_archives_and_csv_merge_by_url_and_rerun_adds_nothing(tmp_path):
 
     assert (first, second, acme, (csv_path.read_bytes(), (apps / "s1.json").read_bytes())) == (
         (
-            ImportReport(imported=1, skipped=["notes.json"]),
-            ImportReport(imported=1, skipped=["line 4"]),
+            ImportReport(imported=1, skipped=["notes.json"], jobs=1),
+            ImportReport(imported=1, skipped=["line 4"], jobs=2, events=1),
             (3, 1, 1),
         ),
         (
-            ImportReport(imported=0, skipped=["notes.json"]),
+            ImportReport(imported=0, skipped=["notes.json", "s1.json"]),
             ImportReport(imported=0, skipped=["line 4"]),
             (3, 1, 1),
         ),
@@ -98,7 +98,7 @@ def test_reimport_never_overwrites_a_newer_run(tmp_path):
         report = import_archives(conn, apps)
         stored = _pdf_path(conn, "s1")
 
-    assert (report, stored) == (ImportReport(imported=0, skipped=[]), "/new.pdf")
+    assert (report, stored) == (ImportReport(imported=0, skipped=["s1.json"]), "/new.pdf")
 
 
 def test_missing_pdf_is_relinked_to_a_file_in_the_archive_folder(tmp_path, caplog):
@@ -204,7 +204,7 @@ def test_contact_ledger_import_is_idempotent_and_read_only(tmp_path):
         ).fetchall()
 
     assert (first, second, [tuple(j) for j in jobs], [tuple(e) for e in events]) == (
-        (ImportReport(imported=2, skipped=["entry 3"]), (2, 0, 2)),
+        (ImportReport(imported=2, skipped=["entry 3"], jobs=2, events=2), (2, 0, 2)),
         (ImportReport(imported=0, skipped=["entry 3"]), (2, 0, 2)),
         [
             ("https://acme.com/job/1", "Acme", "Engineer"),
@@ -254,7 +254,7 @@ def test_csv_non_url_goes_to_the_note_and_blank_rows_are_skipped(tmp_path):
     result = _import_csv(tmp_path, path)
 
     assert result == (
-        ImportReport(imported=1, skipped=["line 3"]),
+        ImportReport(imported=1, skipped=["line 3"], jobs=1, events=1),
         [("pasted:acme-eng",)],
         [("pasted:acme-eng", "2026-10-01", "hi | URL: via quick apply")],
     )
@@ -270,7 +270,7 @@ def test_csv_dates_are_normalized_so_formats_dedupe(tmp_path):
     result = _import_csv(tmp_path, path)
 
     assert result == (
-        ImportReport(imported=2, skipped=["line 5"]),
+        ImportReport(imported=2, skipped=["line 5"], jobs=1, events=2),
         [("pasted:acme-eng",)],
         [
             ("pasted:acme-eng", "2026-10-01", None),
@@ -284,7 +284,7 @@ def test_csv_labels_follow_real_lines_after_multiline_cells(tmp_path):
 
     report, _, _ = _import_csv(tmp_path, path)
 
-    assert report == ImportReport(imported=1, skipped=["line 4"])
+    assert report == ImportReport(imported=1, skipped=["line 4"], jobs=1, events=1)
 
 
 def test_csv_missing_columns_raises(tmp_path):
@@ -345,7 +345,7 @@ def test_contact_dates_and_urls_are_validated(tmp_path):
         dates = [tuple(r) for r in conn.execute("SELECT recorded_at FROM status_events")]
 
     assert (report, dates) == (
-        ImportReport(imported=1, skipped=["entry 1", "entry 3"]),
+        ImportReport(imported=1, skipped=["entry 1", "entry 3"], jobs=1, events=1),
         [("2026-09-02",)],
     )
 
@@ -368,7 +368,7 @@ def test_csv_scores_and_links_go_into_the_note(tmp_path, resume_column):
     result = _import_csv(tmp_path, path)
 
     assert result == (
-        ImportReport(imported=2, skipped=[]),
+        ImportReport(imported=2, skipped=[], jobs=2, events=2),
         [("pasted:acme-eng",), ("pasted:beta-dev",)],
         [
             (
@@ -397,7 +397,7 @@ def test_csv_row_with_notes_but_no_status_becomes_a_note_event(tmp_path):
         jobs = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
 
     assert (report, events, jobs) == (
-        ImportReport(imported=1, skipped=["line 3"]),
+        ImportReport(imported=1, skipped=["line 3"], jobs=3, events=1),
         [("pasted:acme-eng", "Note", "2026-10-01", "called back")],
         3,
     )
@@ -409,7 +409,7 @@ def test_csv_iso_dates_with_a_time_part_dedupe_with_plain_dates(tmp_path):
     result = _import_csv(tmp_path, path)
 
     assert result == (
-        ImportReport(imported=1, skipped=[]),
+        ImportReport(imported=1, skipped=[], jobs=1, events=1),
         [("pasted:acme-eng",)],
         [("pasted:acme-eng", "2026-06-16", None)],
     )
@@ -424,7 +424,7 @@ def test_contact_ledger_path_with_a_hash_opens_the_right_file(tmp_path):
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
         report = import_contact_ledger(conn, src)
 
-    assert report == ImportReport(imported=2, skipped=["entry 3"])
+    assert report == ImportReport(imported=2, skipped=["entry 3"], jobs=2, events=2)
 
 
 def _write_run(folder, session_id, timestamp, total):
@@ -449,7 +449,7 @@ def test_repeated_session_keeps_the_newest_copy_and_warns(tmp_path, caplog):
 
     warnings = [json.loads(r.message) for r in caplog.records]
     assert (report, [tuple(r) for r in stored], warnings) == (
-        ImportReport(imported=1, skipped=[]),
+        ImportReport(imported=1, skipped=[], jobs=1),
         [("2026-10-12T10:00:00+00:00", '{"final": {"total": 90}}')],
         [
             {
@@ -473,3 +473,95 @@ def test_repeated_session_compares_timestamps_across_utc_offsets(tmp_path):
         stored = conn.execute("SELECT finalized_at FROM runs").fetchall()
 
     assert [tuple(r) for r in stored] == [("2026-10-12T01:00:00-08:00",)]
+
+
+def test_archive_roots_are_combined_before_choosing_the_newest_session(tmp_path):
+    older = tmp_path / "older"
+    newer = tmp_path / "newer"
+    _write_run(older, "s1", "2026-10-01T10:00:00+00:00", 10)
+    _write_run(newer, "s1", "2026-10-12T10:00:00+00:00", 90)
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        report = import_archives(conn, [older, newer])
+        stored = conn.execute("SELECT finalized_at, scores FROM runs").fetchall()
+
+    assert (report, [tuple(row) for row in stored]) == (
+        ImportReport(imported=1, skipped=[], jobs=1),
+        [("2026-10-12T10:00:00+00:00", '{"final": {"total": 90}}')],
+    )
+
+
+def test_archive_with_non_iso_timestamp_is_skipped(tmp_path):
+    apps = tmp_path / "apps"
+    _write_run(apps, "s1", "October 12", 90)
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        report = import_archives(conn, apps)
+        runs = conn.execute("SELECT session_id FROM runs").fetchall()
+
+    assert (report, runs) == (ImportReport(imported=0, skipped=["s1.json"]), [])
+
+
+def test_invalid_https_values_fall_back_to_identity_and_preserve_raw_url_in_note(tmp_path):
+    path = _csv(
+        tmp_path,
+        "Acme,Eng,2026-10-01,https://,Applied,hi\n"
+        "Beta,Dev,2026-10-02,https:///jobs/1,Applied,hi\n"
+        "Gamma,Lead,2026-10-03,https:// not available,Applied,hi\n",
+    )
+
+    result = _import_csv(tmp_path, path)
+
+    assert result == (
+        ImportReport(imported=3, skipped=[], jobs=3, events=3),
+        [("pasted:acme-eng",), ("pasted:beta-dev",), ("pasted:gamma-lead",)],
+        [
+            ("pasted:acme-eng", "2026-10-01", "hi | URL: https://"),
+            ("pasted:beta-dev", "2026-10-02", "hi | URL: https:///jobs/1"),
+            ("pasted:gamma-lead", "2026-10-03", "hi | URL: https:// not available"),
+        ],
+    )
+
+
+def test_contact_without_url_company_or_work_type_is_skipped(tmp_path):
+    src = tmp_path / "old.sqlite3"
+    _contacts_db(src)
+    with closing(sqlite3.connect(src)) as db, db:
+        db.execute(
+            "INSERT INTO job_search_entries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (4, "2026-09-03", "", "", "Email", "Applied", "", "", ""),
+        )
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        report = import_contact_ledger(conn, src)
+
+    assert report == ImportReport(imported=2, skipped=["entry 3", "entry 4"], jobs=2, events=2)
+
+
+def test_csv_job_only_row_reports_a_job_without_an_event(tmp_path):
+    path = _csv(tmp_path, "Acme,Eng,2026-10-01,,,\n")
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        report = import_record_csv(conn, path)
+
+    assert (report.jobs, report.events) == (1, 0)
+
+
+def test_csv_and_contact_events_with_different_notes_are_both_kept(tmp_path):
+    path = _csv(tmp_path, "Acme,Eng,2026-10-01,,Applied,CSV note\n")
+    src = tmp_path / "old.sqlite3"
+    _contacts_db(src)
+    with closing(sqlite3.connect(src)) as db, db:
+        db.execute("DELETE FROM job_search_entries WHERE id != 1")
+        db.execute(
+            "UPDATE job_search_entries SET date = ?, employer_name = ?, type_of_work = ?, "
+            "outcome = ?, contact_detail = ?, notes = ? WHERE id = 1",
+            ("2026-10-01", "Acme", "Eng", "Applied", "", "Contact note"),
+        )
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        import_record_csv(conn, path)
+        import_contact_ledger(conn, src)
+        events = conn.execute("SELECT note FROM status_events ORDER BY id").fetchall()
+
+    assert [tuple(row) for row in events] == [("CSV note",), ("Contact: Online | Contact note",)]

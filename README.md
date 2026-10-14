@@ -257,6 +257,7 @@ callback ledger import --archives <folder> --csv <record.csv> --contacts-db <old
 ```
 
 Each flag is optional, and `--archives` can be repeated.
+The command reports imported jobs and status events separately for each source.
 
 To uninstall:
 
