@@ -33,7 +33,10 @@ def _expected_keywords(board: str, source: dict) -> dict:
     expected_path = EXTRACT_DIR / f"{board}.expected.json"
     if expected_path.exists():
         return json.loads(expected_path.read_text(encoding="utf-8"))
-    archive = paths.apps_dir() / f"{source['archived_session']}.json"
+    session = source["archived_session"]
+    archive = next(paths.apps_dir().rglob(f"{session}.json"), None)
+    if archive is None:
+        raise FileNotFoundError(f"no archive for session {session} under {paths.apps_dir()}")
     expected = json.loads(archive.read_text())["keywords"]
     expected_path.write_text(
         json.dumps(expected, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"

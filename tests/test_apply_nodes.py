@@ -180,10 +180,43 @@ def test_render_redirects_to_output_dir(tmp_path, monkeypatch):
         "pdf_path": expected_path,
         "render_page_count": 1,
         "render_warnings": [],
-        "artifact_dir": str(output_dir),
     }
     assert Path(expected_path).exists()
     assert not apps_dir.exists()
+
+
+def test_retry_without_output_dir_uses_the_dated_default_not_the_earlier_explicit_dir(
+    tmp_path, monkeypatch
+):
+    apps_dir = tmp_path / "apps"
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(apps_dir))
+    monkeypatch.setattr("callback.apply_nodes._today", lambda: date(2026, 10, 12))
+
+    def fake_render_resume(_tailored: dict, output_path: str) -> dict:
+        Path(output_path).write_bytes(b"%PDF fake")
+        return {"success": True, "pdf_path": output_path, "page_count": 1, "warnings": []}
+
+    monkeypatch.setattr("callback.apply_nodes.render_resume", fake_render_resume)
+    fields: dict[str, Any] = {
+        "session_id": "retry-session",
+        "keywords": {"company": "Acme Corp"},
+        "tailored": TailoredResume(name="Jane Doe", summary="Engineer"),
+    }
+    explicit = tmp_path / "sandbox_out"
+
+    first = render(ApplyState(**fields, output_dir=str(explicit)))
+    retry = render(ApplyState(**fields, artifact_dir=first.get("artifact_dir")))
+
+    dated = apps_dir / "2026-10-12" / "acme-corp"
+    assert {
+        "first_stored_dir": first.get("artifact_dir"),
+        "retry_dir": retry["artifact_dir"],
+        "retry_pdf": retry["pdf_path"],
+    } == {
+        "first_stored_dir": None,
+        "retry_dir": str(dated),
+        "retry_pdf": str(dated / "Jane_Doe_Acme_Corp_Resume.pdf"),
+    }
 
 
 def test_render_halts_when_tailored_is_none(tmp_path, monkeypatch):

@@ -530,6 +530,17 @@ def _artifact_dir(state: ApplyState) -> Path:
     return paths.apps_dir() / _today().isoformat() / folder
 
 
+def _dated_dir_update(state: ApplyState, folder: Path) -> dict:
+    """State update that remembers the dated default folder, never an explicit output_dir.
+
+    An explicit folder is left out so a retry without output_dir picks the dated default
+    again, while a dated folder stored earlier stays put (the midnight guarantee).
+    """
+    if state.output_dir:
+        return {}
+    return {"artifact_dir": str(folder)}
+
+
 @trace_node("apply", "render")
 def render(state: ApplyState) -> dict:
     """Render tailored resume to PDF via HTML + Playwright."""
@@ -554,7 +565,7 @@ def render(state: ApplyState) -> dict:
             "pdf_path": output_path,
             "render_page_count": result.get("page_count"),
             "render_warnings": result.get("warnings") or [],
-            "artifact_dir": str(base_dir),
+            **_dated_dir_update(state, base_dir),
         }
     else:
         logger.error(
@@ -770,4 +781,4 @@ def finalize(state: ApplyState) -> dict:
         )
         return {"error": f"finalize: cannot write archive: {exc}"}
 
-    return {"finalized_at": finalized_at, "artifact_dir": str(artifact_dir)}
+    return {"finalized_at": finalized_at, **_dated_dir_update(state, artifact_dir)}
