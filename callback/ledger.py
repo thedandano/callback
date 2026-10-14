@@ -1037,8 +1037,9 @@ def find_job(
     than one job shares the company and title, returns found=False with
     matched_by='company_title_ambiguous' and candidate_job_keys for the caller to disambiguate —
     including when a URL-less lookup would otherwise hit a pasted key while a URL-keyed twin
-    exists. When nothing is found and a company is given, company_jobs lists that company's other
-    jobs (up to 20, newest first) so the caller can spot a similar title or requisition id.
+    exists. When nothing is found, or the match is weak (not 'key'), and a company is given,
+    company_jobs lists that company's other jobs (up to 20, newest first, the matched job left
+    out) so the caller can spot a similar title or requisition id.
     """
     cleaned = _clean_url(url)
     derived = job_key(url, company, title)
@@ -1064,8 +1065,18 @@ def find_job(
         "found": row is not None,
         **dict(zip(_FIND_KEYS, values, strict=True)),
         "matched_by": matched_by if row else None,
-        "company_jobs": [] if row or not company else _company_jobs(conn, company),
+        "company_jobs": _other_company_jobs(conn, company, row, matched_by),
     }
+
+
+def _other_company_jobs(
+    conn: sqlite3.Connection, company: str | None, row: tuple | None, matched_by: str
+) -> list[dict]:
+    """The company's other jobs when the match is missing or weak; [] for a confirmed key match."""
+    if not company or (row and matched_by == "key"):
+        return []
+    found_key = row[_FIND_KEYS.index("job_key")] if row else None
+    return [job for job in _company_jobs(conn, company) if job["job_key"] != found_key]
 
 
 def _company_jobs(conn: sqlite3.Connection, company: str) -> list[dict]:

@@ -1524,6 +1524,7 @@ def test_run_after_status_url_assignment_uses_the_pasted_job(tmp_path):
             "score_before": 50.0,
             "score_after": 70.0,
             "matched_by": "key",
+            "company_jobs": [],
         },
     )
 
@@ -1556,6 +1557,7 @@ def test_status_url_assignment_moves_url_job_runs_to_the_pasted_job(tmp_path):
             "score_before": 50.0,
             "score_after": 70.0,
             "matched_by": "key",
+            "company_jobs": [],
         },
     )
 
@@ -1656,3 +1658,34 @@ def test_latest_run_keeps_microsecond_order(tmp_path):
             ledger.record_run(conn, _run(session, pdf=pdf).model_copy(update={"timestamp": stamp}))
         pdfs = [row["Resume PDF"] for row in ledger.export_rows(conn)]
     assert pdfs == ["/new.pdf"]
+
+
+def test_find_job_lists_other_company_jobs_on_a_weak_match(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        for n in (1, 2):
+            ledger.upsert_job(
+                conn,
+                url=f"https://acme.com/jobs/{n}",
+                company="Acme",
+                title="Engineer",
+                seen_at=f"2026-10-0{n}",
+            )
+        weak = ledger.find_job(
+            conn, url="https://acme.com/jobs/3", company="Acme", title="Engineer"
+        )
+        strong = ledger.find_job(
+            conn, url="https://acme.com/jobs/1", company="Acme", title="Engineer"
+        )
+    assert (
+        weak["matched_by"],
+        weak["job_key"],
+        [job["job_key"] for job in weak["company_jobs"]],
+        strong["matched_by"],
+        strong["company_jobs"],
+    ) == (
+        "company_title",
+        "https://acme.com/jobs/2",
+        ["https://acme.com/jobs/1"],
+        "key",
+        [],
+    )

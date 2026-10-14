@@ -22,13 +22,13 @@ Explicit status vocabulary:
 - `Needs callback score - not applied`: role passed the location/plausibility gate but callback scoring was not available in the current session.
 - `Needs source - manual lookup`: role came from an email, alert card, search result, or blocked/partial page, and no full current source JD was available. Do not score from the snippet; the user needs to find/open the full JD manually.
 - `Rescored - not applied`: existing row was rescored only.
-- `Duplicate alert - already scored`: new email/URL matched an existing role.
+- `Duplicate alert - already scored`: new email/URL matched an existing role that has no submission or outcome status yet (never record it over `Applied`, `Rejected`, etc.).
 - `Closed - not scored`: posting was closed before scoring.
 - `Skipped - hard blocker`: clearance, location, work authorization, or other hard blocker.
 - `Skipped - not fit`: role is materially off-track for the user's software/AI target.
 - `Recruiter follow-up`: recruiter thread needs user decision or reply.
 
-Dedupe: call `find_job(url, company, title)`. It matches the URL first, then falls back to company plus title (see `matched_by`). For a `company_title` or `key_title_mismatch` match, compare URLs and requisition IDs first. Reuse its `job_key` only when they confirm the same posting; otherwise record the new URL with no `job_key`. When the new email is the active source for the latest status, say so in `note`; otherwise append the new email detail to `note`.
+Dedupe: call `find_job(url, company, title)`. It matches the URL first, then falls back to company plus title (see `matched_by`). For a `company_title` or `key_title_mismatch` match, compare URLs and requisition IDs first. Reuse its `job_key` only when they confirm the same posting. If they prove a different posting: after a `company_title` match, record the new URL with no `job_key`; after a `key_title_mismatch` (the new URL normalizes to the old job's key), call `record_status` with no `url` (company + title only, so it gets its own job) and put the URL in `note`. A duplicate alert for a job whose latest status already proves submission or an outcome (`Applied`, `Already applied...`, `Interview...`, `Rejected`, `Offer...`) is not recorded again: mention it in the run summary only, so the job's latest status stays that lifecycle status. When the new email is the active source for the latest status, say so in `note`; otherwise append the new email detail to `note`.
 
 Mismatch summary rule:
 
