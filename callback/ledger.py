@@ -424,23 +424,6 @@ def upsert_job(
         )
 
 
-def canonical_timestamp(value: str) -> str:
-    """UTC `YYYY-MM-DDTHH:MM:SS+00:00` (naive means UTC); an unparseable value is kept and logged.
-
-    One form makes text order equal time order, whatever offset or ISO shape the writer used.
-    """
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError:
-        _log.warning(
-            json.dumps({"event": "ledger_timestamp_unparseable", "value": value, "kept": True})
-        )
-        return value
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC).isoformat()
-
-
 def _json_or_null(value: object) -> str | None:
     return None if value is None else json.dumps(value)
 
