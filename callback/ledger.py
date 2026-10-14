@@ -23,7 +23,6 @@ _log = logging.getLogger(__name__)
 
 _BUSY_TIMEOUT_S = 5.0
 _DEFAULT_PORTS = {"http": ":80", "https": ":443"}
-_ROUTE_FRAGMENT_PREFIXES = ("/", "!")
 # Query parameters that only say where a click came from, compared lowercase. Everything else in
 # the query string is kept, because boards name the posting in many different parameters
 # (Taleo `job`, SuccessFactors `career_job_req_id`, LinkedIn `currentJobId`, ...).
@@ -175,8 +174,8 @@ def normalize_url(url: str) -> str:
     Drops the query parameters that only track the click (`_TRACKING_PARAMS`, any `utm_*`),
     compared case-insensitively, and keeps the rest in sorted order. A board that adds a new
     tracking parameter needs it added there, or its links split into two keys. Fragments are dropped
-    unless they look like a route ("#/job/1", "#!/job/1"). A value that cannot be parsed is
-    logged and kept as typed.
+    unless they hold a "/" ("#/job/1", "#!/job/1", Gmail "#all/<id>").
+    A value that cannot be parsed is logged and kept as typed.
 
     ponytail: `www.` is kept, so "www.x.com/a" and "x.com/a" get two keys. Strip it here if
     that ever splits one posting in two.
@@ -216,8 +215,10 @@ def _normalized_query(query: str) -> str:
 
 
 def _normalized_route_fragment(fragment: str) -> str:
-    if not fragment.startswith(_ROUTE_FRAGMENT_PREFIXES):
+    if "/" not in fragment:
         return ""
+    if not fragment.startswith("/"):
+        return fragment
     route = urlsplit(fragment)
     return urlunsplit(("", "", route.path.rstrip("/"), _normalized_query(route.query), ""))
 

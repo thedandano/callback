@@ -55,12 +55,24 @@ def _run(
         ("https://jobs.example.com:8443/a", "https://jobs.example.com:8443/a"),
         ("https://x.com/#/job/1", "https://x.com#/job/1"),
         ("https://x.com/#!/job/2", "https://x.com#!/job/2"),
+        ("https://mail.google.com/mail/#all/abc123", "https://mail.google.com/mail#all/abc123"),
         ("jobs.Example.com/a/", "https://jobs.example.com/a"),
         ("https://jobs.example.com/a", "https://jobs.example.com/a"),
     ],
 )
 def test_normalize_url_drops_tracking_noise_but_keeps_job_ids(raw, expected):
     assert ledger.normalize_url(raw) == expected
+
+
+def test_gmail_style_fragments_give_different_keys():
+    keys = [
+        ledger.job_key(f"https://mail.google.com/mail/#all/{m}", None, None)
+        for m in ("19e8b9f6", "19e8b9f7")
+    ]
+    assert keys == [
+        "https://mail.google.com/mail#all/19e8b9f6",
+        "https://mail.google.com/mail#all/19e8b9f7",
+    ]
 
 
 @pytest.mark.parametrize(

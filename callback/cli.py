@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 import time
@@ -798,6 +799,10 @@ def setup_plugin(
 
 def _print_report(source: Path, report: ledger_import.ImportReport) -> None:
     typer.echo(f"{source}: imported {report.imported}, skipped {len(report.skipped)}")
+    if report.skipped:
+        typer.echo(
+            f"  skipped items are named in the log: {', '.join(report.skipped[:5])}", err=True
+        )
 
 
 def _run_ledger_imports(
@@ -825,8 +830,8 @@ def ledger_import_cmd(
     """Import old run archives, a record CSV, and a contact ledger. Safe to run twice."""
     try:
         _run_ledger_imports(archives or [], record_csv, contacts_db)
-    except ValueError as exc:
-        typer.echo(f"error: {exc}", err=True)
+    except (ValueError, sqlite3.Error) as exc:
+        typer.echo(f"error: {exc} (the import is safe to re-run)", err=True)
         raise typer.Exit(1) from exc
 
 
