@@ -1135,3 +1135,15 @@ def test_ledger_import_file_system_error_exits_with_an_error(tmp_path):
         1,
         ["error: denied (the import is safe to re-run)"],
     )
+
+
+def test_ledger_import_lists_every_skipped_item(tmp_path):
+    apps = tmp_path / "apps"
+    apps.mkdir()
+    for n in range(7):
+        (apps / f"bad{n}.json").write_text("{not json")
+
+    result = runner.invoke(app, ["ledger", "import", "--archives", str(apps)])
+
+    skipped = [line for line in result.output.splitlines() if line.startswith("  skipped: ")]
+    assert (result.exit_code, skipped) == (0, [f"  skipped: bad{n}.json" for n in range(7)])
