@@ -1430,25 +1430,35 @@ def test_status_url_assignment_keeps_the_url_jobs_salary_range(tmp_path):
     assert jobs == [(pasted_key, "150000-200000")]
 
 
-def test_status_url_assignment_keeps_url_job_with_its_own_status(tmp_path):
+def test_status_url_assignment_keeps_job_with_a_different_url(tmp_path):
+    url = "https://jobs.acme.com/engineer"
+    other = "https://jobs.acme.com/other"
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(conn, _update(url=other, company="Acme", title="Engineer"))
+        ledger.record_status(conn, _update(url=url, status="Saved", recorded_at="2026-10-02"))
+        ledger.record_status(
+            conn,
+            _update(job_key=other, url=url, status="Applied", recorded_at="2026-10-03"),
+        )
+        jobs = conn.execute("SELECT job_key, url FROM jobs ORDER BY job_key").fetchall()
+
+    assert jobs == [(url, url), (other, other)]
+
+
+def test_status_url_assignment_moves_url_job_status_events(tmp_path):
     url = "https://jobs.acme.com/engineer"
     pasted_key = "pasted:acme-engineer-b4083d9b"
-    run = _run(url=url)
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
         ledger.record_status(conn, _update(company="Acme", title="Engineer", status="Seen"))
-        ledger.record_run(conn, run)
         ledger.record_status(conn, _update(url=url, status="Saved", recorded_at="2026-10-02"))
         ledger.record_status(
             conn,
             _update(job_key=pasted_key, url=url, status="Applied", recorded_at="2026-10-03"),
         )
-        jobs = conn.execute("SELECT job_key, url FROM jobs ORDER BY job_key").fetchall()
-        runs = conn.execute("SELECT job_key FROM runs").fetchall()
+        jobs = conn.execute("SELECT job_key FROM jobs").fetchall()
+        found = ledger.find_job(conn, url=url, company=None, title=None)
 
-    assert (jobs, runs) == (
-        [(url, url), (pasted_key, url)],
-        [(url,)],
-    )
+    assert (jobs, found["status"]) == ([(pasted_key,)], "Applied")
 
 
 def test_latest_run_keeps_microsecond_order(tmp_path):
