@@ -702,6 +702,15 @@ def record_status(conn: sqlite3.Connection, update: StatusUpdate) -> bool:
     """
     with conn:
         if key := _existing_job_key(conn, update):
+            cleaned_url = _clean_url(update.url)
+            if update.job_key and cleaned_url:
+                url_key = job_key(cleaned_url, None, None)
+                has_status = conn.execute(
+                    "SELECT 1 FROM status_events WHERE job_key = ?", (url_key,)
+                ).fetchone()
+                if url_key != key and job_exists(conn, url_key) and has_status is None:
+                    conn.execute("UPDATE runs SET job_key = ? WHERE job_key = ?", (key, url_key))
+                    conn.execute("DELETE FROM jobs WHERE job_key = ?", (url_key,))
             conn.execute(
                 "UPDATE jobs SET url = COALESCE(NULLIF(url, ''), ?), "
                 "company = COALESCE(NULLIF(company, ''), ?), "
@@ -709,7 +718,7 @@ def record_status(conn: sqlite3.Connection, update: StatusUpdate) -> bool:
                 "salary_range = COALESCE(NULLIF(salary_range, ''), ?) "
                 "WHERE job_key = ?",
                 (
-                    _clean_url(update.url),
+                    cleaned_url,
                     _optional_text(update.company),
                     _optional_text(update.title),
                     clean_salary(update.salary_range) or None,
@@ -760,7 +769,7 @@ WITH latest_status AS (
     FROM status_events
 ), latest_run AS (
     SELECT job_key, scores, pdf_path,
-           ROW_NUMBER() OVER (PARTITION BY job_key ORDER BY julianday(finalized_at) DESC) AS rn
+           ROW_NUMBER() OVER (PARTITION BY job_key ORDER BY finalized_at DESC, rowid DESC) AS rn
     FROM runs
 )
 SELECT j.company, j.title, j.url, j.salary_range, s.status, s.recorded_at, s.note,
@@ -802,9 +811,9 @@ ORDER BY e.recorded_at DESC, e.id DESC
 _FIND_SQL = (
     "SELECT j.company, j.title, s.status, s.recorded_at, j.job_key, "
     "(SELECT json_extract(r.scores, '$.initial.total') FROM runs r "
-    "WHERE r.job_key = j.job_key ORDER BY julianday(r.finalized_at) DESC LIMIT 1), "
+    "WHERE r.job_key = j.job_key ORDER BY r.finalized_at DESC, r.rowid DESC LIMIT 1), "
     "(SELECT json_extract(r.scores, '$.final.total') FROM runs r "
-    "WHERE r.job_key = j.job_key ORDER BY julianday(r.finalized_at) DESC LIMIT 1) FROM jobs j "
+    "WHERE r.job_key = j.job_key ORDER BY r.finalized_at DESC, r.rowid DESC LIMIT 1) FROM jobs j "
     "LEFT JOIN status_events s ON s.job_key = j.job_key WHERE {where} "
     "ORDER BY {order} s.recorded_at DESC, s.id DESC LIMIT 1"
 )
