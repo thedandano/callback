@@ -811,7 +811,7 @@ _EVER_APPLIED_SQL = (
     "OR norm_text(e.status) LIKE 'offer%' "
     # Legacy EDD work-search contacts are applications whatever the outcome (ledger_import's
     # CONTACTS_SOURCE and NOT_REPORTABLE_PREFIX; importing them here would be a cycle).
-    "OR (e.source = 'contacts-import' AND e.note NOT LIKE 'Not reportable%')))"
+    "OR (e.source = 'contacts-import' AND ifnull(e.note, '') NOT LIKE 'Not reportable%')))"
 )
 _FIND_SQL = (
     "SELECT j.company, j.title, j.url, s.status, " + _EVER_APPLIED_SQL + ", "

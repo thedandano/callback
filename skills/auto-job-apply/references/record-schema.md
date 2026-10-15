@@ -9,7 +9,7 @@ Field rules:
 - `url`: canonical job URL (`http://` or `https://`) when available. For recruiter-only leads with no posting URL, leave `url` out, pass `company` and `title`, and put a stable thread descriptor in `note`.
 - `salary_range`: posting/recruiter compensation range, for example `$120K-$160K` or `$75/hr W2`. Omit it when unknown; do not send the literal `Not listed`. Do not invent salary. If multiple sources disagree, explain the conflict in `note`. The ledger keeps the first range it stored and never overwrites it, so a newer range goes in `note` only.
 - `status`: one value from the vocabulary below.
-- `note`: recruiter thread descriptor (for leads with no posting URL), dedupe rationale, salary source if useful, fit rationale, mismatch summary, blockers, source email details, before/after scores, resume and cover letter paths, and next action. Every application or contact note starts with `Contact method: <Online|Email|Phone|Mail|Fax|In person>`.
+- `note`: recruiter thread descriptor (for leads with no posting URL), dedupe rationale, salary source if useful, fit rationale, mismatch summary, blockers, source email details, before/after scores, resume and cover letter paths, and next action. Every reportable contact note (applications, confirmations, recruiter resume submissions) starts with `Contact method: <Online|Email|Phone|Mail|Fax|In person>`; never put that prefix on other notes, such as a `Recruiter follow-up`.
 
 Explicit status vocabulary:
 
