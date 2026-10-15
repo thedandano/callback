@@ -557,6 +557,25 @@ def test_csv_job_only_row_reports_a_job_without_an_event(tmp_path):
     assert (report.jobs, report.events) == (1, 0)
 
 
+def test_csv_name_match_is_logged(tmp_path, caplog):
+    path = _csv(tmp_path, "Acme,Eng,2026-10-01,,Applied,\n")
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        key = ledger.upsert_job(
+            conn,
+            url="https://jobs.acme.com/1",
+            company="Acme",
+            title="Eng",
+            seen_at="2026-09-01",
+        )
+        with caplog.at_level(logging.INFO, logger="callback.ledger_import"):
+            import_record_csv(conn, path)
+
+    assert [json.loads(record.message) for record in caplog.records] == [
+        {"event": "ledger_import_name_match", "label": "line 2", "job_key": key}
+    ]
+
+
 def test_csv_and_contact_events_with_different_notes_are_both_kept(tmp_path):
     path = _csv(tmp_path, "Acme,Eng,2026-10-01,,Applied,CSV note\n")
     src = tmp_path / "old.sqlite3"
