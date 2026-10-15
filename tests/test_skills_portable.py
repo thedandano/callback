@@ -50,7 +50,7 @@ def test_ledger_skills_keep_posting_identity_and_edd_contact_details():
 
     actual = {
         "apply_non_submission_continues": (
-            "is not a prior application; continue the workflow" in apply_skill
+            "When `ever_applied` is false, continue the workflow" in apply_skill
         ),
         "company_title_requires_confirmation": (
             "Reuse its `job_key` only when they confirm the same posting" in auto_skill
@@ -61,10 +61,17 @@ def test_ledger_skills_keep_posting_identity_and_edd_contact_details():
         "status_only_reads_stored_scores": "Read `score_before` and `score_after`" in auto_skill,
         "unknown_salary_is_omitted": "Omit it when unknown" in schema,
         "contacts_have_a_method_prefix": (
-            "Contact method: <Online|Email|Phone|In person>" in schema
+            "Contact method: <Online|Email|Phone|Mail|Fax|In person>" in schema
         ),
         "scan_records_classified_outcomes": (
             "Record each classified outcome with `record_status`" in scan_skill
+        ),
+        "prior_submission_uses_ever_applied": "`ever_applied` is true" in apply_skill,
+        "needs_source_key_match_is_retried": (
+            "except when its latest status starts with `Needs source`" in scan_skill
+        ),
+        "setup_keeps_legacy_config_until_import": (
+            "Keep its `record_csv`, `ledger_db`, and `edd_xlsx` keys when present" in setup_skill
         ),
         "setup_removes_legacy_config_after_success": (
             "After the import succeeds, remove `record_csv`, `ledger_db`, and `edd_xlsx`"
@@ -80,6 +87,9 @@ def test_ledger_skills_keep_posting_identity_and_edd_contact_details():
         "unknown_salary_is_omitted": True,
         "contacts_have_a_method_prefix": True,
         "scan_records_classified_outcomes": True,
+        "prior_submission_uses_ever_applied": True,
+        "needs_source_key_match_is_retried": True,
+        "setup_keeps_legacy_config_until_import": True,
         "setup_removes_legacy_config_after_success": True,
         "export_explains_contact_method": True,
     }

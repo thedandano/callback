@@ -13,7 +13,10 @@ Get the user past the ATS gate by preparing an honest candidate profile and proj
 
 ### 1. Scaffold project
 
-Write `.callback/config.json` in the project root. Prompt for each path or accept defaults:
+On an existing project, load `.callback/config.json` first.
+Keep its `record_csv`, `ledger_db`, and `edd_xlsx` keys when present; remove them only after the
+later import succeeds. Write the config in the project root. Prompt for each path or accept
+defaults:
 
 ```json
 {

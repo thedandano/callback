@@ -891,7 +891,11 @@ ORDER BY e.recorded_at DESC, e.id DESC
 
 
 _FIND_SQL = (
-    "SELECT j.company, j.title, s.status, s.recorded_at, j.job_key, "
+    "SELECT j.company, j.title, j.url, s.status, EXISTS ("
+    "SELECT 1 FROM status_events e WHERE e.job_key = j.job_key AND ("
+    "norm_text(e.status) LIKE 'applied%' OR norm_text(e.status) LIKE 'already applied%' "
+    "OR norm_text(e.status) LIKE 'interview%' OR norm_text(e.status) LIKE 'rejected%' "
+    "OR norm_text(e.status) LIKE 'offer%')), s.recorded_at, j.job_key, "
     "(SELECT json_extract(r.scores, '$.initial.total') FROM runs r "
     "WHERE r.job_key = j.job_key ORDER BY r.finalized_at DESC, r.rowid DESC LIMIT 1), "
     "(SELECT json_extract(r.scores, '$.final.total') FROM runs r "
@@ -909,7 +913,9 @@ _BY_NAME = (
 _FIND_KEYS = [
     "company",
     "title",
+    "url",
     "status",
+    "ever_applied",
     "status_date",
     "job_key",
     "score_before",
@@ -1017,9 +1023,11 @@ def _key_match_kind(row: tuple | None, title: str | None) -> str:
 
 
 def _ambiguous_name_result(candidates: tuple[str, ...]) -> dict:
+    result: dict[str, object | None] = dict(zip(_FIND_KEYS, (None,) * len(_FIND_KEYS), strict=True))
+    result["ever_applied"] = False
     return {
         "found": False,
-        **dict(zip(_FIND_KEYS, (None,) * len(_FIND_KEYS), strict=True)),
+        **result,
         "matched_by": "company_title_ambiguous",
         "candidate_job_keys": list(candidates),
     }
@@ -1032,12 +1040,13 @@ def find_job(
 
     Looks up by URL (or company + title when there is no URL) first. A posting seen under a
     different URL is still found when company and title match, ignoring case, Unicode case, and
-    spacing. Includes the latest run's score totals when a run exists. A key match whose stored
-    title differs from `title` or is missing reports matched_by='key_title_mismatch'. When more
-    than one job shares the company and title, returns found=False with
-    matched_by='company_title_ambiguous' and candidate_job_keys for the caller to disambiguate —
-    including when a URL-less lookup would otherwise hit a pasted key while a URL-keyed twin
-    exists. When nothing is found, or the match is weak (not 'key'), and a company is given,
+    spacing. Returns the stored URL, whether any status event proves submission, and the latest
+    run's score totals when a run exists. A key match whose stored title differs from `title` or
+    is missing reports matched_by='key_title_mismatch'. When more than one job shares the company
+    and title, returns found=False with matched_by='company_title_ambiguous' and
+    candidate_job_keys for the caller to disambiguate — including when a URL-less lookup would
+    otherwise hit a pasted key while a URL-keyed twin exists. When nothing is found, or the match
+    is weak (not 'key'), and a company is given,
     company_jobs lists that company's other jobs (up to 20, newest first, the matched job left
     out) so the caller can spot a similar title or requisition id.
     """
@@ -1061,9 +1070,11 @@ def find_job(
             row = _find_row(conn, _BY_KEY, (match.job_key,))
             matched_by = "company_title"
     values = row or (None,) * len(_FIND_KEYS)
+    result: dict[str, object | None] = dict(zip(_FIND_KEYS, values, strict=True))
+    result["ever_applied"] = bool(result["ever_applied"])
     return {
         "found": row is not None,
-        **dict(zip(_FIND_KEYS, values, strict=True)),
+        **result,
         "matched_by": matched_by if row else None,
         "company_jobs": _other_company_jobs(conn, company, row, matched_by),
     }

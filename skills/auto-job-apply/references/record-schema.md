@@ -9,7 +9,7 @@ Field rules:
 - `url`: canonical job URL (`http://` or `https://`) when available. For recruiter-only leads with no posting URL, leave `url` out, pass `company` and `title`, and put a stable thread descriptor in `note`.
 - `salary_range`: posting/recruiter compensation range, for example `$120K-$160K` or `$75/hr W2`. Omit it when unknown; do not send the literal `Not listed`. Do not invent salary. If multiple sources disagree, explain the conflict in `note`. The ledger keeps the first range it stored and never overwrites it, so a newer range goes in `note` only.
 - `status`: one value from the vocabulary below.
-- `note`: recruiter thread descriptor (for leads with no posting URL), dedupe rationale, salary source if useful, fit rationale, mismatch summary, blockers, source email details, before/after scores, resume and cover letter paths, and next action. Every application or contact note starts with `Contact method: <Online|Email|Phone|In person>`.
+- `note`: recruiter thread descriptor (for leads with no posting URL), dedupe rationale, salary source if useful, fit rationale, mismatch summary, blockers, source email details, before/after scores, resume and cover letter paths, and next action. Every application or contact note starts with `Contact method: <Online|Email|Phone|Mail|Fax|In person>`.
 
 Explicit status vocabulary:
 
@@ -28,7 +28,7 @@ Explicit status vocabulary:
 - `Skipped - not fit`: role is materially off-track for the user's software/AI target.
 - `Recruiter follow-up`: recruiter thread needs user decision or reply.
 
-Dedupe: call `find_job(url, company, title)`. It matches the URL first, then falls back to company plus title (see `matched_by`). For a `company_title` or `key_title_mismatch` match, compare URLs and requisition IDs first. Reuse its `job_key` only when they confirm the same posting. If they prove a different posting: after a `company_title` match, record the new URL with no `job_key`; after a `key_title_mismatch` (the new URL normalizes to the old job's key), call `record_status` with no `url` (company + title only, so it gets its own job) and put the URL in `note`. A duplicate alert for a job whose latest status already proves submission or an outcome (`Applied`, `Already applied...`, `Interview...`, `Rejected`, `Offer...`) is not recorded again: mention it in the run summary only, so the job's latest status stays that lifecycle status. When the new email is the active source for the latest status, say so in `note`; otherwise append the new email detail to `note`.
+Dedupe: call `find_job(url, company, title)`. It matches the URL first, then falls back to company plus title (see `matched_by`). Compare the returned stored `url` and requisition IDs first for a `company_title` or `key_title_mismatch` match. Reuse its `job_key` only when they confirm the same posting. If they prove a different posting: after a `company_title` match, record the new URL with no `job_key`; after a `key_title_mismatch` (the new URL normalizes to the old job's key), call `record_status` with no `url` (company + title only, so it gets its own job) and put the URL in `note`. A duplicate alert for a job with `ever_applied` true is not recorded again: mention it in the run summary only, so the job's latest status stays its lifecycle status. Each event's `note` holds only that event's details; earlier notes stay on their own events (`/export-ledger` with `mode="events"` shows them all).
 
 Mismatch summary rule:
 
