@@ -569,7 +569,7 @@ def test_csv_name_match_is_logged(tmp_path, caplog):
             title="Eng",
             seen_at="2026-09-01",
         )
-        with caplog.at_level(logging.INFO, logger="callback.ledger_import"):
+        with caplog.at_level(logging.WARNING, logger="callback.ledger_import"):
             import_record_csv(conn, path)
 
     assert [json.loads(record.message) for record in caplog.records] == [

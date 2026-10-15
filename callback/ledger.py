@@ -474,7 +474,7 @@ def _same_name_job_key(conn: sqlite3.Connection, run: RunRecord) -> str | None:
         "SELECT 1 FROM runs WHERE job_key = ? AND session_id != ?", (matched, run.session_id)
     ).fetchone()
     if other_runs is None:
-        _log.info(
+        _log.warning(
             json.dumps(
                 {"event": "ledger_run_name_match", "session_id": run.session_id, "job_key": matched}
             )

@@ -469,7 +469,7 @@ def _import_job(
                     matched,
                 ),
             )
-        _info("ledger_import_name_match", label=label, job_key=matched)
+        _warn("ledger_import_name_match", label=label, job_key=matched)
         return matched
     return _upsert_import_job(
         conn,
