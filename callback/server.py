@@ -2136,6 +2136,10 @@ def _csv_text(rows: list[dict], columns: list[str]) -> str:
 def _output_path_error(target: Path) -> dict | None:
     if "\0" in str(target):
         return _err("ledger", "invalid_output_path", "output_path must not contain a null byte")
+    try:
+        str(target).encode("utf-8")
+    except UnicodeEncodeError:
+        return _err("ledger", "invalid_output_path", "output_path must be valid UTF-8 text")
     if not target.is_absolute():
         return _err("ledger", "invalid_output_path", f"output_path must be absolute: {target}")
     if target.suffix.lower() != ".csv":

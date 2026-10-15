@@ -2428,6 +2428,22 @@ async def test_find_job_returns_ledger_error_when_ledger_path_has_no_home():
     }
 
 
+def test_export_ledger_rejects_an_output_path_with_a_lone_surrogate():
+    import callback.server as server
+
+    result = server.export_ledger(output_path="/tmp/\ud800.csv")
+
+    assert result == {
+        "status": "error",
+        "error": {
+            "stage": "ledger",
+            "code": "invalid_output_path",
+            "message": "output_path must be valid UTF-8 text",
+            "retriable": False,
+        },
+    }
+
+
 def test_record_status_returns_ledger_error_for_a_lone_surrogate():
     import callback.server as server
 

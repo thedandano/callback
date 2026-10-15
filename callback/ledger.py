@@ -687,9 +687,6 @@ def record_status(conn: sqlite3.Connection, update: StatusUpdate) -> bool:
             cleaned_url = _clean_url(update.url)
             if update.job_key and cleaned_url:
                 url_key = job_key(cleaned_url, None, None)
-                has_status = conn.execute(
-                    "SELECT 1 FROM status_events WHERE job_key = ?", (url_key,)
-                ).fetchone()
                 target_url = conn.execute(
                     "SELECT url FROM jobs WHERE job_key = ?", (key,)
                 ).fetchone()
@@ -697,15 +694,16 @@ def record_status(conn: sqlite3.Connection, update: StatusUpdate) -> bool:
                 can_merge = target_url is not None and (
                     stored_url is None or stored_url == cleaned_url
                 )
-                if (
-                    url_key != key
-                    and job_exists(conn, url_key)
-                    and has_status is None
-                    and can_merge
-                ):
+                if url_key != key and job_exists(conn, url_key) and can_merge:
                     conn.execute(
                         _FILL_JOB_FROM_URL_JOB, (url_key, url_key, url_key, url_key, url_key, key)
                     )
+                    conn.execute(
+                        "UPDATE OR IGNORE status_events SET job_key = ? WHERE job_key = ?",
+                        (key, url_key),
+                    )
+                    # Leftovers are exact duplicates under the identity index.
+                    conn.execute("DELETE FROM status_events WHERE job_key = ?", (url_key,))
                     conn.execute("UPDATE runs SET job_key = ? WHERE job_key = ?", (key, url_key))
                     conn.execute("DELETE FROM jobs WHERE job_key = ?", (url_key,))
             conn.execute(
