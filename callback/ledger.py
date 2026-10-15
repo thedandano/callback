@@ -117,6 +117,23 @@ ON CONFLICT(job_key) DO UPDATE SET
     END
 """
 
+_FILL_JOB_FROM_URL_JOB = """
+UPDATE jobs SET
+    company = COALESCE(NULLIF(company, ''), (SELECT company FROM jobs WHERE job_key = ?)),
+    title = COALESCE(NULLIF(title, ''), (SELECT title FROM jobs WHERE job_key = ?)),
+    salary_range = COALESCE(
+        NULLIF(salary_range, ''), (SELECT salary_range FROM jobs WHERE job_key = ?)
+    ),
+    first_seen = CASE
+        WHEN first_seen = '' THEN (SELECT first_seen FROM jobs WHERE job_key = ?)
+        ELSE MIN(
+            first_seen,
+            COALESCE(NULLIF((SELECT first_seen FROM jobs WHERE job_key = ?), ''), first_seen)
+        )
+    END
+WHERE job_key = ?
+"""
+
 _UPSERT_RUN = """
 INSERT INTO runs (session_id, job_key, finalized_at, jd_text, keywords, tailored_resume_text,
                   pdf_path, render_page_count, render_warnings, scores, uncovered_skills, outcome)
@@ -709,6 +726,9 @@ def record_status(conn: sqlite3.Connection, update: StatusUpdate) -> bool:
                     "SELECT 1 FROM status_events WHERE job_key = ?", (url_key,)
                 ).fetchone()
                 if url_key != key and job_exists(conn, url_key) and has_status is None:
+                    conn.execute(
+                        _FILL_JOB_FROM_URL_JOB, (url_key, url_key, url_key, url_key, url_key, key)
+                    )
                     conn.execute("UPDATE runs SET job_key = ? WHERE job_key = ?", (key, url_key))
                     conn.execute("DELETE FROM jobs WHERE job_key = ?", (url_key,))
             conn.execute(

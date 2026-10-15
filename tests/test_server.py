@@ -2494,6 +2494,7 @@ async def test_ledger_tools_reject_bad_input(tmp_path):
         ("export_ledger", {"output_path": "x.csv"}),
         ("export_ledger", {"output_path": str(tmp_path / "x.csv"), "since": "10/1/2026"}),
         ("export_ledger", {"output_path": str(tmp_path)}),
+        ("export_ledger", {"output_path": "/tmp/export\0.csv"}),
     ]
     (tmp_path / "dir.csv").mkdir()
     async with Client(FastMCPTransport(server.mcp)) as client:
@@ -2515,6 +2516,7 @@ async def test_ledger_tools_reject_bad_input(tmp_path):
         "missing_job_identity",
         "invalid_output_path",
         "invalid_date",
+        "invalid_output_path",
         "invalid_output_path",
     ]
 
