@@ -704,7 +704,10 @@ def test_urlless_run_keeps_its_own_key_when_the_same_name_job_has_runs(tmp_path,
     warnings = [json.loads(r.message) for r in caplog.records if r.levelno == logging.WARNING]
     assert ([tuple(k) for k in keys], warnings) == (
         [("s0", scanned), ("s1", own)],
-        [{"event": "ledger_possible_twin_job", "matched_key": scanned, "own_key": own}],
+        [
+            {"event": "ledger_run_name_match", "session_id": "s0", "job_key": scanned},
+            {"event": "ledger_possible_twin_job", "matched_key": scanned, "own_key": own},
+        ],
     )
 
 
