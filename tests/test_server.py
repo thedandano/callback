@@ -2290,6 +2290,7 @@ async def test_ledger_tools_record_find_and_export(tmp_path):
             "title": "Dev",
             "status": "Applied",
             "status_date": "2026-10-01",
+            "ever_applied": True,
         }
     ]
     assert (

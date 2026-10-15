@@ -803,12 +803,16 @@ ORDER BY e.recorded_at DESC, e.id DESC
 """
 
 
-_FIND_SQL = (
-    "SELECT j.company, j.title, j.url, s.status, EXISTS ("
-    "SELECT 1 FROM status_events e WHERE e.job_key = j.job_key AND ("
+# True when any status event of the job proves a submission.
+_EVER_APPLIED_SQL = (
+    "EXISTS (SELECT 1 FROM status_events e WHERE e.job_key = j.job_key AND ("
     "norm_text(e.status) LIKE 'applied%' OR norm_text(e.status) LIKE 'already applied%' "
     "OR norm_text(e.status) LIKE 'interview%' OR norm_text(e.status) LIKE 'rejected%' "
-    "OR norm_text(e.status) LIKE 'offer%')), s.recorded_at, j.job_key, "
+    "OR norm_text(e.status) LIKE 'offer%'))"
+)
+_FIND_SQL = (
+    "SELECT j.company, j.title, j.url, s.status, " + _EVER_APPLIED_SQL + ", "
+    "s.recorded_at, j.job_key, "
     "(SELECT json_extract(r.scores, '$.initial.total') FROM runs r "
     "WHERE r.job_key = j.job_key ORDER BY r.finalized_at DESC, r.rowid DESC LIMIT 1), "
     "(SELECT json_extract(r.scores, '$.final.total') FROM runs r "
@@ -836,7 +840,8 @@ _FIND_KEYS = [
 ]
 _COMPANY_JOBS_LIMIT = 20
 _COMPANY_JOBS_SQL = (
-    "SELECT j.job_key, j.url, j.title, s.status, s.recorded_at FROM jobs j "
+    "SELECT j.job_key, j.url, j.title, s.status, s.recorded_at, " + _EVER_APPLIED_SQL + " "
+    "FROM jobs j "
     "LEFT JOIN status_events s ON s.id = ("
     "SELECT e.id FROM status_events e WHERE e.job_key = j.job_key "
     "ORDER BY e.recorded_at DESC, e.id DESC LIMIT 1) "
@@ -966,8 +971,8 @@ def _other_company_jobs(
     if not company or (row and matched_by == "key"):
         return []
     found_key = row[_FIND_KEYS.index("job_key")] if row else None
-    keys = ("job_key", "url", "title", "status", "status_date")
+    keys = ("job_key", "url", "title", "status", "status_date", "ever_applied")
     return [
-        dict(zip(keys, values, strict=True))
+        {**dict(zip(keys, values, strict=True)), "ever_applied": bool(values[-1])}
         for values in conn.execute(_COMPANY_JOBS_SQL, (company, found_key))
     ]

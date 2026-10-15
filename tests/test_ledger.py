@@ -896,6 +896,7 @@ def test_find_job_returns_latest_status_or_not_found(tmp_path):
         "url": "https://a.com/1",
         "title": "Dev",
         "status": "Rejected",
+        "ever_applied": True,
     }
     mine = {**mine, "status_date": "2026-10-05"}
     req7 = {
@@ -903,6 +904,7 @@ def test_find_job_returns_latest_status_or_not_found(tmp_path):
         "url": "https://a.com/req-7",
         "title": "Dev II",
         "status": "Skipped - not fit",
+        "ever_applied": False,
     }
     req7 = {**req7, "status_date": "2026-10-03"}
     assert (found, by_name, missing, half_name, similar) == (
@@ -1517,6 +1519,28 @@ def test_find_job_lists_other_company_jobs_on_a_weak_match(tmp_path):
         "key",
         [],
     )
+
+
+def test_company_jobs_entry_reports_ever_applied(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        for status in ("Applied", "Recruiter follow-up"):
+            ledger.record_status(
+                conn,
+                _update(
+                    url="https://acme.com/jobs/1", company="Acme", title="Engineer", status=status
+                ),
+            )
+        weak = ledger.find_job(conn, url="https://acme.com/jobs/9", company="Acme", title="Dev")
+    assert weak["company_jobs"] == [
+        {
+            "job_key": "https://acme.com/jobs/1",
+            "url": "https://acme.com/jobs/1",
+            "title": "Engineer",
+            "status": "Recruiter follow-up",
+            "status_date": "2026-10-01",
+            "ever_applied": True,
+        }
+    ]
 
 
 def test_company_jobs_returns_twenty_other_jobs_on_a_weak_match(tmp_path):
