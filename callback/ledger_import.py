@@ -287,6 +287,7 @@ def _import_row(conn: sqlite3.Connection, row: dict, label: str, report: ImportR
         conn, report, (url, company, title), recorded_at or "", _cell(row, "Salary range")
     )
     bad_url = None if url else raw_url
+    note = _with_salary_note(conn, key, _cell(row, "Salary range"), _note(row, bad_url))
     status = _event_status(row, bad_url)
     if not status:
         return
@@ -298,7 +299,7 @@ def _import_row(conn: sqlite3.Connection, row: dict, label: str, report: ImportR
         job_key=key,
         status=status,
         recorded_at=recorded_at,
-        note=_note(row, bad_url),
+        note=note,
         source=CSV_SOURCE,
     )
     report.imported += int(added)
@@ -414,17 +415,33 @@ def _import_contact(
     if not (url or company or title):
         _skip(report, f"entry {row['id']}", "row has no URL, employer, or work type")
         return
-    key = _import_job(conn, report, (url, company, title), date, extras.get(_SALARY_KEY))
+    salary = extras.get(_SALARY_KEY)
+    key = _import_job(conn, report, (url, company, title), date, salary)
+    note = _with_salary_note(conn, key, salary, _contact_note(row, url, extras))
     added = ledger.add_status(
         conn,
         job_key=key,
         status=outcome,
         recorded_at=date,
-        note=_contact_note(row, url, extras),
+        note=note,
         source=CONTACTS_SOURCE,
     )
     report.imported += int(added)
     report.events += int(added)
+
+
+def _with_salary_note(
+    conn: sqlite3.Connection, key: str, salary_range: str | None, note: str | None
+) -> str | None:
+    """Add the row's salary range to its note when the job kept a different one.
+
+    The job keeps the first range it stored, so a later source's different range would vanish.
+    """
+    cleaned = ledger.clean_salary(salary_range)
+    stored = conn.execute("SELECT salary_range FROM jobs WHERE job_key = ?", (key,)).fetchone()
+    if not cleaned or not stored or not stored[0] or stored[0] == cleaned:
+        return note
+    return " | ".join(p for p in (note, f"Salary range: {cleaned}") if p)
 
 
 def _import_job(

@@ -697,6 +697,24 @@ def test_urlless_run_keeps_its_own_key_when_the_same_name_job_has_runs(tmp_path,
     )
 
 
+def test_recorded_again_run_stays_on_the_job_it_already_has(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        job_a = _scanned_job(conn)
+        ledger.record_run(conn, _run(url=None))
+        ledger.upsert_job(
+            conn,
+            url="https://b.example.com/2",
+            company="Acme",
+            title="Engineer",
+            seen_at="2026-10-02",
+        )
+        ledger.record_run(conn, _run(url=None))
+        keys = conn.execute("SELECT job_key FROM runs").fetchall()
+        jobs = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+
+    assert ([tuple(k) for k in keys], jobs) == ([(job_a,)], 2)
+
+
 def test_placeholder_salary_is_stored_as_no_salary(tmp_path):
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
         ledger.upsert_job(
