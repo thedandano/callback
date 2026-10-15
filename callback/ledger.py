@@ -269,10 +269,10 @@ def url_or_none(value: str | None) -> str | None:
     text = (value or "").strip()
     try:
         parts = urlsplit(text)
+        hostname, _port = parts.hostname, parts.port
     except ValueError as exc:
         _log.warning(json.dumps({"event": "ledger_url_unparseable", "error": str(exc)}))
         return None
-    hostname = parts.hostname
     if parts.scheme.lower() not in {"http", "https"} or not hostname:
         return None
     return text if not any(character.isspace() for character in hostname) else None
@@ -725,7 +725,19 @@ def record_status(conn: sqlite3.Connection, update: StatusUpdate) -> bool:
                 has_status = conn.execute(
                     "SELECT 1 FROM status_events WHERE job_key = ?", (url_key,)
                 ).fetchone()
-                if url_key != key and job_exists(conn, url_key) and has_status is None:
+                target_url = conn.execute(
+                    "SELECT url FROM jobs WHERE job_key = ?", (key,)
+                ).fetchone()
+                stored_url = _clean_url(target_url[0]) if target_url else None
+                can_merge = target_url is not None and (
+                    stored_url is None or stored_url == cleaned_url
+                )
+                if (
+                    url_key != key
+                    and job_exists(conn, url_key)
+                    and has_status is None
+                    and can_merge
+                ):
                     conn.execute(
                         _FILL_JOB_FROM_URL_JOB, (url_key, url_key, url_key, url_key, url_key, key)
                     )
