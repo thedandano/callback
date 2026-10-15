@@ -1234,3 +1234,99 @@ def test_record_status_by_url_lands_on_the_pasted_job_that_has_that_url(tmp_path
         ledger.record_status(conn, _update(url="https://acme.com/jobs/9", status="Applied"))
         rows = conn.execute("SELECT job_key, status FROM status_events ORDER BY id").fetchall()
     assert rows == [(key, "Seen"), (key, "Applied")]
+
+
+def test_run_after_status_url_assignment_uses_the_pasted_job(tmp_path):
+    url = "https://jobs.acme.com/engineer"
+    pasted_key = "pasted:acme-engineer-b4083d9b"
+    run = _run(url=url)
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(conn, _update(company="Acme", title="Engineer", status="Seen"))
+        ledger.record_status(
+            conn,
+            _update(job_key=pasted_key, url=url, status="Applied", recorded_at="2026-10-02"),
+        )
+        ledger.record_run(conn, run)
+        jobs = conn.execute("SELECT job_key, url FROM jobs").fetchall()
+        runs = conn.execute("SELECT job_key FROM runs").fetchall()
+        found = ledger.find_job(conn, url=url, company=None, title=None)
+
+    assert (jobs, runs, found) == (
+        [(pasted_key, url)],
+        [(pasted_key,)],
+        {
+            "found": True,
+            "company": "Acme",
+            "title": "Engineer",
+            "status": "Applied",
+            "status_date": "2026-10-02",
+            "job_key": pasted_key,
+            "score_before": 50.0,
+            "score_after": 70.0,
+            "matched_by": "key",
+        },
+    )
+
+
+def test_status_url_assignment_moves_url_job_runs_to_the_pasted_job(tmp_path):
+    url = "https://jobs.acme.com/engineer"
+    pasted_key = "pasted:acme-engineer-b4083d9b"
+    run = _run(url=url)
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(conn, _update(company="Acme", title="Engineer", status="Seen"))
+        ledger.record_run(conn, run)
+        ledger.record_status(
+            conn,
+            _update(job_key=pasted_key, url=url, status="Applied", recorded_at="2026-10-02"),
+        )
+        jobs = conn.execute("SELECT job_key, url FROM jobs").fetchall()
+        runs = conn.execute("SELECT job_key FROM runs").fetchall()
+        found = ledger.find_job(conn, url=url, company=None, title=None)
+
+    assert (jobs, runs, found) == (
+        [(pasted_key, url)],
+        [(pasted_key,)],
+        {
+            "found": True,
+            "company": "Acme",
+            "title": "Engineer",
+            "status": "Applied",
+            "status_date": "2026-10-02",
+            "job_key": pasted_key,
+            "score_before": 50.0,
+            "score_after": 70.0,
+            "matched_by": "key",
+        },
+    )
+
+
+def test_status_url_assignment_keeps_url_job_with_its_own_status(tmp_path):
+    url = "https://jobs.acme.com/engineer"
+    pasted_key = "pasted:acme-engineer-b4083d9b"
+    run = _run(url=url)
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(conn, _update(company="Acme", title="Engineer", status="Seen"))
+        ledger.record_run(conn, run)
+        ledger.record_status(conn, _update(url=url, status="Saved", recorded_at="2026-10-02"))
+        ledger.record_status(
+            conn,
+            _update(job_key=pasted_key, url=url, status="Applied", recorded_at="2026-10-03"),
+        )
+        jobs = conn.execute("SELECT job_key, url FROM jobs ORDER BY job_key").fetchall()
+        runs = conn.execute("SELECT job_key FROM runs").fetchall()
+
+    assert (jobs, runs) == (
+        [(url, url), (pasted_key, url)],
+        [(url,)],
+    )
+
+
+def test_latest_run_keeps_microsecond_order(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        for session, stamp, pdf in [
+            ("s1", "2026-10-12T12:00:00.000001+00:00", "/old.pdf"),
+            ("s2", "2026-10-12T12:00:00.000100+00:00", "/new.pdf"),
+        ]:
+            ledger.record_run(conn, _run(session, pdf=pdf).model_copy(update={"timestamp": stamp}))
+        pdfs = [row["Resume PDF"] for row in ledger.export_rows(conn)]
+    assert pdfs == ["/new.pdf"]

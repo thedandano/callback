@@ -2405,6 +2405,28 @@ async def test_ledger_tools_report_unwritable_ledger_as_retriable_error(tmp_path
 
 
 @pytest.mark.anyio
+async def test_find_job_returns_ledger_error_when_ledger_path_has_no_home():
+    import callback.server as server
+
+    with (
+        patch.object(paths, "ledger_path", side_effect=RuntimeError("no home directory")),
+        patch.object(server, "_ensure_browsers"),
+    ):
+        async with Client(FastMCPTransport(server.mcp)) as client:
+            result = await client.call_tool("find_job", {"url": "https://a.com/1"})
+
+    assert _envelope(result) == {
+        "status": "error",
+        "error": {
+            "stage": "ledger",
+            "code": "ledger_error",
+            "message": "could not read or write the ledger: no home directory",
+            "retriable": True,
+        },
+    }
+
+
+@pytest.mark.anyio
 async def test_record_status_on_job_found_by_company_title_uses_job_key(tmp_path):
     import callback.server as server
 

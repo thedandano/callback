@@ -2052,7 +2052,7 @@ def find_job(url: str | None = None, company: str | None = None, title: str | No
     try:
         with closing(ledger.connect()) as conn:
             return _ok("", data=ledger.find_job(conn, url=url, company=company, title=title))
-    except (sqlite3.Error, OSError) as exc:
+    except (sqlite3.Error, OSError, RuntimeError) as exc:
         return _ledger_error(exc)
 
 
@@ -2113,7 +2113,7 @@ def record_status(
             if job_key and not ledger.job_exists(conn, job_key):
                 return _err("ledger", "unknown_job", f"no job with job_key: {job_key!r}")
             added = ledger.record_status(conn, update)
-    except (sqlite3.Error, OSError) as exc:
+    except (sqlite3.Error, OSError, RuntimeError) as exc:
         return _ledger_error(exc)
     return _ok("", data={"recorded": added})
 
@@ -2182,7 +2182,7 @@ def export_ledger(
     try:
         with closing(ledger.connect()) as conn:
             rows = query(conn, status_prefix=status, since=since)
-    except (sqlite3.Error, OSError) as exc:
+    except (sqlite3.Error, OSError, RuntimeError) as exc:
         return _ledger_error(exc)
     try:
         paths.write_text_atomic(target, _csv_text(rows, columns))
