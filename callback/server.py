@@ -2179,8 +2179,8 @@ def find_job(url: str | None = None, company: str | None = None, title: str | No
     submission). To record a status on the job found by company+title, pass its job_key to
     record_status. When not found or the match is weak,
     and a company is given, company_jobs lists that company's other jobs (up to 20, newest
-    first; each with job_key, title, status, status_date) so you can spot a similar title or a
-    requisition id in a job_key URL.
+    first; each with job_key, url, title, status, status_date, ever_applied) so you can spot a
+    similar title or a requisition id in a job_key URL.
     Error codes: missing_job_identity, ledger_error.
     """
     url = ledger.url_or_none(url)
