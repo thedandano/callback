@@ -29,7 +29,7 @@ def test_email_date_preserves_the_source_timestamp():
     actual = {
         "preserves_source_offset": "recorded as-is with its offset" in schema,
         "rejects_time_zone_conversion": "Never convert it to another time zone" in schema,
-        "passes_contact_date": "Pass the email's own date as `date`" in schema,
+        "passes_contact_date": "pass the email's own date as `date`" in schema,
     }
     expected = {
         "preserves_source_offset": True,
