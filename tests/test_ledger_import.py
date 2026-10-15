@@ -864,3 +864,34 @@ def test_archive_with_a_blank_session_id_is_skipped(tmp_path):
         counts = _counts(conn)
 
     assert (report.imported, report.skipped, tuple(counts)) == (0, ["  .json"], (0, 0, 0))
+
+
+def _csv_with_salary(tmp_path, salary):
+    csv_path = tmp_path / "salary.csv"
+    csv_path.write_text(
+        "Company,Title,Recorded Date,Email Date,URL,Salary range,Status,Notes\n"
+        f"Acme,Engineer,2026-10-01,,https://jobs.acme.com/1/,{salary},Applied,\n",
+        encoding="utf-8",
+    )
+    return csv_path
+
+
+@pytest.mark.parametrize(
+    ("row_salary", "note"),
+    [("$190K-$230K", "Salary range: $190K-$230K"), ("180000-220000", None)],
+)
+def test_csv_salary_that_differs_from_the_stored_one_goes_in_the_note(tmp_path, row_salary, note):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.upsert_job(
+            conn,
+            url="https://jobs.acme.com/1/",
+            company="Acme",
+            title="Engineer",
+            seen_at="2026-09-01",
+            salary_range="180000-220000",
+        )
+        import_record_csv(conn, _csv_with_salary(tmp_path, row_salary))
+        salary = conn.execute("SELECT salary_range FROM jobs").fetchone()[0]
+        notes = [r[0] for r in conn.execute("SELECT note FROM status_events")]
+
+    assert (salary, notes) == ("180000-220000", [note])

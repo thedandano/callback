@@ -437,7 +437,14 @@ def record_imported_run_if_absent(conn: sqlite3.Connection, run: RunRecord) -> b
 
 
 def _upsert_run_job(conn: sqlite3.Connection, run: RunRecord) -> str:
-    """Upsert the run's job; a run with no URL may join the one same-name job that has no runs."""
+    """Upsert the run's job.
+
+    A session already in `runs` stays on its job (a retry). A new run with no URL may join the
+    one same-name job that has no runs.
+    """
+    existing = conn.execute(
+        "SELECT job_key FROM runs WHERE session_id = ?", (run.session_id,)
+    ).fetchone()
     return _upsert_job(
         conn,
         url=run.jd_url,
@@ -446,7 +453,7 @@ def _upsert_run_job(conn: sqlite3.Connection, run: RunRecord) -> str:
         seen_at=run.timestamp,
         salary_range=_salary_range(run.keywords),
         jd_text=run.jd_text,
-        key=_same_name_job_key(conn, run),
+        key=existing[0] if existing else _same_name_job_key(conn, run),
     )
 
 
