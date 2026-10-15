@@ -55,12 +55,25 @@ def _run(
         ("https://jobs.example.com:8443/a", "https://jobs.example.com:8443/a"),
         ("https://x.com/#/job/1", "https://x.com#/job/1"),
         ("https://x.com/#!/job/2", "https://x.com#!/job/2"),
+        ("https://x.com/#!/job/2/?utm_source=a", "https://x.com#!/job/2"),
+        ("https://mail.google.com/mail/#all/abc123", "https://mail.google.com/mail#all/abc123"),
         ("jobs.Example.com/a/", "https://jobs.example.com/a"),
         ("https://jobs.example.com/a", "https://jobs.example.com/a"),
     ],
 )
 def test_normalize_url_drops_tracking_noise_but_keeps_job_ids(raw, expected):
     assert ledger.normalize_url(raw) == expected
+
+
+def test_gmail_style_fragments_give_different_keys():
+    keys = [
+        ledger.job_key(f"https://mail.google.com/mail/#all/{m}", None, None)
+        for m in ("19e8b9f6", "19e8b9f7")
+    ]
+    assert keys == [
+        "https://mail.google.com/mail#all/19e8b9f6",
+        "https://mail.google.com/mail#all/19e8b9f7",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -141,6 +154,17 @@ def test_expected_keywords_falls_back_to_archive_when_ledger_dir_is_unreadable(
         {"required": ["Go"]},
         ["ledger_expected_keywords_lookup_failed", "ledger_expected_keywords_source"],
     )
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "https://jobs.example.com/1#description/requirements",
+        "https://jobs.example.com/1#!details/requirements",
+    ],
+)
+def test_normalize_url_drops_unrecognized_fragments(raw):
+    assert ledger.normalize_url(raw) == "https://jobs.example.com/1"
 
 
 def test_normalize_url_keeps_ref_values_that_identify_distinct_jobs():
@@ -618,3 +642,102 @@ def test_blank_labels_and_seen_at_never_block_later_values(tmp_path):
         ("Acme", "Engineer", "2026-10-01"),
         "2026-10-01",
     )
+
+
+def test_job_key_by_name_matches_one_job_ignoring_case_and_spacing(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.upsert_job(conn, url=None, company="Acme  Co", title="Eng", seen_at="2026-10-01")
+        ledger.upsert_job(conn, url="https://b.com/1", company="Beta", title="Dev", seen_at="")
+        ledger.upsert_job(conn, url="https://b.com/2", company="beta", title="DEV", seen_at="")
+        found = (
+            ledger.job_key_by_name(conn, " acme co ", "ENG"),
+            ledger.job_key_by_name(conn, "Beta", "Dev"),
+            ledger.job_key_by_name(conn, "Gamma", "Dev"),
+        )
+
+    assert found == ("pasted:acme-co-eng-04b335ed", None, None)
+
+
+def _scanned_job(conn):
+    return ledger.upsert_job(
+        conn,
+        url="https://www.linkedin.com/jobs/view/123",
+        company="Acme",
+        title="Engineer",
+        seen_at="2026-10-01",
+    )
+
+
+def test_urlless_run_joins_the_one_runless_job_with_the_same_name(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        scanned = _scanned_job(conn)
+        ledger.record_run(conn, _run(url=None))
+        keys = conn.execute("SELECT job_key FROM runs").fetchall()
+        jobs = conn.execute("SELECT job_key FROM jobs").fetchall()
+
+    assert ([tuple(k) for k in keys], [tuple(j) for j in jobs]) == (
+        [(scanned,)],
+        [(scanned,)],
+    )
+
+
+def test_urlless_run_name_match_is_logged(tmp_path, caplog):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        scanned = _scanned_job(conn)
+        with caplog.at_level(logging.INFO, logger="callback.ledger"):
+            ledger.record_run(conn, _run(url=None))
+
+    assert [json.loads(record.message) for record in caplog.records] == [
+        {"event": "ledger_run_name_match", "session_id": "s1", "job_key": scanned}
+    ]
+
+
+def test_urlless_run_keeps_its_own_key_when_the_same_name_job_has_runs(tmp_path, caplog):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        scanned = _scanned_job(conn)
+        ledger.record_run(conn, _run(session_id="s0", url=None))
+        own = ledger.job_key(None, "Acme", "Engineer", "JD")
+        with caplog.at_level(logging.WARNING, logger="callback.ledger"):
+            ledger.record_run(conn, _run(session_id="s1", url=None))
+        keys = conn.execute("SELECT session_id, job_key FROM runs ORDER BY 1").fetchall()
+
+    warnings = [json.loads(r.message) for r in caplog.records if r.levelno == logging.WARNING]
+    assert ([tuple(k) for k in keys], warnings) == (
+        [("s0", scanned), ("s1", own)],
+        [
+            {"event": "ledger_run_name_match", "session_id": "s0", "job_key": scanned},
+            {"event": "ledger_possible_twin_job", "matched_key": scanned, "own_key": own},
+        ],
+    )
+
+
+def test_recorded_again_run_stays_on_the_job_it_already_has(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        job_a = _scanned_job(conn)
+        ledger.record_run(conn, _run(url=None))
+        ledger.upsert_job(
+            conn,
+            url="https://b.example.com/2",
+            company="Acme",
+            title="Engineer",
+            seen_at="2026-10-02",
+        )
+        ledger.record_run(conn, _run(url=None))
+        keys = conn.execute("SELECT job_key FROM runs").fetchall()
+        jobs = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+
+    assert ([tuple(k) for k in keys], jobs) == ([(job_a,)], 2)
+
+
+def test_placeholder_salary_is_stored_as_no_salary(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.upsert_job(
+            conn,
+            url="https://acme.com/j/1",
+            company="Acme",
+            title="SWE",
+            seen_at="2026-09-01",
+            salary_range=" N/A ",
+        )
+        stored = conn.execute("SELECT salary_range FROM jobs").fetchone()
+    assert tuple(stored) == (None,)
