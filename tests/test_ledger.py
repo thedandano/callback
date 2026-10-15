@@ -576,13 +576,29 @@ def test_canonical_timestamp_converts_to_utc_and_keeps_plain_dates(raw, expected
     assert ledger.canonical_timestamp(raw) == expected
 
 
-def test_canonical_timestamp_warns_on_short_malformed_text(caplog):
+@pytest.mark.parametrize("raw", ["oops", "2026-02-31", "2026-00-01"])
+def test_canonical_timestamp_warns_on_malformed_text(caplog, raw):
     with caplog.at_level("WARNING", logger="callback.ledger"):
-        result = ledger.canonical_timestamp("oops")
+        result = ledger.canonical_timestamp(raw)
     assert (result, [r.getMessage() for r in caplog.records]) == (
-        "oops",
-        ['{"event": "ledger_timestamp_unparsed", "value": "oops"}'],
+        raw,
+        [f'{{"event": "ledger_timestamp_unparsed", "value": "{raw}"}}'],
     )
+
+
+def test_blank_salary_never_blocks_a_later_range(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        for salary in (" ", "$100K-$120K"):
+            ledger.upsert_job(
+                conn,
+                url="https://a.com/1",
+                company="Acme",
+                title="Engineer",
+                seen_at="2026-10-01",
+                salary_range=salary,
+            )
+        stored = conn.execute("SELECT salary_range FROM jobs").fetchall()
+    assert stored == [("$100K-$120K",)]
 
 
 def test_connect_creates_the_status_event_identity_index_on_a_fresh_ledger(tmp_path):

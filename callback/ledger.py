@@ -11,7 +11,7 @@ import json
 import logging
 import re
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -295,9 +295,9 @@ def canonical_timestamp(value: str) -> str:
     text that is not ISO comes back as given and logs a warning.
     """
     stripped = value.strip()
-    if not stripped or _PLAIN_DATE.fullmatch(stripped):
-        return stripped
     try:
+        if not stripped or (_PLAIN_DATE.fullmatch(stripped) and date.fromisoformat(stripped)):
+            return stripped
         parsed = datetime.fromisoformat(stripped)
     except ValueError:
         _log.warning(json.dumps({"event": "ledger_timestamp_unparsed", "value": value}))
@@ -320,6 +320,7 @@ def _upsert_job(
     """Insert or merge a job row without committing; callers own the transaction."""
     company = (company or "").strip() or None
     title = (title or "").strip() or None
+    salary_range = (salary_range or "").strip() or None
     key = job_key(url, company, title, jd_text)
     conn.execute(
         _UPSERT_JOB,
