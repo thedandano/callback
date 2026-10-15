@@ -681,6 +681,17 @@ def test_urlless_run_joins_the_one_runless_job_with_the_same_name(tmp_path):
     )
 
 
+def test_urlless_run_name_match_is_logged(tmp_path, caplog):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        scanned = _scanned_job(conn)
+        with caplog.at_level(logging.INFO, logger="callback.ledger"):
+            ledger.record_run(conn, _run(url=None))
+
+    assert [json.loads(record.message) for record in caplog.records] == [
+        {"event": "ledger_run_name_match", "session_id": "s1", "job_key": scanned}
+    ]
+
+
 def test_urlless_run_keeps_its_own_key_when_the_same_name_job_has_runs(tmp_path, caplog):
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
         scanned = _scanned_job(conn)

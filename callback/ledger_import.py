@@ -284,7 +284,7 @@ def _import_row(conn: sqlite3.Connection, row: dict, label: str, report: ImportR
         return
     recorded_at = _iso_date(_cell(row, "Recorded Date")) or _iso_date(_cell(row, "Email Date"))
     key = _import_job(
-        conn, report, (url, company, title), recorded_at or "", _cell(row, "Salary range")
+        conn, report, label, (url, company, title), recorded_at or "", _cell(row, "Salary range")
     )
     bad_url = None if url else raw_url
     note = _with_salary_note(conn, key, _cell(row, "Salary range"), _note(row, bad_url))
@@ -406,17 +406,18 @@ def _contact_url(row: sqlite3.Row, extras: dict[str, str]) -> str | None:
 def _import_contact(
     conn: sqlite3.Connection, row: sqlite3.Row, extras: dict[str, str], report: ImportReport
 ) -> None:
+    label = f"entry {row['id']}"
     date, outcome = _iso_date(_text(row["date"])), _text(row["outcome"])
     if not date or not outcome:
-        _skip(report, f"entry {row['id']}", "missing outcome or missing/invalid date")
+        _skip(report, label, "missing outcome or missing/invalid date")
         return
     url = _contact_url(row, extras)
     company, title = _text(row["employer_name"]) or None, _text(row["type_of_work"]) or None
     if not (url or company or title):
-        _skip(report, f"entry {row['id']}", "row has no URL, employer, or work type")
+        _skip(report, label, "row has no URL, employer, or work type")
         return
     salary = extras.get(_SALARY_KEY)
-    key = _import_job(conn, report, (url, company, title), date, salary)
+    key = _import_job(conn, report, label, (url, company, title), date, salary)
     note = _with_salary_note(conn, key, salary, _contact_note(row, url, extras))
     added = ledger.add_status(
         conn,
@@ -447,6 +448,7 @@ def _with_salary_note(
 def _import_job(
     conn: sqlite3.Connection,
     report: ImportReport,
+    label: str,
     posting: tuple[str | None, str | None, str | None],
     seen_at: str,
     salary_range: str | None,
@@ -464,6 +466,7 @@ def _import_job(
                 " WHERE job_key = ?",
                 (ledger.clean_salary(salary_range), matched),
             )
+        _info("ledger_import_name_match", label=label, job_key=matched)
         return matched
     return _upsert_import_job(
         conn,
