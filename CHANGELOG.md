@@ -16,6 +16,21 @@
 - Existing users must re-run `onboard_user` after upgrading to the HTML renderer + extractor fixes. Older `sections.json` files may contain corrupted contact fields (for example duplicated email or incorrect location).
 - A host that emits `required_any` or `preferred_any` against an OLD callback server is silently degraded: `dataclass_wizard` drops the unknown key, so the group is ignored (not matched, not reported). Upgrade the server before relying on either.
 
+## [2.0.0](https://github.com/thedandano/callback/compare/v1.8.0...v2.0.0) (2026-10-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* record every run in a global ledger ([#135](https://github.com/thedandano/callback/issues/135))
+* tools return structured envelopes instead of JSON strings ([#124](https://github.com/thedandano/callback/issues/124))
+
+### Features
+
+* label traces when the resume has no section headers ([#131](https://github.com/thedandano/callback/issues/131)) ([73d9de0](https://github.com/thedandano/callback/commit/73d9de00fe5caf2625a4d5ec72b293127ec3a941))
+* record every run in a global ledger ([#135](https://github.com/thedandano/callback/issues/135)) ([3af5829](https://github.com/thedandano/callback/commit/3af58293cbf0d013a25870da1d39c8fdda56d539))
+* surface ats_input_suspect in submit_keywords score_gap ([#129](https://github.com/thedandano/callback/issues/129)) ([5ab50d0](https://github.com/thedandano/callback/commit/5ab50d06a27b720bf5d705ff90ba72757ce138a5))
+* tools return structured envelopes instead of JSON strings ([#124](https://github.com/thedandano/callback/issues/124)) ([0a7a713](https://github.com/thedandano/callback/commit/0a7a713b5038fd36866de27395e8f49d4f49ad7b))
+
 ## [1.8.0](https://github.com/thedandano/callback/compare/v1.7.0...v1.8.0) (2026-10-03)
 
 
