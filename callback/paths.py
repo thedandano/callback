@@ -101,7 +101,7 @@ def write_text_atomic(path: Path, content: str) -> None:
     fd, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     tmp_path = Path(name)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as tmp:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as tmp:
             tmp.write(content)
         tmp_path.replace(path)
     except BaseException:

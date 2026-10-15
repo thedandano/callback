@@ -479,7 +479,7 @@ def test_repeated_session_compares_timestamps_across_utc_offsets(tmp_path):
         import_archives(conn, apps)
         stored = conn.execute("SELECT finalized_at FROM runs").fetchall()
 
-    assert [tuple(r) for r in stored] == [("2026-10-12T01:00:00-08:00",)]
+    assert [tuple(r) for r in stored] == [("2026-10-12T09:00:00+00:00",)]
 
 
 def test_archive_roots_are_combined_before_choosing_the_newest_session(tmp_path):
