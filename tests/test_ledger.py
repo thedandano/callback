@@ -1300,6 +1300,27 @@ def test_status_url_assignment_moves_url_job_runs_to_the_pasted_job(tmp_path):
     )
 
 
+def test_status_url_assignment_keeps_the_url_jobs_salary_range(tmp_path):
+    url = "https://jobs.acme.com/engineer"
+    pasted_key = "pasted:acme-engineer-b4083d9b"
+    run = _run(url=url).model_copy(
+        update={
+            "keywords": {
+                "company": "Acme",
+                "title": "Engineer",
+                "pay_range_min": 150000.0,
+                "pay_range_max": 200000.0,
+            }
+        }
+    )
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(conn, _update(company="Acme", title="Engineer", status="Seen"))
+        ledger.record_run(conn, run)
+        ledger.record_status(conn, _update(job_key=pasted_key, url=url, status="Applied"))
+        jobs = conn.execute("SELECT job_key, salary_range FROM jobs").fetchall()
+    assert jobs == [(pasted_key, "150000-200000")]
+
+
 def test_status_url_assignment_keeps_url_job_with_its_own_status(tmp_path):
     url = "https://jobs.acme.com/engineer"
     pasted_key = "pasted:acme-engineer-b4083d9b"
