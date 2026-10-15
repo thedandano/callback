@@ -142,13 +142,14 @@ def _relink_pdf(archive: _Archive) -> ledger.RunRecord:
     elif not matches:
         _warn("ledger_import_pdf_missing", session_id=run.session_id, pdf_path=run.pdf_path)
     else:
+        found = matches[0].resolve()
         _warn(
             "ledger_import_pdf_relinked",
             session_id=run.session_id,
             old=run.pdf_path,
-            new=str(matches[0]),
+            new=str(found),
         )
-        return run.model_copy(update={"pdf_path": str(matches[0])})
+        return run.model_copy(update={"pdf_path": str(found)})
     return run
 
 
@@ -456,15 +457,17 @@ def _import_job(
     """The job an imported row belongs to: the one existing job with the same company and
     title when the row has no URL, else a new or merged job."""
     url, company, title = posting
-    matched = (
-        ledger.job_key_by_name(conn, company, title) if company and title and not url else None
-    )
+    matched = _name_match(conn, url, company, title)
     if matched:
         with conn:
             conn.execute(
-                "UPDATE jobs SET salary_range = COALESCE(NULLIF(salary_range, ''), ?)"
-                " WHERE job_key = ?",
-                (ledger.clean_salary(salary_range), matched),
+                "UPDATE jobs SET salary_range = COALESCE(NULLIF(salary_range, ''), ?),"
+                " url = COALESCE(NULLIF(url, ''), ?) WHERE job_key = ?",
+                (
+                    ledger.clean_salary(salary_range),
+                    ledger.normalize_url(url) if url else None,
+                    matched,
+                ),
             )
         _info("ledger_import_name_match", label=label, job_key=matched)
         return matched
@@ -477,6 +480,22 @@ def _import_job(
         seen_at=seen_at,
         salary_range=salary_range,
     )
+
+
+def _name_match(
+    conn: sqlite3.Connection, url: str | None, company: str | None, title: str | None
+) -> str | None:
+    """The one same-name job a row joins: any job for a URL-less row, else a URL-less job
+    when no job exists yet for the row's URL."""
+    if not (company and title):
+        return None
+    if not url:
+        return ledger.job_key_by_name(conn, company, title)
+    if _job_exists(conn, ledger.job_key(url, None, None)):
+        return None
+    matched = ledger.job_key_by_name(conn, company, title)
+    row = conn.execute("SELECT url FROM jobs WHERE job_key = ?", (matched,)).fetchone()
+    return matched if row and not row[0] else None
 
 
 def _upsert_import_job(

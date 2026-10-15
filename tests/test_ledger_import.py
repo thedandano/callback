@@ -2,6 +2,7 @@ import json
 import logging
 import sqlite3
 from contextlib import closing
+from pathlib import Path
 
 import pytest
 
@@ -914,3 +915,34 @@ def test_csv_salary_that_differs_from_the_stored_one_goes_in_the_note(tmp_path, 
         notes = [r[0] for r in conn.execute("SELECT note FROM status_events")]
 
     assert (salary, notes) == ("180000-220000", [note])
+
+
+@pytest.mark.parametrize("urlless_first", [True, False])
+def test_csv_url_and_urlless_rows_join_one_job_in_either_order(tmp_path, urlless_first):
+    rows = [
+        "Acme,Eng,2026-10-01,,Saved,\n",
+        "Acme,Eng,2026-10-02,https://jobs.acme.com/1,Applied,\n",
+    ]
+    path = _csv(tmp_path, "".join(rows if urlless_first else rows[::-1]))
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        import_record_csv(conn, path)
+        jobs = [tuple(r) for r in conn.execute("SELECT url FROM jobs")]
+        events = [
+            tuple(r) for r in conn.execute("SELECT status FROM status_events ORDER BY status")
+        ]
+
+    assert (jobs, events) == ([("https://jobs.acme.com/1",)], [("Applied",), ("Saved",)])
+
+
+def test_relinked_pdf_path_is_absolute_for_a_relative_archive_root(tmp_path, monkeypatch):
+    _archive(tmp_path, "s1", "https://a.com/1", pdf_path="/home/other/x/resume.pdf")
+    found = tmp_path / "apps" / "resume.pdf"
+    found.write_bytes(b"%PDF")
+    monkeypatch.chdir(tmp_path)
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        import_archives(conn, Path("apps"))
+        stored = _pdf_path(conn, "s1")
+
+    assert stored == str(found.resolve())

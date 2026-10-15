@@ -391,8 +391,8 @@ def _json_or_null(value: object) -> str | None:
 def record_run(conn: sqlite3.Connection, run: RunRecord) -> None:
     """Save a run and its job in one transaction.
 
-    ponytail: a retry whose URL, company or title changed re-points the run to a new job and
-    can leave the old job with no runs. Harmless for dedupe; prune orphans if it ever matters.
+    A session already recorded keeps its job on a retry; the retry's metadata only fills that
+    job's empty fields.
     """
     # Serialize first so bad data fails before anything is written.
     blobs = (
