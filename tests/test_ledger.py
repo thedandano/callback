@@ -1500,6 +1500,7 @@ def test_find_job_lists_other_company_jobs_on_a_weak_match(tmp_path):
                 title="Engineer",
                 seen_at=f"2026-10-0{n}",
             )
+        ledger.record_status(conn, _update(url="https://acme.com/jobs/1", status="Saved"))
         weak = ledger.find_job(
             conn, url="https://acme.com/jobs/3", company="Acme", title="Engineer"
         )
@@ -1562,3 +1563,20 @@ def test_company_jobs_returns_twenty_other_jobs_on_a_weak_match(tmp_path):
         20,
         False,
     )
+
+
+def test_find_job_lists_company_jobs_for_a_run_only_key_match(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(
+            conn, _update(url="https://acme.com/jobs/1", company="Acme", title="Engineer")
+        )
+        ledger.record_run(conn, _run("s9", url="https://acme.com/jobs/1?alt=1"))
+        found = ledger.find_job(
+            conn, url="https://acme.com/jobs/1?alt=1", company="Acme", title="Engineer"
+        )
+
+    assert (
+        found["matched_by"],
+        found["status"],
+        [(job["job_key"], job["ever_applied"]) for job in found["company_jobs"]],
+    ) == ("key", None, [("https://acme.com/jobs/1", True)])
