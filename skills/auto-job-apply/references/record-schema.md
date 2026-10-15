@@ -1,6 +1,6 @@
 # Status values and notes
 
-Write each record with `record_status(status, url, company, title, salary_range, note, date)`. Pass the email's own date as `date` (`YYYY-MM-DD` from its Date header), so exports and `since` filters use the contact's date, not the processing date. Also put the full Date header in `note`, recorded as-is with its offset. Never convert it to another time zone.
+Write each record with `record_status(status, url, company, title, salary_range, note, date)`. For an email-sourced contact or status event (application, confirmation, rejection, recruiter message), pass the email's own date as `date` (`YYYY-MM-DD` from its Date header), so exports and `since` filters use the contact's date. Scoring, staging, skip and curation outcomes omit `date`, so they get the processing date. Also put the full source timestamp in `note`, recorded as-is with its offset. Never convert it to another time zone.
 
 Field rules:
 
