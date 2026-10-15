@@ -972,6 +972,8 @@ def test_export_rows_status_filter_ignores_empty_and_escapes_wildcards(tmp_path)
         ("HTTP://a.com/1", "HTTP://a.com/1"),
         ("Gmail thread: Jane", None),
         ("linkedin.com", None),
+        ("https://a.com:bad", None),
+        ("https://a.com:99999", None),
         ("  ", None),
         (None, None),
     ],
@@ -1297,6 +1299,41 @@ def test_status_url_assignment_moves_url_job_runs_to_the_pasted_job(tmp_path):
             "score_after": 70.0,
             "matched_by": "key",
         },
+    )
+
+
+def test_status_url_assignment_keeps_a_different_url_job_and_its_runs(tmp_path):
+    target_url = "https://jobs.acme.com/engineer-a"
+    run_url = "https://jobs.acme.com/engineer-b"
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        pasted_key = ledger.upsert_job(
+            conn,
+            url=None,
+            company="Acme",
+            title="Engineer",
+            seen_at="2026-10-01",
+        )
+        ledger.record_status(
+            conn,
+            _update(
+                job_key=pasted_key,
+                url=target_url,
+                company="Acme",
+                title="Engineer",
+                status="Seen",
+            ),
+        )
+        ledger.record_run(conn, _run(url=run_url))
+        ledger.record_status(
+            conn,
+            _update(job_key=pasted_key, url=run_url, status="Applied", recorded_at="2026-10-02"),
+        )
+        jobs = conn.execute("SELECT job_key, url FROM jobs ORDER BY job_key").fetchall()
+        runs = conn.execute("SELECT job_key FROM runs ORDER BY job_key").fetchall()
+
+    assert (jobs, runs) == (
+        [(run_url, run_url), (pasted_key, target_url)],
+        [(run_url,)],
     )
 
 

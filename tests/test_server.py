@@ -2428,6 +2428,25 @@ async def test_find_job_returns_ledger_error_when_ledger_path_has_no_home():
     }
 
 
+def test_record_status_returns_ledger_error_for_a_lone_surrogate():
+    import callback.server as server
+
+    result = server.record_status(status="\ud800", url="https://a.com/1")
+
+    assert result == {
+        "status": "error",
+        "error": {
+            "stage": "ledger",
+            "code": "ledger_error",
+            "message": (
+                "could not read or write the ledger: 'utf-8' codec can't encode character "
+                "'\\ud800' in position 0: surrogates not allowed"
+            ),
+            "retriable": True,
+        },
+    }
+
+
 @pytest.mark.anyio
 async def test_record_status_on_job_found_by_company_title_uses_job_key(tmp_path):
     import callback.server as server
