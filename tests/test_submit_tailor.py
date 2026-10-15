@@ -883,7 +883,7 @@ def test_submit_tailor_rejects_relative_output_dir(tmp_path, monkeypatch):
 
 
 def test_submit_tailor_without_output_dir_writes_to_apps_dir(tmp_path, monkeypatch):
-    """Default (no output_dir): PDF lands in apps_dir, unchanged from prior behavior."""
+    """Default (no output_dir): PDF lands in apps_dir/<date>/<slug>/."""
     from callback.server import submit_tailor
 
     resume_label = "default_dir_resume"
@@ -900,10 +900,10 @@ def test_submit_tailor_without_output_dir_writes_to_apps_dir(tmp_path, monkeypat
     pdf_path = Path(result["data"]["pdf_path"])
     actual = {
         "status": result["status"],
-        "pdf_in_apps_dir": pdf_path.parent == apps_dir,
+        "pdf_in_dated_folder": pdf_path.parent.parent.parent == apps_dir,
         "pdf_exists": pdf_path.exists(),
     }
-    assert actual == {"status": "ok", "pdf_in_apps_dir": True, "pdf_exists": True}
+    assert actual == {"status": "ok", "pdf_in_dated_folder": True, "pdf_exists": True}
 
 
 def test_submit_tailor_rejects_unwritable_output_dir(tmp_path, monkeypatch):
@@ -1027,3 +1027,13 @@ def test_submit_tailor_can_be_retried_after_finalize_archive_write_failure(tmp_p
         "archive_exists": Path(second["data"]["archive_path"]).exists(),
     }
     assert actual == {"status": "ok", "pdf_exists": True, "archive_exists": True}
+
+
+def test_archive_path_follows_explicit_output_dir_over_stored_artifact_dir(tmp_path):
+    from callback import server
+
+    final = {"artifact_dir": str(tmp_path / "old"), "output_dir": str(tmp_path / "new")}
+
+    actual = server._submit_tailor_artifacts(final, "s1")
+
+    assert actual == {"pdf_path": None, "archive_path": str(tmp_path / "new" / "s1.json")}

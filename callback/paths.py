@@ -7,9 +7,11 @@ test patch takes effect without reloading modules.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
+import re
 import tempfile
 from pathlib import Path
 
@@ -111,3 +113,26 @@ def config_dir() -> Path:
 
 def env_file() -> Path:
     return config_dir() / "env.json"
+
+
+SLUG_MAX_LENGTH = 80
+_SLUG_HASH_LENGTH = 8
+_SLUG_LOSSY_CHARS = re.compile(r"[^A-Za-z0-9\s\-.,&/'():]")
+
+
+def slug(*parts: str | None) -> str:
+    """Folder-safe name: lowercase words joined by hyphens, e.g. 'acme-senior-engineer'.
+
+    Names over SLUG_MAX_LENGTH are cut and given a short hash of the full name, so they stay
+    under filesystem limits and two long names do not collide.
+    """
+    joined = " ".join(p for p in parts if p)
+    full = re.sub(r"[^a-z0-9]+", "-", joined.lower()).strip("-") or "job"
+    lossy = _SLUG_LOSSY_CHARS.search(joined) is not None
+    if len(full) <= SLUG_MAX_LENGTH and not lossy:
+        return full
+    # Punctuation or non-ASCII text ("C++" vs "C#") collapses to the same words, so hash the
+    # original text. Plain long names keep hashing the folded name, as before.
+    digest = hashlib.sha1((joined if lossy else full).encode()).hexdigest()[:_SLUG_HASH_LENGTH]
+    head = full[: SLUG_MAX_LENGTH - _SLUG_HASH_LENGTH - 1].strip("-")
+    return f"{head}-{digest}"

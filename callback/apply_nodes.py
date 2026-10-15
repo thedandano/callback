@@ -17,7 +17,7 @@ import asyncio
 import json
 import logging
 import re
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from time import perf_counter
 
@@ -510,9 +510,35 @@ def _resolve_tailored_text(state: ApplyState) -> str:
     return ""
 
 
+def _today() -> date:
+    return date.today()  # local date, matching the skills' <YYYY-MM-DD> folders
+
+
 def _artifact_dir(state: ApplyState) -> Path:
-    """Where the PDF and JSON archive both go: output_dir if set, else the default apps dir."""
-    return Path(state.output_dir) if state.output_dir else paths.apps_dir()
+    """Folder for this run's PDF: the caller's output_dir, else the dated folder render
+    already chose, else apps_dir/<local date>/<company-role-slug>/.
+
+    An explicit output_dir always wins, so a retry can redirect the output. render stores
+    the dated default in state.artifact_dir, so a retry that crosses midnight keeps it.
+    """
+    if state.output_dir:
+        return Path(state.output_dir)
+    if state.artifact_dir:
+        return Path(state.artifact_dir)
+    keywords = state.keywords or {}
+    folder = paths.slug(keywords.get("company"), keywords.get("title"))
+    return paths.apps_dir() / _today().isoformat() / folder
+
+
+def _dated_dir_update(state: ApplyState, folder: Path) -> dict:
+    """State update that remembers the dated default folder, never an explicit output_dir.
+
+    An explicit folder is left out so a retry without output_dir picks the dated default
+    again, while a dated folder stored earlier stays put (the midnight guarantee).
+    """
+    if state.output_dir:
+        return {}
+    return {"artifact_dir": str(folder)}
 
 
 @trace_node("apply", "render")
@@ -526,7 +552,10 @@ def render(state: ApplyState) -> dict:
     try:
         base_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        return {"error": f"render: cannot create output dir {base_dir}: {exc}"}
+        return {
+            "error": f"render: cannot create output dir {base_dir}: {exc}",
+            **_dated_dir_update(state, base_dir),
+        }
     company_name = state.keywords.get("company") if state.keywords else None
     output_path = str(base_dir / _resume_pdf_filename(state.tailored.name, company_name))
 
@@ -539,12 +568,16 @@ def render(state: ApplyState) -> dict:
             "pdf_path": output_path,
             "render_page_count": result.get("page_count"),
             "render_warnings": result.get("warnings") or [],
+            **_dated_dir_update(state, base_dir),
         }
     else:
         logger.error(
             json.dumps({"node": "render", "session_id": state.session_id, "error": result["error"]})
         )
-        return {"error": f"render: {result['error']}"}
+        return {
+            "error": f"render: {result['error']}",
+            **_dated_dir_update(state, base_dir),
+        }
 
 
 @trace_node("apply", "parse_final")
@@ -712,7 +745,10 @@ def finalize(state: ApplyState) -> dict:
         logger.error(
             json.dumps({"node": "finalize", "session_id": state.session_id, "error": str(exc)})
         )
-        return {"error": f"finalize: cannot create apps dir {artifact_dir}: {exc}"}
+        return {
+            "error": f"finalize: cannot create apps dir {artifact_dir}: {exc}",
+            **_dated_dir_update(state, artifact_dir),
+        }
 
     # Derive tailored resume text from sections or tailored object
     tailored_text = _resolve_tailored_text(state)
@@ -752,6 +788,9 @@ def finalize(state: ApplyState) -> dict:
         logger.error(
             json.dumps({"node": "finalize", "session_id": state.session_id, "error": str(exc)})
         )
-        return {"error": f"finalize: cannot write archive: {exc}"}
+        return {
+            "error": f"finalize: cannot write archive: {exc}",
+            **_dated_dir_update(state, artifact_dir),
+        }
 
-    return {"finalized_at": finalized_at}
+    return {"finalized_at": finalized_at, **_dated_dir_update(state, artifact_dir)}

@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import re
+from datetime import date
 from pathlib import Path
 
 import callback.render.html_builder as render_builder
@@ -24,14 +25,21 @@ from callback.state import ApplyState, TailoredResume
 
 def test_render_produces_real_pdf(tmp_path, monkeypatch):
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
+    monkeypatch.setattr("callback.apply_nodes._today", lambda: date(2026, 10, 12))
     state = ApplyState(
         session_id="s1",
         keywords={"company": "Acme Corp"},
         tailored=TailoredResume(name="Jane Doe", summary="Python engineer"),
     )
     result = render(state)
-    expected_path = str(tmp_path / "Jane_Doe_Acme_Corp_Resume.pdf")
-    assert result == {"pdf_path": expected_path, "render_page_count": 1, "render_warnings": []}
+    folder = tmp_path / "2026-10-12" / "acme-corp"
+    expected_path = str(folder / "Jane_Doe_Acme_Corp_Resume.pdf")
+    assert result == {
+        "pdf_path": expected_path,
+        "render_page_count": 1,
+        "render_warnings": [],
+        "artifact_dir": str(folder),
+    }
     with open(expected_path, "rb") as f:
         assert f.read(4) == b"%PDF"
 
@@ -39,6 +47,7 @@ def test_render_produces_real_pdf(tmp_path, monkeypatch):
 def test_render_keyword_round_trip(tmp_path, monkeypatch):
     """skills_raw keyword survives render → extract round-trip."""
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
+    monkeypatch.setattr("callback.apply_nodes._today", lambda: date(2026, 10, 12))
     state = ApplyState(
         session_id="s2",
         keywords={"company": "Kafka Systems"},
@@ -46,9 +55,12 @@ def test_render_keyword_round_trip(tmp_path, monkeypatch):
     )
     render_result = render(state)
     assert render_result == {
-        "pdf_path": str(tmp_path / "Jane_Doe_Kafka_Systems_Resume.pdf"),
+        "pdf_path": str(
+            tmp_path / "2026-10-12" / "kafka-systems" / "Jane_Doe_Kafka_Systems_Resume.pdf"
+        ),
         "render_page_count": 1,
         "render_warnings": [],
+        "artifact_dir": str(tmp_path / "2026-10-12" / "kafka-systems"),
     }
 
     pdf_path = render_result["pdf_path"]

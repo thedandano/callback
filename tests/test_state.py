@@ -64,6 +64,7 @@ class TestApplyStateBasic:
             "tailored_sections",
             "pdf_path",
             "output_dir",
+            "artifact_dir",
             "render_page_count",
             "render_warnings",
             "report",

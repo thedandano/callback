@@ -192,3 +192,40 @@ def test_write_text_atomic_cleans_up_temp_file_on_rename_failure(tmp_path: Path,
     actual = {"raised": raised, "entries": sorted(p.name for p in tmp_path.iterdir())}
     expected = {"raised": "rename refused", "entries": []}
     assert actual == expected
+
+
+@pytest.mark.parametrize(
+    ("parts", "expected"),
+    [
+        (("ExpertVoice", "Frontend AI Engineer"), "expertvoice-frontend-ai-engineer"),
+        (("AT&T", "Sr. Engineer, Platform"), "at-t-sr-engineer-platform"),
+        (("Acme", "Senior Engineer"), "acme-senior-engineer"),
+        ((None, None), "job"),
+    ],
+)
+def test_slug_matches_the_skill_folder_names(parts, expected):
+    assert paths.slug(*parts) == expected
+
+
+def test_slug_keeps_punctuation_and_non_ascii_roles_distinct():
+    cpp = paths.slug("Acme", "C++ Engineer")
+    csharp = paths.slug("Acme", "C# Engineer")
+    non_ascii = paths.slug("Acme", "Ingénieur Logiciel")
+    only_non_ascii = paths.slug("株式会社", "エンジニア")
+
+    assert (cpp != csharp, non_ascii != "acme-ing-nieur-logiciel", only_non_ascii != "job") == (
+        True,
+        True,
+        True,
+    )
+    assert paths.slug("Acme", "Ingénieur Logiciel") == non_ascii
+    assert len(only_non_ascii) <= paths.SLUG_MAX_LENGTH
+
+
+def test_slug_bounds_long_names_and_keeps_distinct_ones_distinct():
+    first = paths.slug("Acme", "Senior Engineer " * 20 + "alpha")
+    second = paths.slug("Acme", "Senior Engineer " * 20 + "beta")
+
+    actual = (len(first) <= paths.SLUG_MAX_LENGTH, len(second) <= paths.SLUG_MAX_LENGTH)
+    assert actual == (True, True)
+    assert first != second

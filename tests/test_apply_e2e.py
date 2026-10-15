@@ -329,7 +329,7 @@ class TestM3ScoreDelta:
         """Archive JSON has scores.delta mirroring report.delta."""
         session_id, graph, config, tmp_path = setup_m3_session_with_graph
         state = graph.get_state(config).values
-        archive_path = tmp_path / "applications" / f"{session_id}.json"
+        archive_path = Path(state["artifact_dir"]) / f"{session_id}.json"
         archive = json.loads(archive_path.read_text())
 
         actual = {

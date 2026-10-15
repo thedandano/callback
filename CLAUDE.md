@@ -114,7 +114,7 @@ uv run pytest -m local evals/                          # E1 + E2 checks over the
 - `XDG_DATA_HOME`: Moves the whole data root (resumes, wiki, compiled profile, applications archive) from `~/.local/share/callback` to `$XDG_DATA_HOME/callback`.
 - `XDG_STATE_HOME`: Moves the state root (server log) from `~/.local/state/callback` to `$XDG_STATE_HOME/callback`.
 - `XDG_CONFIG_HOME`: Moves the settings file from `~/.config/callback/env.json` to `$XDG_CONFIG_HOME/callback/env.json`.
-- `CALLBACK_APPS_DIR`: Override where application PDFs and JSON archives are written; overrides only the archive directory, not the other data roots. `submit_tailor`'s `output_dir` argument overrides this per-call for both the PDF and the JSON archive.
+- `CALLBACK_APPS_DIR`: Override the root where application PDFs and JSON archives are written; each run gets `<root>/<YYYY-MM-DD>/<company-role-slug>/`. It moves only these two outputs, not the other data roots. `submit_tailor`'s `output_dir` argument overrides it per call for both the PDF and the JSON archive.
 - `CALLBACK_FETCH_PAGE_TIMEOUT_MS`: Override the Playwright page-load timeout in milliseconds. Default: `30000`.
 - `CALLBACK_FETCH_OUTER_TIMEOUT_S`: Override the outer fetch timeout in seconds. Default: `35`.
 - `CALLBACK_TRACE_BACKEND`: Optional tracing backend. Set to `langsmith` to enable LangSmith tracing.

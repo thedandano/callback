@@ -172,6 +172,7 @@ def test_finalize_archive_includes_scores_delta(tmp_path, monkeypatch):
     }
     state = ApplyState(
         session_id="r4",
+        output_dir=str(tmp_path),
         score_initial=_SCORE_INITIAL,
         score_final=_SCORE_FINAL,
         report=report_data,
@@ -196,6 +197,7 @@ def test_finalize_archive_scoring_engine_version(tmp_path, monkeypatch):
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
     state = ApplyState(
         session_id="r5",
+        output_dir=str(tmp_path),
         score_initial=_SCORE_INITIAL,
         score_final=_SCORE_FINAL,
         report={"delta": _DELTA, "format_gap_chars": 0, "uncovered_skills": []},
@@ -253,6 +255,7 @@ def test_finalize_archive_outcome_field(tmp_path, monkeypatch):
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
     state = ApplyState(
         session_id="r7",
+        output_dir=str(tmp_path),
         score_initial=_SCORE_INITIAL,
         no_coverage=True,
         report={"delta": {}, "format_gap_chars": 0, "uncovered_skills": []},
