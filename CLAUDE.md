@@ -111,10 +111,10 @@ uv run pytest -m local evals/                          # E1 + E2 checks over the
 
 ## Env Vars
 
-- `XDG_DATA_HOME`: Moves the whole data root (resumes, wiki, compiled profile, applications archive) from `~/.local/share/callback` to `$XDG_DATA_HOME/callback`.
+- `XDG_DATA_HOME`: Moves the whole data root (resumes, wiki, compiled profile, ledger, default PDF folder) from `~/.local/share/callback` to `$XDG_DATA_HOME/callback`.
 - `XDG_STATE_HOME`: Moves the state root (server log) from `~/.local/state/callback` to `$XDG_STATE_HOME/callback`.
 - `XDG_CONFIG_HOME`: Moves the settings file from `~/.config/callback/env.json` to `$XDG_CONFIG_HOME/callback/env.json`.
-- `CALLBACK_APPS_DIR`: Override the root where application PDFs and JSON archives are written; each run gets `<root>/<YYYY-MM-DD>/<company-role-slug>/`. It moves only these two outputs, not the other data roots. `submit_tailor`'s `output_dir` argument overrides it per call for both the PDF and the JSON archive.
+- `CALLBACK_APPS_DIR`: Override the root where application PDFs are written; each run gets `<root>/<YYYY-MM-DD>/<company-role-slug>/`. It moves only the PDFs, not the other data roots or the ledger. `submit_tailor`'s `output_dir` argument overrides it per call.
 - `CALLBACK_FETCH_PAGE_TIMEOUT_MS`: Override the Playwright page-load timeout in milliseconds. Default: `30000`.
 - `CALLBACK_FETCH_OUTER_TIMEOUT_S`: Override the outer fetch timeout in seconds. Default: `35`.
 - `CALLBACK_TRACE_BACKEND`: Optional tracing backend. Set to `langsmith` to enable LangSmith tracing.
@@ -196,9 +196,9 @@ All tools return JSON envelopes via `_ok` / `_err`:
 
 ### Agent MCP Playbook
 
-When the user asks to use callback for a job, call `load_jd`, extract JDData as the host, call `submit_keywords`, follow `workflow.next_tool`, and finish with `submit_tailor`. Return `data.pdf_path`, `data.archive_path`, `data.report`, and `data.outcome` to the user. If `workflow.next_tool` is `onboard_user` or `create_story`, collect the missing profile evidence, compile the profile, then restart the job flow with `load_jd`.
+When the user asks to use callback for a job, call `load_jd`, extract JDData as the host, call `submit_keywords`, follow `workflow.next_tool`, and finish with `submit_tailor`. Return `data.pdf_path`, `data.ledger_path`, `data.report`, and `data.outcome` to the user. If `workflow.next_tool` is `onboard_user` or `create_story`, collect the missing profile evidence, compile the profile, then restart the job flow with `load_jd`.
 
-If you run in a sandboxed filesystem, callback's default output (`~/.local/share/callback/applications/`) is outside your reach. Before calling `submit_tailor`, ask the user for a full output directory inside your sandbox and pass it as `output_dir`; the final PDF (`data.pdf_path`) and the JSON archive (`data.archive_path`) are then both written there directly.
+If you run in a sandboxed filesystem, callback's default output (`~/.local/share/callback/applications/`) is outside your reach. Before calling `submit_tailor`, ask the user for a full output directory inside your sandbox and pass it as `output_dir`; the final PDF (`data.pdf_path`) is then written there directly; the run record goes to callback's ledger (`data.ledger_path`).
 
 ### Apply graph (`apply_graph.py`, `apply_nodes.py`)
 
@@ -307,6 +307,7 @@ committed and public, so there is nothing to withhold.
 | `repository/stories.py` | Story pages: read, write, migrate legacy JSON stories to OKF pages |
 | `wikirenderer.py`    | Renders `index.md` |
 | `paths.py`           | Every data directory and the atomic writers |
+| `ledger.py`          | Global application ledger in SQLite (`paths.ledger_path()`): jobs, runs, append-only status events |
 | `observability.py`   | Trace config port and LangSmith adapter |
 | `evals/`             | Eval checks, fixtures, runner; see Evals |
 

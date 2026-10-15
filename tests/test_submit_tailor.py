@@ -2,10 +2,13 @@
 
 import json
 import os
+import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 import pytest
 
+from callback import ledger, paths
 from callback.section_map import (
     ContactInfo,
     ExperienceEntry,
@@ -14,6 +17,41 @@ from callback.section_map import (
     SkillsSection,
 )
 from callback.wiki import WikiStore
+
+
+def _find_ledger_run(result: dict) -> dict | None:
+    """The run recorded for this submit_tailor result, shaped like the pre-ledger JSON record
+    (minus its timestamp). None when the session has no row."""
+    session_id = result["session_id"]
+    with closing(ledger.connect(Path(result["data"]["ledger_path"]))) as conn:
+        row = conn.execute(
+            "SELECT j.url, r.jd_text, r.keywords, r.tailored_resume_text, r.pdf_path, "
+            "r.render_page_count, r.render_warnings, r.scores, r.uncovered_skills, r.outcome "
+            "FROM runs r JOIN jobs j ON j.job_key = r.job_key WHERE r.session_id = ?",
+            (session_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    url, jd_text, keywords, text, pdf, pages, warnings, scores, uncovered, outcome = row
+    return {
+        "session_id": session_id,
+        "jd_url": url,
+        "jd_text": jd_text,
+        "keywords": json.loads(keywords),
+        "tailored_resume_text": text,
+        "pdf_path": pdf,
+        "render_page_count": pages,
+        "render_warnings": json.loads(warnings),
+        "scores": json.loads(scores),
+        "uncovered_skills": json.loads(uncovered),
+        "outcome": json.loads(outcome),
+    }
+
+
+def _ledger_run(result: dict) -> dict:
+    run = _find_ledger_run(result)
+    assert run is not None, f"no ledger row for session {result['session_id']}"
+    return run
 
 
 @pytest.fixture(autouse=True)
@@ -155,7 +193,7 @@ def test_submit_tailor_applies_valid_edits_and_rescores(tmp_path, monkeypatch):
         "edits_applied": result["data"]["edits_applied"],
         "edits_rejected": result["data"]["edits_rejected"],
         "pdf_exists": Path(result["data"]["pdf_path"]).exists(),
-        "archive_exists": Path(result["data"]["archive_path"]).exists(),
+        "ledger_has_run": _find_ledger_run(result) is not None,
         "workflow_phase": result["workflow"]["phase"],
         "workflow_next_tool": result["workflow"]["next_tool"],
         "score_final_has_total": "total" in (result["data"]["score_final"] or {}),
@@ -169,7 +207,7 @@ def test_submit_tailor_applies_valid_edits_and_rescores(tmp_path, monkeypatch):
         "edits_applied": [0, 1, 2],
         "edits_rejected": [],
         "pdf_exists": True,
-        "archive_exists": True,
+        "ledger_has_run": True,
         "workflow_phase": "complete",
         "workflow_next_tool": None,
         "score_final_has_total": True,
@@ -180,7 +218,7 @@ def test_submit_tailor_applies_valid_edits_and_rescores(tmp_path, monkeypatch):
 
 
 def test_submit_tailor_pipeline_error_marks_artifacts_null(tmp_path, monkeypatch):
-    """A pipeline_error must state explicitly that score_final/pdf_path/archive_path
+    """A pipeline_error must state explicitly that score_final/pdf_path/ledger_path
     do not exist and direct the host not to synthesize them
     (host_action=report_and_wait)."""
     from callback.server import submit_tailor
@@ -208,7 +246,7 @@ def test_submit_tailor_pipeline_error_marks_artifacts_null(tmp_path, monkeypatch
     assert "data" in result
     assert result["data"]["score_final"] is None
     assert result["data"]["pdf_path"] is None
-    assert result["data"]["archive_path"] is None
+    assert result["data"]["ledger_path"] is None
 
 
 def test_submit_tailor_can_be_retried_after_render_failure(tmp_path, monkeypatch):
@@ -255,7 +293,7 @@ def test_submit_tailor_can_be_retried_after_render_failure(tmp_path, monkeypatch
             "retriable": True,
             "host_action": "report_and_wait",
         },
-        "data": {"score_final": None, "pdf_path": None, "archive_path": None},
+        "data": {"score_final": None, "pdf_path": None, "ledger_path": None},
         "session_id": session_id,
     }
 
@@ -296,7 +334,7 @@ def test_submit_tailor_no_coverage_retry_clears_stale_render_outputs(tmp_path, m
             "retriable": True,
             "host_action": "report_and_wait",
         },
-        "data": {"score_final": None, "pdf_path": None, "archive_path": None},
+        "data": {"score_final": None, "pdf_path": None, "ledger_path": None},
         "session_id": session_id,
     }
 
@@ -362,9 +400,7 @@ def test_submit_tailor_no_coverage_retry_clears_stale_render_outputs(tmp_path, m
         "outcome": {"no_coverage": True, "reason": "no wiki stories cover required keywords"},
     }
 
-    archive = json.loads(Path(second["data"]["archive_path"]).read_text())
-    timestamp = archive.pop("timestamp")
-    assert isinstance(timestamp, str)
+    run = _ledger_run(second)
     expected_scores = {
         "total": 59.01960784313725,
         "keyword_match": 27.5,
@@ -404,7 +440,7 @@ def test_submit_tailor_no_coverage_retry_clears_stale_render_outputs(tmp_path, m
         ],
         "scoring_engine_version": "v2",
     }
-    expected_archive = {
+    expected_run = {
         "session_id": session_id,
         "jd_url": None,
         "jd_text": "Sample JD",
@@ -445,7 +481,7 @@ def test_submit_tailor_no_coverage_retry_clears_stale_render_outputs(tmp_path, m
         "uncovered_skills": [],
         "outcome": {"no_coverage": True, "reason": "no wiki stories cover required keywords"},
     }
-    assert archive == expected_archive
+    assert run == expected_run
 
 
 def test_submit_tailor_replaces_project_entry(tmp_path, monkeypatch):
@@ -491,13 +527,13 @@ def test_submit_tailor_replaces_project_entry(tmp_path, monkeypatch):
     ]
     result = submit_tailor(session_id=session_id, edits=edits)
 
-    archive = json.loads(Path(result["data"]["archive_path"]).read_text())
+    run = _ledger_run(result)
     actual = {
         "status": result["status"],
         "edits_applied": result["data"]["edits_applied"],
         "edits_rejected": result["data"]["edits_rejected"],
-        "rendered_has_new_project": "Personal Voice LLM" in archive["tailored_resume_text"],
-        "rendered_lost_old_project": "Howe-2" not in archive["tailored_resume_text"],
+        "rendered_has_new_project": "Personal Voice LLM" in run["tailored_resume_text"],
+        "rendered_lost_old_project": "Howe-2" not in run["tailored_resume_text"],
         "chatml_matched": "ChatML" in result["data"]["score_final"]["req_matched"],
     }
     expected = {
@@ -560,8 +596,8 @@ def test_submit_tailor_removes_weak_bullet_and_adds_second_project(tmp_path, mon
     ]
     result = submit_tailor(session_id=session_id, edits=edits)
 
-    archive = json.loads(Path(result["data"]["archive_path"]).read_text())
-    rendered_text = archive["tailored_resume_text"]
+    run = _ledger_run(result)
+    rendered_text = run["tailored_resume_text"]
     actual = {
         "status": result["status"],
         "edits_applied": result["data"]["edits_applied"],
@@ -784,7 +820,7 @@ def test_submit_tailor_project_bullet_replacement_can_match_required_keyword(tmp
 
 
 def test_submit_tailor_redirects_pdf_to_output_dir(tmp_path, monkeypatch):
-    """output_dir redirects both the PDF and the JSON archive there; neither lands in apps_dir."""
+    """output_dir redirects the PDF there; the run goes to the ledger, not into output_dir."""
     from callback.server import submit_tailor
 
     resume_label = "redirect_resume"
@@ -800,24 +836,21 @@ def test_submit_tailor_redirects_pdf_to_output_dir(tmp_path, monkeypatch):
     result = submit_tailor(session_id=session_id, edits=edits, output_dir=str(output_dir))
 
     pdf_path = Path(result["data"]["pdf_path"])
-    archive_path = Path(result["data"]["archive_path"])
     actual = {
         "status": result["status"],
         "pdf_in_output_dir": pdf_path.parent == output_dir,
         "pdf_exists": pdf_path.exists(),
         "no_pdf_in_apps_dir": list(apps_dir.glob("*.pdf")) == [],
-        "archive_in_output_dir": archive_path.parent == output_dir,
-        "archive_exists": archive_path.exists(),
-        "no_archive_in_apps_dir": list(apps_dir.glob("*.json")) == [],
+        "no_json_in_output_dir": list(output_dir.glob("*.json")) == [],
+        "ledger_has_run": _find_ledger_run(result) is not None,
     }
     assert actual == {
         "status": "ok",
         "pdf_in_output_dir": True,
         "pdf_exists": True,
         "no_pdf_in_apps_dir": True,
-        "archive_in_output_dir": True,
-        "archive_exists": True,
-        "no_archive_in_apps_dir": True,
+        "no_json_in_output_dir": True,
+        "ledger_has_run": True,
     }
 
 
@@ -971,17 +1004,14 @@ def test_submit_tailor_returns_envelope_when_extractor_raises(tmp_path, monkeypa
             "retriable": True,
             "host_action": "report_and_wait",
         },
-        "data": {"score_final": None, "pdf_path": None, "archive_path": None},
+        "data": {"score_final": None, "pdf_path": None, "ledger_path": None},
         "session_id": session_id,
     }
     assert result == expected
 
 
-def test_submit_tailor_can_be_retried_after_finalize_archive_write_failure(tmp_path, monkeypatch):
+def test_submit_tailor_can_be_retried_after_finalize_ledger_write_failure(tmp_path, monkeypatch):
     """A finalize OSError leaves the session at the tailor interrupt for a retry."""
-    import builtins
-
-    import callback.apply_nodes as apply_nodes_module
     from callback.server import submit_tailor
 
     resume_label = "test_resume"
@@ -995,16 +1025,16 @@ def test_submit_tailor_can_be_retried_after_finalize_archive_write_failure(tmp_p
         {"section": "summary", "op": "replace", "value": "Python + Kubernetes engineer."},
     ]
 
-    real_open = builtins.open
+    real_connect = ledger.connect
     calls = {"n": 0}
 
-    def flaky_open(*args, **kwargs):
+    def flaky_connect(path=None):
         calls["n"] += 1
         if calls["n"] == 1:
-            raise OSError("disk full")
-        return real_open(*args, **kwargs)
+            raise sqlite3.OperationalError("disk full")
+        return real_connect(path)
 
-    monkeypatch.setattr(apply_nodes_module, "open", flaky_open, raising=False)
+    monkeypatch.setattr(ledger, "connect", flaky_connect)
 
     first = submit_tailor(session_id=session_id, edits=edits)
     assert first == {
@@ -1012,11 +1042,11 @@ def test_submit_tailor_can_be_retried_after_finalize_archive_write_failure(tmp_p
         "error": {
             "stage": "submit_tailor",
             "code": "pipeline_error",
-            "message": "finalize: cannot write archive: disk full",
+            "message": "finalize: cannot write ledger: disk full",
             "retriable": True,
             "host_action": "report_and_wait",
         },
-        "data": {"score_final": None, "pdf_path": None, "archive_path": None},
+        "data": {"score_final": None, "pdf_path": None, "ledger_path": None},
         "session_id": session_id,
     }
 
@@ -1024,16 +1054,17 @@ def test_submit_tailor_can_be_retried_after_finalize_archive_write_failure(tmp_p
     actual = {
         "status": second["status"],
         "pdf_exists": Path(second["data"]["pdf_path"]).exists(),
-        "archive_exists": Path(second["data"]["archive_path"]).exists(),
+        "ledger_has_run": _find_ledger_run(second) is not None,
     }
-    assert actual == {"status": "ok", "pdf_exists": True, "archive_exists": True}
+    assert actual == {"status": "ok", "pdf_exists": True, "ledger_has_run": True}
 
 
-def test_archive_path_follows_explicit_output_dir_over_stored_artifact_dir(tmp_path):
+def test_submit_tailor_artifacts_report_the_ledger_path(tmp_path):
     from callback import server
 
     final = {"artifact_dir": str(tmp_path / "old"), "output_dir": str(tmp_path / "new")}
 
-    actual = server._submit_tailor_artifacts(final, "s1")
-
-    assert actual == {"pdf_path": None, "archive_path": str(tmp_path / "new" / "s1.json")}
+    assert server._submit_tailor_artifacts(final) == {
+        "pdf_path": None,
+        "ledger_path": str(paths.ledger_path()),
+    }

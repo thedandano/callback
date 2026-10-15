@@ -1,7 +1,7 @@
 """Every data directory callback reads or writes, and the atomic writers for them.
 
 XDG_DATA_HOME moves the whole data root. CALLBACK_APPS_DIR moves only the
-applications archive. Paths are computed on every call, so an env change or a
+default PDF folder. Paths are computed on every call, so an env change or a
 test patch takes effect without reloading modules.
 """
 
@@ -41,6 +41,13 @@ def data_dir() -> Path:
 
 def state_dir() -> Path:
     return _xdg_root("XDG_STATE_HOME", Path.home() / ".local" / "state") / "callback"
+
+
+def _ledger_path_impl() -> Path:
+    return data_dir() / "ledger.db"
+
+
+ledger_path = _ledger_path_impl  # tests swap ledger_path; this keeps the real one reachable
 
 
 def inputs_dir() -> Path:

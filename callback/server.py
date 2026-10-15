@@ -916,19 +916,9 @@ def _complete_workflow() -> dict:
     )
 
 
-def _submit_tailor_artifacts(final: dict, session_id: str) -> dict:
-    """Resolve this run's artifact paths from final graph state.
-
-    archive_path sits in the same folder _artifact_dir picks: an explicit output_dir,
-    else the folder render chose (state.artifact_dir). The fallback covers runs where
-    render never succeeded.
-    """
-    artifact_dir = Path(final.get("output_dir") or final.get("artifact_dir") or paths.apps_dir())
-    archive_path = str(artifact_dir / f"{session_id}.json")
-    return {
-        "pdf_path": final.get("pdf_path"),
-        "archive_path": archive_path,
-    }
+def _submit_tailor_artifacts(final: dict) -> dict:
+    """This run's PDF and the ledger it was recorded in (one row keyed by session_id)."""
+    return {"pdf_path": final.get("pdf_path"), "ledger_path": str(paths.ledger_path())}
 
 
 def _resolve_output_dir(output_dir: str | None, session_id: str) -> tuple[str | None, dict | None]:
@@ -1108,10 +1098,11 @@ def submit_tailor(
       value: str | dict (required for add/replace; project add/replacement uses a ProjectEntry dict)
       category: str (optional, for categorized skills)
 
-    output_dir (optional): an absolute directory to write the final PDF and JSON archive into
+    output_dir (optional): an absolute directory to write the final PDF into
     instead of callback's default dated folder. Recommended for sandboxed hosts (Claude/Codex)
-    whose filesystem cannot reach callback's default output. Both artifacts are written there
-    directly (a redirect, not a copy); data.pdf_path and data.archive_path point inside it. An
+    whose filesystem cannot reach callback's default output. The PDF is written there
+    directly (a redirect, not a copy); data.pdf_path points inside it; the run is recorded in
+    callback's ledger regardless. An
     unwritable path returns an invalid_output_dir error rather than silently falling back.
 
     When no_coverage=True, skips edit application entirely, sets no_coverage in
@@ -1121,7 +1112,7 @@ def submit_tailor(
     and returns real score_final and report from final graph state.
 
     Returns envelope dict (structured content) with edits_applied, edits_rejected, uncovered_skills,
-    pdf_path, archive_path, score_final, report, outcome, and tailor_diagnostics.
+    pdf_path, ledger_path, score_final, report, outcome, and tailor_diagnostics.
     tailor_diagnostics is a per-skill-edit list of {value, applied_to_map,
     present_in_rendered_text, suggested_alternatives} entries; empty for
     non-skill edits.
@@ -1207,10 +1198,10 @@ def _submit_tailor_no_coverage(session_id: str, graph, config, resolved_output_d
             final["error"],
             session_id,
             retriable=True,
-            data={"score_final": None, "pdf_path": None, "archive_path": None},
+            data={"score_final": None, "pdf_path": None, "ledger_path": None},
             host_action="report_and_wait",
         )
-    artifacts = _submit_tailor_artifacts(final, session_id)
+    artifacts = _submit_tailor_artifacts(final)
     return _ok(
         session_id,
         next_action=None,
@@ -1219,7 +1210,7 @@ def _submit_tailor_no_coverage(session_id: str, graph, config, resolved_output_d
             "edits_rejected": [],
             "uncovered_skills": [],
             "pdf_path": artifacts["pdf_path"],
-            "archive_path": artifacts["archive_path"],
+            "ledger_path": artifacts["ledger_path"],
             "score_final": final.get("score_final"),
             "report": final.get("report"),
             "tailor_diagnostics": [],
@@ -1348,10 +1339,10 @@ def _apply_tailor_edits(
             final["error"],
             session_id,
             retriable=True,
-            data={"score_final": None, "pdf_path": None, "archive_path": None},
+            data={"score_final": None, "pdf_path": None, "ledger_path": None},
             host_action="report_and_wait",
         )
-    artifacts = _submit_tailor_artifacts(final, session_id)
+    artifacts = _submit_tailor_artifacts(final)
     return _ok(
         session_id,
         next_action=None,
@@ -1360,7 +1351,7 @@ def _apply_tailor_edits(
             "edits_rejected": edits_rejected,
             "uncovered_skills": uncovered_skills,
             "pdf_path": artifacts["pdf_path"],
-            "archive_path": artifacts["archive_path"],
+            "ledger_path": artifacts["ledger_path"],
             "score_final": final.get("score_final"),
             "report": final.get("report"),
             "tailor_diagnostics": final.get("tailor_diagnostics") or [],

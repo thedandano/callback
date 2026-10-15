@@ -54,7 +54,7 @@ def test_xdg_data_home_moves_every_data_path(monkeypatch, tmp_path: Path):
     # so changing XDG_DATA_HOME alone must not move them.
 
 
-def test_callback_apps_dir_overrides_only_the_archive(monkeypatch, tmp_path: Path):
+def test_callback_apps_dir_moves_only_the_pdf_folder(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "apps"))
     monkeypatch.delenv("XDG_STATE_HOME", raising=False)
@@ -229,3 +229,9 @@ def test_slug_bounds_long_names_and_keeps_distinct_ones_distinct():
     actual = (len(first) <= paths.SLUG_MAX_LENGTH, len(second) <= paths.SLUG_MAX_LENGTH)
     assert actual == (True, True)
     assert first != second
+
+
+def test_ledger_lives_in_the_data_dir(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(paths, "ledger_path", paths.__dict__["_ledger_path_impl"])
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    assert paths.ledger_path() == tmp_path / "callback" / "ledger.db"
