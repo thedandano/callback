@@ -568,11 +568,21 @@ def test_first_seen_is_the_earliest_moment_across_offsets(tmp_path):
         ("2026-10-01T23:00:00-07:00", "2026-10-02T06:00:00+00:00"),
         ("2026-10-01T10:00:00", "2026-10-01T10:00:00+00:00"),
         ("2026-10-01", "2026-10-01"),
+        ("20261001", "2026-10-01T00:00:00+00:00"),
         ("", ""),
     ],
 )
 def test_canonical_timestamp_converts_to_utc_and_keeps_plain_dates(raw, expected):
     assert ledger.canonical_timestamp(raw) == expected
+
+
+def test_canonical_timestamp_warns_on_short_malformed_text(caplog):
+    with caplog.at_level("WARNING", logger="callback.ledger"):
+        result = ledger.canonical_timestamp("oops")
+    assert (result, [r.getMessage() for r in caplog.records]) == (
+        "oops",
+        ['{"event": "ledger_timestamp_unparsed", "value": "oops"}'],
+    )
 
 
 def test_connect_creates_the_status_event_identity_index_on_a_fresh_ledger(tmp_path):

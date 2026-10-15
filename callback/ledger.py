@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -56,7 +57,7 @@ _TRACKING_PARAMS = frozenset(
 )
 _JD_HASH_CHARS = 8
 _NAME_SEPARATOR = "\x1f"
-_PLAIN_DATE_LENGTH = len("2026-10-01")
+_PLAIN_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -294,7 +295,7 @@ def canonical_timestamp(value: str) -> str:
     text that is not ISO comes back as given and logs a warning.
     """
     stripped = value.strip()
-    if len(stripped) <= _PLAIN_DATE_LENGTH:
+    if not stripped or _PLAIN_DATE.fullmatch(stripped):
         return stripped
     try:
         parsed = datetime.fromisoformat(stripped)
