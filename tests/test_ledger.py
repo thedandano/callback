@@ -858,8 +858,20 @@ def test_find_job_returns_latest_status_or_not_found(tmp_path):
         by_name = ledger.find_job(conn, url="https://other.com/9", company="a", title=" dev ")
         missing = ledger.find_job(conn, url="https://a.com/2", company=None, title=None)
         half_name = ledger.find_job(conn, url="https://a.com/3", company="A", title=None)
+        other = ledger.upsert_job(
+            conn, url="https://a.com/req-7", company="a ", title="Dev II", seen_at="2026-10-03"
+        )
+        _status(conn, other, "Skipped - not fit", "2026-10-03")
+        similar = ledger.find_job(conn, url="https://a.com/4", company="A", title="Developer")
 
-    hit = {"found": True, "company": "A", "title": "Dev", "status": "Rejected"}
+    hit = {
+        "found": True,
+        "company": "A",
+        "title": "Dev",
+        "url": "https://a.com/1",
+        "status": "Rejected",
+        "ever_applied": True,
+    }
     hit = {
         **hit,
         "status_date": "2026-10-05",
@@ -871,17 +883,36 @@ def test_find_job_returns_latest_status_or_not_found(tmp_path):
         "found": False,
         "company": None,
         "title": None,
+        "url": None,
         "status": None,
+        "ever_applied": False,
         "status_date": None,
         "job_key": None,
         "score_before": None,
         "score_after": None,
     }
-    assert (found, by_name, missing, half_name) == (
-        {**hit, "matched_by": "key"},
-        {**hit, "matched_by": "company_title"},
-        {**none, "matched_by": None},
-        {**none, "matched_by": None},
+    mine = {
+        "job_key": "https://a.com/1",
+        "url": "https://a.com/1",
+        "title": "Dev",
+        "status": "Rejected",
+        "ever_applied": True,
+    }
+    mine = {**mine, "status_date": "2026-10-05"}
+    req7 = {
+        "job_key": "https://a.com/req-7",
+        "url": "https://a.com/req-7",
+        "title": "Dev II",
+        "status": "Skipped - not fit",
+        "ever_applied": False,
+    }
+    req7 = {**req7, "status_date": "2026-10-03"}
+    assert (found, by_name, missing, half_name, similar) == (
+        {**hit, "matched_by": "key", "company_jobs": []},
+        {**hit, "matched_by": "company_title", "company_jobs": []},
+        {**none, "matched_by": None, "company_jobs": []},
+        {**none, "matched_by": None, "company_jobs": [mine]},
+        {**none, "matched_by": None, "company_jobs": [req7, mine]},
     )
 
 
@@ -904,13 +935,66 @@ def test_find_job_normalizes_unicode_and_whitespace_and_returns_run_scores(tmp_p
         "found": True,
         "company": "MÜNCHEN GmbH",
         "title": "Senior  Engineer",
+        "url": "https://jobs.example.com/a",
         "status": None,
+        "ever_applied": False,
         "status_date": None,
         "job_key": "https://jobs.example.com/a",
         "score_before": 50.0,
         "score_after": 70.0,
         "matched_by": "company_title",
+        "company_jobs": [],
     }
+
+
+def test_find_job_reports_prior_submission_after_a_later_non_submission_status(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        submitted = ledger.upsert_job(
+            conn,
+            url="https://a.com/submitted",
+            company="A",
+            title="Submitted",
+            seen_at="2026-10-01",
+        )
+        not_submitted = ledger.upsert_job(
+            conn, url="https://a.com/review", company="A", title="Review", seen_at="2026-10-01"
+        )
+        _status(conn, submitted, "Applied", "2026-10-01")
+        _status(conn, submitted, "Recruiter follow-up", "2026-10-02")
+        _status(conn, not_submitted, "Needs review - not applied", "2026-10-01")
+        found = ledger.find_job(conn, url="https://a.com/submitted", company=None, title=None)
+        not_found = ledger.find_job(conn, url="https://a.com/review", company=None, title=None)
+
+    assert (found, not_found) == (
+        {
+            "found": True,
+            "company": "A",
+            "title": "Submitted",
+            "url": "https://a.com/submitted",
+            "status": "Recruiter follow-up",
+            "ever_applied": True,
+            "status_date": "2026-10-02",
+            "job_key": "https://a.com/submitted",
+            "score_before": None,
+            "score_after": None,
+            "matched_by": "key",
+            "company_jobs": [],
+        },
+        {
+            "found": True,
+            "company": "A",
+            "title": "Review",
+            "url": "https://a.com/review",
+            "status": "Needs review - not applied",
+            "ever_applied": False,
+            "status_date": "2026-10-01",
+            "job_key": "https://a.com/review",
+            "score_before": None,
+            "score_after": None,
+            "matched_by": "key",
+            "company_jobs": [],
+        },
+    )
 
 
 def test_spreadsheet_safe_defuses_formulas_only():
@@ -1260,12 +1344,15 @@ def test_run_after_status_url_assignment_uses_the_pasted_job(tmp_path):
             "found": True,
             "company": "Acme",
             "title": "Engineer",
+            "url": url,
             "status": "Applied",
+            "ever_applied": True,
             "status_date": "2026-10-02",
             "job_key": pasted_key,
             "score_before": 50.0,
             "score_after": 70.0,
             "matched_by": "key",
+            "company_jobs": [],
         },
     )
 
@@ -1292,12 +1379,15 @@ def test_status_url_assignment_moves_url_job_runs_to_the_pasted_job(tmp_path):
             "found": True,
             "company": "Acme",
             "title": "Engineer",
+            "url": url,
             "status": "Applied",
+            "ever_applied": True,
             "status_date": "2026-10-02",
             "job_key": pasted_key,
             "score_before": 50.0,
             "score_after": 70.0,
             "matched_by": "key",
+            "company_jobs": [],
         },
     )
 
@@ -1398,3 +1488,95 @@ def test_latest_run_keeps_microsecond_order(tmp_path):
             ledger.record_run(conn, _run(session, pdf=pdf).model_copy(update={"timestamp": stamp}))
         pdfs = [row["Resume PDF"] for row in ledger.export_rows(conn)]
     assert pdfs == ["/new.pdf"]
+
+
+def test_find_job_lists_other_company_jobs_on_a_weak_match(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        for n in (1, 2):
+            ledger.upsert_job(
+                conn,
+                url=f"https://acme.com/jobs/{n}",
+                company="Acme",
+                title="Engineer",
+                seen_at=f"2026-10-0{n}",
+            )
+        ledger.record_status(conn, _update(url="https://acme.com/jobs/1", status="Saved"))
+        weak = ledger.find_job(
+            conn, url="https://acme.com/jobs/3", company="Acme", title="Engineer"
+        )
+        strong = ledger.find_job(
+            conn, url="https://acme.com/jobs/1", company="Acme", title="Engineer"
+        )
+    assert (
+        weak["matched_by"],
+        weak["job_key"],
+        [job["job_key"] for job in weak["company_jobs"]],
+        strong["matched_by"],
+        strong["company_jobs"],
+    ) == (
+        "company_title",
+        "https://acme.com/jobs/2",
+        ["https://acme.com/jobs/1"],
+        "key",
+        [],
+    )
+
+
+def test_company_jobs_entry_reports_ever_applied(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        for status in ("Applied", "Recruiter follow-up"):
+            ledger.record_status(
+                conn,
+                _update(
+                    url="https://acme.com/jobs/1", company="Acme", title="Engineer", status=status
+                ),
+            )
+        weak = ledger.find_job(conn, url="https://acme.com/jobs/9", company="Acme", title="Dev")
+    assert weak["company_jobs"] == [
+        {
+            "job_key": "https://acme.com/jobs/1",
+            "url": "https://acme.com/jobs/1",
+            "title": "Engineer",
+            "status": "Recruiter follow-up",
+            "status_date": "2026-10-01",
+            "ever_applied": True,
+        }
+    ]
+
+
+def test_company_jobs_returns_twenty_other_jobs_on_a_weak_match(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        for n in range(22):
+            ledger.upsert_job(
+                conn,
+                url=f"https://acme.com/jobs/{n:02d}",
+                company="Acme",
+                title="Engineer" if n == 21 else f"Role {n}",
+                seen_at=f"2026-09-{n + 1:02d}",
+            )
+        weak = ledger.find_job(
+            conn, url="https://acme.com/jobs/99", company="Acme", title="Engineer"
+        )
+    keys = [job["job_key"] for job in weak["company_jobs"]]
+    assert (weak["job_key"], len(keys), "https://acme.com/jobs/21" in keys) == (
+        "https://acme.com/jobs/21",
+        20,
+        False,
+    )
+
+
+def test_find_job_lists_company_jobs_for_a_run_only_key_match(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(
+            conn, _update(url="https://acme.com/jobs/1", company="Acme", title="Engineer")
+        )
+        ledger.record_run(conn, _run("s9", url="https://acme.com/jobs/1?alt=1"))
+        found = ledger.find_job(
+            conn, url="https://acme.com/jobs/1?alt=1", company="Acme", title="Engineer"
+        )
+
+    assert (
+        found["matched_by"],
+        found["status"],
+        [(job["job_key"], job["ever_applied"]) for job in found["company_jobs"]],
+    ) == ("key", None, [("https://acme.com/jobs/1", True)])

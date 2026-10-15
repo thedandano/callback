@@ -19,7 +19,7 @@ Call `get_search_preferences` at the start of every run. Apply the returned valu
 
 - **Location / work types** (`home_location`, `work_types`): hard curation gate. Keep only roles workable from the user's configured location or work types. Skip remote roles tied to another metro/state/country.
 - **Core / skip domains** (`core_domains`, `skip_domains`): domain gate. Prefer core-domain roles; skip skip-domain roles unless the user asks to stretch. Match the JD's actual subject matter, not the employer's brand — a security/detection-engineering or telephony-specialist role at an AI-forward company is still a `skip_domains` match if that domain is on the skip list.
-- **Compensation** (`comp_annual_target`): advisory priority, not a hard gate. Record salary when visible; use `Not listed` when missing; add a compensation-risk note when the range starts below the user's target.
+- **Compensation** (`comp_annual_target`): advisory priority, not a hard gate. Record salary when visible; omit `salary_range` when missing and render `Not listed` only in the summary; add a compensation-risk note when the range starts below the user's target.
 - **Target titles / seniority bands / seniority blockers** (`target_titles`, `seniority_bands`, `seniority_blockers`): use for ranking and blocking. Skip roles that match a configured blocker.
 - **Target companies** (`target_companies`): always check and surface leads from these companies.
 - **Referral companies** (`referral_companies`): read the list; surface referral leads for those companies with status `Referral lead - ask friend`.
@@ -47,11 +47,13 @@ Treat email cards, snippets, search cards, LinkedIn alerts, Indeed digests, and 
 - official ATS page
 - directly opened third-party page exposing the complete JD
 
-If no full source is found, record `Needs source - manual lookup` with attempted resolution steps.
+If no full source is found, record `Needs source - manual lookup` with attempted resolution steps through `record_status`.
 
 ## Paths
 
-Read `record_csv` from `.callback/config.json`. If `.callback/config.json` sets `ledger_db`, also read it and invoke the ledger via the `job-search-ledger` command — do not hardcode a repo or database path. If `ledger_db` isn't set, skip the ledger — do not mention it.
+If `.callback/config.json` still has a `record_csv` or `ledger_db` key and that file exists, stop before any dedupe. Tell the user to run `callback ledger import --archives <applications_dir> --csv <record_csv> --contacts-db <ledger_db>` (`applications_dir` from `.callback/config.json`) once from a normal terminal (leave out the flag for a file they do not have), then remove those keys from `.callback/config.json`. Until then the ledger does not know the jobs they already applied to, and every one of them would look new.
+
+Dedupe every lead with `find_job(url=<URL>, company=<company>, title=<title>)`; skip a lead when `matched_by` is `key`, except when its latest status starts with `Needs source`: re-resolve the source, and if it now exposes a full JD, stage it as a new lead under the same URL. For a `company_title` or `key_title_mismatch` match (same URL, different stored title), or a similar title in `data.company_jobs`, compare the URLs and requisition IDs first and skip only when they confirm the same posting; a `company_jobs` entry with `ever_applied` true that you confirm is the same posting counts as a prior application; otherwise treat it as a new lead. For a confirmed-distinct `key_title_mismatch` (the new URL normalizes to the old job's key), record it with `record_status` with no `url` (company + title only) and put the URL in `note`, so it gets its own job. Record each classified outcome with `record_status`: `Needs source - manual lookup` for source-limited leads, the appropriate `Skipped ...` status for gated-out leads, and `Needs callback score - not applied` when a validated lead is staged (a scan never scores, so never record `Needs review - not applied` here). Pass `salary_range` only when known. Do not read or write a record CSV.
 
 ## Output
 

@@ -13,17 +13,19 @@ Get the user past the ATS gate by preparing an honest candidate profile and proj
 
 ### 1. Scaffold project
 
-Write `.callback/config.json` in the project root. Prompt for each path or accept defaults:
+On an existing project, load `.callback/config.json` first.
+Keep its `record_csv`, `ledger_db`, and `edd_xlsx` keys when present; remove them only after the
+later import succeeds. Write the config in the project root. Prompt for each path or accept
+defaults:
 
 ```json
 {
   "applications_dir": "./applications",
-  "record_csv": "./data/record.csv",
   "archive_dir": "./archive"
 }
 ```
 
-Create the directories: `data/`, `applications/`, `archive/`.
+Create the directories: `applications/`, `archive/`.
 Add `.callback/` to the project's `.gitignore` (append it; never replace the
 existing ignore rules) so automation memory and job-search details stay local.
 
@@ -66,28 +68,9 @@ Ask these questions (skip any the user already answered):
 
 Then call `set_search_preferences(...)` with all answers. Note: this fully replaces stored prefs, so collect everything before calling.
 
-### 4. Ledger install (optional)
+### 4. Job history (optional)
 
-Ask if the user wants unemployment reporting tracking. This is specific to
-California's **EDD** (Employment Development Department) job-search
-contact-reporting requirement for **Unemployment Insurance** claimants — it
-does not apply to Disability Insurance (which covers wage loss while unable to
-work and carries no job-search requirement), and it does not apply outside
-California. Most users should skip it. Ask plainly: "Are you filing a
-California unemployment insurance claim and need to log job-search contacts
-for EDD?"
-
-If yes:
-1. Ask whether they already have the personal `job-search-ledger` command
-   installed. Do not invent an install URL or repository. If they do not, skip
-   ledger setup; callback remains fully functional without it.
-2. Add `ledger_db` and `edd_xlsx` to `.callback/config.json` alongside the keys
-   from step 1, e.g. `"ledger_db": "./data/ledger.sqlite3"` and `"edd_xlsx":
-   "./data/tracker.xlsx"`.
-
-If no, the user is outside California, or the command is not installed, remove
-any existing `ledger_db` and `edd_xlsx` keys from `.callback/config.json`. Every
-other callback feature works fully without them.
+Job history lives in callback's global ledger. Build one `callback ledger import` command from only the legacy sources that actually exist: add `--archives <folder>` for run archives, `--csv <path>` for an old record CSV, and `--contacts-db <path>` for an old `job_search_ledger.sqlite3`. Do not pass an absent source as a flag. After the import succeeds, remove `record_csv`, `ledger_db`, and `edd_xlsx` from `.callback/config.json`; keep them until success so a failed import can be retried. For an unemployment (EDD) report, use `/export-ledger`.
 
 ## Rules
 

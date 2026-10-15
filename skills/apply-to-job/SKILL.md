@@ -25,7 +25,8 @@ Also read the compiled profile (via `get_wiki_pages` or the profile summary) for
 
 ## Workflow
 
-1. If `.callback/config.json` sets `ledger_db`, dedupe against the job search ledger first, then the CSV record. If `ledger_db` isn't set, dedupe against the CSV record alone — do not mention the ledger.
+1. Old records: If `.callback/config.json` still has a `record_csv` or `ledger_db` key and that file exists, stop before any dedupe. Tell the user to run `callback ledger import --archives <applications_dir> --csv <record_csv> --contacts-db <ledger_db>` (`applications_dir` from `.callback/config.json`) once from a normal terminal (leave out the flag for a file they do not have), then remove those keys from `.callback/config.json`. Until then the ledger does not know the jobs they already applied to, and every one of them would look new.
+   Dedupe: call `find_job(url=<job URL>, company=<company>, title=<title>)` (pass `company` and `title` too). Compare the returned stored `url` and requisition ID with the source. A hit is a prior application when `ever_applied` is true. Show the latest status and stop unless the user confirms a re-apply. When `ever_applied` is false, continue the workflow. When `matched_by` is `company_title` or `key_title_mismatch` (same URL, different stored title), compare the returned stored `url` and requisition IDs first. Reuse its `job_key` only when they confirm the same posting. If they prove a different posting: after a `company_title` match, call `record_status` with the new URL and no `job_key`; after a `key_title_mismatch` (the new URL normalizes to the old job's key), call `record_status` with no `url` (company + title only) and put the URL in `note`. Whenever the match is weak, missing, or a key match with no status, also inspect `data.company_jobs` (each has `job_key`, `url`, `title`, `status`, `ever_applied`; once you confirm an entry is the same posting, `ever_applied` true counts as a prior application): confirm a similar title or requisition ID there is the same posting before reusing that job's key.
 2. Validate the source exposes the complete current JD.
 3. Run callback directly:
    - `load_jd`
@@ -34,11 +35,11 @@ Also read the compiled profile (via `get_wiki_pages` or the profile summary) for
    - `get_wiki_pages` when useful
    - `submit_tailor`, passing `output_dir` as the absolute path of `applications_dir/<YYYY-MM-DD>/<company-role-slug>/` (from `.callback/config.json`) so the tailored PDF lands in the project folder instead of callback's hidden data directory.
 4. Store artifacts under the configured `applications_dir` from `.callback/config.json` — use slug `<YYYY-MM-DD>/<company-role-slug>/`. One folder per role per day; reuse the day's folder, do not create near-duplicate run variants.
-5. Record status in the CSV at `record_csv` from `.callback/config.json`.
+5. Record the outcome with `record_status(status, url, company, title, salary_range, note)`. Pass `salary_range` only when the source supplied one; otherwise omit it. For an application or recruiter resume submission, begin `note` with `Contact method: <Online|Email|Phone|Mail|Fax|In person>`; never on other notes. Reuse a `company_title` or `key_title_mismatch` match's `job_key` only after URL or requisition-ID confirmation; reusing it also fills that job's missing URL, company and title. If they prove a different posting: after a `company_title` match, record the new URL with no `job_key`; after a `key_title_mismatch` (the new URL normalizes to the old job's key), call `record_status` with no `url` (company + title only, so it gets its own job) and put the URL in `note`.
 6. Stage scores >= 70 as `Needs review - not applied`.
 7. Keep lower scores as `Scored - below threshold` unless the user explicitly wants a stretch.
 8. Submit an application only after explicit current-turn approval.
-9. If `.callback/config.json` sets `ledger_db`, for real applications, confirmations, or recruiter resume submissions, update the job search ledger via the `job-search-ledger` command. If `ledger_db` isn't set, skip this — do not mention the ledger. Separately, if `.callback/config.json` also sets `edd_xlsx`, export the unemployment-compatible workbook to that path — do not assume `edd_xlsx` is set just because `ledger_db` is.
+9. Record real applications and recruiter resume submissions with `record_status(status="Applied", ...)`. For a confirmation email about an existing application, use `status="Already applied - confirmation recorded"`. For an unemployment (EDD) report, use `/export-ledger`.
 
 ## Failure Contract
 

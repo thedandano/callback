@@ -156,6 +156,7 @@ Ask for these in plain English or use the slash command.
 | `setup-callback` | Set up everything in one pass: paths, resume, preferences. Start here. |
 | `onboard-profile` | Register a resume, add accomplishments, or write a new story. |
 | `tailor-resume` | Score and tailor for one job posting. |
+| `export-ledger` | Export the ledger to CSV, optionally by status or date. |
 | `scan-job-leads` | Find and dedupe job leads. Doesn't apply to anything. |
 | `apply-to-job` | Score, tailor, stage, and record an application. |
 
@@ -279,7 +280,7 @@ Point a scheduler at the `scan-job-leads` skill.
 Claude `/schedule`, weekday mornings:
 
 ```
-/schedule "0 8 * * 1-5" Use the scan-job-leads skill. Read search preferences via get_search_preferences, scan configured sources within lead_recency_days, dedupe against the configured ledger when ledger_db exists, otherwise dedupe against the record CSV, and return the standard scan-job-leads summary with recommended leads for apply-to-job.
+/schedule "0 8 * * 1-5" Use the scan-job-leads skill. Read search preferences via get_search_preferences, scan configured sources within lead_recency_days, dedupe every lead with find_job against callback's ledger, and return the standard scan-job-leads summary with recommended leads for apply-to-job.
 ```
 
 Or plain cron:
@@ -309,7 +310,7 @@ own flow.
 | `set_search_preferences` | Save your job-search preferences. |
 | `get_search_preferences` | Read your job-search preferences. |
 | `check_update` | Report the current version, the latest release tag, and whether an update is available. |
-| `find_job` | Check whether a job is already in the ledger, its latest status, and stored score totals (dedupe). |
+| `find_job` | Check whether a job is already in the ledger, its stored URL, latest status, `ever_applied`, and score totals (dedupe). |
 | `record_status` | Add a status (Applied, Rejected, ...) to a job in the ledger; never overwrites history. A non-http(s) `url`, like a recruiter thread, goes into the note. |
 | `export_ledger` | Write the ledger as CSV to an absolute path: one row per job (latest status and scores), with `mode="events"` one row per status event with its own date, or with `mode="contacts"` only the EDD-reportable events (notes starting `Contact method:`, statuses starting `Applied` or `Already applied`). |
 
