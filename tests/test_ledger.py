@@ -864,7 +864,14 @@ def test_find_job_returns_latest_status_or_not_found(tmp_path):
         _status(conn, other, "Skipped - not fit", "2026-10-03")
         similar = ledger.find_job(conn, url="https://a.com/4", company="A", title="Developer")
 
-    hit = {"found": True, "company": "A", "title": "Dev", "status": "Rejected"}
+    hit = {
+        "found": True,
+        "company": "A",
+        "title": "Dev",
+        "url": "https://a.com/1",
+        "status": "Rejected",
+        "ever_applied": True,
+    }
     hit = {
         **hit,
         "status_date": "2026-10-05",
@@ -876,7 +883,9 @@ def test_find_job_returns_latest_status_or_not_found(tmp_path):
         "found": False,
         "company": None,
         "title": None,
+        "url": None,
         "status": None,
+        "ever_applied": False,
         "status_date": None,
         "job_key": None,
         "score_before": None,
@@ -924,7 +933,9 @@ def test_find_job_normalizes_unicode_and_whitespace_and_returns_run_scores(tmp_p
         "found": True,
         "company": "MÜNCHEN GmbH",
         "title": "Senior  Engineer",
+        "url": "https://jobs.example.com/a",
         "status": None,
+        "ever_applied": False,
         "status_date": None,
         "job_key": "https://jobs.example.com/a",
         "score_before": 50.0,
@@ -932,6 +943,56 @@ def test_find_job_normalizes_unicode_and_whitespace_and_returns_run_scores(tmp_p
         "matched_by": "company_title",
         "company_jobs": [],
     }
+
+
+def test_find_job_reports_prior_submission_after_a_later_non_submission_status(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        submitted = ledger.upsert_job(
+            conn,
+            url="https://a.com/submitted",
+            company="A",
+            title="Submitted",
+            seen_at="2026-10-01",
+        )
+        not_submitted = ledger.upsert_job(
+            conn, url="https://a.com/review", company="A", title="Review", seen_at="2026-10-01"
+        )
+        _status(conn, submitted, "Applied", "2026-10-01")
+        _status(conn, submitted, "Recruiter follow-up", "2026-10-02")
+        _status(conn, not_submitted, "Needs review - not applied", "2026-10-01")
+        found = ledger.find_job(conn, url="https://a.com/submitted", company=None, title=None)
+        not_found = ledger.find_job(conn, url="https://a.com/review", company=None, title=None)
+
+    assert (found, not_found) == (
+        {
+            "found": True,
+            "company": "A",
+            "title": "Submitted",
+            "url": "https://a.com/submitted",
+            "status": "Recruiter follow-up",
+            "ever_applied": True,
+            "status_date": "2026-10-02",
+            "job_key": "https://a.com/submitted",
+            "score_before": None,
+            "score_after": None,
+            "matched_by": "key",
+            "company_jobs": [],
+        },
+        {
+            "found": True,
+            "company": "A",
+            "title": "Review",
+            "url": "https://a.com/review",
+            "status": "Needs review - not applied",
+            "ever_applied": False,
+            "status_date": "2026-10-01",
+            "job_key": "https://a.com/review",
+            "score_before": None,
+            "score_after": None,
+            "matched_by": "key",
+            "company_jobs": [],
+        },
+    )
 
 
 def test_spreadsheet_safe_defuses_formulas_only():
@@ -1281,7 +1342,9 @@ def test_run_after_status_url_assignment_uses_the_pasted_job(tmp_path):
             "found": True,
             "company": "Acme",
             "title": "Engineer",
+            "url": url,
             "status": "Applied",
+            "ever_applied": True,
             "status_date": "2026-10-02",
             "job_key": pasted_key,
             "score_before": 50.0,
@@ -1314,7 +1377,9 @@ def test_status_url_assignment_moves_url_job_runs_to_the_pasted_job(tmp_path):
             "found": True,
             "company": "Acme",
             "title": "Engineer",
+            "url": url,
             "status": "Applied",
+            "ever_applied": True,
             "status_date": "2026-10-02",
             "job_key": pasted_key,
             "score_before": 50.0,

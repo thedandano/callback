@@ -2042,8 +2042,9 @@ def find_job(url: str | None = None, company: str | None = None, title: str | No
     'key_title_mismatch' when the URL matches but the stored title differs or is missing,
     'company_title', or
     null) and confirm anything but 'key' before skipping. Returns found, job_key, company,
-    title, and the latest status with its date. To record a status on the job found by
-    company+title, pass its job_key to record_status. When not found or the match is weak,
+    title, stored URL, latest status with its date, and ever_applied (whether any status proves
+    submission). To record a status on the job found by company+title, pass its job_key to
+    record_status. When not found or the match is weak,
     and a company is given, company_jobs lists that company's other jobs (up to 20, newest
     first; each with job_key, title, status, status_date) so you can spot a similar title or a
     requisition id in a job_key URL.
