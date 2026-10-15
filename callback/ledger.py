@@ -895,7 +895,10 @@ _EVER_APPLIED_SQL = (
     "EXISTS (SELECT 1 FROM status_events e WHERE e.job_key = j.job_key AND ("
     "norm_text(e.status) LIKE 'applied%' OR norm_text(e.status) LIKE 'already applied%' "
     "OR norm_text(e.status) LIKE 'interview%' OR norm_text(e.status) LIKE 'rejected%' "
-    "OR norm_text(e.status) LIKE 'offer%'))"
+    "OR norm_text(e.status) LIKE 'offer%' "
+    # Legacy EDD work-search contacts are applications whatever the outcome (ledger_import's
+    # CONTACTS_SOURCE and NOT_REPORTABLE_PREFIX; importing them here would be a cycle).
+    "OR (e.source = 'contacts-import' AND e.note NOT LIKE 'Not reportable%')))"
 )
 _FIND_SQL = (
     "SELECT j.company, j.title, j.url, s.status, " + _EVER_APPLIED_SQL + ", "
@@ -1051,7 +1054,8 @@ def find_job(
     and title, returns found=False with matched_by='company_title_ambiguous' and
     candidate_job_keys for the caller to disambiguate — including when a URL-less lookup would
     otherwise hit a pasted key while a URL-keyed twin exists. When nothing is found, or the match
-    is weak (not 'key'), and a company is given,
+    is weak (not 'key') or a key match whose job has no status event (a run-only job), and a
+    company is given,
     company_jobs lists that company's other jobs (up to 20, newest first, the matched job left
     out) so the caller can spot a similar title or requisition id.
     """
@@ -1088,8 +1092,8 @@ def find_job(
 def _other_company_jobs(
     conn: sqlite3.Connection, company: str | None, row: tuple | None, matched_by: str
 ) -> list[dict]:
-    """The company's other jobs when the match is missing or weak; [] for a confirmed key match."""
-    if not company or (row and matched_by == "key"):
+    """The company's other jobs when the match is missing, weak, or a key match with no status."""
+    if not company or (row and matched_by == "key" and row[_FIND_KEYS.index("status")]):
         return []
     found_key = row[_FIND_KEYS.index("job_key")] if row else None
     keys = ("job_key", "url", "title", "status", "status_date", "ever_applied")
