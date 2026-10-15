@@ -1327,3 +1327,18 @@ def test_imported_legacy_contact_counts_as_applied_unless_not_reportable(
         found = ledger.find_job(conn, url="https://acme.com/j/9", company="Acme", title="Eng")
 
     assert (found["status"], found["ever_applied"]) == ("No decision", expected)
+
+
+def test_imported_contact_with_no_note_counts_as_applied(tmp_path):
+    src = tmp_path / "old.sqlite3"
+    _contacts_db_with_metadata(src, reportable=1)
+    with closing(sqlite3.connect(src)) as db, db:
+        db.execute("UPDATE job_search_entries SET outcome = 'No decision', contact_type = ''")
+        db.execute("DELETE FROM job_search_metadata WHERE key != 'JobURL'")
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        import_contact_ledger(conn, src)
+        conn.execute("UPDATE status_events SET note = NULL")
+        found = ledger.find_job(conn, url="https://acme.com/j/9", company="Acme", title="Eng")
+
+    assert found["ever_applied"] is True
