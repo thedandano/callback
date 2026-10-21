@@ -49,7 +49,15 @@ from callback.apply_graph import (
     make_config as make_apply_config,
 )
 from callback.apply_nodes import _detect_uncovered_skills
-from callback.jd_data import EXTRACTION_PROTOCOL, JDDataError, parse_jd_json
+from callback.jd_data import (
+    EXTRACTION_PROTOCOL,
+    RESPONSIBILITIES_PROTOCOL,
+    JDDataError,
+    clean_responsibilities,
+    drop_scored_duplicates,
+    non_atomic_responsibilities,
+    parse_jd_json,
+)
 from callback.jd_fetcher import JDFetchError
 from callback.observability import invoke_graph_without_native_tracing, record_decision, trace_tool
 from callback.preferences import SearchPreferences
@@ -849,10 +857,20 @@ def _submit_keywords_next_action(wiki_index: str | None, orphaned_required: list
     return _NEXT_ADD_STORY_FIRST if orphaned_required else _NEXT_FETCH_WIKI_THEN_TAILOR
 
 
+_PASS_2_TASK = (
+    "First run pass 2 of keyword extraction: start a fresh subagent and give it exactly "
+    "data.responsibilities_protocol and load_jd's data.jd_text, word for word, and nothing "
+    "else. It returns a key_responsibilities list; send that list to submit_responsibilities. "
+    "If you cannot start a subagent, skip pass 2. Then: "
+)
+
+
 def _submit_keywords_workflow(
     session_id: str,
     next_action: str,
     orphaned_required: list[str],
+    *,
+    pass_2_pending: bool = True,
 ) -> dict:
     if next_action == _NEXT_ONBOARD_RESUME_FIRST:
         return _workflow(
@@ -890,16 +908,28 @@ def _submit_keywords_workflow(
                 "impact": "<truthful quantified or concrete outcome>",
             },
         )
+    tailor_task = (
+        "Use data.sections, data.score_gap, data.wiki_index, and "
+        "data.tailor_instructions to choose relevant wiki pages and prepare "
+        "honest SectionMap edits. If the index already contains enough "
+        "evidence, submit_tailor is also valid."
+    )
+    if pass_2_pending:
+        return _workflow(
+            phase="tailor_evidence",
+            next_tool="submit_responsibilities",
+            allowed_next_tools=["submit_responsibilities", "get_wiki_pages", "submit_tailor"],
+            host_task=_PASS_2_TASK + tailor_task,
+            required_input={
+                "session_id": session_id,
+                "key_responsibilities": ["<term from pass 2>"],
+            },
+        )
     return _workflow(
         phase="tailor_evidence",
         next_tool="get_wiki_pages",
         allowed_next_tools=["get_wiki_pages", "submit_tailor"],
-        host_task=(
-            "Use data.sections, data.score_gap, data.wiki_index, and "
-            "data.tailor_instructions to choose relevant wiki pages and prepare "
-            "honest SectionMap edits. If the index already contains enough "
-            "evidence, submit_tailor is also valid."
-        ),
+        host_task=tailor_task,
         required_input={
             "session_id": session_id,
             "page_ids": ["experience/<page-id>.md"],
@@ -1072,13 +1102,95 @@ def _submit_keywords_impl(session_id: str, jd_json: str) -> dict:
             state.get("keywords") or {},
             state.get("sections") or {},
         )
-    next_action = _submit_keywords_next_action(state.get("wiki_index"), orphaned_required)
+    return _submit_keywords_reply(session_id, data, state.get("wiki_index"), orphaned_required)
+
+
+def _submit_keywords_reply(
+    session_id: str, data: dict, wiki_index: str | None, orphaned_required: list[str]
+) -> dict:
+    """Pick the next step; only the tailor route asks for pass 2 (the others restart)."""
+    next_action = _submit_keywords_next_action(wiki_index, orphaned_required)
+    if next_action == _NEXT_FETCH_WIKI_THEN_TAILOR:
+        data["responsibilities_protocol"] = RESPONSIBILITIES_PROTOCOL
     return _ok(
         session_id,
         next_action,
         data,
         _submit_keywords_workflow(session_id, next_action, orphaned_required),
     )
+
+
+@mcp.tool()
+def submit_responsibilities(session_id: str, key_responsibilities: list[str]) -> dict:
+    """Store pass 2 of keyword extraction: the key_responsibilities list.
+
+    Call after submit_keywords and before submit_tailor. The list replaces the one
+    from submit_keywords. Terms already in a scored list are dropped. Scoring is unchanged.
+    """
+    return _submit_responsibilities_impl(session_id, key_responsibilities)
+
+
+def _responsibilities_state_error(snapshot, session_id: str) -> dict | None:
+    if not snapshot.values:
+        return _err(
+            "submit_responsibilities",
+            "invalid_session",
+            "session_id was not found; call load_jd and submit_keywords first",
+            session_id,
+        )
+    if snapshot.next != (TAILOR_NODE,):
+        return _err(
+            "submit_responsibilities",
+            "invalid_state",
+            "session is not between submit_keywords and submit_tailor",
+            session_id,
+        )
+    return None
+
+
+def _trim_responsibilities(keywords: dict, session_id: str) -> dict:
+    """Drop responsibilities already scored; warn when they look like sentences."""
+    trimmed, dropped = drop_scored_duplicates(keywords)
+    base = {"tool": "submit_responsibilities", "session_id": session_id}
+    if dropped:
+        _log("INFO", {**base, "event": "responsibilities_deduped", "dropped": dropped})
+    sentences = non_atomic_responsibilities(trimmed["key_responsibilities"])
+    if sentences:
+        _log(
+            "WARNING",
+            {
+                **base,
+                "event": "non_atomic_responsibilities",
+                "terms": sentences,
+                "action": "kept as sent; pass 2 should return short keywords",
+            },
+        )
+    return trimmed
+
+
+@trace_tool("submit_responsibilities", graph_name="apply")
+def _submit_responsibilities_impl(session_id: str, key_responsibilities: list[str]) -> dict:
+    _log("INFO", {"tool": "submit_responsibilities", "session_id": session_id})
+    graph, graph_error = _graph_or_err(get_apply_graph, session_id)
+    if graph_error is not None:
+        return graph_error
+    config = make_apply_config(session_id, tool_name="submit_responsibilities")
+    snapshot = graph.get_state(config)
+    state_error = _responsibilities_state_error(snapshot, session_id)
+    if state_error is not None:
+        return state_error
+    try:
+        terms = clean_responsibilities(key_responsibilities)
+    except JDDataError as exc:
+        return _err("submit_responsibilities", exc.code, str(exc), session_id, retriable=True)
+    keywords = {**(snapshot.values.get("keywords") or {}), "key_responsibilities": terms}
+    keywords = _trim_responsibilities(keywords, session_id)
+    # as_node keeps tailor as the next pending node (see _tailor_retry_update).
+    graph.update_state(config, {"keywords": keywords}, as_node=SCORE_INITIAL_NODE)
+    workflow = _submit_keywords_workflow(
+        session_id, _NEXT_FETCH_WIKI_THEN_TAILOR, [], pass_2_pending=False
+    )
+    return _ok(session_id, _NEXT_FETCH_WIKI_THEN_TAILOR, {"keywords": keywords}, workflow)
 
 
 @mcp.tool()

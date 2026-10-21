@@ -13,7 +13,7 @@ from fastmcp import Client
 from fastmcp.client.transports import FastMCPTransport
 
 from callback import ledger, paths
-from callback.jd_data import EXTRACTION_PROTOCOL
+from callback.jd_data import EXTRACTION_PROTOCOL, RESPONSIBILITIES_PROTOCOL
 
 PARTIAL_JD_JSON = """
 {
@@ -78,6 +78,7 @@ def test_apply_handoff_tools_registered():
     expected = {
         "load_jd",
         "submit_keywords",
+        "submit_responsibilities",
         "submit_tailor",
         "get_wiki_pages",
         "onboard_user",
@@ -742,6 +743,9 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
         "workflow_next_tool": result["workflow"]["next_tool"],
         "allowed_next_tools": result["workflow"]["allowed_next_tools"],
         "required_input": result["workflow"]["required_input"],
+        "responsibilities_protocol": result["data"]["responsibilities_protocol"],
+        "host_task_mentions_pass_2": "data.responsibilities_protocol"
+        in result["workflow"]["host_task"],
         "host_task_mentions_sections": "data.sections" in result["workflow"]["host_task"],
         "mentions_project_descriptions": "existing project descriptions or bullets" in instructions,
         "mentions_wiki_source": "source resume or profile wiki" in instructions,
@@ -752,12 +756,14 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
     expected = {
         "next_action": "fetch_wiki_then_tailor",
         "workflow_phase": "tailor_evidence",
-        "workflow_next_tool": "get_wiki_pages",
-        "allowed_next_tools": ["get_wiki_pages", "submit_tailor"],
+        "workflow_next_tool": "submit_responsibilities",
+        "allowed_next_tools": ["submit_responsibilities", "get_wiki_pages", "submit_tailor"],
         "required_input": {
             "session_id": loaded["session_id"],
-            "page_ids": ["experience/<page-id>.md"],
+            "key_responsibilities": ["<term from pass 2>"],
         },
+        "responsibilities_protocol": RESPONSIBILITIES_PROTOCOL,
+        "host_task_mentions_pass_2": True,
         "host_task_mentions_sections": True,
         "mentions_project_descriptions": True,
         "mentions_wiki_source": True,
@@ -2242,3 +2248,123 @@ def test_submit_keywords_propagates_ats_input_suspect(score, expected_suspect):
     }
     expected = {"status": "ok", "ats_input_suspect": expected_suspect, "score_unchanged": True}
     assert actual == expected
+
+
+_RESP_JD_JSON = json.dumps(
+    {
+        "title": "Backend Engineer",
+        "required": ["Swift"],
+        "key_responsibilities": ["Build the executor that dispatches tool calls into apps"],
+    }
+)
+
+
+def _session_at_tailor() -> str:
+    from callback.server import load_jd, submit_keywords
+
+    with patch("callback.server.list_resumes", return_value=["resume"]):
+        session_id = load_jd(jd_raw_text="Swift engineer needed")["session_id"]
+    submit_keywords(session_id=session_id, jd_json=_RESP_JD_JSON)
+    return session_id
+
+
+def _logged(caplog, event: str) -> list[dict]:
+    payloads = [json.loads(r.message) for r in caplog.records if r.message.startswith("{")]
+    return [p for p in payloads if p.get("event") == event]
+
+
+def test_submit_responsibilities_replaces_trims_and_keeps_tailor_pending(
+    tmp_path, monkeypatch, caplog
+):
+    from callback.apply_graph import TAILOR_NODE, get_apply_graph, make_config
+    from callback.server import submit_responsibilities, submit_tailor
+
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
+    caplog.set_level("INFO", logger="callback.server")
+    session_id = _session_at_tailor()
+
+    result = submit_responsibilities(
+        session_id=session_id, key_responsibilities=["swift", "agent loop", "Agent  Loop"]
+    )
+    snapshot = get_apply_graph().get_state(make_config(session_id))
+    tailored = submit_tailor(session_id=session_id, edits=[], no_coverage=True)
+
+    actual = {
+        "status": result["status"],
+        "returned": result["data"]["keywords"]["key_responsibilities"],
+        "stored": snapshot.values["keywords"]["key_responsibilities"],
+        "required_untouched": snapshot.values["keywords"]["required"],
+        "still_before_tailor": snapshot.next == (TAILOR_NODE,),
+        "next_tool": result["workflow"]["next_tool"],
+        "dropped_log": [e["dropped"] for e in _logged(caplog, "responsibilities_deduped")],
+        "tailor_status": tailored["status"],
+    }
+    assert actual == {
+        "status": "ok",
+        "returned": ["agent loop"],
+        "stored": ["agent loop"],
+        "required_untouched": ["Swift"],
+        "still_before_tailor": True,
+        "next_tool": "get_wiki_pages",
+        "dropped_log": [["swift", "Agent  Loop"]],
+        "tailor_status": "ok",
+    }
+
+
+def test_submit_responsibilities_twice_replaces_list():
+    from callback.server import submit_responsibilities
+
+    session_id = _session_at_tailor()
+    submit_responsibilities(session_id=session_id, key_responsibilities=["agent loop"])
+    result = submit_responsibilities(session_id=session_id, key_responsibilities=["executor"])
+
+    assert result["data"]["keywords"]["key_responsibilities"] == ["executor"]
+
+
+def test_submit_responsibilities_warns_on_sentences(caplog):
+    from callback.server import submit_responsibilities
+
+    caplog.set_level("WARNING", logger="callback.server")
+    session_id = _session_at_tailor()
+    sentence = "Build the executor that dispatches tool calls into apps"
+
+    result = submit_responsibilities(session_id=session_id, key_responsibilities=[sentence])
+
+    actual = {
+        "status": result["status"],
+        "kept": result["data"]["keywords"]["key_responsibilities"],
+        "warned": [e["terms"] for e in _logged(caplog, "non_atomic_responsibilities")],
+    }
+    assert actual == {"status": "ok", "kept": [sentence], "warned": [[sentence]]}
+
+
+def test_submit_responsibilities_rejects_non_string_terms():
+    from callback.server import submit_responsibilities
+
+    session_id = _session_at_tailor()
+    result = submit_responsibilities(session_id=session_id, key_responsibilities=["ok", 5])  # type: ignore[list-item]  # bad host input
+
+    actual = {"status": result["status"], **{k: result["error"][k] for k in ("code", "retriable")}}
+    assert actual == {"status": "error", "code": "invalid_jd", "retriable": True}
+
+
+def test_submit_responsibilities_rejects_finished_session(tmp_path, monkeypatch):
+    from callback.server import submit_responsibilities, submit_tailor
+
+    monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
+    session_id = _session_at_tailor()
+    submit_tailor(session_id=session_id, edits=[], no_coverage=True)
+
+    result = submit_responsibilities(session_id=session_id, key_responsibilities=["executor"])
+
+    actual = {"status": result["status"], **{k: result["error"][k] for k in ("code", "retriable")}}
+    assert actual == {"status": "error", "code": "invalid_state", "retriable": False}
+
+
+def test_submit_responsibilities_rejects_unknown_session():
+    from callback.server import submit_responsibilities
+
+    result = submit_responsibilities(session_id=str(uuid.uuid4()), key_responsibilities=["x"])
+
+    actual = {"status": result["status"], "code": result["error"]["code"]}
+    assert actual == {"status": "error", "code": "invalid_session"}

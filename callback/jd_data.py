@@ -185,3 +185,8 @@ def drop_scored_duplicates(keywords: dict) -> tuple[dict, list[str]]:
 def non_atomic_responsibilities(terms: list[str]) -> list[str]:
     """Entries that read like sentences: more than 6 words, or a comma."""
     return [t for t in terms if len(t.split()) > _MAX_ATOMIC_WORDS or "," in t]
+
+
+def clean_responsibilities(values: object) -> list[str]:
+    """Validate a pass-2 key_responsibilities list: strings only, blanks dropped."""
+    return _clean_strings(values, "key_responsibilities")
