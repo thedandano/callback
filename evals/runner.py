@@ -33,6 +33,7 @@ from callback.jd_data import (
     JDDataError,
     clean_responsibilities,
     drop_scored_duplicates,
+    parse_jd_json,
 )
 from callback.server import _TAILOR_INSTRUCTIONS
 from evals import experiments
@@ -49,6 +50,7 @@ HOSTS = ("claude", "codex", "ollama", "llamacpp", "hermes")
 LOCAL_PORTS = {"ollama": 11434, "llamacpp": 8080}
 EVALS = ("extract", "tailor")
 HOST_TIMEOUT_S = 900
+MAX_OUTPUT_ATTEMPTS = 3
 RunFn = Callable[..., subprocess.CompletedProcess]
 
 EDIT_SCHEMA = (
@@ -74,6 +76,7 @@ class EvalRow:
     eval_name: str
     fixture: str
     checks: list[Check]
+    stop_extract_run: bool = False
 
     @property
     def passed(self) -> bool:
@@ -527,12 +530,112 @@ def _host_output(
     return _record_host_reply(path, host, model, raw, commit, routing=routing), None
 
 
+def _validate_pass1(output: dict) -> dict:
+    """Raise JDDataError on bad pass 1; return the raw reply, which is what the checks grade."""
+    parse_jd_json(json.dumps(output))
+    return output
+
+
+def _validate_pass2(output: dict) -> dict:
+    try:
+        responsibilities = clean_responsibilities(output.get("key_responsibilities"))
+    except JDDataError as exc:
+        raise JDDataError("invalid_jd", f"invalid pass 2 key_responsibilities: {exc}") from exc
+    return {"key_responsibilities": responsibilities}
+
+
+def _retry_bad_output(
+    path: Path,
+    host: str,
+    model: str | None,
+    prompt: str,
+    fixture: str,
+    pass_name: str,
+    validate: Callable[[dict], dict],
+    host_kwargs: dict,
+) -> tuple[dict | None, Check | None, Check | None]:
+    """Call a host up to the named limit, retrying only syntactically bad replies."""
+    reason = "reply did not contain a JSON object"
+    for attempt in range(1, MAX_OUTPUT_ATTEMPTS + 1):
+        output, gate = _host_output(path, host, model, prompt, fixture, **host_kwargs)
+        if gate is not None:
+            return None, gate, None
+        if output is not None:
+            try:
+                validated = validate(output)
+            except JDDataError as exc:
+                reason = str(exc)
+            else:
+                detail = f"valid after {attempt} attempt{'s' if attempt != 1 else ''}"
+                return validated, None, Check(f"{pass_name}_output", True, detail)
+        if attempt < MAX_OUTPUT_ATTEMPTS:
+            logger.warning(
+                "%s: retrying %s attempt %d/%d: %s",
+                fixture,
+                pass_name,
+                attempt + 1,
+                MAX_OUTPUT_ATTEMPTS,
+                reason,
+            )
+    return (
+        None,
+        None,
+        Check(
+            f"{pass_name}_output", False, f"invalid after {MAX_OUTPUT_ATTEMPTS} attempts: {reason}"
+        ),
+    )
+
+
+def _clear_pass2_output(
+    board: str, host: str, model: str | None, commit: str, port: int | None, provider: str | None
+) -> None:
+    _write_host_file(
+        EXTRACT_DIR / f"{board}.resp.host.json",
+        host,
+        model,
+        "skipped: pass 1 failed",
+        None,
+        commit,
+        routing=_routing(host, port, provider),
+    )
+
+
+def _fresh_pass2(
+    path: Path,
+    board: str,
+    jd_text: str,
+    pass1: dict,
+    host: str,
+    model: str | None,
+    host_kwargs: dict,
+) -> tuple[dict | None, Check | None]:
+    pass2, gate, pass2_check = _retry_bad_output(
+        path,
+        host,
+        model,
+        responsibilities_prompt(jd_text),
+        f"{board} pass 2",
+        "pass2",
+        _validate_pass2,
+        host_kwargs,
+    )
+    if gate is not None:
+        return None, gate
+    if pass2_check is not None and not pass2_check.passed:
+        return None, pass2_check
+    if pass2 is None:
+        raise RuntimeError(f"{board}: pass 2 succeeded without an output")
+    return merge_passes(pass1, pass2), None
+
+
 def _with_pass2(
     board: str, jd_text: str, pass1: dict, host: str, model: str | None, host_kwargs: dict
 ) -> tuple[dict | None, Check | None]:
     """Run (or replay) pass 2 and merge it into pass 1."""
     path = EXTRACT_DIR / f"{board}.resp.host.json"
-    if host_kwargs["checks_only"] and not path.exists():
+    if not host_kwargs["checks_only"]:
+        return _fresh_pass2(path, board, jd_text, pass1, host, model, host_kwargs)
+    if not path.exists():
         # E1 checks never read key_responsibilities, so pass 1 alone gives the same verdict.
         logger.warning("%s missing; checking pass 1 only (saved before pass 2 existed)", path.name)
         return pass1, None
@@ -552,6 +655,70 @@ def _with_pass2(
         logger.warning("%s: %s", board, detail)
         return None, Check("pass2_output", False, detail)
     return merge_passes(pass1, {"key_responsibilities": responsibilities}), None
+
+
+def _saved_pass1(
+    board: str, jd_text: str, host: str, model: str | None, host_kwargs: dict
+) -> tuple[dict | None, Check | None, Check | None, bool]:
+    output, gate = _host_output(
+        EXTRACT_DIR / f"{board}.host.json",
+        host,
+        model,
+        extract_prompt(jd_text),
+        board,
+        **host_kwargs,
+    )
+    if gate is not None or output is None:
+        return output, gate, None, False
+    try:
+        return _validate_pass1(output), None, None, True
+    except JDDataError as exc:
+        logger.warning("%s: saved pass 1 output is invalid; skipping pass 2: %s", board, exc)
+        return output, None, None, False
+
+
+def _fresh_pass1(
+    board: str,
+    jd_text: str,
+    host: str,
+    model: str | None,
+    host_kwargs: dict,
+) -> tuple[dict | None, Check | None, Check | None]:
+    output, gate, pass1_check = _retry_bad_output(
+        EXTRACT_DIR / f"{board}.host.json",
+        host,
+        model,
+        extract_prompt(jd_text),
+        board,
+        "pass1",
+        _validate_pass1,
+        host_kwargs,
+    )
+    if gate is not None:
+        pass1_check = Check("pass1_output", False, f"host error after 1 attempt: {gate.detail}")
+    if gate is not None or (pass1_check is not None and not pass1_check.passed):
+        _clear_pass2_output(
+            board,
+            host,
+            model,
+            host_kwargs["commit"],
+            host_kwargs["port"],
+            host_kwargs["provider"],
+        )
+    return output, gate, pass1_check
+
+
+def _extract_row_checks(
+    output: dict | None,
+    gate: Check | None,
+    pass1_check: Check | None,
+    expected: dict,
+    jd_text: str,
+) -> list[Check]:
+    if pass1_check is not None and not pass1_check.passed:
+        return [pass1_check]
+    base_checks = [gate] if gate else extract_run_checks(json.dumps(output), expected, jd_text)
+    return [pass1_check, *base_checks] if pass1_check is not None else base_checks
 
 
 def run_extract(
@@ -576,19 +743,23 @@ def run_extract(
             "port": port,
             "provider": provider,
         }
-        output, gate = _host_output(
-            EXTRACT_DIR / f"{board}.host.json",
-            host,
-            model,
-            extract_prompt(jd_text),
-            board,
-            **host_kwargs,
-        )
-        if gate is None and output is not None:
+        if checks_only:
+            output, gate, pass1_check, run_pass2 = _saved_pass1(
+                board, jd_text, host, model, host_kwargs
+            )
+        else:
+            output, gate, pass1_check = _fresh_pass1(board, jd_text, host, model, host_kwargs)
+            run_pass2 = pass1_check is None or pass1_check.passed
+        if gate is None and output is not None and run_pass2:
             output, gate = _with_pass2(board, jd_text, output, host, model, host_kwargs)
-        checks = [gate] if gate else extract_run_checks(json.dumps(output), expected, jd_text)
-        rows.append(EvalRow("extract", board, checks))
+        checks = _extract_row_checks(output, gate, pass1_check, expected, jd_text)
+        stop_extract_run = (
+            not checks_only and gate is None and pass1_check is not None and not pass1_check.passed
+        )
+        rows.append(EvalRow("extract", board, checks, stop_extract_run))
         logger.info("extract %s: %s", board, "PASS" if rows[-1].passed else rows[-1].first_failure)
+        if stop_extract_run:
+            break
     return rows
 
 
@@ -765,7 +936,10 @@ def main(argv: list[str] | None = None) -> int:
         run_meta = {"host": args.host, "model": args.model or "default", "commit": _commit()}
         run_meta.update(_routing(args.host, args.port, args.provider))
         for name in wanted:
-            rows.extend(_run_one_eval(name, args, run_meta))
+            eval_rows = _run_one_eval(name, args, run_meta)
+            rows.extend(eval_rows)
+            if any(row.stop_extract_run for row in eval_rows):
+                break
     except (ValueError, HostError) as exc:
         print(exc, file=sys.stderr)
         return 1

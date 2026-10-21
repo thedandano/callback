@@ -557,13 +557,91 @@ def test_run_extract_saves_both_passes(tmp_path, monkeypatch):
     }
 
 
+def test_run_extract_retries_invalid_pass1_then_records_valid_attempt(tmp_path, monkeypatch):
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    _write_extract_fixture(tmp_path, "a", expected)
+    monkeypatch.setattr(runner, "EXTRACT_DIR", tmp_path)
+    replies = iter(
+        [
+            '{"required":5}',
+            json.dumps(expected),
+            '{"key_responsibilities":[]}',
+        ]
+    )
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout=json.dumps({"result": next(replies)}), stderr=""
+        )
+
+    rows = run_extract("claude", None, ["a"], checks_only=False, run=fake_run, commit="abc")
+
+    actual = {
+        "checks": rows[0].checks,
+        "saved_output": json.loads((tmp_path / "a.host.json").read_text())["output"],
+    }
+    expected_actual = {
+        "checks": [
+            Check("pass1_output", True, "valid after 2 attempts"),
+            Check("valid_jd_data", True),
+            Check("term_recall", True),
+            Check("term_precision", True),
+            Check("groups_match", True),
+            Check("terms_are_jd_substrings", True),
+            Check("required_years_exact", True),
+            Check("title_exact", True),
+        ],
+        "saved_output": expected,
+    }
+    assert actual == expected_actual
+
+
+def test_run_extract_stops_after_three_invalid_pass1_replies(tmp_path, monkeypatch):
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    for board in ["a", "b"]:
+        _write_extract_fixture(tmp_path, board, expected)
+    monkeypatch.setattr(runner, "EXTRACT_DIR", tmp_path)
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(kwargs["input"])
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout=json.dumps({"result": "not JSON"}), stderr=""
+        )
+
+    rows = run_extract("claude", None, ["a", "b"], checks_only=False, run=fake_run, commit="abc")
+
+    actual = {
+        "rows": [(row.fixture, row.checks) for row in rows],
+        "calls": len(calls),
+        "pass2_output": json.loads((tmp_path / "a.resp.host.json").read_text())["output"],
+    }
+    expected_actual = {
+        "rows": [
+            (
+                "a",
+                [
+                    Check(
+                        "pass1_output",
+                        False,
+                        "invalid after 3 attempts: reply did not contain a JSON object",
+                    )
+                ],
+            )
+        ],
+        "calls": 3,
+        "pass2_output": None,
+    }
+    assert actual == expected_actual
+
+
 def test_run_extract_fails_only_fixture_when_pass2_has_no_json_object(
     tmp_path, monkeypatch, caplog
 ):
     expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
     _write_extract_fixture(tmp_path, "a", expected)
     monkeypatch.setattr(runner, "EXTRACT_DIR", tmp_path)
-    replies = iter([json.dumps(expected), "no JSON object"])
+    replies = iter([json.dumps(expected), "no JSON object", "no JSON object", "no JSON object"])
 
     def fake_run(cmd, **kwargs):
         return subprocess.CompletedProcess(
@@ -575,10 +653,18 @@ def test_run_extract_fails_only_fixture_when_pass2_has_no_json_object(
 
     actual = {
         "checks": rows[0].checks,
-        "warning": "a: pass 2 reply did not contain a JSON object" in caplog.messages,
+        "warning": "a pass 2: retrying pass2 attempt 2/3: reply did not contain a JSON object"
+        in caplog.messages,
     }
     expected_actual = {
-        "checks": [Check("pass2_output", False, "pass 2 reply did not contain a JSON object")],
+        "checks": [
+            Check("pass1_output", True, "valid after 1 attempt"),
+            Check(
+                "pass2_output",
+                False,
+                "invalid after 3 attempts: reply did not contain a JSON object",
+            ),
+        ],
         "warning": True,
     }
     assert actual == expected_actual
@@ -592,6 +678,8 @@ def test_run_extract_invalid_pass2_keeps_running_next_board(tmp_path, monkeypatc
     replies = iter(
         [
             json.dumps(expected),
+            '{"key_responsibilities":[5]}',
+            '{"key_responsibilities":[5]}',
             '{"key_responsibilities":[5]}',
             json.dumps(expected),
             '{"key_responsibilities":["agent loop"]}',
@@ -609,18 +697,76 @@ def test_run_extract_invalid_pass2_keeps_running_next_board(tmp_path, monkeypatc
         )
 
     actual = {
-        "rows": [(row.fixture, row.passed, row.checks[0].name) for row in rows],
+        "rows": [(row.fixture, row.passed, [check.name for check in row.checks]) for row in rows],
         "warning": (
-            "a: invalid pass 2 key_responsibilities: key_responsibilities entries must be strings"
+            "a pass 2: retrying pass2 attempt 2/3: invalid pass 2 key_responsibilities: "
+            "key_responsibilities entries must be strings"
         )
         in caplog.messages,
     }
     expected_actual = {
         "rows": [
-            ("a", False, "pass2_output"),
-            ("b", True, "valid_jd_data"),
+            ("a", False, ["pass1_output", "pass2_output"]),
+            (
+                "b",
+                True,
+                [
+                    "pass1_output",
+                    "valid_jd_data",
+                    "term_recall",
+                    "term_precision",
+                    "groups_match",
+                    "terms_are_jd_substrings",
+                    "required_years_exact",
+                    "title_exact",
+                ],
+            ),
         ],
         "warning": True,
+    }
+    assert actual == expected_actual
+
+
+def test_run_extract_retries_bad_pass2_then_continues_to_next_board(tmp_path, monkeypatch):
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    for board in ["a", "b"]:
+        _write_extract_fixture(tmp_path, board, expected)
+    monkeypatch.setattr(runner, "EXTRACT_DIR", tmp_path)
+    replies = iter(
+        [
+            json.dumps(expected),
+            '{"key_responsibilities":[5]}',
+            '{"key_responsibilities":[5]}',
+            '{"key_responsibilities":[5]}',
+            json.dumps(expected),
+            '{"key_responsibilities":[]}',
+        ]
+    )
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout=json.dumps({"result": next(replies)}), stderr=""
+        )
+
+    rows = run_extract("claude", None, ["a", "b"], checks_only=False, run=fake_run, commit="abc")
+
+    actual = {
+        "a_checks": rows[0].checks,
+        "b_first_check": rows[1].checks[0],
+        "b_passed": rows[1].passed,
+    }
+    expected_actual = {
+        "a_checks": [
+            Check("pass1_output", True, "valid after 1 attempt"),
+            Check(
+                "pass2_output",
+                False,
+                "invalid after 3 attempts: invalid pass 2 key_responsibilities: "
+                "key_responsibilities entries must be strings",
+            ),
+        ],
+        "b_first_check": Check("pass1_output", True, "valid after 1 attempt"),
+        "b_passed": True,
     }
     assert actual == expected_actual
 
@@ -896,7 +1042,7 @@ def test_run_extract_continues_after_host_failure(tmp_path, monkeypatch, caplog)
         )
 
     actual = [(r.fixture, r.passed, (r.first_failure or "").split(":")[0]) for r in rows]
-    expected = [("a", False, "host_call"), ("b", True, "")]
+    expected = [("a", False, "pass1_output"), ("b", True, "")]
     assert actual == expected
 
 
@@ -946,6 +1092,31 @@ def test_host_call_failure_discards_a_stale_host_file(tmp_path, monkeypatch):
     assert actual == expected
 
 
+def test_pass1_host_failure_clears_stale_pass2_output(tmp_path, monkeypatch):
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    _write_extract_fixture(tmp_path, "acme", expected)
+    (tmp_path / "acme.resp.host.json").write_text(
+        json.dumps({"output": {"key_responsibilities": ["stale"]}})
+    )
+    monkeypatch.setattr(runner, "EXTRACT_DIR", tmp_path)
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="not logged in")
+
+    run_extract("claude", None, ["acme"], checks_only=False, run=fake_run, commit="abc")
+
+    actual = json.loads((tmp_path / "acme.resp.host.json").read_text())
+    expected_actual = {
+        "host": "claude",
+        "model": "default",
+        "commit": "abc",
+        "ran_at": actual["ran_at"],
+        "raw": "skipped: pass 1 failed",
+        "output": None,
+    }
+    assert actual == expected_actual
+
+
 def test_run_extract_checks_only_reads_existing_output(tmp_path, monkeypatch):
     extract_dir = tmp_path / "extract"
     extract_dir.mkdir()
@@ -990,6 +1161,26 @@ def test_run_extract_checks_only_without_output_is_a_failed_row(tmp_path, monkey
         ("acme", False, "host_output_present: acme.host.json missing; run without --checks-only")
     ]
     assert actual == expected
+
+
+def test_run_extract_checks_only_malformed_pass1_skips_merge(tmp_path, monkeypatch):
+    extract_dir = tmp_path / "extract"
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    _write_extract_fixture(extract_dir, "acme", expected)
+    (extract_dir / "acme.host.json").write_text(json.dumps({"output": {"required": 5}}))
+    (extract_dir / "acme.resp.host.json").write_text(
+        json.dumps({"output": {"key_responsibilities": ["stale"]}})
+    )
+    monkeypatch.setattr(runner, "EXTRACT_DIR", extract_dir)
+
+    def never(cmd, **kwargs):
+        raise AssertionError("checks_only must not call the host")
+
+    rows = run_extract("claude", None, ["acme"], checks_only=True, run=never, commit="abc")
+
+    actual = rows[0].checks
+    expected_actual = [Check("valid_jd_data", False, "required must be a list")]
+    assert actual == expected_actual
 
 
 def test_run_tailor_writes_host_file_and_checks(tmp_path, monkeypatch):
@@ -1063,6 +1254,60 @@ def test_main_fails_when_a_case_filter_matches_nothing(tmp_path, monkeypatch, ca
     expected = 1
     assert actual == expected
     assert "no extract fixtures match --case ['nope']" in capsys.readouterr().err
+
+
+def test_main_records_failed_pass1_row_then_exits_nonzero(tmp_path, monkeypatch):
+    extract_dir = tmp_path / "extract"
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    for board in ["a", "b"]:
+        _write_extract_fixture(extract_dir, board, expected)
+    monkeypatch.setattr(runner, "EXTRACT_DIR", extract_dir)
+    monkeypatch.setattr(runner, "_commit", lambda: "abc1234")
+    recorded = []
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(kwargs["input"])
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout=json.dumps({"result": "not JSON"}), stderr=""
+        )
+
+    def record(rows, run_meta):
+        recorded.append((rows, run_meta))
+        return None
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(runner.experiments, "record_extract", record)
+
+    actual = {
+        "exit_code": main(["--eval", "extract", "--model", "test-model"]),
+        "calls": len(calls),
+        "recorded": [
+            ([(row.fixture, row.checks) for row in rows], run_meta) for rows, run_meta in recorded
+        ],
+    }
+    expected_actual = {
+        "exit_code": 1,
+        "calls": 3,
+        "recorded": [
+            (
+                [
+                    (
+                        "a",
+                        [
+                            Check(
+                                "pass1_output",
+                                False,
+                                "invalid after 3 attempts: reply did not contain a JSON object",
+                            )
+                        ],
+                    )
+                ],
+                {"host": "claude", "model": "test-model", "commit": "abc1234"},
+            )
+        ],
+    }
+    assert actual == expected_actual
 
 
 def test_checks_only_never_records_a_langsmith_experiment(tmp_path, monkeypatch, caplog):
