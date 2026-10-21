@@ -27,7 +27,11 @@ from urllib.request import ProxyHandler, Request, build_opener
 import yaml
 from langsmith.utils import LangSmithError
 
-from callback.jd_data import EXTRACTION_PROTOCOL
+from callback.jd_data import (
+    EXTRACTION_PROTOCOL,
+    RESPONSIBILITIES_PROTOCOL,
+    drop_scored_duplicates,
+)
 from callback.server import _TAILOR_INSTRUCTIONS
 from evals import experiments
 from evals.cases import case_dirs, case_id
@@ -128,11 +132,27 @@ def extract_json_object(text: str) -> dict | None:
 
 
 def extract_prompt(jd_text: str) -> str:
+    """Pass 1: today's extraction prompt, unchanged."""
     return (
         f"{EXTRACTION_PROTOCOL}\n\n"
         "Respond with only the JSON object: no prose, no code fence.\n\n"
         f"<jd_text>\n{jd_text}\n</jd_text>"
     )
+
+
+def responsibilities_prompt(jd_text: str) -> str:
+    """Pass 2: exactly what the host hands its subagent."""
+    return (
+        f"{RESPONSIBILITIES_PROTOCOL}\n\n"
+        "Respond with only the JSON object: no prose, no code fence.\n\n"
+        f"<jd_text>\n{jd_text}\n</jd_text>"
+    )
+
+
+def merge_passes(pass1: dict, pass2: dict) -> dict:
+    """Swap in pass 2's key_responsibilities, then trim them like submit_responsibilities does."""
+    merged = {**pass1, "key_responsibilities": pass2.get("key_responsibilities") or []}
+    return drop_scored_duplicates(merged)[0]
 
 
 def _pages_block(pages: dict[str, str]) -> str:
@@ -505,6 +525,23 @@ def _host_output(
     return _record_host_reply(path, host, model, raw, commit, routing=routing), None
 
 
+def _with_pass2(
+    board: str, jd_text: str, pass1: dict, host: str, model: str | None, host_kwargs: dict
+) -> tuple[dict | None, Check | None]:
+    """Run (or replay) pass 2 and merge it into pass 1."""
+    path = EXTRACT_DIR / f"{board}.resp.host.json"
+    if host_kwargs["checks_only"] and not path.exists():
+        # E1 checks never read key_responsibilities, so pass 1 alone gives the same verdict.
+        logger.warning("%s missing; checking pass 1 only (saved before pass 2 existed)", path.name)
+        return pass1, None
+    pass2, gate = _host_output(
+        path, host, model, responsibilities_prompt(jd_text), f"{board} pass 2", **host_kwargs
+    )
+    if gate is not None:
+        return None, gate
+    return merge_passes(pass1, pass2 or {}), None
+
+
 def run_extract(
     host: str,
     model: str | None,
@@ -520,19 +557,23 @@ def run_extract(
     for board in boards:
         jd_text = (EXTRACT_DIR / f"{board}.md").read_text(encoding="utf-8")
         expected = json.loads((EXTRACT_DIR / f"{board}.expected.json").read_text(encoding="utf-8"))
-        path = EXTRACT_DIR / f"{board}.host.json"
+        host_kwargs = {
+            "checks_only": checks_only,
+            "run": run,
+            "commit": commit,
+            "port": port,
+            "provider": provider,
+        }
         output, gate = _host_output(
-            path,
+            EXTRACT_DIR / f"{board}.host.json",
             host,
             model,
             extract_prompt(jd_text),
             board,
-            checks_only=checks_only,
-            run=run,
-            commit=commit,
-            port=port,
-            provider=provider,
+            **host_kwargs,
         )
+        if gate is None and output is not None:
+            output, gate = _with_pass2(board, jd_text, output, host, model, host_kwargs)
         checks = [gate] if gate else extract_run_checks(json.dumps(output), expected, jd_text)
         rows.append(EvalRow("extract", board, checks))
         logger.info("extract %s: %s", board, "PASS" if rows[-1].passed else rows[-1].first_failure)

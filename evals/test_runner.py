@@ -14,6 +14,7 @@ from urllib.error import HTTPError, URLError
 import pytest
 from langsmith.utils import LangSmithError
 
+from callback.jd_data import EXTRACTION_PROTOCOL, RESPONSIBILITIES_PROTOCOL
 from evals import runner
 from evals.checks import Check
 from evals.runner import (
@@ -25,6 +26,8 @@ from evals.runner import (
     extract_prompt,
     format_table,
     main,
+    merge_passes,
+    responsibilities_prompt,
     run_extract,
     run_tailor,
     tailor_prompt,
@@ -185,6 +188,7 @@ def test_local_failure_clears_saved_reply_and_continues(tmp_path, monkeypatch):
         [
             URLError("connection refused"),
             {"choices": [{"message": {"content": json.dumps(expected)}}]},
+            {"choices": [{"message": {"content": '{"key_responsibilities":[]}'}}]},
         ]
     )
 
@@ -484,10 +488,61 @@ def test_extract_prompt_carries_protocol_and_jd():
         "has_protocol": "Extract keywords from jd_text using this exact protocol" in prompt,
         "has_jd": "<jd_text>\nJD BODY\n</jd_text>" in prompt,
         "asks_for_json_only": "Respond with only the JSON object" in prompt,
+        "no_pass_2_text": RESPONSIBILITIES_PROTOCOL not in prompt,
     }
 
-    expected = {"has_protocol": True, "has_jd": True, "asks_for_json_only": True}
+    expected = {
+        "has_protocol": True,
+        "has_jd": True,
+        "asks_for_json_only": True,
+        "no_pass_2_text": True,
+    }
     assert actual == expected
+
+
+def test_responsibilities_prompt_is_protocol_and_jd_only():
+    prompt = responsibilities_prompt("JD BODY")
+
+    expected = (
+        f"{RESPONSIBILITIES_PROTOCOL}\n\n"
+        "Respond with only the JSON object: no prose, no code fence.\n\n"
+        "<jd_text>\nJD BODY\n</jd_text>"
+    )
+    assert prompt == expected
+
+
+def test_merge_passes_swaps_and_trims_responsibilities():
+    pass1 = {"required": ["Swift"], "key_responsibilities": ["Build the whole agent loop"]}
+    pass2 = {"key_responsibilities": ["swift", "agent loop"]}
+
+    expected = {"required": ["Swift"], "key_responsibilities": ["agent loop"]}
+    assert merge_passes(pass1, pass2) == expected
+
+
+def test_run_extract_saves_both_passes(tmp_path, monkeypatch):
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    _write_extract_fixture(tmp_path, "a", expected)
+    monkeypatch.setattr(runner, "EXTRACT_DIR", tmp_path)
+    replies = iter([json.dumps(expected), '{"key_responsibilities":["python","agent loop"]}'])
+    prompts = []
+
+    def fake_run(cmd, **kwargs):
+        prompts.append(kwargs.get("input"))
+        stdout = json.dumps({"result": next(replies)})
+        return subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr="")
+
+    rows = run_extract("claude", None, ["a"], checks_only=False, run=fake_run, commit="abc")
+
+    actual = {
+        "passed": rows[0].passed,
+        "pass2_saved": json.loads((tmp_path / "a.resp.host.json").read_text())["output"],
+        "pass2_prompt_has_extraction_protocol": EXTRACTION_PROTOCOL in (prompts[1] or ""),
+    }
+    assert actual == {
+        "passed": True,
+        "pass2_saved": {"key_responsibilities": ["python", "agent loop"]},
+        "pass2_prompt_has_extraction_protocol": False,
+    }
 
 
 def test_tailor_prompt_carries_every_input():
@@ -994,6 +1049,11 @@ def test_body_read_failure_clears_saved_reply_and_continues(error, tmp_path, mon
             BrokenBody(),
             BytesIO(
                 json.dumps({"choices": [{"message": {"content": json.dumps(expected)}}]}).encode()
+            ),
+            BytesIO(
+                json.dumps(
+                    {"choices": [{"message": {"content": '{"key_responsibilities":[]}'}}]}
+                ).encode()
             ),
         ]
     )
