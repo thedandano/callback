@@ -39,6 +39,28 @@ Examples:
   JD says (no labeled Required/Preferred sections - rule 4 applies): "Some of the problems you'll work on: **Data Pipeline Performance:** we push the limits of what our warehouse can handle, exploring query optimization and pre-computed state using dbt. **Real-time Sync:** as sources adopt CDC, we're building real-time computation with Kafka."
   -> {"title":"Software Engineer","company":"Acme Corp","required":["query optimization","pre-computed state","dbt","CDC","Kafka"]}"""  # noqa: E501
 
+# kw-eval v3 "C" responsibilities pass, word for word. Pass 2 of the hybrid extraction.
+RESPONSIBILITIES_PROTOCOL = """You are extracting ONE field of a structured record from a job description (jd_text). A resume-scoring tool matches the strings you output against candidates' resumes. Other fields are extracted separately, so output only the field asked for here.
+
+Shared definitions (apply to every term you output):
+- ATOMIC term: an individual skill, tool, technology, framework, platform, language, methodology, or named domain. Never a whole sentence or clause. A requirement bullet is often a full sentence, so pull out only the individual items named inside it.
+- Copy the EXACT string from the JD. Do NOT paraphrase, generalize, or substitute synonyms (e.g. if the JD says "k8s", use "k8s", not "Kubernetes").
+- A keyword is a NAMED technology, tool, framework, platform, language, credential, or named methodology or domain, explicitly stated in an eligible JD section. Include every one that meets this definition; do not filter by perceived importance. Bare activity words a reader could guess from the job title alone are NOT keywords (e.g. "training", "evaluating", "tooling", "cloud", "analytics", "data processing", "software engineering fundamentals").
+- Do NOT mine terms from: the interview process or hiring-steps section, benefits/compensation/equity text, EEO/legal/accommodation boilerplate, staffing-agency notices, or company awards/marketing copy.
+- Degrees, fields of study, and years of experience are never terms (they are a separate field). Soft skills are not terms.
+
+FIELD: key_responsibilities (terms describing the work itself)
+
+1. Find the sections that describe the work: "Responsibilities", "What you'll do", "Duties", "The role", "Day to day", or similar, plus description paragraphs that describe what the person will build, run, or own.
+2. Extract every technical noun there as an ATOMIC term: each named system, component, technique, technology, method, or domain the person will build, operate, or work with. A line that lists several components ("the X: the A, B, C, and D") yields one term per component.
+3. Terms are noun phrases of 1-4 words in the JD's own wording. Drop leading verbs and filler ("build", "own", "help", "work on").
+4. Bare activity words anyone could guess from the job title, and generic nouns with no skill content ("features", "results", "the system", "production"), are not terms. Skip company/product marketing, team and culture lines, and logistics.
+5. Include a term even if it also appears in a qualifications section, but list each term only once.
+
+Output only: {"key_responsibilities":["<term1>","<term2>",...]}  (use [] if the JD describes no work)"""  # noqa: E501
+
+_MAX_ATOMIC_WORDS = 6
+
 Seniority = Literal["junior", "mid", "senior", "lead", "director"]
 SUPPORTED_SENIORITIES = {"junior", "mid", "senior", "lead", "director", "unspecified"}
 
@@ -134,3 +156,32 @@ def parse_jd_json(jd_json: str) -> dict:
         return JDData.model_validate_json(jd_json).model_dump()
     except ValidationError as exc:
         raise JDDataError("invalid_jd", f"jd_json parse failed: {exc}") from exc
+
+
+def _norm(term: str) -> str:
+    return " ".join(term.lower().split())
+
+
+def drop_scored_duplicates(keywords: dict) -> tuple[dict, list[str]]:
+    """Drop key_responsibilities terms already in a scored list, plus repeats.
+
+    Returns a new dict and the dropped terms in input order. Scored lists are untouched.
+    """
+    groups = [*keywords.get("required_any", []), *keywords.get("preferred_any", [])]
+    seen = {
+        _norm(t)
+        for t in [*keywords.get("required", []), *keywords.get("preferred", [])]
+        + [t for g in groups for t in g]
+    }
+    kept: list[str] = []
+    dropped: list[str] = []
+    for term in keywords.get("key_responsibilities", []):
+        key = _norm(term)
+        (dropped if key in seen else kept).append(term)
+        seen.add(key)
+    return {**keywords, "key_responsibilities": kept}, dropped
+
+
+def non_atomic_responsibilities(terms: list[str]) -> list[str]:
+    """Entries that read like sentences: more than 6 words, or a comma."""
+    return [t for t in terms if len(t.split()) > _MAX_ATOMIC_WORDS or "," in t]
