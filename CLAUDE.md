@@ -106,6 +106,9 @@ uv run pytest -m local evals/                          # E1 + E2 checks over the
 # already on file. Reviewer also flagged ashby's answer key itself contains non-atomic clause
 # fragments (e.g. "ML models from research or prototype stage into production at scale") inherited
 # from the M8 rebuild - logged as a follow-up answer-key audit, not fixed here.
+# updated 2026-10-20 (two-pass extraction), claude default model: E1 5/6 (FAIL cedar). Pass 1 is
+# byte-identical to the previous run's prompt, so the jump from 2/6 is sampling variance, not a gain.
+# E1 checks don't read key_responsibilities; pass 2 output is saved in <board>.resp.host.json.
 
 ```
 

@@ -1,0 +1,24 @@
+{
+  "host": "claude",
+  "model": "opus",
+  "commit": "94873a4",
+  "ran_at": "2026-10-21T00:05:56.959921+00:00",
+  "raw": "{\"key_responsibilities\":[\"embedded and cloud edge software\",\"specialized utility programs\",\"system-level software solutions\",\"performance requirements\",\"interfaces\",\"software requirements\",\"unit testing\",\"debugging\",\"integration\",\"code reviews\",\"regression tests\",\"triaging of issues\",\"technical documentation\"]}",
+  "output": {
+    "key_responsibilities": [
+      "embedded and cloud edge software",
+      "specialized utility programs",
+      "system-level software solutions",
+      "performance requirements",
+      "interfaces",
+      "software requirements",
+      "unit testing",
+      "debugging",
+      "integration",
+      "code reviews",
+      "regression tests",
+      "triaging of issues",
+      "technical documentation"
+    ]
+  }
+}

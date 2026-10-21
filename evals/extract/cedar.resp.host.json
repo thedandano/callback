@@ -1,0 +1,29 @@
+{
+  "host": "claude",
+  "model": "opus",
+  "commit": "94873a4",
+  "ran_at": "2026-10-21T00:05:26.995272+00:00",
+  "raw": "{\"key_responsibilities\":[\"core platform services\",\"APIs\",\"internal tools\",\"architecture\",\"reliability\",\"domain logic\",\"zoning\",\"design constraints\",\"software abstractions\",\"AI tools\",\"performance\",\"scalability\",\"developer velocity\",\"AI development tools\",\"data models\",\"developer workflows\",\"automation\",\"delivery workflows\"]}",
+  "output": {
+    "key_responsibilities": [
+      "core platform services",
+      "APIs",
+      "internal tools",
+      "architecture",
+      "reliability",
+      "domain logic",
+      "zoning",
+      "design constraints",
+      "software abstractions",
+      "AI tools",
+      "performance",
+      "scalability",
+      "developer velocity",
+      "AI development tools",
+      "data models",
+      "developer workflows",
+      "automation",
+      "delivery workflows"
+    ]
+  }
+}
