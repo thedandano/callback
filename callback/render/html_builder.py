@@ -4,6 +4,7 @@ import asyncio
 import base64
 import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pdfplumber
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -11,7 +12,34 @@ from playwright.async_api import async_playwright
 
 _RENDER_DIR = Path(__file__).parent
 _TEMPLATE = "resume_template.html.j2"
-FONT_B64 = base64.b64encode((_RENDER_DIR / "fonts" / "InterVariable.ttf").read_bytes()).decode()
+# Static Inter faces (v4.1, OFL). Chromium embeds the variable font as Type 3,
+# which ATS text extraction handles poorly.
+_FONT_FILES: tuple[tuple[str, int], ...] = (
+    ("Inter-Regular.ttf", 400),
+    ("Inter-Medium.ttf", 500),
+    ("Inter-SemiBold.ttf", 600),
+    ("Inter-Bold.ttf", 700),
+    ("Inter-ExtraBold.ttf", 800),
+)
+
+
+def _load_font_faces() -> list[dict[str, str | int]]:
+    faces: list[dict[str, str | int]] = []
+    for name, weight in _FONT_FILES:
+        font_path = _RENDER_DIR / "fonts" / name
+        font_bytes = font_path.read_bytes()
+        if not font_bytes:
+            raise RuntimeError(f"bundled font is empty: {font_path}")
+        faces.append({"b64": base64.b64encode(font_bytes).decode(), "weight": weight})
+    return faces
+
+
+FONT_FACES = _load_font_faces()
+# Whole-pixel font hinting shifts glyph positions and shows up as uneven
+# letter spacing in the printed PDF.
+_CHROMIUM_ARGS = ["--no-sandbox", "--font-render-hinting=none"]
+_CONTACT_FIELDS = ("location", "email", "phone", "linkedin", "website")
+_CONTACT_LINK_KINDS = frozenset({"linkedin", "website"})
 _CSS_DPI = 96
 _LETTER_WIDTH_IN = 8.5
 _LETTER_HEIGHT_IN = 11
@@ -161,30 +189,60 @@ def _render_page_warnings(
     return []
 
 
+def _contact_link(value: str) -> tuple[str, str] | None:
+    """Return ``(href, visible)`` when ``value`` is an absolute http(s) URL.
+
+    ``href`` is the trimmed original URL, including any query string. ``visible``
+    drops the scheme, query, fragment, and trailing slash. Values without an
+    http(s) scheme return None so callers keep the plain text.
+    """
+    text = value.strip()
+    parts = urlsplit(text)
+    if parts.scheme.lower() not in {"http", "https"} or not parts.netloc:
+        return None
+    visible = f"{parts.netloc}{parts.path}".rstrip("/")
+    return text, visible
+
+
+def _contact_items(tailored: dict) -> list[dict[str, str]]:
+    items: list[dict[str, str]] = []
+    for kind in _CONTACT_FIELDS:
+        value = tailored.get(kind)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if not text:
+            continue
+        item = {"value": text, "kind": kind}
+        if kind in _CONTACT_LINK_KINDS:
+            link = _contact_link(text)
+            if link is not None:
+                href, visible = link
+                item["href"] = href
+                item["value"] = visible
+        items.append(item)
+    return items
+
+
 def _render_html(tailored: dict) -> str:
     template = _JINJA.get_template(_TEMPLATE)
-    contact_items = []
-    for kind in ("location", "email", "phone", "linkedin", "website"):
-        value = tailored.get(kind)
-        if value is not None and str(value).strip():
-            contact_items.append({"value": str(value).strip(), "kind": kind})
     return template.render(
         name=(tailored.get("name") or "YOUR NAME"),
         title=(tailored.get("title") or ""),
         summary=(tailored.get("summary") or ""),
-        contact_items=contact_items,
+        contact_items=_contact_items(tailored),
         skills_rows=_split_skill_rows(tailored.get("skills_raw")),
         experience_entries=_split_timeline_entries(tailored.get("experience_raw")),
         project_entries=_split_timeline_entries(tailored.get("projects_raw")),
         education_lines=_split_nonempty_lines(tailored.get("education_raw")),
-        font_b64=FONT_B64,
+        font_faces=FONT_FACES,
     )
 
 
 async def _render_async(tailored: dict, output_path: str) -> None:
     html = _render_html(tailored)
     async with async_playwright() as p:
-        browser = await p.chromium.launch(args=["--no-sandbox"])
+        browser = await p.chromium.launch(args=_CHROMIUM_ARGS)
         try:
             page = await browser.new_page()
             await page.set_viewport_size(
