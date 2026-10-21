@@ -28,6 +28,48 @@ def test_record_skips_with_warning_when_key_missing(monkeypatch, caplog):
     ]
 
 
+def test_record_extract_includes_saved_pass2_output_when_present(tmp_path, monkeypatch):
+    (tmp_path / "ashby.md").write_text("job description", encoding="utf-8")
+    (tmp_path / "ashby.host.json").write_text('{"output":{"title":"Engineer"}}', encoding="utf-8")
+    (tmp_path / "ashby.resp.host.json").write_text(
+        '{"output":{"key_responsibilities":["agent loop"]}}', encoding="utf-8"
+    )
+    (tmp_path / "cedar.md").write_text("second job description", encoding="utf-8")
+    (tmp_path / "cedar.host.json").write_text('{"output":{"title":"Developer"}}', encoding="utf-8")
+    monkeypatch.setattr(experiments, "EXTRACT_DIR", tmp_path)
+    captured = {}
+
+    def fake_record(eval_name, rows, inputs, outputs, run_meta):
+        captured.update(eval_name=eval_name, inputs=inputs, outputs=outputs, run_meta=run_meta)
+        return "recorded"
+
+    monkeypatch.setattr(experiments, "record", fake_record)
+    rows = [
+        EvalRow("extract", "ashby", [Check("valid_jd_data", True)]),
+        EvalRow("extract", "cedar", [Check("valid_jd_data", True)]),
+    ]
+
+    actual = experiments.record_extract(rows, {"commit": "abc"})
+
+    expected = "recorded"
+    assert actual == expected
+    assert captured == {
+        "eval_name": "extract",
+        "inputs": {
+            "ashby": {"jd_text": "job description"},
+            "cedar": {"jd_text": "second job description"},
+        },
+        "outputs": {
+            "ashby": {
+                "title": "Engineer",
+                "pass2": {"key_responsibilities": ["agent loop"]},
+            },
+            "cedar": {"title": "Developer"},
+        },
+        "run_meta": {"commit": "abc"},
+    }
+
+
 class FakeClient:
     def __init__(self):
         self.datasets = {}

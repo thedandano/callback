@@ -22,6 +22,7 @@ This is a one-job workflow. Do not scan Gmail, Google Jobs, FAANG careers, CSV l
 2. Extract compact JDData from `data.jd_text` using `data.extraction_protocol`. For disjunctive "one or more of" / "any of" requirement groups, put the alternatives in a `required_any` group (or `preferred_any` when the group sits under a preferred section) — only one is needed, so a candidate who has any single one satisfies it and must not be penalized for lacking the others.
 3. Call `submit_keywords(session_id, jd_json)`.
 4. Follow `workflow.next_tool`:
+   - `submit_responsibilities`: start a fresh subagent and give it only `data.responsibilities_protocol` and the `data.jd_text` from `load_jd`. Send the `key_responsibilities` list it returns to `submit_responsibilities(session_id, key_responsibilities)`, then follow the next `workflow.next_tool`. If you cannot start a subagent, skip this step.
    - `get_wiki_pages`: fetch relevant page IDs from `data.wiki_index`, then tailor with that evidence.
    - `submit_tailor`: tailor directly from visible resume evidence.
    - `onboard_user` or `create_story`: stop and explain what profile evidence is missing.

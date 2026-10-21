@@ -1,27 +1,42 @@
 {
   "host": "claude",
-  "model": "default",
-  "commit": "020b287",
-  "ran_at": "2026-09-15T18:08:57.636561+00:00",
-  "raw": "{\"title\":\"Software Engineer, Customer Studio Backend\",\"company\":\"Hightouch\",\"required\":[\"SQL\",\"query optimization\",\"pre-computed state\",\"CDC\",\"Generative AI\"],\"location\":\"Remote\",\"seniority\":\"senior\",\"team\":\"Customer Studio\",\"key_responsibilities\":[\"Optimize data warehouse query speed and performance\",\"Build analytics and experimentation capabilities for customer audiences\",\"Enable real-time audience computation and syncing\",\"Enhance user workflows with generative AI\"],\"pay_range_min\":180000,\"pay_range_max\":400000}",
+  "model": "opus",
+  "commit": "94873a4",
+  "ran_at": "2026-10-21T00:05:36.711142+00:00",
+  "raw": "{\"title\":\"Software Engineer, Customer Studio Backend\",\"company\":\"Hightouch\",\"required\":[\"backend\",\"distributed systems\",\"architecture\",\"scalability\",\"maintainability\",\"reliability\",\"product specs\",\"data warehouses\",\"optimizing queries\",\"pre-computed state\",\"experimentation\",\"segments\",\"real-time audience computation\",\"syncing\",\"CDC\",\"Generative AI\",\"SQL\",\"no-code\"],\"location\":\"Remote\",\"seniority\":\"senior\",\"team\":\"Customer Studio\",\"key_responsibilities\":[\"Improve data warehouse performance, speed, and interactivity through query optimization, pre-computed state, and warehouse-specific improvements\",\"Build analytics and experimentation capabilities to help customers build segments and track audience performance\",\"Develop real-time audience computation and syncing leveraging technologies like CDC\",\"Apply generative AI to make user workflows for acting on data more seamless\",\"Architect backend and distributed systems with attention to scalability, maintainability, and reliability\",\"Write and engage with product specs\"],\"pay_range_min\":180000,\"pay_range_max\":400000}",
   "output": {
     "title": "Software Engineer, Customer Studio Backend",
     "company": "Hightouch",
     "required": [
-      "SQL",
-      "query optimization",
+      "backend",
+      "distributed systems",
+      "architecture",
+      "scalability",
+      "maintainability",
+      "reliability",
+      "product specs",
+      "data warehouses",
+      "optimizing queries",
       "pre-computed state",
+      "experimentation",
+      "segments",
+      "real-time audience computation",
+      "syncing",
       "CDC",
-      "Generative AI"
+      "Generative AI",
+      "SQL",
+      "no-code"
     ],
     "location": "Remote",
     "seniority": "senior",
     "team": "Customer Studio",
     "key_responsibilities": [
-      "Optimize data warehouse query speed and performance",
-      "Build analytics and experimentation capabilities for customer audiences",
-      "Enable real-time audience computation and syncing",
-      "Enhance user workflows with generative AI"
+      "Improve data warehouse performance, speed, and interactivity through query optimization, pre-computed state, and warehouse-specific improvements",
+      "Build analytics and experimentation capabilities to help customers build segments and track audience performance",
+      "Develop real-time audience computation and syncing leveraging technologies like CDC",
+      "Apply generative AI to make user workflows for acting on data more seamless",
+      "Architect backend and distributed systems with attention to scalability, maintainability, and reliability",
+      "Write and engage with product specs"
     ],
     "pay_range_min": 180000,
     "pay_range_max": 400000

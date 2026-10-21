@@ -106,6 +106,9 @@ uv run pytest -m local evals/                          # E1 + E2 checks over the
 # already on file. Reviewer also flagged ashby's answer key itself contains non-atomic clause
 # fragments (e.g. "ML models from research or prototype stage into production at scale") inherited
 # from the M8 rebuild - logged as a follow-up answer-key audit, not fixed here.
+# updated 2026-10-20 (two-pass extraction), claude default model: E1 5/6 (FAIL cedar). Pass 1 is
+# byte-identical to the previous run's prompt, so the jump from 2/6 is sampling variance, not a gain.
+# E1 checks don't read key_responsibilities; pass 2 output is saved in <board>.resp.host.json.
 
 ```
 
@@ -177,12 +180,13 @@ tool/node spans for LangSmith demos.
 
 ### Two graphs, one server
 
-`server.py` (FastMCP) exposes eight tools wired to two distinct LangGraph state graphs:
+`server.py` (FastMCP) exposes these tools wired to two distinct LangGraph state graphs:
 
 | Tool             | Graph    | Behavior                                                    |
 |------------------|----------|-------------------------------------------------------------|
 | `load_jd`        | apply    | Runs through `jd_fetch`, then returns JD markdown plus extraction instructions. |
 | `submit_keywords`| apply    | Accepts validated host-extracted JDData, runs parse/initial score, and returns score gaps plus tailor handoff guidance. |
+| `submit_responsibilities` | apply | Optional pass 2 after `submit_keywords`: stores the host's `key_responsibilities` list from `data.responsibilities_protocol`, drops terms already scored, and returns the tailor handoff. Not scored. |
 | `submit_tailor`  | apply    | Applies host edits, renders the tailored PDF, scores final output, and returns artifact paths/report data. Optional `output_dir` redirects the final PDF into a caller directory (e.g. a sandbox). |
 | `get_wiki_pages` | apply    | Returns selected profile wiki pages for host tailoring evidence. |
 | `onboard_user`   | profile  | Enters the profile graph (interrupts after `onboard`).      |
@@ -196,7 +200,7 @@ All tools return JSON envelopes via `_ok` / `_err`:
 
 ### Agent MCP Playbook
 
-When the user asks to use callback for a job, call `load_jd`, extract JDData as the host, call `submit_keywords`, follow `workflow.next_tool`, and finish with `submit_tailor`. Return `data.pdf_path`, `data.ledger_path`, `data.report`, and `data.outcome` to the user. If `workflow.next_tool` is `onboard_user` or `create_story`, collect the missing profile evidence, compile the profile, then restart the job flow with `load_jd`.
+When the user asks to use callback for a job, call `load_jd`, extract JDData as the host, call `submit_keywords`, follow `workflow.next_tool` (on the tailor route that is `submit_responsibilities`: run `data.responsibilities_protocol` with load_jd's `data.jd_text` in a fresh subagent and send its list; skip it if you cannot start a subagent), and finish with `submit_tailor`. Return `data.pdf_path`, `data.ledger_path`, `data.report`, and `data.outcome` to the user. If `workflow.next_tool` is `onboard_user` or `create_story`, collect the missing profile evidence, compile the profile, then restart the job flow with `load_jd`.
 
 If you run in a sandboxed filesystem, callback's default output (`~/.local/share/callback/applications/`) is outside your reach. Before calling `submit_tailor`, ask the user for a full output directory inside your sandbox and pass it as `output_dir`; the final PDF (`data.pdf_path`) is then written there directly; the run record goes to callback's ledger (`data.ledger_path`).
 

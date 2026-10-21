@@ -291,6 +291,7 @@ own flow.
 |---|---|
 | `load_jd` | Fetch a job posting from a URL, or accept raw text. Returns the posting as markdown plus extraction instructions. |
 | `submit_keywords` | Accept the client-extracted job data: title, required and preferred keywords, seniority, years. Scores the resume and returns keyword gaps. |
+| `submit_responsibilities` | Optional second pass: send the job's responsibilities as short keywords, for tailoring. Not scored. |
 | `submit_tailor` | Apply bullet edits, render the PDF, score the result, produce the report. |
 | `get_wiki_pages` | Fetch pages from your behavioral-story profile by path. |
 | `onboard_user` | Register a resume, skills file, and accomplishments doc. |

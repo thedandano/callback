@@ -1,0 +1,37 @@
+{
+  "host": "claude",
+  "model": "opus",
+  "commit": "94873a4",
+  "ran_at": "2026-10-21T00:05:17.019529+00:00",
+  "raw": "{\"key_responsibilities\":[\"research-to-production pipeline\",\"research checkpoints\",\"production models\",\"hybrid training and inference stack\",\"GPU data centers\",\"in-house tooling\",\"productionization\",\"reproducible, well-tested workflows\",\"packaging\",\"deployment\",\"model release gates\",\"automated evaluation\",\"regression detection\",\"quality/latency/throughput checks\",\"efficient inference\",\"batching\",\"memory and latency tuning\",\"profiling\",\"build and delivery layer\",\"custom infrastructure\",\"GPU compute\",\"cloud environments\",\"benchmarking\",\"validation\",\"feedback loop\",\"speech models\"]}",
+  "output": {
+    "key_responsibilities": [
+      "research-to-production pipeline",
+      "research checkpoints",
+      "production models",
+      "hybrid training and inference stack",
+      "GPU data centers",
+      "in-house tooling",
+      "productionization",
+      "reproducible, well-tested workflows",
+      "packaging",
+      "deployment",
+      "model release gates",
+      "automated evaluation",
+      "regression detection",
+      "quality/latency/throughput checks",
+      "efficient inference",
+      "batching",
+      "memory and latency tuning",
+      "profiling",
+      "build and delivery layer",
+      "custom infrastructure",
+      "GPU compute",
+      "cloud environments",
+      "benchmarking",
+      "validation",
+      "feedback loop",
+      "speech models"
+    ]
+  }
+}

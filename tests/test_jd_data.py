@@ -1,9 +1,18 @@
+import hashlib
 import json
 
 import pytest
 from pydantic import BaseModel
 
-from callback.jd_data import EXTRACTION_PROTOCOL, JDData, JDDataError, parse_jd_json
+from callback.jd_data import (
+    EXTRACTION_PROTOCOL,
+    RESPONSIBILITIES_PROTOCOL,
+    JDData,
+    JDDataError,
+    drop_scored_duplicates,
+    non_atomic_responsibilities,
+    parse_jd_json,
+)
 
 FULL_JD = {
     "title": "Senior Platform Engineer",
@@ -318,3 +327,45 @@ def test_non_string_seniority_is_rejected_as_invalid_jd():
         actual = {"code": exc.code, "mentions_seniority": "seniority" in str(exc)}
     expected = {"code": "invalid_jd", "mentions_seniority": True}
     assert actual == expected
+
+
+def test_responsibilities_protocol_matches_eval_text():
+    assert len(RESPONSIBILITIES_PROTOCOL) == 2607
+    assert hashlib.sha256(RESPONSIBILITIES_PROTOCOL.encode()).hexdigest() == (
+        "1a325a7da4276a0ab24ed4ae5769e125a838690e60f863e3dd32b512d9699355"
+    )
+
+
+def test_extraction_protocol_unchanged():
+    assert hashlib.sha256(EXTRACTION_PROTOCOL.encode()).hexdigest() == (
+        "6d72cb02355b61f39fda3bf118f4edd7f408c42c677060afdc249b12dd073856"
+    )
+
+
+def test_drop_scored_duplicates_trims_only_responsibilities():
+    kw = {
+        "required": ["Swift", "swift"],
+        "required_any": [["Rust", "Go"]],
+        "preferred": ["evals"],
+        "preferred_any": [["LLM"]],
+        "key_responsibilities": ["swift", "Go", "Evals", "llm", "agent loop", "Agent  Loop"],
+    }
+    out, dropped = drop_scored_duplicates(kw)
+    assert out == {**kw, "key_responsibilities": ["agent loop"]}
+    assert dropped == ["swift", "Go", "Evals", "llm", "Agent  Loop"]
+    assert kw["key_responsibilities"][0] == "swift"  # input not mutated
+
+
+def test_drop_scored_duplicates_empty_responsibilities():
+    kw = {"required": ["Go"], "key_responsibilities": []}
+    assert drop_scored_duplicates(kw) == (kw, [])
+
+
+def test_parse_accepts_empty_responsibilities():
+    parsed = parse_jd_json('{"required":["Go"],"key_responsibilities":[]}')
+    assert parsed["key_responsibilities"] == []
+
+
+def test_non_atomic_responsibilities():
+    terms = ["agent loop", "build the executor that dispatches tool calls", "latency, memory"]
+    assert non_atomic_responsibilities(terms) == terms[1:]
