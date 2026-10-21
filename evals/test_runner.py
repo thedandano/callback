@@ -353,7 +353,13 @@ def test_new_host_routing_is_saved_and_recorded(
     host, extra_flags, routing, tmp_path, monkeypatch, caplog
 ):
     extract_dir = tmp_path / "extract"
-    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    expected = {
+        "title": "Engineer",
+        "required": ["Python"],
+        "preferred": [],
+        "required_years": 0.0,
+        "key_responsibilities": [],  # one reply serves pass 1 and pass 2
+    }
     _write_extract_fixture(extract_dir, "acme", expected)
     monkeypatch.setattr(runner, "EXTRACT_DIR", extract_dir)
     monkeypatch.setattr(runner, "_commit", lambda: "abc")
@@ -424,7 +430,13 @@ def test_checks_only_logs_saved_output(tmp_path, monkeypatch, caplog):
 
 def test_saved_codex_default_is_passed_and_recorded(tmp_path, monkeypatch):
     extract_dir = tmp_path / "extract"
-    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    expected = {
+        "title": "Engineer",
+        "required": ["Python"],
+        "preferred": [],
+        "required_years": 0.0,
+        "key_responsibilities": [],  # one reply serves pass 1 and pass 2
+    }
     _write_extract_fixture(extract_dir, "acme", expected)
     (tmp_path / "config.toml").write_text(
         'model = "chosen-default"\nmodel_reasoning_effort = "high"'
@@ -543,6 +555,74 @@ def test_run_extract_saves_both_passes(tmp_path, monkeypatch):
         "pass2_saved": {"key_responsibilities": ["python", "agent loop"]},
         "pass2_prompt_has_extraction_protocol": False,
     }
+
+
+def test_run_extract_fails_only_fixture_when_pass2_has_no_json_object(
+    tmp_path, monkeypatch, caplog
+):
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    _write_extract_fixture(tmp_path, "a", expected)
+    monkeypatch.setattr(runner, "EXTRACT_DIR", tmp_path)
+    replies = iter([json.dumps(expected), "no JSON object"])
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout=json.dumps({"result": next(replies)}), stderr=""
+        )
+
+    with caplog.at_level("WARNING", logger="callback.evals"):
+        rows = run_extract("claude", None, ["a"], checks_only=False, run=fake_run, commit="abc")
+
+    actual = {
+        "checks": rows[0].checks,
+        "warning": "a: pass 2 reply did not contain a JSON object" in caplog.messages,
+    }
+    expected_actual = {
+        "checks": [Check("pass2_output", False, "pass 2 reply did not contain a JSON object")],
+        "warning": True,
+    }
+    assert actual == expected_actual
+
+
+def test_run_extract_invalid_pass2_keeps_running_next_board(tmp_path, monkeypatch, caplog):
+    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    _write_extract_fixture(tmp_path, "a", expected)
+    _write_extract_fixture(tmp_path, "b", expected)
+    monkeypatch.setattr(runner, "EXTRACT_DIR", tmp_path)
+    replies = iter(
+        [
+            json.dumps(expected),
+            '{"key_responsibilities":[5]}',
+            json.dumps(expected),
+            '{"key_responsibilities":["agent loop"]}',
+        ]
+    )
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout=json.dumps({"result": next(replies)}), stderr=""
+        )
+
+    with caplog.at_level("WARNING", logger="callback.evals"):
+        rows = run_extract(
+            "claude", None, ["a", "b"], checks_only=False, run=fake_run, commit="abc"
+        )
+
+    actual = {
+        "rows": [(row.fixture, row.passed, row.checks[0].name) for row in rows],
+        "warning": (
+            "a: invalid pass 2 key_responsibilities: key_responsibilities entries must be strings"
+        )
+        in caplog.messages,
+    }
+    expected_actual = {
+        "rows": [
+            ("a", False, "pass2_output"),
+            ("b", True, "valid_jd_data"),
+        ],
+        "warning": True,
+    }
+    assert actual == expected_actual
 
 
 def test_tailor_prompt_carries_every_input():
@@ -747,6 +827,7 @@ def test_run_extract_writes_host_file_and_checks(tmp_path, monkeypatch):
     extract_dir.mkdir()
     jd = "Engineer at Acme. Requirements: Python, Go."
     fixture_jd = {
+        "key_responsibilities": [],
         "title": "Engineer",
         "required": ["Python", "Go"],
         "preferred": [],
@@ -785,6 +866,7 @@ def test_run_extract_continues_after_host_failure(tmp_path, monkeypatch, caplog)
     extract_dir = tmp_path / "extract"
     extract_dir.mkdir()
     fixture_jd = {
+        "key_responsibilities": [],
         "title": "Engineer",
         "required": ["Python"],
         "preferred": [],
@@ -1004,7 +1086,13 @@ def test_checks_only_never_records_a_langsmith_experiment(tmp_path, monkeypatch,
 
 def test_langsmith_failure_is_logged_and_local_results_still_print(tmp_path, monkeypatch, caplog):
     extract_dir = tmp_path / "extract"
-    expected = {"title": "Engineer", "required": ["Python"], "preferred": [], "required_years": 0.0}
+    expected = {
+        "title": "Engineer",
+        "required": ["Python"],
+        "preferred": [],
+        "required_years": 0.0,
+        "key_responsibilities": [],  # one reply serves pass 1 and pass 2
+    }
     _write_extract_fixture(extract_dir, "acme", expected)
     reply = json.dumps({"result": json.dumps(expected)})
     monkeypatch.setattr("evals.runner.EXTRACT_DIR", extract_dir)

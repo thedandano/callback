@@ -925,11 +925,17 @@ def _submit_keywords_workflow(
                 "key_responsibilities": ["<term from pass 2>"],
             },
         )
+    pass_2_tailor_task = (
+        "Use data.sections, data.score_gap, data.wiki_index, and "
+        "data.tailor_instructions from the submit_keywords reply, plus the keywords "
+        "returned here, to choose relevant wiki pages and prepare honest SectionMap edits. "
+        "If the index already contains enough evidence, submit_tailor is also valid."
+    )
     return _workflow(
         phase="tailor_evidence",
         next_tool="get_wiki_pages",
         allowed_next_tools=["get_wiki_pages", "submit_tailor"],
-        host_task=tailor_task,
+        host_task=pass_2_tailor_task,
         required_input={
             "session_id": session_id,
             "page_ids": ["experience/<page-id>.md"],

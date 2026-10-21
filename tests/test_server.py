@@ -2296,6 +2296,8 @@ def test_submit_responsibilities_replaces_trims_and_keeps_tailor_pending(
         "required_untouched": snapshot.values["keywords"]["required"],
         "still_before_tailor": snapshot.next == (TAILOR_NODE,),
         "next_tool": result["workflow"]["next_tool"],
+        "host_task_mentions_submit_keywords_reply": "submit_keywords reply"
+        in result["workflow"]["host_task"],
         "dropped_log": [e["dropped"] for e in _logged(caplog, "responsibilities_deduped")],
         "tailor_status": tailored["status"],
     }
@@ -2306,6 +2308,7 @@ def test_submit_responsibilities_replaces_trims_and_keeps_tailor_pending(
         "required_untouched": ["Swift"],
         "still_before_tailor": True,
         "next_tool": "get_wiki_pages",
+        "host_task_mentions_submit_keywords_reply": True,
         "dropped_log": [["swift", "Agent  Loop"]],
         "tailor_status": "ok",
     }

@@ -30,6 +30,8 @@ from langsmith.utils import LangSmithError
 from callback.jd_data import (
     EXTRACTION_PROTOCOL,
     RESPONSIBILITIES_PROTOCOL,
+    JDDataError,
+    clean_responsibilities,
     drop_scored_duplicates,
 )
 from callback.server import _TAILOR_INSTRUCTIONS
@@ -539,7 +541,17 @@ def _with_pass2(
     )
     if gate is not None:
         return None, gate
-    return merge_passes(pass1, pass2 or {}), None
+    if pass2 is None:
+        detail = "pass 2 reply did not contain a JSON object"
+        logger.warning("%s: %s", board, detail)
+        return None, Check("pass2_output", False, detail)
+    try:
+        responsibilities = clean_responsibilities(pass2.get("key_responsibilities"))
+    except JDDataError as exc:
+        detail = f"invalid pass 2 key_responsibilities: {exc}"
+        logger.warning("%s: %s", board, detail)
+        return None, Check("pass2_output", False, detail)
+    return merge_passes(pass1, {"key_responsibilities": responsibilities}), None
 
 
 def run_extract(
