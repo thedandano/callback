@@ -29,7 +29,7 @@ build-backend = "setuptools.build_meta"
 include = ["callback*"]
 
 [tool.setuptools.package-data]
-"callback.render" = ["*.html.j2", "fonts/*.ttf"]
+"callback.render" = ["*.html.j2", "fonts/*.ttf", "fonts/LICENSE.txt"]
 
 [dependency-groups]
 dev = [
