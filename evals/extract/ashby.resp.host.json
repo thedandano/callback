@@ -1,21 +1,27 @@
 {
   "host": "claude",
   "model": "opus",
-  "commit": "94873a4",
-  "ran_at": "2026-10-21T00:05:17.019529+00:00",
-  "raw": "{\"key_responsibilities\":[\"research-to-production pipeline\",\"research checkpoints\",\"production models\",\"hybrid training and inference stack\",\"GPU data centers\",\"in-house tooling\",\"productionization\",\"reproducible, well-tested workflows\",\"packaging\",\"deployment\",\"model release gates\",\"automated evaluation\",\"regression detection\",\"quality/latency/throughput checks\",\"efficient inference\",\"batching\",\"memory and latency tuning\",\"profiling\",\"build and delivery layer\",\"custom infrastructure\",\"GPU compute\",\"cloud environments\",\"benchmarking\",\"validation\",\"feedback loop\",\"speech models\"]}",
+  "commit": "9a2e833",
+  "ran_at": "2026-10-21T06:35:38.543511+00:00",
+  "raw": "{\"key_responsibilities\":[\"research-to-production pipeline\",\"research checkpoints\",\"production models\",\"training and evaluation workflows\",\"packaging\",\"deployment\",\"custom infrastructure\",\"hybrid training and inference stack\",\"GPU data centers\",\"in-house tooling\",\"ML\",\"systems engineering\",\"productionization\",\"reproducible, well-tested workflows\",\"abstractions\",\"reproducibility\",\"model release gates\",\"automated evaluation\",\"regression detection\",\"quality/latency/throughput checks\",\"efficient inference\",\"batching\",\"memory and latency tuning\",\"profiling\",\"build and delivery layer\",\"GPU compute\",\"cloud environments\",\"benchmarking\",\"validation\",\"feedback loop\",\"instrument production model behavior\"]}",
   "output": {
     "key_responsibilities": [
       "research-to-production pipeline",
       "research checkpoints",
       "production models",
+      "training and evaluation workflows",
+      "packaging",
+      "deployment",
+      "custom infrastructure",
       "hybrid training and inference stack",
       "GPU data centers",
       "in-house tooling",
+      "ML",
+      "systems engineering",
       "productionization",
       "reproducible, well-tested workflows",
-      "packaging",
-      "deployment",
+      "abstractions",
+      "reproducibility",
       "model release gates",
       "automated evaluation",
       "regression detection",
@@ -25,13 +31,12 @@
       "memory and latency tuning",
       "profiling",
       "build and delivery layer",
-      "custom infrastructure",
       "GPU compute",
       "cloud environments",
       "benchmarking",
       "validation",
       "feedback loop",
-      "speech models"
+      "instrument production model behavior"
     ]
   }
 }
