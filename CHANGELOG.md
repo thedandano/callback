@@ -4,11 +4,13 @@
 
 ### Features
 
+- Two-pass keyword extraction: `load_jd` and pass 1 are unchanged. On the tailor route, `submit_keywords` returns `responsibilities_protocol` and asks the host to run it in a fresh subagent, then send the list to the new `submit_responsibilities` tool. Hosts without subagents skip it. `key_responsibilities` come back as short keywords instead of sentences. Scoring is unchanged. kw-eval v3 responsibilities recall: 15% before, about 88–95% after, depending on the model.
 - `required_any` OR-groups + atomic keyword extraction — disjunctive requirements ("one or more of A, B, C") now score as a single required unit matched if any member matches; unmatched groups surface as `score_gap.required_missing_any`.
 - `preferred_any` OR-groups — the same primitive on the preferred side: disjunctions in a nice-to-have section score as a single preferred unit at preferred weight; unmatched groups surface as `score_gap.preferred_missing_any`.
 
 ### Miscellaneous
 
+- E1 extract eval now grades `key_responsibilities` (new `responsibilities_recall` check, pass at 0.7, with aliases). Every E1 answer key was re-audited by a blind reviewer council. `groups_match` now also fails an OR-group that mixes members of different requirements, such as `[Kubernetes, AWS]`.
 - chore: remove deprecated go-apply bridge (`bridge.py`) and its tests — the module was wired into nothing at runtime.
 
 ### Important Upgrade Note

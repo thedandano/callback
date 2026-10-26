@@ -2,24 +2,19 @@
   "title": "Software Engineer - Universal Media",
   "company": "Apple",
   "required": [
-    "5+ years building resilient, high-scale distributed microservices in production",
+    "microservices",
     "Java",
-    "event-driven",
-    "streaming systems",
+    "event-driven / streaming systems",
     "data pipelines",
     "big-data framework",
-    "personalization",
-    "recommendation",
-    "ranking algorithms",
-    "notification",
-    "message-delivery systems",
+    "personalization / recommendation / ranking algorithms",
+    "notification / message-delivery systems",
     "algorithms",
     "data structures",
     "SQL",
     "NoSQL",
     "Redis",
-    "Bachelor’s degree",
-    "written and verbal communication"
+    "Bachelor’s degree"
   ],
   "preferred": [
     "Feature stores",
@@ -31,33 +26,71 @@
     "dedup",
     "delivery-guarantee design",
     "CI/CD",
-    "cloud environments",
     "stream/data processing",
     "Master’s degree"
   ],
   "required_any": [
-    ["Kafka", "Kinesis", "Pulsar"],
-    ["pub/sub", "async", "stream processing"],
-    ["push", "email", "SMS", "in-app"],
-    ["PostgreSQL", "Cassandra", "DynamoDB", "MySQL"],
-    ["CS", "CE", "EE"]
+    [
+      "Kafka",
+      "Kinesis",
+      "Pulsar"
+    ],
+    [
+      "pub/sub",
+      "async",
+      "stream processing"
+    ],
+    [
+      "push",
+      "email",
+      "SMS",
+      "in-app"
+    ],
+    [
+      "PostgreSQL",
+      "Cassandra",
+      "DynamoDB",
+      "MySQL"
+    ],
+    [
+      "CS",
+      "CE",
+      "EE"
+    ]
   ],
   "preferred_any": [
-    ["AWS", "GCP", "Azure"],
-    ["Flink", "Beam", "Spark Structured Streaming"]
+    [
+      "AWS",
+      "GCP",
+      "Azure"
+    ],
+    [
+      "Flink",
+      "Beam",
+      "Spark Structured Streaming"
+    ]
   ],
   "location": null,
   "seniority": "unspecified",
   "required_years": 5.0,
   "team": "Universal Media Engineering",
   "key_responsibilities": [
-    "Partner with data scientists to productionize and deploy personalization algorithms, ensuring models are scalable, reliable, and performant in production environments",
-    "Design and build data pipelines to generate and process large-scale datasets used for personalization and user targeting initiatives",
-    "Develop and maintain systems for delivering timely, personalized notifications to users across multiple channels",
-    "Monitor and optimize production systems for latency, throughput, and reliability, implementing improvements as usage scales",
-    "Collaborate cross-functionally with data scientists, product managers, and other engineers to translate business requirements into robust technical solutions",
-    "Contribute to code reviews, technical design discussions, and engineering best practices to raise the overall quality and health of the codebase"
+    "data platform",
+    "personalization algorithms",
+    "data pipelines",
+    "personalization",
+    "user targeting",
+    "personalized notifications",
+    "code reviews"
   ],
   "pay_range_min": null,
-  "pay_range_max": null
+  "pay_range_max": null,
+  "key_responsibilities_aliases": {
+    "user targeting": [
+      "user targeting initiatives"
+    ],
+    "personalized notifications": [
+      "notifications"
+    ]
+  }
 }

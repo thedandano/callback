@@ -5,15 +5,11 @@
     "backend",
     "distributed systems",
     "architecture",
-    "scalability",
-    "maintainability",
-    "reliability",
-    "product specs",
     "SQL",
-    "data warehouse",
+    "no-code",
+    "data warehouses",
     "optimizing queries",
     "pre-computed state",
-    "real-time audience syncing",
     "CDC",
     "generative AI"
   ],
@@ -25,11 +21,29 @@
   "required_years": 0.0,
   "team": "Customer Studio",
   "key_responsibilities": [
-    "Data Warehouse Performance: optimize queries, store pre-computed state, warehouse-specific improvements",
-    "Analytics and Experimentation: build segments, decide what data to sync, track audience performance",
-    "Real-time Audience Syncing: real-time audience computation and syncing using CDC as warehouses adopt real-time technologies",
-    "Generative AI: use generative AI to enhance user workflows around acting on data"
+    "distributed systems",
+    "data warehouses",
+    "optimizing queries",
+    "pre-computed state",
+    "Experimentation",
+    "Real-time Audience Syncing",
+    "CDC",
+    "real-time audience computation",
+    "Generative AI"
   ],
   "pay_range_min": 180000.0,
-  "pay_range_max": 400000.0
+  "pay_range_max": 400000.0,
+  "key_responsibilities_aliases": {
+    "data warehouses": [
+      "data warehouse",
+      "warehouses",
+      "warehouse"
+    ],
+    "Real-time Audience Syncing": [
+      "audience syncing"
+    ],
+    "real-time audience computation": [
+      "audience computation"
+    ]
+  }
 }

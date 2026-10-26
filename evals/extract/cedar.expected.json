@@ -16,8 +16,7 @@
     "React",
     "zoning codes",
     "building codes",
-    "permitting",
-    "regulatory or compliance data"
+    "permitting"
   ],
   "required_any": [
     [
@@ -32,7 +31,7 @@
       "applied ML"
     ],
     [
-      "AEC software",
+      "AEC",
       "BIM tools",
       "CAD systems"
     ],
@@ -48,8 +47,7 @@
     ],
     [
       "Revit",
-      "IFC",
-      "building information modeling formats"
+      "IFC"
     ]
   ],
   "location": null,
@@ -57,12 +55,27 @@
   "required_years": 3.0,
   "team": null,
   "key_responsibilities": [
-    "Design and build core platform services, APIs, and internal tools",
-    "Own systems end-to-end: architecture, implementation, reliability, and iteration",
-    "Translate complex domain logic (zoning, design constraints, workflows) into robust software abstractions",
-    "Leverage AI tools to increase development velocity",
-    "Improve performance, scalability, and developer velocity"
+    "core platform services",
+    "APIs",
+    "internal tools",
+    "data models",
+    "developer workflows",
+    "domain logic",
+    "zoning",
+    "design constraints",
+    "AI tools"
   ],
   "pay_range_min": null,
-  "pay_range_max": null
+  "pay_range_max": null,
+  "key_responsibilities_aliases": {
+    "core platform services": [
+      "platform services"
+    ],
+    "domain logic": [
+      "complex domain logic"
+    ],
+    "AI tools": [
+      "AI development tools"
+    ]
+  }
 }

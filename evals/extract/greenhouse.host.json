@@ -1,27 +1,34 @@
 {
   "host": "claude",
-  "model": "default",
-  "commit": "020b287",
-  "ran_at": "2026-09-15T18:08:57.636561+00:00",
-  "raw": "{\"title\":\"Software Engineer, Customer Studio Backend\",\"company\":\"Hightouch\",\"required\":[\"SQL\",\"query optimization\",\"pre-computed state\",\"CDC\",\"Generative AI\"],\"location\":\"Remote\",\"seniority\":\"senior\",\"team\":\"Customer Studio\",\"key_responsibilities\":[\"Optimize data warehouse query speed and performance\",\"Build analytics and experimentation capabilities for customer audiences\",\"Enable real-time audience computation and syncing\",\"Enhance user workflows with generative AI\"],\"pay_range_min\":180000,\"pay_range_max\":400000}",
+  "model": "opus",
+  "commit": "9a2e833",
+  "ran_at": "2026-10-21T06:36:07.078751+00:00",
+  "raw": "{\"title\":\"Software Engineer, Customer Studio Backend\",\"company\":\"Hightouch\",\"required\":[\"backend\",\"distributed systems\",\"SQL\",\"data warehouses\",\"optimizing queries\",\"pre-computed state\",\"CDC\",\"real-time audience computation\",\"Generative AI\",\"no-code\"],\"location\":\"Remote\",\"seniority\":\"senior\",\"team\":\"Customer Studio\",\"key_responsibilities\":[\"Push the limits of data warehouse speed, performance, and interactivity through query optimizations, pre-computed state, and warehouse-specific improvements\",\"Help customers build segments and facilitate experimentation to downstream tools, including tracking audience performance\",\"Explore real-time audience computation and syncing as warehouses adopt technologies like CDC\",\"Apply generative AI to make user workflows for acting on data more seamless\",\"Design backend and distributed systems with attention to architecture, scalability, maintainability, and reliability\",\"Write and engage with product specs\"],\"pay_range_min\":180000,\"pay_range_max\":400000}",
   "output": {
     "title": "Software Engineer, Customer Studio Backend",
     "company": "Hightouch",
     "required": [
+      "backend",
+      "distributed systems",
       "SQL",
-      "query optimization",
+      "data warehouses",
+      "optimizing queries",
       "pre-computed state",
       "CDC",
-      "Generative AI"
+      "real-time audience computation",
+      "Generative AI",
+      "no-code"
     ],
     "location": "Remote",
     "seniority": "senior",
     "team": "Customer Studio",
     "key_responsibilities": [
-      "Optimize data warehouse query speed and performance",
-      "Build analytics and experimentation capabilities for customer audiences",
-      "Enable real-time audience computation and syncing",
-      "Enhance user workflows with generative AI"
+      "Push the limits of data warehouse speed, performance, and interactivity through query optimizations, pre-computed state, and warehouse-specific improvements",
+      "Help customers build segments and facilitate experimentation to downstream tools, including tracking audience performance",
+      "Explore real-time audience computation and syncing as warehouses adopt technologies like CDC",
+      "Apply generative AI to make user workflows for acting on data more seamless",
+      "Design backend and distributed systems with attention to architecture, scalability, maintainability, and reliability",
+      "Write and engage with product specs"
     ],
     "pay_range_min": 180000,
     "pay_range_max": 400000

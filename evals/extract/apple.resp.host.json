@@ -1,0 +1,26 @@
+{
+  "host": "claude",
+  "model": "opus",
+  "commit": "9a2e833",
+  "ran_at": "2026-10-21T06:35:17.970636+00:00",
+  "raw": "{\"key_responsibilities\":[\"data platform\",\"Apple TV app\",\"tvOS\",\"services\",\"personalization algorithms\",\"data pipelines\",\"large-scale datasets\",\"personalization\",\"user targeting\",\"personalized notifications\",\"latency\",\"throughput\",\"reliability\",\"code reviews\",\"technical design\"]}",
+  "output": {
+    "key_responsibilities": [
+      "data platform",
+      "Apple TV app",
+      "tvOS",
+      "services",
+      "personalization algorithms",
+      "data pipelines",
+      "large-scale datasets",
+      "personalization",
+      "user targeting",
+      "personalized notifications",
+      "latency",
+      "throughput",
+      "reliability",
+      "code reviews",
+      "technical design"
+    ]
+  }
+}

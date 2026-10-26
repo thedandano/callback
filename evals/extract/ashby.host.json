@@ -1,40 +1,52 @@
 {
   "host": "claude",
-  "model": "default",
-  "commit": "020b287",
-  "ran_at": "2026-09-15T18:08:36.884136+00:00",
-  "raw": "{\"title\":\"Applied ML Engineer\",\"company\":\"Deepgram\",\"required\":[\"Python\",\"production-quality, well-tested ML code\",\"ML pipelines\",\"training orchestration\",\"evaluation harnesses\",\"model packaging\",\"deployment\",\"CI/CD for models\",\"serving and inference optimization\",\"distributed systems\",\"GPU compute\"],\"required_any\":[[\"PyTorch\"]],\"preferred\":[\"research-to-production handoff\",\"speech, audio, or other real-time/streaming ML domains\",\"automated model evaluation and release-gating systems\",\"regression detection across model versions\",\"hybrid infrastructure spanning on-premise GPU clusters and cloud\",\"workload orchestration\",\"internal platforms or developer-facing tooling\"],\"preferred_any\":[[\"quantization\",\"distillation\",\"compilation\",\"runtime tuning\"]],\"location\":\"Remote\",\"seniority\":\"senior\",\"team\":\"Engineering\",\"key_responsibilities\":[\"Own the research-to-production pipeline: take research checkpoints and turn them into production models, defining the repeatable path from a working result to a deployed, monitored, scaled service.\",\"Partner directly with research scientists to productionize new models — translating experimental training and evaluation code into robust, reproducible, well-tested workflows.\",\"Build and extend the tooling and abstractions that let researchers and engineers move models through training, evaluation, packaging, and deployment with minimal friction and maximal reproducibility.\",\"Design and own model release gates — automated evaluation, regression detection, and quality/latency/throughput checks that decide whether a model is ready to ship.\",\"Optimize models and serving for production: efficient inference, batching, memory and latency tuning, and the profiling work that turns a research model into something that performs economically at scale.\",\"Strengthen the build and delivery layer for models on our custom infrastructure, spanning our GPU compute and cloud environments, so that shipping a model is fast, safe, and observable.\",\"Establish benchmarking and validation that runs consistently from model development all the way through production, so performance and quality regressions are caught early.\",\"Build the feedback loop: instrument production model behavior, surface what's working and what isn't, and feed it back to research to accelerate the next iteration.\"],\"pay_range_min\":150000,\"pay_range_max\":220000}",
+  "model": "opus",
+  "commit": "9a2e833",
+  "ran_at": "2026-10-21T06:35:32.192232+00:00",
+  "raw": "{\"title\":\"Applied ML Engineer\",\"company\":\"Deepgram\",\"required\":[\"Python\",\"deep learning stack\",\"ML pipelines\",\"inference optimization\",\"batching\",\"distributed systems\",\"GPU compute\"],\"required_any\":[[\"training orchestration\",\"evaluation harnesses\",\"model packaging\",\"deployment\",\"CI/CD for models\"],[\"cloud\",\"bare metal\"]],\"preferred\":[\"research-to-production handoff\",\"automated model evaluation\",\"release-gating systems\",\"regression detection\",\"hybrid infrastructure\",\"on-premise GPU clusters\",\"workload orchestration\",\"inference optimization\",\"internal platforms\",\"developer-facing tooling\"],\"preferred_any\":[[\"speech\",\"audio\",\"real-time/streaming ML\"],[\"quantization\",\"distillation\",\"compilation\",\"runtime tuning\"]],\"location\":\"Remote\",\"seniority\":\"senior\",\"team\":\"Engineering\",\"key_responsibilities\":[\"Own the research-to-production pipeline, turning research checkpoints into deployed, monitored, scaled production models\",\"Partner with research scientists to productionize new models with robust, reproducible, well-tested training and evaluation workflows\",\"Build and extend tooling and abstractions for moving models through training, evaluation, packaging, and deployment\",\"Design and own model release gates including automated evaluation, regression detection, and quality/latency/throughput checks\",\"Optimize models and serving for production: efficient inference, batching, memory and latency tuning, and profiling\",\"Strengthen the build and delivery layer for models across GPU compute and cloud environments\",\"Establish benchmarking and validation from model development through production\",\"Instrument production model behavior and feed results back to research\"],\"pay_range_min\":150000,\"pay_range_max\":220000}",
   "output": {
     "title": "Applied ML Engineer",
     "company": "Deepgram",
     "required": [
       "Python",
-      "production-quality, well-tested ML code",
+      "deep learning stack",
       "ML pipelines",
-      "training orchestration",
-      "evaluation harnesses",
-      "model packaging",
-      "deployment",
-      "CI/CD for models",
-      "serving and inference optimization",
+      "inference optimization",
+      "batching",
       "distributed systems",
       "GPU compute"
     ],
     "required_any": [
       [
-        "PyTorch"
+        "training orchestration",
+        "evaluation harnesses",
+        "model packaging",
+        "deployment",
+        "CI/CD for models"
+      ],
+      [
+        "cloud",
+        "bare metal"
       ]
     ],
     "preferred": [
       "research-to-production handoff",
-      "speech, audio, or other real-time/streaming ML domains",
-      "automated model evaluation and release-gating systems",
-      "regression detection across model versions",
-      "hybrid infrastructure spanning on-premise GPU clusters and cloud",
+      "automated model evaluation",
+      "release-gating systems",
+      "regression detection",
+      "hybrid infrastructure",
+      "on-premise GPU clusters",
       "workload orchestration",
-      "internal platforms or developer-facing tooling"
+      "inference optimization",
+      "internal platforms",
+      "developer-facing tooling"
     ],
     "preferred_any": [
+      [
+        "speech",
+        "audio",
+        "real-time/streaming ML"
+      ],
       [
         "quantization",
         "distillation",
@@ -46,14 +58,14 @@
     "seniority": "senior",
     "team": "Engineering",
     "key_responsibilities": [
-      "Own the research-to-production pipeline: take research checkpoints and turn them into production models, defining the repeatable path from a working result to a deployed, monitored, scaled service.",
-      "Partner directly with research scientists to productionize new models — translating experimental training and evaluation code into robust, reproducible, well-tested workflows.",
-      "Build and extend the tooling and abstractions that let researchers and engineers move models through training, evaluation, packaging, and deployment with minimal friction and maximal reproducibility.",
-      "Design and own model release gates — automated evaluation, regression detection, and quality/latency/throughput checks that decide whether a model is ready to ship.",
-      "Optimize models and serving for production: efficient inference, batching, memory and latency tuning, and the profiling work that turns a research model into something that performs economically at scale.",
-      "Strengthen the build and delivery layer for models on our custom infrastructure, spanning our GPU compute and cloud environments, so that shipping a model is fast, safe, and observable.",
-      "Establish benchmarking and validation that runs consistently from model development all the way through production, so performance and quality regressions are caught early.",
-      "Build the feedback loop: instrument production model behavior, surface what's working and what isn't, and feed it back to research to accelerate the next iteration."
+      "Own the research-to-production pipeline, turning research checkpoints into deployed, monitored, scaled production models",
+      "Partner with research scientists to productionize new models with robust, reproducible, well-tested training and evaluation workflows",
+      "Build and extend tooling and abstractions for moving models through training, evaluation, packaging, and deployment",
+      "Design and own model release gates including automated evaluation, regression detection, and quality/latency/throughput checks",
+      "Optimize models and serving for production: efficient inference, batching, memory and latency tuning, and profiling",
+      "Strengthen the build and delivery layer for models across GPU compute and cloud environments",
+      "Establish benchmarking and validation from model development through production",
+      "Instrument production model behavior and feed results back to research"
     ],
     "pay_range_min": 150000,
     "pay_range_max": 220000

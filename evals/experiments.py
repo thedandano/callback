@@ -118,7 +118,13 @@ def record_extract(rows: list[EvalRow], run_meta: dict) -> str | None:
         inputs[r.fixture] = {
             "jd_text": (EXTRACT_DIR / f"{r.fixture}.md").read_text(encoding="utf-8")
         }
-        outputs[r.fixture] = _saved_output(EXTRACT_DIR / f"{r.fixture}.host.json")
+        pass1_output = _saved_output(EXTRACT_DIR / f"{r.fixture}.host.json")
+        pass2_output = _saved_output(EXTRACT_DIR / f"{r.fixture}.resp.host.json")
+        outputs[r.fixture] = (
+            {**(pass1_output or {}), "pass2": pass2_output}
+            if pass2_output is not None
+            else pass1_output
+        )
     return record("extract", rows, inputs, outputs, run_meta)
 
 

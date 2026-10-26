@@ -11,8 +11,10 @@ from pathlib import Path
 
 import pytest
 
+from callback.jd_data import clean_responsibilities
 from evals.checks import first_failure
 from evals.extract_checks import run_checks
+from evals.runner import merge_passes
 
 EXTRACT_DIR = Path(__file__).resolve().parent / "extract"
 BOARDS = sorted(json.loads((EXTRACT_DIR / "sources.json").read_text(encoding="utf-8")))
@@ -27,7 +29,18 @@ def test_host_extraction_passes_checks(board):
     host = json.loads(host_path.read_text(encoding="utf-8"))
     expected_jd = json.loads((EXTRACT_DIR / f"{board}.expected.json").read_text(encoding="utf-8"))
     jd_text = (EXTRACT_DIR / f"{board}.md").read_text(encoding="utf-8")
-    checks = run_checks(json.dumps(host["output"]), expected_jd, jd_text)
+    response_path = EXTRACT_DIR / f"{board}.resp.host.json"
+    grade_responsibilities = response_path.exists()
+    output = host["output"]
+    if grade_responsibilities:
+        response = json.loads(response_path.read_text(encoding="utf-8"))["output"]
+        output = merge_passes(
+            output,
+            {"key_responsibilities": clean_responsibilities(response.get("key_responsibilities"))},
+        )
+    checks = run_checks(
+        json.dumps(output), expected_jd, jd_text, grade_responsibilities=grade_responsibilities
+    )
 
     actual = first_failure(checks)
 

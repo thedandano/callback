@@ -3,9 +3,8 @@
   "company": "Reddit",
   "required": [
     "BS in Computer Science",
-    "well-tested code",
-    "communication skills",
-    "cross-functional collaboration"
+    "Kubernetes",
+    "gRPC"
   ],
   "preferred": [
     "platform services",
@@ -24,8 +23,6 @@
       "Redis"
     ],
     [
-      "Kubernetes",
-      "gRPC",
       "AWS",
       "GCP"
     ]
@@ -36,11 +33,37 @@
   "required_years": 3.0,
   "team": "Content Platform (Infrastructure)",
   "key_responsibilities": [
-    "Design, write, and deliver software in Go and Python",
-    "system level improvements and complex code modifications",
-    "on-call responsibilities and monitoring/alerting",
-    "cross-functional collaboration with product teams"
+    "Tier-0 services",
+    "core data models",
+    "monolith legacy stack",
+    "Tier-0 infrastructure",
+    "platform services",
+    "Go",
+    "Python",
+    "Go services",
+    "on-call",
+    "monitoring/alerting"
   ],
   "pay_range_min": 164200.0,
-  "pay_range_max": 229900.0
+  "pay_range_max": 229900.0,
+  "key_responsibilities_aliases": {
+    "core data models": [
+      "data models"
+    ],
+    "monolith legacy stack": [
+      "monolith Python legacy stack",
+      "Python legacy stack",
+      "R2"
+    ],
+    "platform services": [
+      "high-leverage platform services"
+    ],
+    "on-call": [
+      "on-call responsibilities"
+    ],
+    "monitoring/alerting": [
+      "monitoring",
+      "alerting"
+    ]
+  }
 }

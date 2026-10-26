@@ -31,6 +31,7 @@ Also read the compiled profile (via `get_wiki_pages` or the profile summary) for
    - `load_jd`
    - host extracts JDData
    - `submit_keywords`
+   - `submit_responsibilities` when `workflow.next_tool` asks for it (pass 2 in a fresh subagent)
    - `get_wiki_pages` when useful
    - `submit_tailor`, passing `output_dir` as the absolute path of `applications_dir/<YYYY-MM-DD>/<company-role-slug>/` (from `.callback/config.json`) so the tailored PDF lands in the project folder instead of callback's hidden data directory.
 4. Store artifacts under the configured `applications_dir` from `.callback/config.json` — use slug `<YYYY-MM-DD>/<company-role-slug>/`. One folder per role per day; reuse the day's folder, do not create near-duplicate run variants.

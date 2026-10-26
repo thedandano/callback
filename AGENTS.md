@@ -260,6 +260,7 @@ handoff metadata.
 |---|---|---|
 | `load_jd` | apply | Loads JD markdown, resolves a resume label, and returns host extraction instructions. |
 | `submit_keywords` | apply | Accepts host-extracted JDData, runs parse/initial score, and returns score gaps plus tailor handoff guidance. |
+| `submit_responsibilities` | apply | Optional pass 2: stores the host's `key_responsibilities` list, drops terms already scored, returns the tailor handoff. |
 | `submit_tailor` | apply | Applies host edits, resumes the graph, and finalizes the PDF/report artifacts. |
 | `get_wiki_pages` | apply | Reads wiki pages for the active resume label. |
 | `onboard_user` | profile | Starts profile intake and registers the resume plus optional source files. |
@@ -278,6 +279,7 @@ When the user asks to use callback for a job, the host should follow the workflo
 1. Call `load_jd` with `jd_url` or `jd_raw_text`.
 2. Extract compact JDData from `data.jd_text` using `data.extraction_protocol`.
 3. Call `submit_keywords` with the same `session_id` and the compact `jd_json` string.
+   If `workflow.next_tool` is `submit_responsibilities`, start a fresh subagent with exactly `data.responsibilities_protocol` and load_jd's `data.jd_text`, then send its list to `submit_responsibilities`. Skip this if you cannot start a subagent.
 4. If `workflow.next_tool` is `get_wiki_pages`, use `data.wiki_index` to fetch relevant evidence pages, then call `submit_tailor`.
 5. If `workflow.next_tool` is `submit_tailor`, create honest edits from `data.sections`, `data.score_gap`, wiki evidence, and `data.tailor_instructions`.
 6. If `workflow.next_tool` is `onboard_user` or `create_story`, collect the missing profile evidence, compile the profile, then restart the job flow with `load_jd`.

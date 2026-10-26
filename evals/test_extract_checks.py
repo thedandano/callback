@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from evals.checks import Check
 from evals.extract_checks import PrecisionRecall, precision_recall, run_checks
 
@@ -11,6 +13,7 @@ JD = (
     "Senior Backend Engineer at Northwind. Requirements: Python, FastAPI, PostgreSQL, "
     "and 4+ years building services on AWS or GCP. Nice to have: Redis, Terraform."
 )
+GROUPING_JD = "AWS GCP Kubernetes Cassandra Postgres Redis"
 EXPECTED = {
     "title": "Senior Backend Engineer",
     "company": "Northwind",
@@ -19,6 +22,7 @@ EXPECTED = {
     "required_any": [["AWS", "GCP"]],
     "preferred_any": [],
     "required_years": 4.0,
+    "key_responsibilities": ["services"],
 }
 
 
@@ -41,7 +45,50 @@ def test_expected_as_host_output_passes_every_check():
         "terms_are_jd_substrings": True,
         "required_years_exact": True,
         "title_exact": True,
+        "responsibilities_recall": True,
     }
+    assert actual == expected
+
+
+def test_responsibilities_recall_accepts_aliases_and_scored_terms_only():
+    case = {
+        **EXPECTED,
+        "key_responsibilities": ["service ownership", "deployment"],
+        "key_responsibilities_aliases": {"service ownership": ["own services"]},
+    }
+    host_json = _host(
+        required=["Python", "FastAPI", "PostgreSQL", "deployment"],
+        key_responsibilities=["own services"],
+    )
+
+    checks = run_checks(host_json, case, JD)
+
+    actual = [check for check in checks if check.name == "responsibilities_recall"]
+    expected = [
+        Check(
+            "responsibilities_recall",
+            True,
+            "via scored terms only: ['deployment']",
+        )
+    ]
+    assert actual == expected
+
+
+def test_responsibilities_recall_reports_missing_gold_terms():
+    case = {**EXPECTED, "key_responsibilities": ["service ownership", "deployment"]}
+
+    checks = run_checks(_host(key_responsibilities=["service ownership"]), case, JD)
+
+    actual = [check for check in checks if check.name == "responsibilities_recall"]
+    expected = [Check("responsibilities_recall", False, "missing ['deployment']")]
+    assert actual == expected
+
+
+def test_responsibilities_recall_skips_without_pass2_output():
+    checks = run_checks(_host(), EXPECTED, JD, grade_responsibilities=False)
+
+    actual = [check for check in checks if check.name == "responsibilities_recall"]
+    expected = [Check("responsibilities_recall", True, "no pass 2 output", skipped=True)]
     assert actual == expected
 
 
@@ -217,6 +264,100 @@ def test_repeated_group_member_does_not_double_count_as_overgrouped():
     actual = [c for c in checks if c.name == "groups_match"]
 
     expected = [Check("groups_match", True, "extra host groups: [['redis', 'redis']]")]
+    assert actual == expected
+
+
+@pytest.mark.parametrize(
+    ("expected_terms", "expected_groups", "host_group", "expected_check"),
+    [
+        (
+            ["personalization / recommendation / ranking algorithms"],
+            [],
+            ["personalization", "recommendation"],
+            Check(
+                "groups_match",
+                False,
+                "host collapsed independent required/preferred terms into an OR-group: "
+                "[['personalization', 'recommendation']]",
+            ),
+        ),
+        (
+            ["personalization / recommendation / ranking algorithms"],
+            [],
+            ["personalization / recommendation / ranking algorithms"],
+            Check(
+                "groups_match",
+                True,
+                "extra host groups: [['personalization/recommendation/ranking algorithms']]",
+            ),
+        ),
+        (
+            ["event-driven / streaming systems"],
+            [],
+            ["event-driven", "streaming systems"],
+            Check(
+                "groups_match",
+                False,
+                "host collapsed independent required/preferred terms into an OR-group: "
+                "[['event driven', 'streaming systems']]",
+            ),
+        ),
+        (
+            ["CI/CD"],
+            [],
+            ["CI", "CD"],
+            Check(
+                "groups_match",
+                False,
+                "host collapsed independent required/preferred terms into an OR-group: "
+                "[['cd', 'ci']]",
+            ),
+        ),
+        ([], [["AWS", "GCP"]], ["AWS", "GCP"], Check("groups_match", True, "")),
+        (
+            ["Kubernetes"],
+            [["AWS", "GCP"]],
+            ["Kubernetes", "AWS"],
+            Check(
+                "groups_match",
+                False,
+                "host collapsed independent required/preferred terms into an OR-group: "
+                "[['aws', 'kubernetes']]",
+            ),
+        ),
+        (
+            [],
+            [["AWS", "GCP"], ["Cassandra", "Postgres"]],
+            ["AWS", "Cassandra"],
+            Check(
+                "groups_match",
+                False,
+                "host collapsed independent required/preferred terms into an OR-group: "
+                "[['aws', 'cassandra']]",
+            ),
+        ),
+        (
+            ["Redis"],
+            [],
+            ["Redis", "Redis"],
+            Check("groups_match", True, "extra host groups: [['redis', 'redis']]"),
+        ),
+    ],
+)
+def test_groups_check_obligation_rule(expected_terms, expected_groups, host_group, expected_check):
+    case = {
+        **EXPECTED,
+        "required": expected_terms,
+        "preferred": [],
+        "required_any": expected_groups,
+        "preferred_any": [],
+    }
+    host_json = _host(required=[], preferred=[], required_any=[host_group], preferred_any=[])
+
+    checks = run_checks(host_json, case, GROUPING_JD)
+
+    actual = [check for check in checks if check.name == "groups_match"]
+    expected = [expected_check]
     assert actual == expected
 
 
