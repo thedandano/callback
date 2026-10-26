@@ -2,14 +2,22 @@
 
 import asyncio
 import base64
-import re
+import inspect
 from datetime import date
+from importlib.resources import files
 from pathlib import Path
+
+import pdfplumber
+from pdfminer.pdfdocument import PDFDocument
+from pdfminer.pdfparser import PDFParser
+from pdfminer.pdftypes import resolve1
+from pdfminer.psparser import PSLiteral
 
 import callback.render.html_builder as render_builder
 from callback import extractor as resume_extractor
 from callback.apply_nodes import parse_final, render
 from callback.render.html_builder import (
+    _contact_link,
     _render_async,
     _render_html,
     _render_page_warnings,
@@ -201,7 +209,7 @@ class _FakeChromium:
         self.page = page
 
     async def launch(self, args: list[str]) -> _FakeBrowser:
-        assert args == ["--no-sandbox"]
+        assert args == ["--no-sandbox", "--font-render-hinting=none"]
         return _FakeBrowser(self.page)
 
 
@@ -262,7 +270,7 @@ def test_parse_final_halts_on_missing_file(tmp_path):
     assert parse_final(state) == {"error": f"parse_final: pdf file not found: {path}"}
 
 
-def test_render_html_contains_font_face_embed():
+def test_render_html_embeds_each_static_inter_face():
     html = _render_html(
         {
             "name": "Jane Doe",
@@ -272,16 +280,42 @@ def test_render_html_contains_font_face_embed():
         }
     )
     assert "@font-face" in html
-    assert 'src: url("data:font/' in html
+    assert 'src: url("data:font/ttf;base64,' in html
+    assert "font-weight: 100 900" not in html
+    assert "InterVariable" not in html
 
-    payload_m = re.search(r'data:font/ttf;base64,([^"]+)"', html)
-    assert payload_m is not None
-    payload_len = len(payload_m.group(1))
-    font_bytes = (
-        Path(__file__).parent.parent / "callback" / "render" / "fonts" / "InterVariable.ttf"
-    ).read_bytes()
-    expected_len = len(base64.b64encode(font_bytes).decode())
-    assert payload_len == expected_len
+    font_dir = Path(__file__).parent.parent / "callback" / "render" / "fonts"
+    for name, weight in (
+        ("Inter-Regular.ttf", 400),
+        ("Inter-Medium.ttf", 500),
+        ("Inter-SemiBold.ttf", 600),
+        ("Inter-Bold.ttf", 700),
+        ("Inter-ExtraBold.ttf", 800),
+    ):
+        payload = base64.b64encode((font_dir / name).read_bytes()).decode()
+        assert f"font-weight: {weight};" in html
+        assert payload in html
+
+
+def test_static_inter_fonts_ship_with_the_package():
+    font_root = files("callback.render") / "fonts"
+    for name in (
+        "Inter-Regular.ttf",
+        "Inter-Medium.ttf",
+        "Inter-SemiBold.ttf",
+        "Inter-Bold.ttf",
+        "Inter-ExtraBold.ttf",
+        "LICENSE.txt",
+    ):
+        resource = font_root / name
+        assert resource.is_file()
+        assert len(resource.read_bytes()) > 0
+    assert not (font_root / "InterVariable.ttf").is_file()
+
+
+def test_chromium_launch_disables_font_hinting():
+    assert "--font-render-hinting=none" in render_builder._CHROMIUM_ARGS
+    assert "args=_CHROMIUM_ARGS" in inspect.getsource(render_builder._render_async)
 
 
 def test_render_html_bolds_skill_categories_and_uses_target_header():
@@ -444,3 +478,183 @@ def test_render_page_warnings_flags_under_five_years_over_one_page():
 
 def test_render_page_warnings_allows_five_plus_years_over_one_page():
     assert _render_page_warnings(page_count=2, max_pages=1, candidate_experience_years=5.0) == []
+
+
+def test_contact_link_keeps_full_url_and_shortens_visible_text():
+    website = "https://dsedano.dev/?utm_source=resume&utm_medium=document&utm_campaign=job_search"
+    assert _contact_link(website) == (website, "dsedano.dev")
+    assert _contact_link("https://www.linkedin.com/in/janedoe/") == (
+        "https://www.linkedin.com/in/janedoe/",
+        "www.linkedin.com/in/janedoe",
+    )
+    assert _contact_link("http://example.com/path") == (
+        "http://example.com/path",
+        "example.com/path",
+    )
+    assert _contact_link("  HTTPS://Example.COM/About/#team  ") == (
+        "HTTPS://Example.COM/About/#team",
+        "Example.COM/About",
+    )
+    assert _contact_link("https://dsedano.dev/docs/?q=1#section") == (
+        "https://dsedano.dev/docs/?q=1#section",
+        "dsedano.dev/docs",
+    )
+
+
+def test_contact_link_leaves_values_without_an_http_scheme_alone():
+    assert _contact_link("www.linkedin.com/in/janedoe") is None
+    assert _contact_link("linkedin.com/in/janedoe") is None
+    assert _contact_link("dsedano.dev") is None
+    assert _contact_link("not a url") is None
+    assert _contact_link("") is None
+    assert _contact_link("   ") is None
+    assert _contact_link("mailto:jane@example.com") is None
+
+
+def test_render_html_anchors_full_contact_urls_without_underlines():
+    linkedin = "https://www.linkedin.com/in/janedoe/"
+    website = "https://dsedano.dev/?utm_source=resume&utm_medium=document&utm_campaign=job_search"
+    html = _render_html(
+        {
+            "name": "Jane Doe",
+            "location": "Anytown, USA",
+            "email": "jane.doe@example.com",
+            "phone": "555-0100",
+            "linkedin": linkedin,
+            "website": website,
+        }
+    )
+
+    assert (
+        '<a class="contact-link" href="https://www.linkedin.com/in/janedoe/">'
+        "www.linkedin.com/in/janedoe</a>"
+    ) in html
+    assert (
+        '<a class="contact-link" '
+        'href="https://dsedano.dev/?utm_source=resume&amp;utm_medium=document'
+        '&amp;utm_campaign=job_search">dsedano.dev</a>'
+    ) in html
+    assert "<span>Anytown, USA</span>" in html
+    assert "<span>jane.doe@example.com</span>" in html
+    assert "<span>555-0100</span>" in html
+    assert "mailto:" not in html
+    assert ".contact-link,\n    a.contact-link:visited {" in html
+    assert "text-decoration: none;" in html
+
+
+def _pdf_name(value: object) -> str | None:
+    if isinstance(value, PSLiteral):
+        name = value.name
+        return name.decode("latin-1") if isinstance(name, bytes) else str(name)
+    if isinstance(value, bytes):
+        return value.decode("latin-1")
+    if value is None:
+        return None
+    return str(value)
+
+
+def _walk_font_resources(resources: object, found: list[tuple[str, str | None]]) -> None:
+    if not resources:
+        return
+    resolved = resolve1(resources)
+    fonts = resolve1(resolved.get("Font") or {})
+    for font in fonts.values():
+        font = resolve1(font)
+        found.append((_pdf_name(font.get("Subtype")) or "", _pdf_name(font.get("BaseFont"))))
+        descendants = font.get("DescendantFonts")
+        if not descendants:
+            continue
+        for desc in resolve1(descendants):
+            desc = resolve1(desc)
+            found.append((_pdf_name(desc.get("Subtype")) or "", _pdf_name(desc.get("BaseFont"))))
+    xobjects = resolve1(resolved.get("XObject") or {})
+    for xobj in xobjects.values():
+        xobj = resolve1(xobj)
+        nested = xobj.get("Resources") if isinstance(xobj, dict) else None
+        if nested:
+            _walk_font_resources(nested, found)
+
+
+def _letter_pair_gaps(path: Path) -> list[tuple[str, float]]:
+    """Return (pair, gap) for consecutive non-space glyphs. Gap is in PDF points."""
+    with pdfplumber.open(path) as pdf:
+        chars = pdf.pages[0].chars
+    lines: list[list[dict]] = []
+    for char in chars:
+        if not lines or abs(char["top"] - lines[-1][0]["top"]) > 1:
+            lines.append([char])
+        else:
+            lines[-1].append(char)
+    gaps: list[tuple[str, float]] = []
+    for line in lines:
+        for left, right in zip(line, line[1:], strict=False):
+            if not left["text"].strip() or not right["text"].strip():
+                continue
+            gaps.append((left["text"] + right["text"], right["x0"] - left["x1"]))
+    return gaps
+
+
+def _embedded_fonts(path: Path) -> list[tuple[str, str | None]]:
+    """Return (subtype, base font) for every font in the PDF, including descendants."""
+    found: list[tuple[str, str | None]] = []
+    with path.open("rb") as handle:
+        document = PDFDocument(PDFParser(handle))
+        pages = resolve1(document.catalog["Pages"])
+        for kid in resolve1(pages["Kids"]):
+            page = resolve1(kid)
+            _walk_font_resources(page.get("Resources"), found)
+    return found
+
+
+def test_render_pdf_embeds_truetype_fonts_and_contact_link_annotations(tmp_path):
+    linkedin = "https://www.linkedin.com/in/janedoe"
+    website = "https://dsedano.dev/?utm_source=resume&utm_medium=document&utm_campaign=job_search"
+    output_path = tmp_path / "links.pdf"
+    result = render_resume(
+        {
+            "name": "Jane Doe",
+            "title": "SOFTWARE ENGINEER",
+            "email": "jane.doe@example.com",
+            "linkedin": linkedin,
+            "website": website,
+            "skills_raw": (
+                "Languages: Python, Java, SQL, TypeScript, JavaScript\n"
+                "Backend & Data: Distributed systems, microservices, REST APIs"
+            ),
+        },
+        str(output_path),
+    )
+    assert result == {
+        "success": True,
+        "pdf_path": str(output_path),
+        "page_count": 1,
+        "warnings": [],
+    }
+
+    text = resume_extractor.extract(str(output_path))
+    assert "dsedano.dev" in text
+    assert "www.linkedin.com/in/janedoe" in text
+    assert "jane.doe@example.com" in text
+    assert "https://" not in text
+    assert "utm_source" not in text
+    assert "utm_medium" not in text
+    assert "utm_campaign" not in text
+
+    with pdfplumber.open(output_path) as pdf:
+        uris = [link["uri"] for link in pdf.pages[0].hyperlinks]
+    assert sorted(uris) == sorted([linkedin, website])
+
+    fonts = _embedded_fonts(output_path)
+    assert fonts
+    assert "Type3" not in {subtype for subtype, _name in fonts}
+    # Chromium wraps each static face in a Type0 font whose descendant is
+    # CIDFontType2. pdffonts reports that descendant as "CID TrueType".
+    descendants = [(subtype, name) for subtype, name in fonts if subtype != "Type0"]
+    assert descendants
+    assert {subtype for subtype, _name in descendants} == {"CIDFontType2"}
+    faces = {(name or "").split("+")[-1] for _subtype, name in descendants}
+    assert {"Inter-Regular", "Inter-Bold", "Inter-ExtraBold"} <= faces
+    # Hinting snaps advances onto the pixel grid and opens holes inside words
+    # ("SOFT WARE"). Unhinted static faces keep every letter-pair gap <= 0.25pt.
+    wide_gaps = [item for item in _letter_pair_gaps(output_path) if item[1] > 0.25]
+    assert wide_gaps == []

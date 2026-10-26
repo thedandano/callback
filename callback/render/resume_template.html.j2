@@ -3,13 +3,15 @@
 <head>
   <meta charset="utf-8">
   <style>
+    {% for face in font_faces %}
     @font-face {
       font-family: "Inter";
-      src: url("data:font/ttf;base64,{{ font_b64 }}") format("truetype");
-      font-weight: 100 900;
+      src: url("data:font/ttf;base64,{{ face.b64 }}") format("truetype");
+      font-weight: {{ face.weight }};
       font-style: normal;
       font-display: swap;
     }
+    {% endfor %}
 
     @page {
       size: letter;
@@ -55,8 +57,10 @@
       margin-bottom: 6px;
     }
 
-    .contact-link {
+    .contact-link,
+    a.contact-link:visited {
       color: #00e;
+      text-decoration: none;
     }
 
     .summary {
@@ -150,7 +154,13 @@
     <div class="contact">
       {%- for item in contact_items -%}
         {%- if not loop.first %} | {% endif -%}
-        <span class="{% if item.kind in ['linkedin', 'website'] %}contact-link{% endif %}">{{ item.value }}</span>
+        {%- if item.href -%}
+        <a class="contact-link" href="{{ item.href | e }}">{{ item.value | e }}</a>
+        {%- elif item.kind in ['linkedin', 'website'] -%}
+        <span class="contact-link">{{ item.value }}</span>
+        {%- else -%}
+        <span>{{ item.value }}</span>
+        {%- endif -%}
       {%- endfor -%}
     </div>
     {% endif %}
