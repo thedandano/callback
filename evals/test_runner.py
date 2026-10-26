@@ -590,6 +590,9 @@ def test_run_extract_retries_invalid_pass1_then_records_valid_attempt(tmp_path, 
             Check("terms_are_jd_substrings", True),
             Check("required_years_exact", True),
             Check("title_exact", True),
+            Check(
+                "responsibilities_recall", True, "no expected key_responsibilities", skipped=True
+            ),
         ],
         "saved_output": expected,
     }
@@ -719,6 +722,7 @@ def test_run_extract_invalid_pass2_keeps_running_next_board(tmp_path, monkeypatc
                     "terms_are_jd_substrings",
                     "required_years_exact",
                     "title_exact",
+                    "responsibilities_recall",
                 ],
             ),
         ],
@@ -1142,6 +1146,33 @@ def test_run_extract_checks_only_reads_existing_output(tmp_path, monkeypatch):
 
     expected = [("acme", True, None)]
     assert actual == expected
+
+
+def test_run_extract_checks_only_skips_responsibility_grade_without_pass2(tmp_path, monkeypatch):
+    expected = {
+        "title": "Engineer",
+        "required": ["Python"],
+        "preferred": [],
+        "required_years": 0.0,
+        "key_responsibilities": ["service ownership"],
+    }
+    _write_extract_fixture(tmp_path, "acme", expected)
+    monkeypatch.setattr(runner, "EXTRACT_DIR", tmp_path)
+
+    rows = run_extract("claude", None, ["acme"], checks_only=True, run=None, commit="abc1234")
+
+    actual = rows[0].checks
+    expected_checks = [
+        Check("valid_jd_data", True),
+        Check("term_recall", True),
+        Check("term_precision", True),
+        Check("groups_match", True),
+        Check("terms_are_jd_substrings", True),
+        Check("required_years_exact", True),
+        Check("title_exact", True),
+        Check("responsibilities_recall", True, "no pass 2 output", skipped=True),
+    ]
+    assert actual == expected_checks
 
 
 def test_run_extract_checks_only_without_output_is_a_failed_row(tmp_path, monkeypatch):

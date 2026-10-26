@@ -10,6 +10,7 @@
 
 ### Miscellaneous
 
+- E1 extract eval now grades `key_responsibilities` (new `responsibilities_recall` check, pass at 0.7, with aliases). Every E1 answer key was re-audited by a blind reviewer council. `groups_match` now also fails an OR-group that mixes members of different requirements, such as `[Kubernetes, AWS]`.
 - chore: remove deprecated go-apply bridge (`bridge.py`) and its tests — the module was wired into nothing at runtime.
 
 ### Important Upgrade Note

@@ -109,6 +109,16 @@ uv run pytest -m local evals/                          # E1 + E2 checks over the
 # updated 2026-10-20 (two-pass extraction), claude default model: E1 5/6 (FAIL cedar). Pass 1 is
 # byte-identical to the previous run's prompt, so the jump from 2/6 is sampling variance, not a gain.
 # E1 checks don't read key_responsibilities; pass 2 output is saved in <board>.resp.host.json.
+# updated 2026-10-26 (answer-key council), re-grade of the saved 2026-10-22 run: E1 4/6 (FAIL
+# ashby/cedar), was 3/6. A blind 3-reviewer council (Opus + Codex) re-audited every keyword key
+# (greenhouse flips to PASS from key fixes alone) and built a graded key_responsibilities key
+# (58 terms, aliases in key_responsibilities_aliases; only terms both final reviewers agreed on).
+# New check responsibilities_recall (>= 0.7): a gold item counts if it appears in pass 2 output
+# OR in a scored term (merge drops duplicates). Its detail lists items credited "via scored terms
+# only" - on greenhouse 6 of 9 come from pass 1, so this check can't prove pass 2 worked there.
+# groups_match now fails any host OR-group whose members belong to different expected
+# requirements (e.g. [Kubernetes, AWS]) or are slash-parts of one flat compound. The council
+# kept cedar's zoning codes / building codes / permitting as separate terms, so cedar stays FAIL.
 
 ```
 

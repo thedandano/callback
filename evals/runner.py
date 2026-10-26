@@ -630,31 +630,31 @@ def _fresh_pass2(
 
 def _with_pass2(
     board: str, jd_text: str, pass1: dict, host: str, model: str | None, host_kwargs: dict
-) -> tuple[dict | None, Check | None]:
+) -> tuple[dict | None, Check | None, bool]:
     """Run (or replay) pass 2 and merge it into pass 1."""
     path = EXTRACT_DIR / f"{board}.resp.host.json"
     if not host_kwargs["checks_only"]:
-        return _fresh_pass2(path, board, jd_text, pass1, host, model, host_kwargs)
+        output, gate = _fresh_pass2(path, board, jd_text, pass1, host, model, host_kwargs)
+        return output, gate, True
     if not path.exists():
-        # E1 checks never read key_responsibilities, so pass 1 alone gives the same verdict.
         logger.warning("%s missing; checking pass 1 only (saved before pass 2 existed)", path.name)
-        return pass1, None
+        return pass1, None, False
     pass2, gate = _host_output(
         path, host, model, responsibilities_prompt(jd_text), f"{board} pass 2", **host_kwargs
     )
     if gate is not None:
-        return None, gate
+        return None, gate, True
     if pass2 is None:
         detail = "pass 2 reply did not contain a JSON object"
         logger.warning("%s: %s", board, detail)
-        return None, Check("pass2_output", False, detail)
+        return None, Check("pass2_output", False, detail), True
     try:
         responsibilities = clean_responsibilities(pass2.get("key_responsibilities"))
     except JDDataError as exc:
         detail = f"invalid pass 2 key_responsibilities: {exc}"
         logger.warning("%s: %s", board, detail)
-        return None, Check("pass2_output", False, detail)
-    return merge_passes(pass1, {"key_responsibilities": responsibilities}), None
+        return None, Check("pass2_output", False, detail), True
+    return merge_passes(pass1, {"key_responsibilities": responsibilities}), None, True
 
 
 def _saved_pass1(
@@ -714,10 +714,17 @@ def _extract_row_checks(
     pass1_check: Check | None,
     expected: dict,
     jd_text: str,
+    grade_responsibilities: bool,
 ) -> list[Check]:
     if pass1_check is not None and not pass1_check.passed:
         return [pass1_check]
-    base_checks = [gate] if gate else extract_run_checks(json.dumps(output), expected, jd_text)
+    base_checks = (
+        [gate]
+        if gate
+        else extract_run_checks(
+            json.dumps(output), expected, jd_text, grade_responsibilities=grade_responsibilities
+        )
+    )
     return [pass1_check, *base_checks] if pass1_check is not None else base_checks
 
 
@@ -750,9 +757,14 @@ def run_extract(
         else:
             output, gate, pass1_check = _fresh_pass1(board, jd_text, host, model, host_kwargs)
             run_pass2 = pass1_check is None or pass1_check.passed
+        grade_responsibilities = False  # only _with_pass2 knows whether pass 2 output exists
         if gate is None and output is not None and run_pass2:
-            output, gate = _with_pass2(board, jd_text, output, host, model, host_kwargs)
-        checks = _extract_row_checks(output, gate, pass1_check, expected, jd_text)
+            output, gate, grade_responsibilities = _with_pass2(
+                board, jd_text, output, host, model, host_kwargs
+            )
+        checks = _extract_row_checks(
+            output, gate, pass1_check, expected, jd_text, grade_responsibilities
+        )
         stop_extract_run = (
             not checks_only and gate is None and pass1_check is not None and not pass1_check.passed
         )

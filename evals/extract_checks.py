@@ -13,7 +13,11 @@ with a note) rather than trusted.
 
 OR-groups are checked for coverage, not set equality: every expected group
 with at least one member still present in the JD text must be matched by some
-host group that shares a normalized member with it.
+host group that shares a normalized member with it. The grouping guard treats
+each flat expected term and each expected OR-group as an obligation. A host
+group with multiple mapped members is valid only when those members share one
+expected OR-group obligation; slash-parts of one flat compound are still
+invalid when offered as an OR-group.
 
 Separately, every host group - not only ones with no expected counterpart -
 is checked for collapsing two or more terms the expected data lists as
@@ -24,6 +28,11 @@ independent terms. That is score inflation the required_coverage/
 preferred_coverage math can't see (one OR-group is one denominator entry no
 matter how many members it has). A host group that avoids both problems is
 allowed and only surfaces as a note in the check detail.
+
+Responsibilities are graded separately from scored terms. A responsibility
+may be satisfied by an exact gold term or alias in the pass-2 output, or by a
+scored term because the merge step removes pass-2 responsibilities that were
+already scored in pass 1.
 """
 
 from __future__ import annotations
@@ -36,6 +45,7 @@ from evals.checks import Check
 from evals.recall import all_terms, term_present
 
 RECALL_MIN = 0.6
+RESPONSIBILITIES_RECALL_MIN = 0.7
 PRECISION_MIN = 0.6
 MIN_LIVE_RATIO = 0.6
 
@@ -107,16 +117,37 @@ def _present_expected_groups(
     return present
 
 
-def _flat_expected_terms_norm(expected: dict) -> set[str]:
-    return {_norm(t) for t in expected.get("required", []) + expected.get("preferred", [])}
+def _flat_obligation_terms(term: str) -> set[str]:
+    terms = {_norm(term)}
+    if "/" in term:
+        terms.update(_norm(part.strip()) for part in term.split("/"))
+    return terms
 
 
-def _is_overgrouped(host_group: tuple[str, ...], flat_expected_norm: set[str]) -> bool:
-    """True when the host folded 2+ distinct terms the expected data lists as independent
-    required/preferred requirements into one OR-group - claiming only one is needed when the
-    posting actually asked for both. A set intersection (not a per-member sum) so a repeated
-    member ("Redis", "Redis") can't double-count as two distinct collapsed requirements."""
-    return len(set(host_group) & flat_expected_norm) >= 2
+def _expected_obligations(expected: dict) -> dict[str, set[tuple[str, int]]]:
+    obligations: dict[str, set[tuple[str, int]]] = {}
+    flat_terms = expected.get("required", []) + expected.get("preferred", [])
+    for index, term in enumerate(flat_terms):
+        for normalized in _flat_obligation_terms(term):
+            obligations.setdefault(normalized, set()).add(("flat", index))
+    groups = expected.get("required_any", []) + expected.get("preferred_any", [])
+    for index, group in enumerate(groups):
+        for member in group:
+            obligations.setdefault(_norm(member), set()).add(("group", index))
+    return obligations
+
+
+def _is_overgrouped(
+    host_group: tuple[str, ...], expected_obligations: dict[str, set[tuple[str, int]]]
+) -> bool:
+    """Whether distinct mapped host members lack one shared expected OR-group obligation."""
+    mapped = [
+        expected_obligations[member] for member in set(host_group) if member in expected_obligations
+    ]
+    if len(mapped) < 2:
+        return False
+    common = set.intersection(*mapped)
+    return not any(kind == "group" for kind, _ in common)
 
 
 def _groups_check(host: dict, expected: dict, jd_text: str) -> Check:
@@ -132,8 +163,12 @@ def _groups_check(host: dict, expected: dict, jd_text: str) -> Check:
     # Checked against every host group, not just ones with no expected counterpart: a group
     # that shares one member with a real expected group ("AWS" from AWS/GCP) can still smuggle
     # in two unrelated independent terms ("Redis", "Terraform") alongside it.
-    flat_expected_norm = _flat_expected_terms_norm(expected)
-    overgrouped = sorted(list(hg) for hg in host_groups if _is_overgrouped(hg, flat_expected_norm))
+    expected_obligations = _expected_obligations(expected)
+    overgrouped = sorted(
+        list(host_group)
+        for host_group in host_groups
+        if _is_overgrouped(host_group, expected_obligations)
+    )
     if overgrouped:
         return Check(
             "groups_match",
@@ -208,7 +243,52 @@ def _scalar_checks(host: dict, expected: dict) -> list[Check]:
     ]
 
 
-def run_checks(host_json: str, expected: dict, jd_text: str) -> list[Check]:
+def _responsibility_coverage(
+    host: dict, gold_terms: list[str], aliases: dict[str, list[str]]
+) -> tuple[list[str], list[str]]:
+    host_responsibilities = {_norm(term) for term in host.get("key_responsibilities", [])}
+    scored_terms = {_norm(term) for term in all_terms(host)}
+    missing = []
+    via_scored_terms_only = []
+    for gold_term in gold_terms:
+        credited_terms = {_norm(gold_term), *(_norm(alias) for alias in aliases.get(gold_term, []))}
+        found_in_responsibilities = bool(credited_terms & host_responsibilities)
+        found_in_scored_terms = bool(credited_terms & scored_terms)
+        if not found_in_responsibilities and not found_in_scored_terms:
+            missing.append(gold_term)
+        elif not found_in_responsibilities:
+            via_scored_terms_only.append(gold_term)
+    return missing, via_scored_terms_only
+
+
+def _responsibilities_check(host: dict, expected: dict, grade_responsibilities: bool) -> Check:
+    if not grade_responsibilities:
+        return Check("responsibilities_recall", True, "no pass 2 output", skipped=True)
+    gold_terms = expected.get("key_responsibilities", [])
+    if not gold_terms:
+        return Check(
+            "responsibilities_recall", True, "no expected key_responsibilities", skipped=True
+        )
+
+    missing, via_scored_terms_only = _responsibility_coverage(
+        host, gold_terms, expected.get("key_responsibilities_aliases", {})
+    )
+    recall = _ratio(len(gold_terms) - len(missing), len(gold_terms))
+    details = []
+    if missing:
+        details.append(f"missing {missing}")
+    if via_scored_terms_only:
+        details.append(f"via scored terms only: {via_scored_terms_only}")
+    return Check(
+        "responsibilities_recall",
+        recall >= RESPONSIBILITIES_RECALL_MIN,
+        "; ".join(details),
+    )
+
+
+def run_checks(
+    host_json: str, expected: dict, jd_text: str, *, grade_responsibilities: bool = True
+) -> list[Check]:
     """Every E1 check in table order. An unparseable host output yields one failed check."""
     try:
         host = parse_jd_json(host_json)
@@ -220,4 +300,5 @@ def run_checks(host_json: str, expected: dict, jd_text: str) -> list[Check]:
         _groups_check(host, expected, jd_text),
         _substring_check(host, jd_text),
         *_scalar_checks(host, expected),
+        _responsibilities_check(host, expected, grade_responsibilities),
     ]
