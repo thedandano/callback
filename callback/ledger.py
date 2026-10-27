@@ -505,15 +505,23 @@ def record_imported_run_if_absent(conn: sqlite3.Connection, run: RunRecord) -> b
 def _upsert_run_job(conn: sqlite3.Connection, run: RunRecord) -> str:
     """Upsert the run's job.
 
-    A session already in `runs` stays on its job (a retry). A new run with no URL may join the
-    one same-name job that has no runs; a new run with a URL joins a pasted job carrying it.
+    A session already in `runs` stays on its job (a retry). An existing URL-keyed job wins over
+    a same-name pasted job so scores stay with that URL's history. Otherwise a new run with no
+    URL may join the one same-name job that has no runs; a new run with a URL joins a pasted job
+    carrying it (or a URL-less same-name job).
     """
     existing = conn.execute(
         "SELECT job_key FROM runs WHERE session_id = ?", (run.session_id,)
     ).fetchone()
-    key = existing[0] if existing else _same_name_job_key(conn, run)
-    if key is None and (cleaned := _clean_url(run.jd_url)):
-        key = _pasted_job_with_url(conn, cleaned)
+    if existing:
+        key = existing[0]
+    else:
+        cleaned = _clean_url(run.jd_url)
+        key = cleaned if cleaned and job_exists(conn, cleaned) else None
+        if key is None:
+            key = _same_name_job_key(conn, run)
+        if key is None and cleaned:
+            key = _pasted_job_with_url(conn, cleaned)
     return _upsert_job(
         conn,
         url=run.jd_url,

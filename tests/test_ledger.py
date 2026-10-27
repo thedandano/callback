@@ -1331,6 +1331,36 @@ def test_record_status_prefers_existing_url_key_over_same_name_pasted_job(tmp_pa
     )
 
 
+def test_record_run_prefers_existing_url_key_over_same_name_pasted_job(tmp_path):
+    url = "https://jobs.acme.com/1"
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(conn, _update(url=url, company=None, title=None, status="Saved"))
+        pasted = ledger.upsert_job(
+            conn, url=None, company="Acme", title="Engineer", seen_at="2026-10-01"
+        )
+        ledger.record_run(
+            conn,
+            _run().model_copy(
+                update={
+                    "jd_url": url,
+                    "keywords": {"company": "Acme", "title": "Engineer"},
+                    "scores": {"initial": {"total": 50.0}, "final": {"total": 70.0}},
+                }
+            ),
+        )
+        jobs = [tuple(r) for r in conn.execute("SELECT job_key, url FROM jobs ORDER BY job_key")]
+        runs = [tuple(r) for r in conn.execute("SELECT session_id, job_key FROM runs")]
+        found = ledger.find_job(conn, url=url, company=None, title=None)
+
+    assert (jobs, runs, found["job_key"], found["status"], found["score_after"]) == (
+        [(url, url), (pasted, None)],
+        [("s1", url)],
+        url,
+        "Saved",
+        70.0,
+    )
+
+
 def test_find_job_url_less_lookup_flags_pasted_and_url_twins_as_ambiguous(tmp_path):
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
         url_key = ledger.upsert_job(
