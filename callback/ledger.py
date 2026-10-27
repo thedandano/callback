@@ -700,14 +700,18 @@ class StatusUpdate(BaseModel):
 def _existing_job_key(conn: sqlite3.Connection, update: StatusUpdate) -> str | None:
     """The job a status names: its job_key, a pasted job given this URL, or a name match.
 
-    A URL plus company/title reuses the unique same-name job when that job has no URL or
-    already stores this URL. Raises AmbiguousJobMatchError when several same-name jobs exist.
+    An existing URL-keyed job wins over a same-name pasted job so Applied does not attach the
+    URL to the pasted row and hide the URL job's history. Otherwise a URL plus company/title
+    reuses the unique same-name job when that job has no URL or already stores this URL.
+    Raises AmbiguousJobMatchError when several same-name jobs exist on a name-only write.
     """
     if update.job_key:
         return update.job_key
     cleaned = _clean_url(update.url)
     company, title = _optional_text(update.company), _optional_text(update.title)
     if cleaned:
+        if job_exists(conn, cleaned):
+            return cleaned
         if key := _pasted_job_with_url(conn, cleaned):
             return key
         if company and title:
@@ -995,6 +999,15 @@ def _key_match_kind(row: tuple | None, title: str | None) -> str:
     return "key"
 
 
+def _ambiguous_name_result(candidates: tuple[str, ...]) -> dict:
+    return {
+        "found": False,
+        **dict(zip(_FIND_KEYS, (None,) * len(_FIND_KEYS), strict=True)),
+        "matched_by": "company_title_ambiguous",
+        "candidate_job_keys": list(candidates),
+    }
+
+
 def find_job(
     conn: sqlite3.Connection, *, url: str | None, company: str | None, title: str | None
 ) -> dict:
@@ -1005,21 +1018,26 @@ def find_job(
     spacing. Includes the latest run's score totals when a run exists. A key match whose stored
     title differs from `title` or is missing reports matched_by='key_title_mismatch'. When more
     than one job shares the company and title, returns found=False with
-    matched_by='company_title_ambiguous' and candidate_job_keys for the caller to disambiguate.
+    matched_by='company_title_ambiguous' and candidate_job_keys for the caller to disambiguate —
+    including when a URL-less lookup would otherwise hit a pasted key while a URL-keyed twin
+    exists.
     """
-    row = _find_row(conn, _BY_KEY, (job_key(url, company, title),))
-    if row is None and (cleaned := _clean_url(url)):
+    cleaned = _clean_url(url)
+    derived = job_key(url, company, title)
+    row = _find_row(conn, _BY_KEY, (derived,))
+    # A pasted-key hit on a URL-less lookup can hide a same-name URL job; treat that as ambiguous.
+    if row is not None and cleaned is None and company and title:
+        match = job_key_by_name(conn, company, title)
+        if len(match.candidates) > 1:
+            return _ambiguous_name_result(match.candidates)
+    matched_by = _key_match_kind(row, title) if row else None
+    if row is None and cleaned:
         row = _find_row(conn, _BY_STORED_URL, (cleaned,))
-    matched_by = _key_match_kind(row, title)
+        matched_by = _key_match_kind(row, title) if row else None
     if row is None and company and title:
         match = job_key_by_name(conn, company, title)
         if len(match.candidates) > 1:
-            return {
-                "found": False,
-                **dict(zip(_FIND_KEYS, (None,) * len(_FIND_KEYS), strict=True)),
-                "matched_by": "company_title_ambiguous",
-                "candidate_job_keys": list(match.candidates),
-            }
+            return _ambiguous_name_result(match.candidates)
         if match.job_key is not None:
             row = _find_row(conn, _BY_KEY, (match.job_key,))
             matched_by = "company_title"

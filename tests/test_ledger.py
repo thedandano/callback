@@ -1304,6 +1304,60 @@ def test_find_job_and_record_status_reject_ambiguous_company_title(tmp_path):
     assert (set(keys), set(raised.value.candidates)) == ({a, b}, {a, b})
 
 
+def test_record_status_prefers_existing_url_key_over_same_name_pasted_job(tmp_path):
+    url = "https://jobs.acme.com/1"
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(conn, _update(url=url, company=None, title=None, status="Saved"))
+        pasted = ledger.upsert_job(
+            conn, url=None, company="Acme", title="Engineer", seen_at="2026-10-01"
+        )
+        ledger.record_status(
+            conn,
+            _update(
+                url=url,
+                company="Acme",
+                title="Engineer",
+                status="Applied",
+                recorded_at="2026-10-02",
+            ),
+        )
+        jobs = [tuple(r) for r in conn.execute("SELECT job_key, url FROM jobs ORDER BY job_key")]
+        found = ledger.find_job(conn, url=url, company=None, title=None)
+
+    assert (jobs, found["job_key"], found["status"]) == (
+        [(url, url), (pasted, None)],
+        url,
+        "Applied",
+    )
+
+
+def test_find_job_url_less_lookup_flags_pasted_and_url_twins_as_ambiguous(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        url_key = ledger.upsert_job(
+            conn, url="https://a.com/1", company="Acme", title="Engineer", seen_at="2026-10-01"
+        )
+        pasted = ledger.upsert_job(
+            conn, url=None, company="Acme", title="Engineer", seen_at="2026-10-02"
+        )
+        _status(conn, url_key, "Saved", "2026-10-01")
+        _status(conn, pasted, "Applied", "2026-10-02")
+        found = ledger.find_job(conn, url=None, company="Acme", title="Engineer")
+
+    keys = set(found.pop("candidate_job_keys"))
+    expected = {
+        "found": False,
+        "company": None,
+        "title": None,
+        "status": None,
+        "status_date": None,
+        "job_key": None,
+        "score_before": None,
+        "score_after": None,
+        "matched_by": "company_title_ambiguous",
+    }
+    assert (found, keys) == (expected, {url_key, pasted})
+
+
 def test_find_job_flags_a_key_match_with_a_different_title(tmp_path):
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
         ledger.upsert_job(
