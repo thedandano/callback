@@ -577,6 +577,22 @@ def test_ambiguous_url_less_row_with_different_note_is_skipped(tmp_path):
     ]
 
 
+def test_name_match_pulls_first_seen_earlier(tmp_path):
+    path = _csv(
+        tmp_path,
+        "Acme,Eng,2026-10-10,https://acme.com/1,Seen,\nAcme,Eng,2026-10-01,,Applied,\n",
+    )
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        import_record_csv(conn, path)
+        actual = [
+            tuple(row)
+            for row in conn.execute("SELECT job_key, first_seen FROM jobs ORDER BY job_key")
+        ]
+
+    assert actual == [("https://acme.com/1", "2026-10-01")]
+
+
 def test_blank_name_url_row_reuses_promoted_pasted_job(tmp_path):
     path = _csv(
         tmp_path,

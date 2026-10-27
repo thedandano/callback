@@ -522,7 +522,7 @@ def _import_job(
         else:
             matched = name_match.job_key
         if matched:
-            _apply_name_match(conn, label, matched, url, salary_range)
+            _apply_name_match(conn, label, matched, url, salary_range, seen_at)
             return matched
         return _upsert_import_job(
             conn,
@@ -535,7 +535,7 @@ def _import_job(
         )
     matched = _name_match(conn, url, company, title)
     if matched:
-        _apply_name_match(conn, label, matched, url, salary_range)
+        _apply_name_match(conn, label, matched, url, salary_range, seen_at)
         return matched
     return _upsert_import_job(
         conn,
@@ -578,14 +578,31 @@ def _apply_name_match(
     matched: str,
     url: str | None,
     salary_range: str | None,
+    seen_at: str,
 ) -> None:
+    """Fill empty metadata on a matched job and pull first_seen earlier when this row is older."""
+    seen = ledger.canonical_timestamp(seen_at)
     with conn:
         conn.execute(
             "UPDATE jobs SET salary_range = COALESCE(NULLIF(salary_range, ''), ?),"
-            " url = COALESCE(NULLIF(url, ''), ?) WHERE job_key = ?",
+            " url = COALESCE(NULLIF(url, ''), ?),"
+            " first_seen = CASE"
+            " WHEN ? = '' THEN first_seen"
+            " WHEN first_seen = '' THEN ?"
+            " WHEN julianday(?) IS NULL OR julianday(first_seen) IS NULL"
+            " THEN MIN(first_seen, ?)"
+            " WHEN julianday(?) < julianday(first_seen) THEN ?"
+            " ELSE first_seen END"
+            " WHERE job_key = ?",
             (
                 ledger.clean_salary(salary_range),
                 ledger.normalize_url(url) if url else None,
+                seen,
+                seen,
+                seen,
+                seen,
+                seen,
+                seen,
                 matched,
             ),
         )
