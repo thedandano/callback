@@ -799,8 +799,16 @@ def test_tailor_skill_and_eval_prompt_forbid_keyword_stuffing():
     from evals.tailor_checks import TailorCase
 
     skill = Path("skills/tailor-resume/SKILL.md").read_text()
+    skill_lower = skill.lower()
     assert "Keyword mapping, not stuffing" in _TAILOR_INSTRUCTIONS
-    assert "keyword mapping" in skill.lower()
+    assert "keyword mapping" in skill_lower
+    assert "keyword-stuff" in skill_lower or "do not keyword-stuff" in skill_lower
+    assert (
+        "leave it uncovered" in skill_lower
+        or "no real experience" in skill_lower
+        or "delete the suggestion" in skill_lower
+    )
+    assert "fewer strong" in skill_lower
     case = TailorCase.from_dir(Path("evals/tailor/jane-doe-backend"))
     prompt = tailor_prompt(case)
     assert "Keyword mapping, not stuffing" in prompt
