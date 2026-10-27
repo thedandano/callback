@@ -1378,7 +1378,9 @@ def test_find_job_and_record_status_reject_ambiguous_company_title(tmp_path):
         "found": False,
         "company": None,
         "title": None,
+        "url": None,
         "status": None,
+        "ever_applied": False,
         "status_date": None,
         "job_key": None,
         "score_before": None,
@@ -1462,7 +1464,9 @@ def test_find_job_url_less_lookup_flags_pasted_and_url_twins_as_ambiguous(tmp_pa
         "found": False,
         "company": None,
         "title": None,
+        "url": None,
         "status": None,
+        "ever_applied": False,
         "status_date": None,
         "job_key": None,
         "score_before": None,
@@ -1738,15 +1742,24 @@ def test_latest_run_keeps_microsecond_order(tmp_path):
 
 
 def test_find_job_lists_other_company_jobs_on_a_weak_match(tmp_path):
+    # One exact title match plus a sibling with a different title: company_title is unique,
+    # and company_jobs still lists the company's other postings for similar-title dedupe.
+    # Two same-title URL jobs are company_title_ambiguous (see the ambiguous-name tests).
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
-        for n in (1, 2):
-            ledger.upsert_job(
-                conn,
-                url=f"https://acme.com/jobs/{n}",
-                company="Acme",
-                title="Engineer",
-                seen_at=f"2026-10-0{n}",
-            )
+        engineer = ledger.upsert_job(
+            conn,
+            url="https://acme.com/jobs/1",
+            company="Acme",
+            title="Engineer",
+            seen_at="2026-10-01",
+        )
+        designer = ledger.upsert_job(
+            conn,
+            url="https://acme.com/jobs/2",
+            company="Acme",
+            title="Designer",
+            seen_at="2026-10-02",
+        )
         ledger.record_status(conn, _update(url="https://acme.com/jobs/1", status="Saved"))
         weak = ledger.find_job(
             conn, url="https://acme.com/jobs/3", company="Acme", title="Engineer"
@@ -1762,8 +1775,8 @@ def test_find_job_lists_other_company_jobs_on_a_weak_match(tmp_path):
         strong["company_jobs"],
     ) == (
         "company_title",
-        "https://acme.com/jobs/2",
-        ["https://acme.com/jobs/1"],
+        engineer,
+        [designer],
         "key",
         [],
     )

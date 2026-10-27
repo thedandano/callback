@@ -50,10 +50,11 @@ def test_ledger_skills_keep_posting_identity_and_edd_contact_details():
 
     actual = {
         "apply_non_submission_continues": (
-            "When `ever_applied` is false, continue the workflow" in apply_skill
+            "when `ever_applied` is false, continue the workflow" in apply_skill
         ),
         "company_title_requires_confirmation": (
-            "Reuse its `job_key` only when they confirm the same posting" in auto_skill
+            "Reuse a confirmed row's `job_key` only when they confirm the same posting"
+            in auto_skill
         ),
         "confirmation_has_distinct_status": (
             "Already applied - confirmation recorded" in apply_skill
@@ -74,8 +75,15 @@ def test_ledger_skills_keep_posting_identity_and_edd_contact_details():
             "Keep its `record_csv`, `ledger_db`, and `edd_xlsx` keys when present" in setup_skill
         ),
         "setup_removes_legacy_config_after_success": (
-            "After the import succeeds, remove `record_csv`, `ledger_db`, and `edd_xlsx`"
-            in setup_skill
+            "After the import exits successfully with `skipped 0`, remove "
+            "`record_csv`, `ledger_db`, and `edd_xlsx`" in setup_skill
+        ),
+        "apply_confirms_weak_match_before_ever_applied": (
+            "confirm identity before treating the hit as the same posting" in apply_skill
+            and "Only after a confirmed same-posting match" in apply_skill
+        ),
+        "setup_keeps_legacy_on_skips": (
+            "Keep those keys when the CLI lists any `skipped:` lines" in setup_skill
         ),
         "export_explains_contact_method": "that prefix is the contact-method field" in export_skill,
     }
@@ -91,6 +99,8 @@ def test_ledger_skills_keep_posting_identity_and_edd_contact_details():
         "needs_source_key_match_is_retried": True,
         "setup_keeps_legacy_config_until_import": True,
         "setup_removes_legacy_config_after_success": True,
+        "apply_confirms_weak_match_before_ever_applied": True,
+        "setup_keeps_legacy_on_skips": True,
         "export_explains_contact_method": True,
     }
 

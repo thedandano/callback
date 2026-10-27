@@ -15,7 +15,7 @@ Get the user past the ATS gate by preparing an honest candidate profile and proj
 
 On an existing project, load `.callback/config.json` first.
 Keep its `record_csv`, `ledger_db`, and `edd_xlsx` keys when present; remove them only after the
-later import succeeds. Write the config in the project root. Prompt for each path or accept
+later import succeeds with `skipped 0`. Write the config in the project root. Prompt for each path or accept
 defaults:
 
 ```json
@@ -70,7 +70,7 @@ Then call `set_search_preferences(...)` with all answers. Note: this fully repla
 
 ### 4. Job history (optional)
 
-Job history lives in callback's global ledger. Build one `callback ledger import` command from only the legacy sources that actually exist: add `--archives <folder>` for run archives, `--csv <path>` for an old record CSV, and `--contacts-db <path>` for an old `job_search_ledger.sqlite3`. Do not pass an absent source as a flag. After the import succeeds, remove `record_csv`, `ledger_db`, and `edd_xlsx` from `.callback/config.json`; keep them until success so a failed import can be retried. For an unemployment (EDD) report, use `/export-ledger`.
+Job history lives in callback's global ledger. Build one `callback ledger import` command from only the legacy sources that actually exist: add `--archives <folder>` for run archives, `--csv <path>` for an old record CSV, and `--contacts-db <path>` for an old `job_search_ledger.sqlite3`. Do not pass an absent source as a flag. After the import exits successfully with `skipped 0`, remove `record_csv`, `ledger_db`, and `edd_xlsx` from `.callback/config.json`. Keep those keys when the CLI lists any `skipped:` lines (malformed archive, bad date, ambiguous company/title, and so on) until the user fixes or explicitly discards every skip — a non-zero skip list means migration is incomplete even though the command exited 0. Keep them on a failed import too so the command can be retried. For an unemployment (EDD) report, use `/export-ledger`.
 
 ## Rules
 
