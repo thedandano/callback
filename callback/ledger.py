@@ -448,11 +448,14 @@ def _upsert_run_job(conn: sqlite3.Connection, run: RunRecord) -> str:
     """Upsert the run's job.
 
     A session already in `runs` stays on its job (a retry). A new run with no URL may join the
-    one same-name job that has no runs.
+    one same-name job that has no runs; a new run with a URL joins a pasted job carrying it.
     """
     existing = conn.execute(
         "SELECT job_key FROM runs WHERE session_id = ?", (run.session_id,)
     ).fetchone()
+    key = existing[0] if existing else _same_name_job_key(conn, run)
+    if key is None and (cleaned := _clean_url(run.jd_url)):
+        key = _pasted_job_with_url(conn, cleaned)
     return _upsert_job(
         conn,
         url=run.jd_url,
@@ -461,8 +464,19 @@ def _upsert_run_job(conn: sqlite3.Connection, run: RunRecord) -> str:
         seen_at=run.timestamp,
         salary_range=_salary_range(run.keywords),
         jd_text=run.jd_text,
-        key=existing[0] if existing else _same_name_job_key(conn, run),
+        key=key,
     )
+
+
+def _pasted_job_with_url(conn: sqlite3.Connection, url: str) -> str | None:
+    """A company + title job that was later given this URL (its key stays pasted:), if any."""
+    url_key = job_key(url, None, None)
+    if conn.execute("SELECT 1 FROM jobs WHERE job_key = ?", (url_key,)).fetchone():
+        return None
+    row = conn.execute(
+        "SELECT job_key FROM jobs WHERE url = ? ORDER BY first_seen DESC LIMIT 1", (url,)
+    ).fetchone()
+    return row[0] if row else None
 
 
 def _same_name_job_key(conn: sqlite3.Connection, run: RunRecord) -> str | None:

@@ -428,6 +428,89 @@ def test_csv_promoted_url_reuse_survives_second_same_name_posting(tmp_path):
     assert actual == expected
 
 
+def test_archive_run_joins_csv_promoted_pasted_job_by_url(tmp_path):
+    """A later archive with the promoted URL must not create a URL-keyed twin."""
+    csv_path = _csv(
+        tmp_path,
+        "Acme,Eng,2026-10-01,,Seen,\nAcme,Eng,2026-10-02,https://acme.com/1,Applied,\n",
+    )
+    apps = _archive(tmp_path, "s1", "https://acme.com/1")
+    # Archive keywords use "Engineer, Platform"; override to match the CSV name.
+    data = json.loads((apps / "s1.json").read_text())
+    data["keywords"] = {"company": "Acme", "title": "Eng"}
+    (apps / "s1.json").write_text(json.dumps(data))
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        csv_report = import_record_csv(conn, csv_path)
+        archive_report = import_archives(conn, apps)
+        rerun_csv = import_record_csv(conn, csv_path)
+        actual = {
+            "reports": [csv_report, archive_report, rerun_csv],
+            "jobs": [
+                tuple(row) for row in conn.execute("SELECT job_key, url FROM jobs ORDER BY job_key")
+            ],
+            "runs": [
+                tuple(row)
+                for row in conn.execute("SELECT session_id, job_key FROM runs ORDER BY session_id")
+            ],
+            "events": [
+                tuple(row)
+                for row in conn.execute(
+                    "SELECT job_key, status, recorded_at FROM status_events ORDER BY id"
+                )
+            ],
+        }
+
+    expected = {
+        "reports": [
+            ImportReport(imported=2, skipped=[], jobs=1, events=2),
+            ImportReport(imported=1, skipped=[], jobs=0, events=0),
+            ImportReport(imported=0, skipped=[]),
+        ],
+        "jobs": [("pasted:acme-eng-82da35ff", "https://acme.com/1")],
+        "runs": [("s1", "pasted:acme-eng-82da35ff")],
+        "events": [
+            ("pasted:acme-eng-82da35ff", "Seen", "2026-10-01"),
+            ("pasted:acme-eng-82da35ff", "Applied", "2026-10-02"),
+        ],
+    }
+
+    assert actual == expected
+
+
+def test_url_less_csv_row_skips_when_same_name_is_ambiguous(tmp_path, caplog):
+    path = _csv(
+        tmp_path,
+        "Acme,Eng,2026-10-01,https://acme.com/1,Applied,\n"
+        "Acme,Eng,2026-10-02,https://acme.com/2,Applied,\n"
+        "Acme,Eng,2026-10-03,,Rejected,\n",
+    )
+
+    with (
+        caplog.at_level(logging.WARNING, logger="callback.ledger_import"),
+        closing(ledger.connect(tmp_path / "l.db")) as conn,
+    ):
+        report = import_record_csv(conn, path)
+        jobs = [tuple(row) for row in conn.execute("SELECT job_key FROM jobs ORDER BY job_key")]
+        events = [
+            tuple(row)
+            for row in conn.execute("SELECT job_key, status FROM status_events ORDER BY id")
+        ]
+
+    assert report == ImportReport(imported=2, skipped=["line 4"], jobs=2, events=2)
+    assert jobs == [("https://acme.com/1",), ("https://acme.com/2",)]
+    assert events == [
+        ("https://acme.com/1", "Applied"),
+        ("https://acme.com/2", "Applied"),
+    ]
+    assert {
+        "event": "ledger_import_ambiguous_name_match",
+        "label": "line 4",
+        "candidate_job_keys": ["https://acme.com/1", "https://acme.com/2"],
+        "action": "skipped",
+    } in [json.loads(r.message) for r in caplog.records]
+
+
 def test_csv_labels_follow_real_lines_after_multiline_cells(tmp_path):
     path = _csv(tmp_path, 'Acme,Eng,2026-10-01,,Applied,"two\nlines"\n,,,,Applied,\n')
 

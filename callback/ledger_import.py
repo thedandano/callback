@@ -228,14 +228,14 @@ def import_archives(conn: sqlite3.Connection, roots: Path | list[Path]) -> Impor
 
 def _import_archive(conn: sqlite3.Connection, archive: _Archive, report: ImportReport) -> None:
     run = archive.run.model_copy(update={"jd_url": _url_or_none(archive.run.jd_url)})
-    key = ledger.job_key(run.jd_url, run.company, run.title, run.jd_text)
-    job_exists = _job_exists(conn, key)
+    jobs_before = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
     relinked = _relink_pdf(archive._replace(run=run))
     if not ledger.record_imported_run_if_absent(conn, relinked):
         _info("ledger_import_run_exists", session_id=run.session_id, file=archive.label)
         report.skipped.append(archive.label)
         return
-    report.jobs += int(not job_exists)
+    jobs_after = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+    report.jobs += jobs_after - jobs_before
     report.imported += 1
 
 
@@ -287,12 +287,23 @@ def _import_row(conn: sqlite3.Connection, row: dict, label: str, report: ImportR
         _skip(report, label, "row has no URL, company, or title")
         return
     recorded_at = _iso_date(_cell(row, "Recorded Date")) or _iso_date(_cell(row, "Email Date"))
-    key = _import_job(
-        conn, report, label, (url, company, title), recorded_at or "", _cell(row, "Salary range")
-    )
     bad_url = None if url else raw_url
-    note = _with_salary_note(conn, key, _cell(row, "Salary range"), _note(row, bad_url))
     status = _event_status(row, bad_url)
+    key = _import_job(
+        conn,
+        report,
+        label,
+        (url, company, title),
+        recorded_at or "",
+        _cell(row, "Salary range"),
+        status=status,
+        recorded_at=recorded_at,
+        source=CSV_SOURCE,
+    )
+    if key is None:
+        _skip(report, label, "company and title match more than one job")
+        return
+    note = _with_salary_note(conn, key, _cell(row, "Salary range"), _note(row, bad_url))
     if not status:
         return
     if not recorded_at:
@@ -421,7 +432,20 @@ def _import_contact(
         _skip(report, label, "row has no URL, employer, or work type")
         return
     salary = extras.get(_SALARY_KEY)
-    key = _import_job(conn, report, label, (url, company, title), date, salary)
+    key = _import_job(
+        conn,
+        report,
+        label,
+        (url, company, title),
+        date,
+        salary,
+        status=outcome,
+        recorded_at=date,
+        source=CONTACTS_SOURCE,
+    )
+    if key is None:
+        _skip(report, label, "company and title match more than one job")
+        return
     note = _with_salary_note(conn, key, salary, _contact_note(row, url, extras))
     added = ledger.add_status(
         conn,
@@ -456,23 +480,48 @@ def _import_job(
     posting: tuple[str | None, str | None, str | None],
     seen_at: str,
     salary_range: str | None,
-) -> str:
+    *,
+    status: str | None = None,
+    recorded_at: str | None = None,
+    source: str | None = None,
+) -> str | None:
     """The job an imported row belongs to: the one existing job with the same company and
-    title when the row has no URL, else a new or merged job."""
+    title when the row has no URL, else a new or merged job.
+
+    Returns None when a URL-less row matches more than one job and none uniquely already
+    holds this status event (caller skips the row).
+    """
     url, company, title = posting
+    if not url and company and title:
+        name_match = ledger.job_key_by_name(conn, company, title)
+        if len(name_match.candidates) > 1:
+            holder = _unique_event_holder(conn, name_match.candidates, status, recorded_at, source)
+            if holder is None:
+                _warn(
+                    "ledger_import_ambiguous_name_match",
+                    label=label,
+                    candidate_job_keys=list(name_match.candidates),
+                    action="skipped",
+                )
+                return None
+            matched = holder
+        else:
+            matched = name_match.job_key
+        if matched:
+            _apply_name_match(conn, label, matched, url, salary_range)
+            return matched
+        return _upsert_import_job(
+            conn,
+            report=report,
+            url=url,
+            company=company,
+            title=title,
+            seen_at=seen_at,
+            salary_range=salary_range,
+        )
     matched = _name_match(conn, url, company, title)
     if matched:
-        with conn:
-            conn.execute(
-                "UPDATE jobs SET salary_range = COALESCE(NULLIF(salary_range, ''), ?),"
-                " url = COALESCE(NULLIF(url, ''), ?) WHERE job_key = ?",
-                (
-                    ledger.clean_salary(salary_range),
-                    ledger.normalize_url(url) if url else None,
-                    matched,
-                ),
-            )
-        _warn("ledger_import_name_match", label=label, job_key=matched)
+        _apply_name_match(conn, label, matched, url, salary_range)
         return matched
     return _upsert_import_job(
         conn,
@@ -483,6 +532,48 @@ def _import_job(
         seen_at=seen_at,
         salary_range=salary_range,
     )
+
+
+def _unique_event_holder(
+    conn: sqlite3.Connection,
+    candidates: tuple[str, ...],
+    status: str | None,
+    recorded_at: str | None,
+    source: str | None,
+) -> str | None:
+    """The one candidate that already has this source event, if exactly one does."""
+    if not (status and recorded_at and source):
+        return None
+    holders = [
+        key
+        for key in candidates
+        if conn.execute(
+            "SELECT 1 FROM status_events WHERE job_key = ? AND status = ?"
+            " AND recorded_at = ? AND source = ?",
+            (key, status, recorded_at, source),
+        ).fetchone()
+    ]
+    return holders[0] if len(holders) == 1 else None
+
+
+def _apply_name_match(
+    conn: sqlite3.Connection,
+    label: str,
+    matched: str,
+    url: str | None,
+    salary_range: str | None,
+) -> None:
+    with conn:
+        conn.execute(
+            "UPDATE jobs SET salary_range = COALESCE(NULLIF(salary_range, ''), ?),"
+            " url = COALESCE(NULLIF(url, ''), ?) WHERE job_key = ?",
+            (
+                ledger.clean_salary(salary_range),
+                ledger.normalize_url(url) if url else None,
+                matched,
+            ),
+        )
+    _warn("ledger_import_name_match", label=label, job_key=matched)
 
 
 def _name_match(
@@ -500,7 +591,10 @@ def _name_match(
     # A prior import may have filled this URL onto a pasted: key; look that up by
     # stored URL before requiring a unique company/title (which a second same-name
     # posting makes ambiguous).
-    by_url = conn.execute("SELECT job_key FROM jobs WHERE url = ?", (normalized_url,)).fetchone()
+    by_url = conn.execute(
+        "SELECT job_key FROM jobs WHERE url = ? ORDER BY first_seen DESC LIMIT 1",
+        (normalized_url,),
+    ).fetchone()
     if by_url:
         return by_url[0]
     matched = ledger.job_key_by_name(conn, company, title).job_key

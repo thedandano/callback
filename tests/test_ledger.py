@@ -785,3 +785,31 @@ def test_placeholder_salary_is_stored_as_no_salary(tmp_path):
         )
         stored = conn.execute("SELECT salary_range FROM jobs").fetchone()
     assert tuple(stored) == (None,)
+
+
+def test_url_run_joins_pasted_job_that_already_carries_that_url(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        pasted = ledger.job_key(None, "Acme", "Engineer")
+        ledger.upsert_job(
+            conn,
+            url=None,
+            company="Acme",
+            title="Engineer",
+            seen_at="2026-10-01",
+        )
+        conn.execute(
+            "UPDATE jobs SET url = ? WHERE job_key = ?",
+            ("https://jobs.example.com/a", pasted),
+        )
+        ledger.record_run(conn, _run(url="https://jobs.example.com/a"))
+        actual = {
+            "runs": [tuple(r) for r in conn.execute("SELECT session_id, job_key FROM runs")],
+            "jobs": [
+                tuple(r) for r in conn.execute("SELECT job_key, url FROM jobs ORDER BY job_key")
+            ],
+        }
+
+    assert actual == {
+        "runs": [("s1", pasted)],
+        "jobs": [(pasted, "https://jobs.example.com/a")],
+    }
