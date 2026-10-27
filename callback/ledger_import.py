@@ -213,7 +213,7 @@ def import_archives(conn: sqlite3.Connection, roots: Path | list[Path]) -> Impor
 
 
 def _import_archive(conn: sqlite3.Connection, archive: _Archive, report: ImportReport) -> None:
-    run = archive.run.model_copy(update={"jd_url": _url_or_none(archive.run.jd_url)})
+    run = archive.run.model_copy(update={"jd_url": ledger.url_or_none(archive.run.jd_url)})
     jobs_before = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
     relinked = _relink_pdf(archive._replace(run=run))
     if not ledger.record_imported_run_if_absent(conn, relinked):
