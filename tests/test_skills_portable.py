@@ -27,9 +27,89 @@ def test_email_date_preserves_the_source_timestamp():
     schema = (REPO_ROOT / "skills/auto-job-apply/references/record-schema.md").read_text()
 
     actual = {
-        "preserves_source_offset": "recorded as-is with the offset from its Date header" in schema,
+        "preserves_source_offset": "recorded as-is with its offset" in schema,
         "rejects_time_zone_conversion": "Never convert it to another time zone" in schema,
+        "passes_contact_date": "pass the email's own date as `date`" in schema,
     }
-    expected = {"preserves_source_offset": True, "rejects_time_zone_conversion": True}
+    expected = {
+        "preserves_source_offset": True,
+        "rejects_time_zone_conversion": True,
+        "passes_contact_date": True,
+    }
+
+    assert actual == expected
+
+
+def test_ledger_skills_keep_posting_identity_and_edd_contact_details():
+    apply_skill = (REPO_ROOT / "skills/apply-to-job/SKILL.md").read_text()
+    auto_skill = (REPO_ROOT / "skills/auto-job-apply/SKILL.md").read_text()
+    scan_skill = (REPO_ROOT / "skills/scan-job-leads/SKILL.md").read_text()
+    setup_skill = (REPO_ROOT / "skills/setup-callback/SKILL.md").read_text()
+    export_skill = (REPO_ROOT / "skills/export-ledger/SKILL.md").read_text()
+    schema = (REPO_ROOT / "skills/auto-job-apply/references/record-schema.md").read_text()
+
+    actual = {
+        "apply_non_submission_continues": (
+            "when `ever_applied` is false, continue the workflow" in apply_skill
+        ),
+        "company_title_requires_confirmation": (
+            "Reuse a confirmed row's `job_key` only when they confirm the same posting"
+            in auto_skill
+        ),
+        "confirmation_has_distinct_status": (
+            "Already applied - confirmation recorded" in apply_skill
+        ),
+        "status_only_reads_stored_scores": "Read `score_before` and `score_after`" in auto_skill,
+        "unknown_salary_is_omitted": "Omit it when unknown" in schema,
+        "contacts_have_a_method_prefix": (
+            "Contact method: <Online|Email|Phone|Mail|Fax|In person>" in schema
+        ),
+        "scan_records_classified_outcomes": (
+            "Record each classified outcome with `record_status`" in scan_skill
+        ),
+        "prior_submission_uses_ever_applied": "`ever_applied` is true" in apply_skill,
+        "needs_source_key_match_is_retried": (
+            "except when its latest status starts with `Needs source`" in scan_skill
+        ),
+        "setup_keeps_legacy_config_until_import": (
+            "Keep its `record_csv`, `ledger_db`, and `edd_xlsx` keys when present" in setup_skill
+        ),
+        "setup_removes_legacy_config_after_success": (
+            "After the import exits successfully with `skipped 0`, remove "
+            "`record_csv`, `ledger_db`, and `edd_xlsx`" in setup_skill
+        ),
+        "apply_confirms_weak_match_before_ever_applied": (
+            "confirm identity before treating the hit as the same posting" in apply_skill
+            and "Only after a confirmed same-posting match" in apply_skill
+        ),
+        "setup_keeps_legacy_on_skips": (
+            "Keep those keys when the CLI lists any `skipped:` lines" in setup_skill
+        ),
+        "scan_keeps_legacy_on_skips": (
+            "Remove those keys only when the import prints `skipped 0`" in scan_skill
+        ),
+        "status_changing_email_before_duplicate_skip": (
+            "status-changing email" in auto_skill and "before any duplicate skip" in auto_skill
+        ),
+        "export_explains_contact_method": "that prefix is the contact-method field" in export_skill,
+    }
+    expected = {
+        "apply_non_submission_continues": True,
+        "company_title_requires_confirmation": True,
+        "confirmation_has_distinct_status": True,
+        "status_only_reads_stored_scores": True,
+        "unknown_salary_is_omitted": True,
+        "contacts_have_a_method_prefix": True,
+        "scan_records_classified_outcomes": True,
+        "prior_submission_uses_ever_applied": True,
+        "needs_source_key_match_is_retried": True,
+        "setup_keeps_legacy_config_until_import": True,
+        "setup_removes_legacy_config_after_success": True,
+        "apply_confirms_weak_match_before_ever_applied": True,
+        "setup_keeps_legacy_on_skips": True,
+        "scan_keeps_legacy_on_skips": True,
+        "status_changing_email_before_duplicate_skip": True,
+        "export_explains_contact_method": True,
+    }
 
     assert actual == expected

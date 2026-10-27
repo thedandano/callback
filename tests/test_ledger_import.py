@@ -1311,3 +1311,34 @@ def test_relinked_pdf_path_is_absolute_for_a_relative_archive_root(tmp_path, mon
         stored = _pdf_path(conn, "s1")
 
     assert stored == str(found.resolve())
+
+
+@pytest.mark.parametrize(("reportable", "expected"), [(1, True), (0, False)])
+def test_imported_legacy_contact_counts_as_applied_unless_not_reportable(
+    tmp_path, reportable, expected
+):
+    src = tmp_path / "old.sqlite3"
+    _contacts_db_with_metadata(src, reportable=reportable)
+    with closing(sqlite3.connect(src)) as db, db:
+        db.execute("UPDATE job_search_entries SET outcome = 'No decision'")
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        import_contact_ledger(conn, src)
+        found = ledger.find_job(conn, url="https://acme.com/j/9", company="Acme", title="Eng")
+
+    assert (found["status"], found["ever_applied"]) == ("No decision", expected)
+
+
+def test_imported_contact_with_no_note_counts_as_applied(tmp_path):
+    src = tmp_path / "old.sqlite3"
+    _contacts_db_with_metadata(src, reportable=1)
+    with closing(sqlite3.connect(src)) as db, db:
+        db.execute("UPDATE job_search_entries SET outcome = 'No decision', contact_type = ''")
+        db.execute("DELETE FROM job_search_metadata WHERE key != 'JobURL'")
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        import_contact_ledger(conn, src)
+        conn.execute("UPDATE status_events SET note = NULL")
+        found = ledger.find_job(conn, url="https://acme.com/j/9", company="Acme", title="Eng")
+
+    assert found["ever_applied"] is True

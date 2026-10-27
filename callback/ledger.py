@@ -890,8 +890,19 @@ ORDER BY e.recorded_at DESC, e.id DESC
 """
 
 
+# True when any status event of the job proves a submission.
+_EVER_APPLIED_SQL = (
+    "EXISTS (SELECT 1 FROM status_events e WHERE e.job_key = j.job_key AND ("
+    "norm_text(e.status) LIKE 'applied%' OR norm_text(e.status) LIKE 'already applied%' "
+    "OR norm_text(e.status) LIKE 'interview%' OR norm_text(e.status) LIKE 'rejected%' "
+    "OR norm_text(e.status) LIKE 'offer%' "
+    # Legacy EDD work-search contacts are applications whatever the outcome (ledger_import's
+    # CONTACTS_SOURCE and NOT_REPORTABLE_PREFIX; importing them here would be a cycle).
+    "OR (e.source = 'contacts-import' AND ifnull(e.note, '') NOT LIKE 'Not reportable%')))"
+)
 _FIND_SQL = (
-    "SELECT j.company, j.title, s.status, s.recorded_at, j.job_key, "
+    "SELECT j.company, j.title, j.url, s.status, " + _EVER_APPLIED_SQL + ", "
+    "s.recorded_at, j.job_key, "
     "(SELECT json_extract(r.scores, '$.initial.total') FROM runs r "
     "WHERE r.job_key = j.job_key ORDER BY r.finalized_at DESC, r.rowid DESC LIMIT 1), "
     "(SELECT json_extract(r.scores, '$.final.total') FROM runs r "
@@ -909,12 +920,28 @@ _BY_NAME = (
 _FIND_KEYS = [
     "company",
     "title",
+    "url",
     "status",
+    "ever_applied",
     "status_date",
     "job_key",
     "score_before",
     "score_after",
 ]
+_COMPANY_JOBS_LIMIT = 20
+_COMPANY_JOB_ROW_SQL = (
+    "SELECT j.job_key, j.url, j.title, s.status, s.recorded_at, " + _EVER_APPLIED_SQL + " "
+    "FROM jobs j "
+    "LEFT JOIN status_events s ON s.id = ("
+    "SELECT e.id FROM status_events e WHERE e.job_key = j.job_key "
+    "ORDER BY e.recorded_at DESC, e.id DESC LIMIT 1) "
+)
+_COMPANY_JOBS_SQL = (
+    _COMPANY_JOB_ROW_SQL
+    + "WHERE norm_text(j.company) = norm_text(?) AND j.job_key IS NOT ? "
+    + f"ORDER BY j.first_seen DESC, j.job_key LIMIT {_COMPANY_JOBS_LIMIT}"
+)
+_COMPANY_JOB_BY_KEY_SQL = _COMPANY_JOB_ROW_SQL + "WHERE j.job_key = ?"
 
 
 def spreadsheet_safe(row: dict) -> dict:
@@ -1007,12 +1034,44 @@ def _key_match_kind(row: tuple | None, title: str | None) -> str:
     return "key"
 
 
-def _ambiguous_name_result(candidates: tuple[str, ...]) -> dict:
+def _company_job_entry(conn: sqlite3.Connection, job_key: str) -> dict | None:
+    row = conn.execute(_COMPANY_JOB_BY_KEY_SQL, (job_key,)).fetchone()
+    if row is None:
+        return None
+    keys = ("job_key", "url", "title", "status", "status_date", "ever_applied")
+    return {**dict(zip(keys, row, strict=True)), "ever_applied": bool(row[-1])}
+
+
+def _ambiguous_company_jobs(
+    conn: sqlite3.Connection, company: str | None, candidates: tuple[str, ...]
+) -> list[dict]:
+    """Candidate details first, then other company jobs up to the shared limit."""
+    prioritized: list[dict] = []
+    seen: set[str] = set()
+    for key in candidates:
+        entry = _company_job_entry(conn, key)
+        if entry is None or key in seen:
+            continue
+        prioritized.append(entry)
+        seen.add(key)
+    others = [
+        job for job in _other_company_jobs(conn, company, None, None) if job["job_key"] not in seen
+    ]
+    return (prioritized + others)[:_COMPANY_JOBS_LIMIT]
+
+
+def _ambiguous_name_result(
+    conn: sqlite3.Connection, company: str | None, candidates: tuple[str, ...]
+) -> dict:
+    result: dict[str, object | None] = dict(zip(_FIND_KEYS, (None,) * len(_FIND_KEYS), strict=True))
+    result["ever_applied"] = False
     return {
         "found": False,
-        **dict(zip(_FIND_KEYS, (None,) * len(_FIND_KEYS), strict=True)),
+        **result,
         "matched_by": "company_title_ambiguous",
         "candidate_job_keys": list(candidates),
+        # Candidates first so pasted: keys and older same-title rows stay visible under the limit.
+        "company_jobs": _ambiguous_company_jobs(conn, company, candidates),
     }
 
 
@@ -1023,12 +1082,17 @@ def find_job(
 
     Looks up by URL (or company + title when there is no URL) first. A posting seen under a
     different URL is still found when company and title match, ignoring case, Unicode case, and
-    spacing. Includes the latest run's score totals when a run exists. A key match whose stored
-    title differs from `title` or is missing reports matched_by='key_title_mismatch'. When more
-    than one job shares the company and title, returns found=False with
-    matched_by='company_title_ambiguous' and candidate_job_keys for the caller to disambiguate —
-    including when a URL-less lookup would otherwise hit a pasted key while a URL-keyed twin
-    exists.
+    spacing. Returns the stored URL, whether any status event proves submission, and the latest
+    run's score totals when a run exists. A key match whose stored title differs from `title` or
+    is missing reports matched_by='key_title_mismatch'. When more than one job shares the company
+    and title, returns found=False with matched_by='company_title_ambiguous',
+    candidate_job_keys, and company_jobs (candidates first, then other company jobs up to 20)
+    for the caller to disambiguate — including when a URL-less lookup would otherwise hit a
+    pasted key while a URL-keyed twin exists. When nothing is found, or the match
+    is weak (not 'key') or a key match whose job has no status event (a run-only job), and a
+    company is given,
+    company_jobs lists that company's other jobs (up to 20, newest first, the matched job left
+    out) so the caller can spot a similar title or requisition id.
     """
     cleaned = _clean_url(url)
     derived = job_key(url, company, title)
@@ -1037,7 +1101,7 @@ def find_job(
     if row is not None and cleaned is None and company and title:
         match = job_key_by_name(conn, company, title)
         if len(match.candidates) > 1:
-            return _ambiguous_name_result(match.candidates)
+            return _ambiguous_name_result(conn, company, match.candidates)
     matched_by = _key_match_kind(row, title) if row else None
     if row is None and cleaned:
         row = _find_row(conn, _BY_STORED_URL, (cleaned,))
@@ -1045,13 +1109,30 @@ def find_job(
     if row is None and company and title:
         match = job_key_by_name(conn, company, title)
         if len(match.candidates) > 1:
-            return _ambiguous_name_result(match.candidates)
+            return _ambiguous_name_result(conn, company, match.candidates)
         if match.job_key is not None:
             row = _find_row(conn, _BY_KEY, (match.job_key,))
             matched_by = "company_title"
     values = row or (None,) * len(_FIND_KEYS)
+    result: dict[str, object | None] = dict(zip(_FIND_KEYS, values, strict=True))
+    result["ever_applied"] = bool(result["ever_applied"])
     return {
         "found": row is not None,
-        **dict(zip(_FIND_KEYS, values, strict=True)),
+        **result,
         "matched_by": matched_by if row else None,
+        "company_jobs": _other_company_jobs(conn, company, row, matched_by),
     }
+
+
+def _other_company_jobs(
+    conn: sqlite3.Connection, company: str | None, row: tuple | None, matched_by: str | None
+) -> list[dict]:
+    """The company's other jobs when the match is missing, weak, or a key match with no status."""
+    if not company or (row and matched_by == "key" and row[_FIND_KEYS.index("status")]):
+        return []
+    found_key = row[_FIND_KEYS.index("job_key")] if row else None
+    keys = ("job_key", "url", "title", "status", "status_date", "ever_applied")
+    return [
+        {**dict(zip(keys, values, strict=True)), "ever_applied": bool(values[-1])}
+        for values in conn.execute(_COMPANY_JOBS_SQL, (company, found_key))
+    ]
