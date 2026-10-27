@@ -167,12 +167,14 @@ def _read_archives(archive_dir: Path, report: ImportReport, *, qualify: bool) ->
 
 
 def _run_time(run: ledger.RunRecord) -> datetime.datetime | None:
-    """A valid archive timestamp, normalized to UTC when it omitted an offset."""
+    """A valid archive timestamp in UTC, or None when it is not ISO or overflows UTC."""
     try:
         moment = datetime.datetime.fromisoformat(run.timestamp)
-    except ValueError:
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=datetime.UTC)
+        return moment.astimezone(datetime.UTC)
+    except (ValueError, OverflowError):
         return None
-    return moment if moment.tzinfo else moment.replace(tzinfo=datetime.UTC)
 
 
 def _newest_per_session(runs: list[_Archive]) -> list[_Archive]:

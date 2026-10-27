@@ -364,19 +364,20 @@ def canonical_timestamp(value: str) -> str:
     """UTC ISO form of a timestamp, so text and time order agree.
 
     A time with no offset is read as UTC. Plain `YYYY-MM-DD` dates and blanks come back stripped;
-    text that is not ISO comes back as given and logs a warning.
+    text that is not ISO, or that overflows when converted to UTC, comes back as given and logs
+    a warning.
     """
     stripped = value.strip()
     try:
         if not stripped or (_PLAIN_DATE.fullmatch(stripped) and date.fromisoformat(stripped)):
             return stripped
         parsed = datetime.fromisoformat(stripped)
-    except ValueError:
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC).isoformat()
+    except (ValueError, OverflowError):
         _log.warning(json.dumps({"event": "ledger_timestamp_unparsed", "value": value}))
         return value
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC).isoformat()
 
 
 def clean_salary(value: str | None) -> str | None:
@@ -515,17 +516,6 @@ def _upsert_run_job(conn: sqlite3.Connection, run: RunRecord) -> str:
         jd_text=run.jd_text,
         key=key,
     )
-
-
-def _pasted_job_with_url(conn: sqlite3.Connection, url: str) -> str | None:
-    """A company + title job that was later given this URL (its key stays pasted:), if any."""
-    url_key = job_key(url, None, None)
-    if conn.execute("SELECT 1 FROM jobs WHERE job_key = ?", (url_key,)).fetchone():
-        return None
-    row = conn.execute(
-        "SELECT job_key FROM jobs WHERE url = ? ORDER BY first_seen DESC LIMIT 1", (url,)
-    ).fetchone()
-    return row[0] if row else None
 
 
 def _same_name_job_key(conn: sqlite3.Connection, run: RunRecord) -> str | None:

@@ -601,7 +601,7 @@ def test_canonical_timestamp_converts_to_utc_and_keeps_plain_dates(raw, expected
     assert ledger.canonical_timestamp(raw) == expected
 
 
-@pytest.mark.parametrize("raw", ["oops", "2026-02-31", "2026-00-01"])
+@pytest.mark.parametrize("raw", ["oops", "2026-02-31", "2026-00-01", "0001-01-01T00:00:00+23:59"])
 def test_canonical_timestamp_warns_on_malformed_text(caplog, raw):
     with caplog.at_level("WARNING", logger="callback.ledger"):
         result = ledger.canonical_timestamp(raw)

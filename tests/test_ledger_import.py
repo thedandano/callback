@@ -859,6 +859,21 @@ def test_archive_with_non_iso_timestamp_is_skipped(tmp_path):
     assert (report, runs) == (ImportReport(imported=0, skipped=["s1.json"]), [])
 
 
+def test_archive_with_utc_overflow_timestamp_is_skipped(tmp_path):
+    apps = tmp_path / "apps"
+    _write_run(apps, "s1", "0001-01-01T00:00:00+23:59", 90)
+    _write_run(apps, "s2", "2026-10-01T10:00:00+00:00", 80)
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        report = import_archives(conn, apps)
+        runs = conn.execute("SELECT session_id FROM runs").fetchall()
+
+    assert (report, [tuple(r) for r in runs]) == (
+        ImportReport(imported=1, skipped=["s1.json"], jobs=1),
+        [("s2",)],
+    )
+
+
 def test_invalid_https_values_fall_back_to_identity_and_preserve_raw_url_in_note(tmp_path):
     path = _csv(
         tmp_path,
