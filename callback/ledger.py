@@ -1090,7 +1090,7 @@ def find_job(
 
 
 def _other_company_jobs(
-    conn: sqlite3.Connection, company: str | None, row: tuple | None, matched_by: str
+    conn: sqlite3.Connection, company: str | None, row: tuple | None, matched_by: str | None
 ) -> list[dict]:
     """The company's other jobs when the match is missing, weak, or a key match with no status."""
     if not company or (row and matched_by == "key" and row[_FIND_KEYS.index("status")]):
