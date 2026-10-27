@@ -496,12 +496,18 @@ def _name_match(
         return ledger.job_key_by_name(conn, company, title).job_key
     if _job_exists(conn, ledger.job_key(url, None, None)):
         return None
+    normalized_url = ledger.normalize_url(url)
+    # A prior import may have filled this URL onto a pasted: key; look that up by
+    # stored URL before requiring a unique company/title (which a second same-name
+    # posting makes ambiguous).
+    by_url = conn.execute("SELECT job_key FROM jobs WHERE url = ?", (normalized_url,)).fetchone()
+    if by_url:
+        return by_url[0]
     matched = ledger.job_key_by_name(conn, company, title).job_key
     if matched is None:
         return None
     row = conn.execute("SELECT url FROM jobs WHERE job_key = ?", (matched,)).fetchone()
-    normalized_url = ledger.normalize_url(url)
-    return matched if row and (not row[0] or row[0] == normalized_url) else None
+    return matched if row and not row[0] else None
 
 
 def _upsert_import_job(

@@ -381,6 +381,53 @@ def test_csv_url_promoted_from_same_name_job_stays_idempotent_on_rerun(tmp_path)
     assert actual == expected
 
 
+def test_csv_promoted_url_reuse_survives_second_same_name_posting(tmp_path):
+    """A second same-name URL makes the name lookup ambiguous; reuse the promoted job by URL."""
+    path = _csv(
+        tmp_path,
+        "Acme,Eng,2026-10-01,,Seen,\n"
+        "Acme,Eng,2026-10-02,https://acme.com/1,Applied,\n"
+        "Acme,Eng,2026-10-03,https://acme.com/2,Applied,\n",
+    )
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        first = import_record_csv(conn, path)
+        second = import_record_csv(conn, path)
+        actual = {
+            "reports": [first, second],
+            "jobs": [
+                tuple(row)
+                for row in conn.execute(
+                    "SELECT job_key, url, company, title FROM jobs ORDER BY job_key"
+                )
+            ],
+            "events": [
+                tuple(row)
+                for row in conn.execute(
+                    "SELECT job_key, status, recorded_at FROM status_events ORDER BY id"
+                )
+            ],
+        }
+
+    expected = {
+        "reports": [
+            ImportReport(imported=3, skipped=[], jobs=2, events=3),
+            ImportReport(imported=0, skipped=[]),
+        ],
+        "jobs": [
+            ("https://acme.com/2", "https://acme.com/2", "Acme", "Eng"),
+            ("pasted:acme-eng-82da35ff", "https://acme.com/1", "Acme", "Eng"),
+        ],
+        "events": [
+            ("pasted:acme-eng-82da35ff", "Seen", "2026-10-01"),
+            ("pasted:acme-eng-82da35ff", "Applied", "2026-10-02"),
+            ("https://acme.com/2", "Applied", "2026-10-03"),
+        ],
+    }
+
+    assert actual == expected
+
+
 def test_csv_labels_follow_real_lines_after_multiline_cells(tmp_path):
     path = _csv(tmp_path, 'Acme,Eng,2026-10-01,,Applied,"two\nlines"\n,,,,Applied,\n')
 
