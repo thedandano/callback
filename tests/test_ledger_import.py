@@ -511,6 +511,115 @@ def test_url_less_csv_row_skips_when_same_name_is_ambiguous(tmp_path, caplog):
     } in [json.loads(r.message) for r in caplog.records]
 
 
+def test_csv_url_then_url_less_then_second_url_stays_idempotent_on_rerun(tmp_path):
+    """URL-less mid-file attaches to the first same-name job; rerun stays a no-op."""
+    path = _csv(
+        tmp_path,
+        "Acme,Eng,2026-10-01,https://acme.com/1,Seen,\n"
+        "Acme,Eng,2026-10-02,,Applied,via friend\n"
+        "Acme,Eng,2026-10-03,https://acme.com/2,Applied,\n",
+    )
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        first = import_record_csv(conn, path)
+        second = import_record_csv(conn, path)
+        actual = {
+            "reports": [first, second],
+            "jobs": [
+                tuple(row) for row in conn.execute("SELECT job_key, url FROM jobs ORDER BY job_key")
+            ],
+            "events": [
+                tuple(row)
+                for row in conn.execute(
+                    "SELECT job_key, status, recorded_at, note FROM status_events ORDER BY id"
+                )
+            ],
+        }
+
+    expected = {
+        "reports": [
+            ImportReport(imported=3, skipped=[], jobs=2, events=3),
+            ImportReport(imported=0, skipped=[]),
+        ],
+        "jobs": [
+            ("https://acme.com/1", "https://acme.com/1"),
+            ("https://acme.com/2", "https://acme.com/2"),
+        ],
+        "events": [
+            ("https://acme.com/1", "Seen", "2026-10-01", None),
+            ("https://acme.com/1", "Applied", "2026-10-02", "via friend"),
+            ("https://acme.com/2", "Applied", "2026-10-03", None),
+        ],
+    }
+
+    assert actual == expected
+
+
+def test_ambiguous_url_less_row_with_different_note_is_skipped(tmp_path):
+    path = _csv(
+        tmp_path,
+        "Acme,Eng,2026-10-01,https://acme.com/1,Applied,note-a\n"
+        "Acme,Eng,2026-10-02,https://acme.com/2,Seen,\n"
+        "Acme,Eng,2026-10-01,,Applied,note-b\n",
+    )
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        report = import_record_csv(conn, path)
+        events = [
+            tuple(row)
+            for row in conn.execute("SELECT job_key, status, note FROM status_events ORDER BY id")
+        ]
+
+    assert report == ImportReport(imported=2, skipped=["line 4"], jobs=2, events=2)
+    assert events == [
+        ("https://acme.com/1", "Applied", "note-a"),
+        ("https://acme.com/2", "Seen", None),
+    ]
+
+
+def test_blank_name_url_row_reuses_promoted_pasted_job(tmp_path):
+    path = _csv(
+        tmp_path,
+        "Acme,Eng,2026-10-01,,Seen,\n"
+        "Acme,Eng,2026-10-02,https://acme.com/1,Applied,\n"
+        ",,2026-10-03,https://acme.com/1,Interview,\n",
+    )
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        first = import_record_csv(conn, path)
+        second = import_record_csv(conn, path)
+        actual = {
+            "reports": [first, second],
+            "jobs": [
+                tuple(row)
+                for row in conn.execute(
+                    "SELECT job_key, url, company, title FROM jobs ORDER BY job_key"
+                )
+            ],
+            "events": [
+                tuple(row)
+                for row in conn.execute(
+                    "SELECT job_key, status, recorded_at FROM status_events ORDER BY id"
+                )
+            ],
+        }
+
+    expected = {
+        "reports": [
+            ImportReport(imported=3, skipped=[], jobs=1, events=3),
+            ImportReport(imported=0, skipped=[]),
+        ],
+        "jobs": [("pasted:acme-eng-82da35ff", "https://acme.com/1", "Acme", "Eng")],
+        "events": [
+            ("pasted:acme-eng-82da35ff", "Seen", "2026-10-01"),
+            ("pasted:acme-eng-82da35ff", "Applied", "2026-10-02"),
+            ("pasted:acme-eng-82da35ff", "Interview", "2026-10-03"),
+        ],
+    }
+
+    assert actual == expected
+
+
 def test_csv_labels_follow_real_lines_after_multiline_cells(tmp_path):
     path = _csv(tmp_path, 'Acme,Eng,2026-10-01,,Applied,"two\nlines"\n,,,,Applied,\n')
 
