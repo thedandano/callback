@@ -37,9 +37,10 @@ This is a one-job workflow. Do not scan Gmail, Google Jobs, FAANG careers, the j
 
 ## Tailoring Rules
 
+- Keyword mapping, not stuffing: use `key_responsibilities` (pass 2) as the employer's problems first. Map keywords to real experience that solves those problems.
 - Add a keyword only when it is supported by dated experience or clear project evidence.
 - Rewrite bullets only when the mechanism and impact are supported by the resume or fetched wiki stories.
-- Do not keyword-stuff skills.
+- If no real experience backs a keyword, leave it uncovered — delete the suggestion. Do not keyword-stuff skills.
 - Do not use banned filler language: spearheaded, orchestrated, championed, leveraged, utilized, streamlined, passionate, driven, results-oriented, proven track record.
 - Prefer fewer strong edits over many weak edits.
 

@@ -212,6 +212,13 @@ _TAILOR_INSTRUCTIONS = (
     "- Context line per role: <Role> · <Domain/Team> · <Scale signal> · <Stack>"
     " — factual only, no adjectives.\n"
     "- Skills: every keyword added to skills MUST appear in ≥1 dated experience bullet.\n"
+    "- Keyword mapping, not stuffing: treat key_responsibilities (pass 2) as the "
+    "employer's problems to solve first. Map only keywords that are truthfully backed "
+    "by dated experience, project evidence, or wiki stories into real bullets that show "
+    "how you solved similar problems. Prefer fewer strong, evidenced keywords over "
+    "maximum coverage. If a keyword has no real experience behind it, leave it "
+    "uncovered — do not invent facts, do not add keyword-only text, and do not pile "
+    "synonyms into Skills.\n"
     "- Projects: use existing project descriptions or bullets when a missing required or "
     "preferred keyword is truthfully supported by project evidence rather than dated "
     "experience evidence. Project edits MUST be grounded in the source resume or "
@@ -915,8 +922,9 @@ def _submit_keywords_workflow(
     tailor_task = (
         "Use data.sections, data.score_gap, data.wiki_index, and "
         "data.tailor_instructions to choose relevant wiki pages and prepare "
-        "honest SectionMap edits. If the index already contains enough "
-        "evidence, submit_tailor is also valid."
+        "honest SectionMap edits. Map keywords to evidenced experience that "
+        "addresses the employer's problems; leave unsupported gaps uncovered. "
+        "If the index already contains enough evidence, submit_tailor is also valid."
     )
     if pass_2_pending:
         return _workflow(
@@ -932,7 +940,10 @@ def _submit_keywords_workflow(
     pass_2_tailor_task = (
         "Use data.sections, data.score_gap, data.wiki_index, and "
         "data.tailor_instructions from the submit_keywords reply, plus the keywords "
-        "returned here, to choose relevant wiki pages and prepare honest SectionMap edits. "
+        "returned here. Treat key_responsibilities as the employer's problems to solve "
+        "first; map only keywords backed by dated experience, project evidence, or wiki "
+        "stories; leave unsupported gaps uncovered — do not invent facts or keyword-stuff. "
+        "Choose relevant wiki pages and prepare honest SectionMap edits. "
         "If the index already contains enough evidence, submit_tailor is also valid."
     )
     return _workflow(

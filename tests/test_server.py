@@ -755,11 +755,17 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
         "host_task_mentions_pass_2": "data.responsibilities_protocol"
         in result["workflow"]["host_task"],
         "host_task_mentions_sections": "data.sections" in result["workflow"]["host_task"],
+        "host_task_mentions_problems": "problems" in result["workflow"]["host_task"],
         "mentions_project_descriptions": "existing project descriptions or bullets" in instructions,
         "mentions_wiki_source": "source resume or profile wiki" in instructions,
         "rejects_invented_project_facts": "MUST NOT invent project facts" in instructions,
         "rejects_keyword_only_text": "keyword-only text" in instructions,
         "keeps_skills_coverage_dated": "dated experience bullet" in instructions,
+        "mentions_keyword_mapping": "Keyword mapping, not stuffing" in instructions,
+        "mentions_problems_first": "key_responsibilities" in instructions
+        and "problems" in instructions,
+        "prefers_fewer_strong": "fewer strong" in instructions,
+        "leave_unsupported_uncovered": "leave it uncovered" in instructions,
     }
     expected = {
         "next_action": "fetch_wiki_then_tailor",
@@ -773,13 +779,40 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
         "responsibilities_protocol": RESPONSIBILITIES_PROTOCOL,
         "host_task_mentions_pass_2": True,
         "host_task_mentions_sections": True,
+        "host_task_mentions_problems": True,
         "mentions_project_descriptions": True,
         "mentions_wiki_source": True,
         "rejects_invented_project_facts": True,
         "rejects_keyword_only_text": True,
         "keeps_skills_coverage_dated": True,
+        "mentions_keyword_mapping": True,
+        "mentions_problems_first": True,
+        "prefers_fewer_strong": True,
+        "leave_unsupported_uncovered": True,
     }
     assert actual == expected
+
+
+def test_tailor_skill_and_eval_prompt_forbid_keyword_stuffing():
+    from callback.server import _TAILOR_INSTRUCTIONS
+    from evals.runner import tailor_prompt
+    from evals.tailor_checks import TailorCase
+
+    skill = Path("skills/tailor-resume/SKILL.md").read_text()
+    skill_lower = skill.lower()
+    assert "Keyword mapping, not stuffing" in _TAILOR_INSTRUCTIONS
+    assert "keyword mapping" in skill_lower
+    assert "keyword-stuff" in skill_lower or "do not keyword-stuff" in skill_lower
+    assert (
+        "leave it uncovered" in skill_lower
+        or "no real experience" in skill_lower
+        or "delete the suggestion" in skill_lower
+    )
+    assert "fewer strong" in skill_lower
+    case = TailorCase.from_dir(Path("evals/tailor/jane-doe-backend"))
+    prompt = tailor_prompt(case)
+    assert "Keyword mapping, not stuffing" in prompt
+    assert "keyword-stuff" in prompt
 
 
 def test_submit_keywords_returns_ranked_project_candidates(tmp_path, monkeypatch):
@@ -2306,6 +2339,11 @@ def test_submit_responsibilities_replaces_trims_and_keeps_tailor_pending(
         "next_tool": result["workflow"]["next_tool"],
         "host_task_mentions_submit_keywords_reply": "submit_keywords reply"
         in result["workflow"]["host_task"],
+        "host_task_mentions_problems_first": (
+            "key_responsibilities" in result["workflow"]["host_task"]
+            and "problems" in result["workflow"]["host_task"]
+        ),
+        "host_task_leave_unsupported": "unsupported" in result["workflow"]["host_task"],
         "dropped_log": [e["dropped"] for e in _logged(caplog, "responsibilities_deduped")],
         "tailor_status": tailored["status"],
     }
@@ -2317,6 +2355,8 @@ def test_submit_responsibilities_replaces_trims_and_keeps_tailor_pending(
         "still_before_tailor": True,
         "next_tool": "get_wiki_pages",
         "host_task_mentions_submit_keywords_reply": True,
+        "host_task_mentions_problems_first": True,
+        "host_task_leave_unsupported": True,
         "dropped_log": [["swift", "Agent  Loop"]],
         "tailor_status": "ok",
     }
