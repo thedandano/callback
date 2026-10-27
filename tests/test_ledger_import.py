@@ -139,6 +139,36 @@ def test_undecodable_archive_is_skipped(tmp_path):
     assert report == ImportReport(imported=0, skipped=["bad.json"])
 
 
+def test_archive_whose_filename_does_not_match_its_session_id_is_skipped(tmp_path, caplog):
+    apps = tmp_path / "apps"
+    apps.mkdir()
+    (apps / "wrong.json").write_text(
+        json.dumps(
+            {
+                "session_id": "s1",
+                "timestamp": "2026-10-01T10:00:00+00:00",
+                "jd_url": "https://a.com/1",
+            }
+        )
+    )
+
+    with caplog.at_level(logging.WARNING), closing(ledger.connect(tmp_path / "l.db")) as conn:
+        report = import_archives(conn, apps)
+        runs = conn.execute("SELECT session_id FROM runs").fetchall()
+
+    assert (report, runs, [json.loads(record.message) for record in caplog.records]) == (
+        ImportReport(imported=0, skipped=["wrong.json"]),
+        [],
+        [
+            {
+                "event": "ledger_import_skip",
+                "item": "wrong.json",
+                "reason": "filename does not match session_id",
+            }
+        ],
+    )
+
+
 def test_missing_archive_folder_raises_a_clear_error(tmp_path):
     with (
         closing(ledger.connect(tmp_path / "l.db")) as conn,
@@ -225,6 +255,31 @@ def test_contact_ledger_import_is_idempotent_and_read_only(tmp_path):
     assert src.read_bytes() == before
 
 
+def test_contact_ledger_without_reportable_column_warns_once(tmp_path, caplog):
+    src = tmp_path / "old.sqlite3"
+    _contacts_db(src)
+
+    with caplog.at_level(logging.WARNING), closing(ledger.connect(tmp_path / "l.db")) as conn:
+        report = import_contact_ledger(conn, src)
+
+    warnings = [json.loads(record.message) for record in caplog.records]
+    assert (report, warnings) == (
+        ImportReport(imported=2, skipped=["entry 3"], jobs=2, events=2),
+        [
+            {
+                "event": "ledger_import_no_reportable_column",
+                "path": str(src),
+                "action": "every contact is treated as reportable",
+            },
+            {
+                "event": "ledger_import_skip",
+                "item": "entry 3",
+                "reason": "missing outcome or missing/invalid date",
+            },
+        ],
+    )
+
+
 def test_contact_ledger_without_the_table_raises_a_clear_error(tmp_path):
     src = tmp_path / "empty.sqlite3"
     sqlite3.connect(src).close()
@@ -284,6 +339,46 @@ def test_csv_dates_are_normalized_so_formats_dedupe(tmp_path):
             ("pasted:acme-eng-82da35ff", "2026-10-02", None),
         ],
     )
+
+
+def test_csv_url_promoted_from_same_name_job_stays_idempotent_on_rerun(tmp_path):
+    path = _csv(
+        tmp_path,
+        "Acme,Eng,2026-10-01,,Seen,\nAcme,Eng,2026-10-02,https://acme.com/1,Applied,\n",
+    )
+
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        first = import_record_csv(conn, path)
+        second = import_record_csv(conn, path)
+        actual = {
+            "reports": [first, second],
+            "jobs": [
+                tuple(row)
+                for row in conn.execute(
+                    "SELECT job_key, url, company, title FROM jobs ORDER BY job_key"
+                )
+            ],
+            "events": [
+                tuple(row)
+                for row in conn.execute(
+                    "SELECT job_key, status, recorded_at FROM status_events ORDER BY id"
+                )
+            ],
+        }
+
+    expected = {
+        "reports": [
+            ImportReport(imported=2, skipped=[], jobs=1, events=2),
+            ImportReport(imported=0, skipped=[]),
+        ],
+        "jobs": [("pasted:acme-eng-82da35ff", "https://acme.com/1", "Acme", "Eng")],
+        "events": [
+            ("pasted:acme-eng-82da35ff", "Seen", "2026-10-01"),
+            ("pasted:acme-eng-82da35ff", "Applied", "2026-10-02"),
+        ],
+    }
+
+    assert actual == expected
 
 
 def test_csv_labels_follow_real_lines_after_multiline_cells(tmp_path):

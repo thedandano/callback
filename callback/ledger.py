@@ -13,6 +13,7 @@ import re
 import sqlite3
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import NamedTuple
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import BaseModel, ConfigDict
@@ -167,6 +168,13 @@ class RunRecord(BaseModel):
     @property
     def title(self) -> str | None:
         return _text_field(self.keywords, "title")
+
+
+class JobNameMatch(NamedTuple):
+    """The matching job key, plus every same-name candidate when it is ambiguous."""
+
+    job_key: str | None
+    candidates: tuple[str, ...]
 
 
 def _text_field(keywords: dict | None, name: str) -> str | None:
@@ -466,22 +474,40 @@ def _same_name_job_key(conn: sqlite3.Connection, run: RunRecord) -> str | None:
     """
     if _clean_url(run.jd_url) or not (run.company and run.title):
         return None
-    matched = job_key_by_name(conn, run.company, run.title)
+    match = job_key_by_name(conn, run.company, run.title)
     own = job_key(None, run.company, run.title, run.jd_text)
-    if matched is None or matched == own:
+    if len(match.candidates) > 1:
+        _log.warning(
+            json.dumps(
+                {
+                    "event": "ledger_ambiguous_name_match",
+                    "session_id": run.session_id,
+                    "candidate_job_keys": list(match.candidates),
+                    "action": "created_new_pasted_job",
+                }
+            )
+        )
+        return None
+    if match.job_key is None or match.job_key == own:
         return None
     other_runs = conn.execute(
-        "SELECT 1 FROM runs WHERE job_key = ? AND session_id != ?", (matched, run.session_id)
+        "SELECT 1 FROM runs WHERE job_key = ? AND session_id != ?", (match.job_key, run.session_id)
     ).fetchone()
     if other_runs is None:
         _log.warning(
             json.dumps(
-                {"event": "ledger_run_name_match", "session_id": run.session_id, "job_key": matched}
+                {
+                    "event": "ledger_run_name_match",
+                    "session_id": run.session_id,
+                    "job_key": match.job_key,
+                }
             )
         )
-        return matched
+        return match.job_key
     _log.warning(
-        json.dumps({"event": "ledger_possible_twin_job", "matched_key": matched, "own_key": own})
+        json.dumps(
+            {"event": "ledger_possible_twin_job", "matched_key": match.job_key, "own_key": own}
+        )
     )
     return None
 
@@ -495,17 +521,14 @@ def _name_form(text: str) -> str:
     return " ".join(text.split()).casefold()
 
 
-def job_key_by_name(conn: sqlite3.Connection, company: str, title: str) -> str | None:
-    """The one job whose company and title match ignoring case and spacing, else None.
-
-    None when nothing matches or several jobs match; the caller then keeps its own key.
-    """
+def job_key_by_name(conn: sqlite3.Connection, company: str, title: str) -> JobNameMatch:
+    """The same-name job key, plus all candidates when several jobs match."""
     wanted = (_name_form(company), _name_form(title))
     rows = conn.execute(
         "SELECT job_key, company, title FROM jobs WHERE company IS NOT NULL AND title IS NOT NULL"
     )
     matches = [key for key, name, role in rows if (_name_form(name), _name_form(role)) == wanted]
-    return matches[0] if len(matches) == 1 else None
+    return JobNameMatch(matches[0] if len(matches) == 1 else None, tuple(matches))
 
 
 def _run_blobs(run: RunRecord) -> tuple[str | None, str, str, str, str]:

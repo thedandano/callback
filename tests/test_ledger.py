@@ -650,9 +650,9 @@ def test_job_key_by_name_matches_one_job_ignoring_case_and_spacing(tmp_path):
         ledger.upsert_job(conn, url="https://b.com/1", company="Beta", title="Dev", seen_at="")
         ledger.upsert_job(conn, url="https://b.com/2", company="beta", title="DEV", seen_at="")
         found = (
-            ledger.job_key_by_name(conn, " acme co ", "ENG"),
-            ledger.job_key_by_name(conn, "Beta", "Dev"),
-            ledger.job_key_by_name(conn, "Gamma", "Dev"),
+            ledger.job_key_by_name(conn, " acme co ", "ENG").job_key,
+            ledger.job_key_by_name(conn, "Beta", "Dev").job_key,
+            ledger.job_key_by_name(conn, "Gamma", "Dev").job_key,
         )
 
     assert found == ("pasted:acme-co-eng-04b335ed", None, None)
@@ -709,6 +709,50 @@ def test_urlless_run_keeps_its_own_key_when_the_same_name_job_has_runs(tmp_path,
             {"event": "ledger_possible_twin_job", "matched_key": scanned, "own_key": own},
         ],
     )
+
+
+def test_urlless_run_with_multiple_same_name_jobs_creates_and_logs_its_own_job(tmp_path, caplog):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        first = ledger.upsert_job(
+            conn,
+            url="https://jobs.example.com/first",
+            company="Acme",
+            title="Engineer",
+            seen_at="2026-10-01",
+        )
+        second = ledger.upsert_job(
+            conn,
+            url="https://jobs.example.com/second",
+            company="Acme",
+            title="Engineer",
+            seen_at="2026-10-01",
+        )
+        with caplog.at_level(logging.WARNING, logger="callback.ledger"):
+            ledger.record_run(conn, _run(url=None))
+        actual = {
+            "jobs": [
+                tuple(row) for row in conn.execute("SELECT job_key FROM jobs ORDER BY job_key")
+            ],
+            "runs": [
+                tuple(row)
+                for row in conn.execute("SELECT session_id, job_key FROM runs ORDER BY session_id")
+            ],
+            "warnings": [json.loads(record.message) for record in caplog.records],
+        }
+
+    own = ledger.job_key(None, "Acme", "Engineer", "JD")
+    assert actual == {
+        "jobs": [(first,), (second,), (own,)],
+        "runs": [("s1", own)],
+        "warnings": [
+            {
+                "event": "ledger_ambiguous_name_match",
+                "session_id": "s1",
+                "candidate_job_keys": [first, second],
+                "action": "created_new_pasted_job",
+            }
+        ],
+    }
 
 
 def test_recorded_again_run_stays_on_the_job_it_already_has(tmp_path):

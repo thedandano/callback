@@ -173,6 +173,9 @@ def _read_archives(archive_dir: Path, report: ImportReport, *, qualify: bool) ->
         if not run.session_id.strip():
             _skip(report, label, "session_id is blank")
             continue
+        if path.stem != run.session_id:
+            _skip(report, label, "filename does not match session_id")
+            continue
         runs.append(_Archive(label, path, run, archive_dir))
     return runs
 
@@ -369,7 +372,7 @@ def _text(value: object) -> str:
 
 
 def _is_reportable(row: sqlite3.Row) -> bool:
-    """A contact counts toward reporting when `reportable` is 1; a DB without the column does."""
+    """A contact counts toward reporting when `reportable` is 1."""
     return "reportable" not in row.keys() or row["reportable"] == 1  # noqa: SIM118
 
 
@@ -486,16 +489,19 @@ def _name_match(
     conn: sqlite3.Connection, url: str | None, company: str | None, title: str | None
 ) -> str | None:
     """The one same-name job a row joins: any job for a URL-less row, else a URL-less job
-    when no job exists yet for the row's URL."""
+    or one already promoted to the row's URL when no job exists yet for that URL."""
     if not (company and title):
         return None
     if not url:
-        return ledger.job_key_by_name(conn, company, title)
+        return ledger.job_key_by_name(conn, company, title).job_key
     if _job_exists(conn, ledger.job_key(url, None, None)):
         return None
-    matched = ledger.job_key_by_name(conn, company, title)
+    matched = ledger.job_key_by_name(conn, company, title).job_key
+    if matched is None:
+        return None
     row = conn.execute("SELECT url FROM jobs WHERE job_key = ?", (matched,)).fetchone()
-    return matched if row and not row[0] else None
+    normalized_url = ledger.normalize_url(url)
+    return matched if row and (not row[0] or row[0] == normalized_url) else None
 
 
 def _upsert_import_job(
@@ -530,6 +536,13 @@ def _job_exists(conn: sqlite3.Connection, key: str) -> bool:
 def import_contact_ledger(conn: sqlite3.Connection, db_path: Path) -> ImportReport:
     report = ImportReport()
     rows, metadata = _read_contact_rows(db_path)
+    column_names = rows[0].keys() if rows else ()
+    if rows and "reportable" not in column_names:
+        _warn(
+            "ledger_import_no_reportable_column",
+            path=str(db_path),
+            action="every contact is treated as reportable",
+        )
     for row in rows:
         _import_contact(conn, row, metadata.get(row["id"], {}), report)
     return report
