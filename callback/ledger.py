@@ -929,15 +929,19 @@ _FIND_KEYS = [
     "score_after",
 ]
 _COMPANY_JOBS_LIMIT = 20
-_COMPANY_JOBS_SQL = (
+_COMPANY_JOB_ROW_SQL = (
     "SELECT j.job_key, j.url, j.title, s.status, s.recorded_at, " + _EVER_APPLIED_SQL + " "
     "FROM jobs j "
     "LEFT JOIN status_events s ON s.id = ("
     "SELECT e.id FROM status_events e WHERE e.job_key = j.job_key "
     "ORDER BY e.recorded_at DESC, e.id DESC LIMIT 1) "
-    "WHERE norm_text(j.company) = norm_text(?) AND j.job_key IS NOT ? "
-    f"ORDER BY j.first_seen DESC, j.job_key LIMIT {_COMPANY_JOBS_LIMIT}"
 )
+_COMPANY_JOBS_SQL = (
+    _COMPANY_JOB_ROW_SQL
+    + "WHERE norm_text(j.company) = norm_text(?) AND j.job_key IS NOT ? "
+    + f"ORDER BY j.first_seen DESC, j.job_key LIMIT {_COMPANY_JOBS_LIMIT}"
+)
+_COMPANY_JOB_BY_KEY_SQL = _COMPANY_JOB_ROW_SQL + "WHERE j.job_key = ?"
 
 
 def spreadsheet_safe(row: dict) -> dict:
@@ -1030,6 +1034,32 @@ def _key_match_kind(row: tuple | None, title: str | None) -> str:
     return "key"
 
 
+def _company_job_entry(conn: sqlite3.Connection, job_key: str) -> dict | None:
+    row = conn.execute(_COMPANY_JOB_BY_KEY_SQL, (job_key,)).fetchone()
+    if row is None:
+        return None
+    keys = ("job_key", "url", "title", "status", "status_date", "ever_applied")
+    return {**dict(zip(keys, row, strict=True)), "ever_applied": bool(row[-1])}
+
+
+def _ambiguous_company_jobs(
+    conn: sqlite3.Connection, company: str | None, candidates: tuple[str, ...]
+) -> list[dict]:
+    """Candidate details first, then other company jobs up to the shared limit."""
+    prioritized: list[dict] = []
+    seen: set[str] = set()
+    for key in candidates:
+        entry = _company_job_entry(conn, key)
+        if entry is None or key in seen:
+            continue
+        prioritized.append(entry)
+        seen.add(key)
+    others = [
+        job for job in _other_company_jobs(conn, company, None, None) if job["job_key"] not in seen
+    ]
+    return (prioritized + others)[:_COMPANY_JOBS_LIMIT]
+
+
 def _ambiguous_name_result(
     conn: sqlite3.Connection, company: str | None, candidates: tuple[str, ...]
 ) -> dict:
@@ -1040,8 +1070,8 @@ def _ambiguous_name_result(
         **result,
         "matched_by": "company_title_ambiguous",
         "candidate_job_keys": list(candidates),
-        # Callers need URLs and ever_applied to confirm pasted: keys and the prior-application gate.
-        "company_jobs": _other_company_jobs(conn, company, None, None),
+        # Candidates first so pasted: keys and older same-title rows stay visible under the limit.
+        "company_jobs": _ambiguous_company_jobs(conn, company, candidates),
     }
 
 
@@ -1056,9 +1086,9 @@ def find_job(
     run's score totals when a run exists. A key match whose stored title differs from `title` or
     is missing reports matched_by='key_title_mismatch'. When more than one job shares the company
     and title, returns found=False with matched_by='company_title_ambiguous',
-    candidate_job_keys, and company_jobs (URLs, statuses, ever_applied) for the caller to
-    disambiguate — including when a URL-less lookup would otherwise hit a pasted key while a
-    URL-keyed twin exists. When nothing is found, or the match
+    candidate_job_keys, and company_jobs (candidates first, then other company jobs up to 20)
+    for the caller to disambiguate — including when a URL-less lookup would otherwise hit a
+    pasted key while a URL-keyed twin exists. When nothing is found, or the match
     is weak (not 'key') or a key match whose job has no status event (a run-only job), and a
     company is given,
     company_jobs lists that company's other jobs (up to 20, newest first, the matched job left

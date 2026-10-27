@@ -88,6 +88,9 @@ def test_ledger_skills_keep_posting_identity_and_edd_contact_details():
         "scan_keeps_legacy_on_skips": (
             "Remove those keys only when the import prints `skipped 0`" in scan_skill
         ),
+        "status_changing_email_before_duplicate_skip": (
+            "status-changing email" in auto_skill and "before any duplicate skip" in auto_skill
+        ),
         "export_explains_contact_method": "that prefix is the contact-method field" in export_skill,
     }
     expected = {
@@ -105,6 +108,7 @@ def test_ledger_skills_keep_posting_identity_and_edd_contact_details():
         "apply_confirms_weak_match_before_ever_applied": True,
         "setup_keeps_legacy_on_skips": True,
         "scan_keeps_legacy_on_skips": True,
+        "status_changing_email_before_duplicate_skip": True,
         "export_explains_contact_method": True,
     }
 

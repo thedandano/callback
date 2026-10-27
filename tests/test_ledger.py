@@ -1471,6 +1471,73 @@ def test_record_run_prefers_existing_url_key_over_same_name_pasted_job(tmp_path)
     )
 
 
+def test_ambiguous_company_jobs_prioritize_candidates_over_newer_siblings(tmp_path):
+    # Two older same-title candidates must appear even when 20 newer unrelated jobs exist.
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        older_a = ledger.upsert_job(
+            conn,
+            url="https://acme.com/old/a",
+            company="Acme",
+            title="Engineer",
+            seen_at="2026-01-01",
+        )
+        older_b = ledger.upsert_job(
+            conn,
+            url=None,
+            company="Acme",
+            title="Engineer",
+            seen_at="2026-01-02",
+        )
+        _status(conn, older_a, "Applied", "2026-01-01")
+        _status(conn, older_b, "Rejected", "2026-01-02")
+        for n in range(20):
+            ledger.upsert_job(
+                conn,
+                url=f"https://acme.com/new/{n}",
+                company="Acme",
+                title=f"Designer {n}",
+                seen_at=f"2026-10-{n + 1:02d}",
+            )
+        found = ledger.find_job(conn, url="https://other.com/x", company="Acme", title="Engineer")
+
+    keys = set(found["candidate_job_keys"])
+    company_keys = [job["job_key"] for job in found["company_jobs"]]
+    by_key = {job["job_key"]: job for job in found["company_jobs"]}
+    expected = {
+        "matched_by": "company_title_ambiguous",
+        "candidate_keys": {older_a, older_b},
+        "company_jobs_prefix": [older_a, older_b],
+        "older_a": {
+            "url": "https://acme.com/old/a",
+            "ever_applied": True,
+            "status": "Applied",
+        },
+        "older_b": {
+            "url": None,
+            "ever_applied": True,
+            "status": "Rejected",
+        },
+        "company_jobs_len": 20,
+    }
+    actual = {
+        "matched_by": found["matched_by"],
+        "candidate_keys": keys,
+        "company_jobs_prefix": company_keys[:2],
+        "older_a": {
+            "url": by_key[older_a]["url"],
+            "ever_applied": by_key[older_a]["ever_applied"],
+            "status": by_key[older_a]["status"],
+        },
+        "older_b": {
+            "url": by_key[older_b]["url"],
+            "ever_applied": by_key[older_b]["ever_applied"],
+            "status": by_key[older_b]["status"],
+        },
+        "company_jobs_len": len(found["company_jobs"]),
+    }
+    assert actual == expected
+
+
 def test_find_job_url_less_lookup_flags_pasted_and_url_twins_as_ambiguous(tmp_path):
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
         url_key = ledger.upsert_job(
