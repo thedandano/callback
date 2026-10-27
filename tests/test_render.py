@@ -325,9 +325,37 @@ def test_render_html_bolds_skill_categories_and_uses_target_header():
             "skills_raw": "Languages: Python, Java\nCloud & Infrastructure: AWS, Docker",
         }
     )
-    assert "SKILLS &amp; ABILITIES" in html
+    assert '<div class="section-header">SKILLS</div>' in html
+    assert "SKILLS &amp; ABILITIES" not in html
     assert '<span class="skill-label">Languages:</span> Python, Java' in html
     assert '<span class="skill-label">Cloud & Infrastructure:</span> AWS, Docker' in html
+
+
+def test_render_html_uses_plain_headers_in_jeff_order():
+    html = _render_html(
+        {
+            "name": "Jane Doe",
+            "summary": "Backend engineer.",
+            "skills_raw": "Python, AWS",
+            "experience_raw": ("Acme\nEngineer | January 2024 – Present\n• Shipped APIs"),
+            "projects_raw": ("Side Project\nOwner | 2023 – Present\n• Built a tool"),
+            "education_raw": "BS Computer Science, State University",
+        }
+    )
+
+    for header in ("EXPERIENCE", "PROJECTS", "EDUCATION", "SKILLS"):
+        assert f'<div class="section-header">{header}</div>' in html
+
+    experience = html.index('<div class="section-header">EXPERIENCE</div>')
+    projects = html.index('<div class="section-header">PROJECTS</div>')
+    education = html.index('<div class="section-header">EDUCATION</div>')
+    skills = html.index('<div class="section-header">SKILLS</div>')
+
+    assert "Backend engineer." in html
+    assert html.index("Backend engineer.") < experience
+    assert experience < projects < education < skills
+    assert "PROFESSIONAL EXPERIENCE" not in html
+    assert "SKILLS &amp; ABILITIES" not in html
 
 
 def test_render_html_structures_title_contact_and_timeline_rows():

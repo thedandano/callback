@@ -177,20 +177,9 @@
     <div class="summary">{{ summary }}</div>
     {% endif %}
 
-    {% if skills_rows %}
-    <section class="section">
-      <div class="section-header">SKILLS &amp; ABILITIES</div>
-      {% for row in skills_rows %}
-      <div class="line">
-        {% if row.category %}<span class="skill-label">{{ row.category }}:</span> {% endif %}{{ row.value }}
-      </div>
-      {% endfor %}
-    </section>
-    {% endif %}
-
     {% if experience_entries %}
     <section class="section">
-      <div class="section-header">PROFESSIONAL EXPERIENCE</div>
+      <div class="section-header">EXPERIENCE</div>
       {% for entry in experience_entries %}
       <div class="entry">
         {% if entry.organization %}
@@ -237,6 +226,17 @@
       <div class="section-header">EDUCATION</div>
       {% for line in education_lines %}
       <div class="line education-line">{{ line }}</div>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if skills_rows %}
+    <section class="section">
+      <div class="section-header">SKILLS</div>
+      {% for row in skills_rows %}
+      <div class="line">
+        {% if row.category %}<span class="skill-label">{{ row.category }}:</span> {% endif %}{{ row.value }}
+      </div>
       {% endfor %}
     </section>
     {% endif %}
