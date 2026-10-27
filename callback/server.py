@@ -2124,21 +2124,36 @@ def _identity_error(url: str | None, company: str | None, title: str | None) -> 
 
 
 def _contact_note(url: str | None, note: str | None) -> str | None:
-    """A non-URL `url` (e.g. a recruiter thread) is kept in the note as `Contact: <value>`."""
+    """A non-URL `url` (e.g. a recruiter thread) is kept in the note as `Contact: <value>`.
+
+    A leading or mid-note `Not reportable` marker stays first so export_ledger(mode=contacts)
+    still excludes the event; `Contact method:` stays ahead of `Contact:`.
+    """
     contact = (url or "").strip()
     if not contact or ledger.url_or_none(contact):
         return note
-    method, rest = _split_contact_method(note)
-    return " | ".join(part for part in (method, f"Contact: {contact}", rest) if part)
+    not_reportable, method, rest = _split_note_markers(note)
+    return " | ".join(
+        part for part in (not_reportable, method, f"Contact: {contact}", rest) if part
+    )
 
 
-def _split_contact_method(note: str | None) -> tuple[str | None, str | None]:
-    """('Contact method: X', rest) when the note leads with it, so the EDD filter still sees it."""
-    text = (note or "").strip()
-    if not text.casefold().startswith("contact method:"):
-        return None, note
-    method, _, rest = text.partition(" | ")
-    return method, rest or None
+def _split_note_markers(note: str | None) -> tuple[str | None, str | None, str | None]:
+    """('Not reportable'|None, 'Contact method: X'|None, remaining note)."""
+    segments = [part.strip() for part in (note or "").split(" | ") if part.strip()]
+    not_reportable = None
+    method = None
+    rest_parts: list[str] = []
+    for part in segments:
+        folded = part.casefold()
+        if not_reportable is None and folded == "not reportable":
+            not_reportable = "Not reportable"
+            continue
+        if method is None and folded.startswith("contact method:"):
+            method = part
+            continue
+        rest_parts.append(part)
+    return not_reportable, method, " | ".join(rest_parts) or None
 
 
 def _ledger_error(exc: Exception) -> dict:
@@ -2231,6 +2246,14 @@ def record_status(
             if job_key and not ledger.job_exists(conn, job_key):
                 return _err("ledger", "unknown_job", f"no job with job_key: {job_key!r}")
             added = ledger.record_status(conn, update)
+    except ledger.AmbiguousJobMatchError as exc:
+        return _err(
+            "ledger",
+            "ambiguous_job",
+            "Several jobs share that company and title; pass job_key from find_job.",
+            retriable=False,
+            data={"candidate_job_keys": list(exc.candidates)},
+        )
     except (sqlite3.Error, OSError, RuntimeError, UnicodeError) as exc:
         return _ledger_error(exc)
     return _ok("", data={"recorded": added})

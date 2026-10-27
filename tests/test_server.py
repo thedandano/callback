@@ -2790,9 +2790,84 @@ async def test_export_ledger_contacts_mode_keeps_only_reportable_events(tmp_path
         ),
         ("Gmail thread: Jane", "replied", "Contact: Gmail thread: Jane | replied"),
         ("https://a.com/1", "Contact method: Online", "Contact method: Online"),
+        (
+            "Gmail thread: Jane",
+            "Not reportable",
+            "Not reportable | Contact: Gmail thread: Jane",
+        ),
+        (
+            "Gmail thread: Jane",
+            "Contact method: Email | Not reportable",
+            "Not reportable | Contact method: Email | Contact: Gmail thread: Jane",
+        ),
     ],
 )
 def test_contact_note_keeps_the_contact_method_first(url, note, expected):
     import callback.server as server
 
     assert server._contact_note(url, note) == expected
+
+
+@pytest.mark.anyio
+async def test_record_status_gmail_not_reportable_stays_out_of_contacts_export(tmp_path):
+    import callback.server as server
+
+    out = tmp_path / "contacts.csv"
+    async with Client(FastMCPTransport(server.mcp)) as client:
+        await client.call_tool(
+            "record_status",
+            {
+                "status": "Applied",
+                "url": "Gmail thread: Jane",
+                "company": "Acme",
+                "title": "Engineer",
+                "note": "Not reportable",
+                "date": "2026-10-01",
+            },
+        )
+        await client.call_tool("export_ledger", {"output_path": str(out), "mode": "contacts"})
+
+    assert out.read_text().splitlines() == [",".join(ledger.EVENT_COLUMNS)]
+
+
+@pytest.mark.anyio
+async def test_record_status_errors_when_company_title_is_ambiguous(tmp_path):
+    import callback.server as server
+
+    async with Client(FastMCPTransport(server.mcp)) as client:
+        await client.call_tool(
+            "record_status",
+            {
+                "status": "Applied",
+                "url": "https://a.com/1",
+                "company": "Acme",
+                "title": "Engineer",
+                "date": "2026-10-01",
+            },
+        )
+        await client.call_tool(
+            "record_status",
+            {
+                "status": "Rejected",
+                "url": "https://b.com/2",
+                "company": "Acme",
+                "title": "Engineer",
+                "date": "2026-10-02",
+            },
+        )
+        result = await client.call_tool(
+            "record_status",
+            {
+                "status": "Seen",
+                "company": "Acme",
+                "title": "Engineer",
+                "date": "2026-10-03",
+            },
+        )
+
+    env = _envelope(result)
+    assert (env["status"], env["error"]["code"], sorted(env["data"]["candidate_job_keys"])) == (
+        "error",
+        "ambiguous_job",
+        ["https://a.com/1", "https://b.com/2"],
+    )

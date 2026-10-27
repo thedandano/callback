@@ -997,6 +997,8 @@ def test_spreadsheet_safe_defuses_formulas_only():
         "h": "+1",
         "i": "\rx",
         "j": "\nx",
+        "k": " =1+1",
+        "l": "\xa0=SUM(1)",
     }
     assert ledger.spreadsheet_safe(row) == {
         "a": "'=HYPERLINK(1)",
@@ -1009,6 +1011,8 @@ def test_spreadsheet_safe_defuses_formulas_only():
         "h": "'+1",
         "i": "'\rx",
         "j": "'\nx",
+        "k": "'=1+1",
+        "l": "'=SUM(1)",
     }
 
 
@@ -1191,6 +1195,7 @@ def test_export_contacts_keeps_contact_notes_and_applications_only(tmp_path):
         ("Needs review - not applied", None),
         ("Applied", "Not reportable | Contact: Email"),
         ("Applied", "  NOT REPORTABLE  "),
+        ("Seen", "Contact method: Email | Not reportable"),
     ]
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
         for i, (status, note) in enumerate(events):
@@ -1199,7 +1204,7 @@ def test_export_contacts_keeps_contact_notes_and_applications_only(tmp_path):
                 _update(
                     status=status,
                     note=note,
-                    recorded_at=f"2026-10-0{i + 1}",
+                    recorded_at=f"2026-10-{i + 1:02d}",
                     url=f"https://a.com/{i}",
                     company="A",
                     title="E",
@@ -1211,6 +1216,92 @@ def test_export_contacts_keeps_contact_notes_and_applications_only(tmp_path):
         ("already applied", None),
         ("Applied - confirmed", None),
     ]
+
+
+def test_record_status_with_url_reuses_same_name_job_without_url(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(
+            conn, _update(company="Acme", title="Engineer", status="Applied", url=None)
+        )
+        ledger.record_status(
+            conn,
+            _update(
+                company="Acme",
+                title="Engineer",
+                status="Rejected",
+                url="https://jobs.acme.com/1",
+                recorded_at="2026-10-02",
+            ),
+        )
+        jobs = [tuple(r) for r in conn.execute("SELECT job_key, url FROM jobs")]
+        by_url = ledger.find_job(conn, url="https://jobs.acme.com/1", company=None, title=None)
+        by_name = ledger.find_job(conn, url="https://other.com/9", company="Acme", title="Engineer")
+
+    pasted = ledger.job_key(None, "Acme", "Engineer")
+    assert (jobs, by_url["job_key"], by_name["job_key"], by_url["status"], by_name["status"]) == (
+        [(pasted, "https://jobs.acme.com/1")],
+        pasted,
+        pasted,
+        "Rejected",
+        "Rejected",
+    )
+
+
+def test_record_run_with_url_joins_same_name_pasted_job(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(
+            conn, _update(company="Acme", title="Engineer", status="Applied", url=None)
+        )
+        ledger.record_run(
+            conn,
+            _run().model_copy(
+                update={
+                    "jd_url": "https://jobs.acme.com/1",
+                    "keywords": {"company": "Acme", "title": "Engineer"},
+                }
+            ),
+        )
+        jobs = [tuple(r) for r in conn.execute("SELECT job_key, url FROM jobs")]
+        found = ledger.find_job(conn, url="https://jobs.acme.com/1", company=None, title=None)
+
+    pasted = ledger.job_key(None, "Acme", "Engineer")
+    assert (jobs, found["job_key"], found["status"], found["score_after"]) == (
+        [(pasted, "https://jobs.acme.com/1")],
+        pasted,
+        "Applied",
+        70.0,
+    )
+
+
+def test_find_job_and_record_status_reject_ambiguous_company_title(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        a = ledger.upsert_job(
+            conn, url="https://a.com/1", company="Acme", title="Engineer", seen_at="2026-10-10"
+        )
+        b = ledger.upsert_job(
+            conn, url="https://b.com/2", company="Acme", title="Engineer", seen_at="2026-10-05"
+        )
+        _status(conn, a, "Applied", "2026-10-10")
+        _status(conn, b, "Rejected", "2026-10-05")
+        found = ledger.find_job(conn, url="https://other.com/9", company="Acme", title="Engineer")
+        with pytest.raises(ledger.AmbiguousJobMatchError) as raised:
+            ledger.record_status(
+                conn, _update(company="Acme", title="Engineer", status="Seen", url=None)
+            )
+
+    keys = found.pop("candidate_job_keys")
+    assert found == {
+        "found": False,
+        "company": None,
+        "title": None,
+        "status": None,
+        "status_date": None,
+        "job_key": None,
+        "score_before": None,
+        "score_after": None,
+        "matched_by": "company_title_ambiguous",
+    }
+    assert (set(keys), set(raised.value.candidates)) == ({a, b}, {a, b})
 
 
 def test_find_job_flags_a_key_match_with_a_different_title(tmp_path):

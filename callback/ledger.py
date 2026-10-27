@@ -194,6 +194,14 @@ class JobNameMatch(NamedTuple):
     candidates: tuple[str, ...]
 
 
+class AmbiguousJobMatchError(Exception):
+    """More than one job shares the company and title; the caller must pass a job_key."""
+
+    def __init__(self, candidates: tuple[str, ...]):
+        self.candidates = candidates
+        super().__init__(f"ambiguous company+title match: {candidates}")
+
+
 def _text_field(keywords: dict | None, name: str) -> str | None:
     value = (keywords or {}).get(name)
     if isinstance(value, str) and value.strip():
@@ -519,16 +527,19 @@ def _upsert_run_job(conn: sqlite3.Connection, run: RunRecord) -> str:
 
 
 def _same_name_job_key(conn: sqlite3.Connection, run: RunRecord) -> str | None:
-    """Key of the one job a URL-less run belongs to (the scan-then-tailor case), else None.
+    """Key of the one same-name job a run belongs to (scan-then-tailor), else None.
 
-    Joins only when the company and title match exactly one job and that job has no other
-    runs. A job that already has runs may be a different posting, so the run keeps its own
-    pasted key and the possible twin is logged.
+    Joins when company and title match exactly one job that has no other runs. A run with a
+    URL still joins when that job's stored URL is empty or already the same URL, so Applied on
+    a pasted row and the later finalize score stay on one job. A same-name job with a different
+    URL is left alone. A job that already has runs may be a different posting, so the run keeps
+    its own key and the possible twin is logged.
     """
-    if _clean_url(run.jd_url) or not (run.company and run.title):
+    if not (run.company and run.title):
         return None
+    cleaned = _clean_url(run.jd_url)
     match = job_key_by_name(conn, run.company, run.title)
-    own = job_key(None, run.company, run.title, run.jd_text)
+    own = job_key(cleaned, run.company, run.title, run.jd_text)
     if len(match.candidates) > 1:
         _log.warning(
             json.dumps(
@@ -542,6 +553,8 @@ def _same_name_job_key(conn: sqlite3.Connection, run: RunRecord) -> str | None:
         )
         return None
     if match.job_key is None or match.job_key == own:
+        return None
+    if cleaned and not _url_compatible(conn, match.job_key, cleaned):
         return None
     other_runs = conn.execute(
         "SELECT 1 FROM runs WHERE job_key = ? AND session_id != ?", (match.job_key, run.session_id)
@@ -563,6 +576,13 @@ def _same_name_job_key(conn: sqlite3.Connection, run: RunRecord) -> str | None:
         )
     )
     return None
+
+
+def _url_compatible(conn: sqlite3.Connection, job_key: str, cleaned_url: str) -> bool:
+    """True when the job has no URL yet, or already stores this cleaned URL."""
+    row = conn.execute("SELECT url FROM jobs WHERE job_key = ?", (job_key,)).fetchone()
+    stored = _clean_url(row[0]) if row else None
+    return stored is None or stored == cleaned_url
 
 
 def _run_exists(conn: sqlite3.Connection, session_id: str) -> bool:
@@ -678,15 +698,44 @@ class StatusUpdate(BaseModel):
 
 
 def _existing_job_key(conn: sqlite3.Connection, update: StatusUpdate) -> str | None:
-    """The job a status names: its job_key, a pasted job given this URL, or a name match."""
+    """The job a status names: its job_key, a pasted job given this URL, or a name match.
+
+    A URL plus company/title reuses the unique same-name job when that job has no URL or
+    already stores this URL. Raises AmbiguousJobMatchError when several same-name jobs exist.
+    """
     if update.job_key:
         return update.job_key
-    if cleaned := _clean_url(update.url):
-        return _pasted_job_with_url(conn, cleaned)
+    cleaned = _clean_url(update.url)
     company, title = _optional_text(update.company), _optional_text(update.title)
+    if cleaned:
+        if key := _pasted_job_with_url(conn, cleaned):
+            return key
+        if company and title:
+            return _unique_name_job(conn, company, title, cleaned)
+        return None
     if not (company and title):
         return None
-    return job_key_by_name(conn, company, title).job_key
+    return _unique_name_job(conn, company, title, cleaned_url=None)
+
+
+def _unique_name_job(
+    conn: sqlite3.Connection, company: str, title: str, cleaned_url: str | None
+) -> str | None:
+    """The one same-name job, optionally requiring its URL to be empty or cleaned_url.
+
+    Name-only writes raise AmbiguousJobMatchError when several jobs share the name. A URL write
+    with several same-name jobs returns None so a new URL-keyed row is created instead.
+    """
+    match = job_key_by_name(conn, company, title)
+    if len(match.candidates) > 1:
+        if cleaned_url is not None:
+            return None
+        raise AmbiguousJobMatchError(match.candidates)
+    if match.job_key is None:
+        return None
+    if cleaned_url is not None and not _url_compatible(conn, match.job_key, cleaned_url):
+        return None
+    return match.job_key
 
 
 def _pasted_job_with_url(conn: sqlite3.Connection, url: str) -> str | None:
@@ -808,9 +857,10 @@ ORDER BY s.recorded_at DESC, j.job_key
 """
 EVENT_COLUMNS = ["Date", "Company", "Title", "URL", "Status", "Notes", "Source"]
 # An EDD-reportable event: a contact note, or an application or its confirmation.
+# Exclude notes whose `|`-segments include an exact `Not reportable` marker (leading or middle).
 _CONTACT_FILTER = """
-  AND NOT (ifnull(norm_text(e.note), '') = 'not reportable'
-           OR ifnull(norm_text(e.note), '') LIKE 'not reportable |%')
+  AND instr('|' || replace(ifnull(norm_text(e.note), ''), ' | ', '|') || '|',
+            '|not reportable|') = 0
   AND (norm_text(e.note) LIKE 'contact method:%'
        OR norm_text(e.status) LIKE 'applied%'
        OR norm_text(e.status) LIKE 'already applied%')
@@ -856,11 +906,19 @@ _FIND_KEYS = [
 
 
 def spreadsheet_safe(row: dict) -> dict:
-    """Prefix text that a spreadsheet would run as a formula with ', so postings can't inject."""
-    return {
-        name: f"'{value}" if isinstance(value, str) and value.startswith(_FORMULA_STARTS) else value
-        for name, value in row.items()
-    }
+    """Prefix text that a spreadsheet would run as a formula with ', so postings can't inject.
+
+    Leading spaces and non-breaking spaces are stripped before the check, so ` =1+1` is
+    defused; tab/CR/LF prefixes stay as formula starts on the original value.
+    """
+    out = {}
+    for name, value in row.items():
+        if not isinstance(value, str):
+            out[name] = value
+            continue
+        stripped = value.lstrip(" \xa0")
+        out[name] = f"'{stripped}" if stripped.startswith(_FORMULA_STARTS) else value
+    return out
 
 
 def export_rows(
@@ -945,15 +1003,26 @@ def find_job(
     Looks up by URL (or company + title when there is no URL) first. A posting seen under a
     different URL is still found when company and title match, ignoring case, Unicode case, and
     spacing. Includes the latest run's score totals when a run exists. A key match whose stored
-    title differs from `title` or is missing reports matched_by='key_title_mismatch'.
+    title differs from `title` or is missing reports matched_by='key_title_mismatch'. When more
+    than one job shares the company and title, returns found=False with
+    matched_by='company_title_ambiguous' and candidate_job_keys for the caller to disambiguate.
     """
     row = _find_row(conn, _BY_KEY, (job_key(url, company, title),))
     if row is None and (cleaned := _clean_url(url)):
         row = _find_row(conn, _BY_STORED_URL, (cleaned,))
     matched_by = _key_match_kind(row, title)
     if row is None and company and title:
-        row = _find_row(conn, _BY_NAME, (company, title))
-        matched_by = "company_title"
+        match = job_key_by_name(conn, company, title)
+        if len(match.candidates) > 1:
+            return {
+                "found": False,
+                **dict(zip(_FIND_KEYS, (None,) * len(_FIND_KEYS), strict=True)),
+                "matched_by": "company_title_ambiguous",
+                "candidate_job_keys": list(match.candidates),
+            }
+        if match.job_key is not None:
+            row = _find_row(conn, _BY_KEY, (match.job_key,))
+            matched_by = "company_title"
     values = row or (None,) * len(_FIND_KEYS)
     return {
         "found": row is not None,
