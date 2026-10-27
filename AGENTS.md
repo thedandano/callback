@@ -117,6 +117,9 @@ uv run callback config env unset CALLBACK_TRACE_BACKEND
 uv run callback trace-check
 uv run callback trace-check --emit-test-trace
 
+# One-time import of old run archives, the record CSV, and the old contact ledger (safe to re-run)
+uv run callback ledger import --archives <folder> --csv <record.csv> --contacts-db <old.sqlite3>
+
 # All tests
 uv run pytest
 
@@ -411,6 +414,7 @@ committed and public, so there is nothing to withhold.
 | `ledger.py` | Global application ledger in SQLite (`paths.ledger_path()`): jobs, runs, append-only status events |
 | `cli.py` | `callback` CLI entry point |
 | `plugin_install.py` | Plugin installation functions (replaces `HarnessTarget` dataclass) |
+| `ledger_import.py` | One-time, re-runnable import of old run archives, the record CSV, and the old contact ledger into the ledger |
 | `observability.py` | Trace config port and LangSmith adapter |
 | `version_check.py` | Current-vs-latest release comparison |
 | `evals/` | Eval checks, fixtures, runner; see Evals |

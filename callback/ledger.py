@@ -13,6 +13,7 @@ import re
 import sqlite3
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import NamedTuple
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import BaseModel, ConfigDict
@@ -23,7 +24,6 @@ _log = logging.getLogger(__name__)
 
 _BUSY_TIMEOUT_S = 5.0
 _DEFAULT_PORTS = {"http": ":80", "https": ":443"}
-_ROUTE_FRAGMENT_PREFIXES = ("/", "!")
 # Query parameters that only say where a click came from, compared lowercase. Everything else in
 # the query string is kept, because boards name the posting in many different parameters
 # (Taleo `job`, SuccessFactors `career_job_req_id`, LinkedIn `currentJobId`, ...).
@@ -57,6 +57,7 @@ _TRACKING_PARAMS = frozenset(
 )
 _JD_HASH_CHARS = 8
 _NAME_SEPARATOR = "\x1f"
+_SALARY_PLACEHOLDERS = frozenset({"", "not listed", "n/a", "unknown", "ambiguous", "-", "tbd"})
 _PLAIN_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 
 _SCHEMA = """
@@ -134,6 +135,13 @@ ON CONFLICT(session_id) DO UPDATE SET
     outcome = excluded.outcome
 """
 
+_INSERT_RUN_IF_ABSENT = """
+INSERT INTO runs (session_id, job_key, finalized_at, jd_text, keywords, tailored_resume_text,
+                  pdf_path, render_page_count, render_warnings, scores, uncovered_skills, outcome)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(session_id) DO NOTHING
+"""
+
 
 class RunRecord(BaseModel):
     """One tailoring run, shaped like the old <session_id>.json archive."""
@@ -162,6 +170,13 @@ class RunRecord(BaseModel):
         return _text_field(self.keywords, "title")
 
 
+class JobNameMatch(NamedTuple):
+    """The matching job key, plus every same-name candidate when it is ambiguous."""
+
+    job_key: str | None
+    candidates: tuple[str, ...]
+
+
 def _text_field(keywords: dict | None, name: str) -> str | None:
     value = (keywords or {}).get(name)
     if isinstance(value, str) and value.strip():
@@ -175,8 +190,8 @@ def normalize_url(url: str) -> str:
     Drops the query parameters that only track the click (`_TRACKING_PARAMS`, any `utm_*`),
     compared case-insensitively, and keeps the rest in sorted order. A board that adds a new
     tracking parameter needs it added there, or its links split into two keys. Fragments are dropped
-    unless they look like a route ("#/job/1", "#!/job/1"). A value that cannot be parsed is
-    logged and kept as typed.
+    unless they hold a recognized route ("#/job/1", "#!/job/1", Gmail "#all/<id>").
+    A value that cannot be parsed is logged and kept as typed.
 
     ponytail: `www.` is kept, so "www.x.com/a" and "x.com/a" get two keys. Strip it here if
     that ever splits one posting in two.
@@ -201,7 +216,7 @@ def normalize_url(url: str) -> str:
     if scheme == "http":
         scheme = "https"
     query = _normalized_query(parts.query)
-    fragment = _normalized_route_fragment(parts.fragment)
+    fragment = _normalized_route_fragment(parts.fragment, parts.hostname)
     return urlunsplit((scheme, netloc, parts.path.rstrip("/"), query, fragment))
 
 
@@ -215,11 +230,21 @@ def _normalized_query(query: str) -> str:
     )
 
 
-def _normalized_route_fragment(fragment: str) -> str:
-    if not fragment.startswith(_ROUTE_FRAGMENT_PREFIXES):
+def _normalized_route_fragment(fragment: str, hostname: str | None) -> str:
+    """Keep hash routes (`#/x`, `#!/x`) and Gmail message ids; drop descriptive fragments."""
+    prefix, body = ("!", fragment[1:]) if fragment.startswith("!/") else ("", fragment)
+    route = urlsplit(body)
+    if body.startswith("/"):
+        path = route.path.rstrip("/")
+        return prefix + urlunsplit(("", "", path, _normalized_query(route.query), ""))
+    if hostname != "mail.google.com" or not _is_gmail_message_path(route.path):
         return ""
-    route = urlsplit(fragment)
-    return urlunsplit(("", "", route.path.rstrip("/"), _normalized_query(route.query), ""))
+    return urlunsplit(("", "", route.path, _normalized_query(route.query), ""))
+
+
+def _is_gmail_message_path(path: str) -> bool:
+    mailbox, separator, message_id = path.partition("/")
+    return mailbox in {"all", "inbox"} and bool(separator and message_id and "/" not in message_id)
 
 
 def _is_tracking(param: str) -> bool:
@@ -307,6 +332,12 @@ def canonical_timestamp(value: str) -> str:
     return parsed.astimezone(UTC).isoformat()
 
 
+def clean_salary(value: str | None) -> str | None:
+    """The salary text, or None when it is blank or a placeholder such as `Not listed`."""
+    folded = _norm_text(value)
+    return None if folded in _SALARY_PLACEHOLDERS else (value or "").strip()
+
+
 def _upsert_job(
     conn: sqlite3.Connection,
     *,
@@ -316,15 +347,25 @@ def _upsert_job(
     seen_at: str,
     salary_range: str | None,
     jd_text: str | None = None,
+    key: str | None = None,
 ) -> str:
-    """Insert or merge a job row without committing; callers own the transaction."""
+    """Insert or merge a job row without committing; callers own the transaction.
+
+    `key` overrides the computed job key; the run recorders use it to attach to an existing job.
+    """
     company = (company or "").strip() or None
     title = (title or "").strip() or None
-    salary_range = (salary_range or "").strip() or None
-    key = job_key(url, company, title, jd_text)
+    key = key or job_key(url, company, title, jd_text)
     conn.execute(
         _UPSERT_JOB,
-        (key, _clean_url(url), company, title, salary_range, canonical_timestamp(seen_at)),
+        (
+            key,
+            _clean_url(url),
+            company,
+            title,
+            clean_salary(salary_range),
+            canonical_timestamp(seen_at),
+        ),
     )
     return key
 
@@ -358,8 +399,8 @@ def _json_or_null(value: object) -> str | None:
 def record_run(conn: sqlite3.Connection, run: RunRecord) -> None:
     """Save a run and its job in one transaction.
 
-    ponytail: a retry whose URL, company or title changed re-points the run to a new job and
-    can leave the old job with no runs. Harmless for dedupe; prune orphans if it ever matters.
+    A session already recorded keeps its job on a retry; the retry's metadata only fills that
+    job's empty fields.
     """
     # Serialize first so bad data fails before anything is written.
     blobs = (
@@ -370,15 +411,7 @@ def record_run(conn: sqlite3.Connection, run: RunRecord) -> None:
         json.dumps(run.outcome),
     )
     with conn:
-        key = _upsert_job(
-            conn,
-            url=run.jd_url,
-            company=run.company,
-            title=run.title,
-            seen_at=run.timestamp,
-            salary_range=_salary_range(run.keywords),
-            jd_text=run.jd_text,
-        )
+        key = _upsert_run_job(conn, run)
         conn.execute(
             _UPSERT_RUN,
             (
@@ -393,6 +426,147 @@ def record_run(conn: sqlite3.Connection, run: RunRecord) -> None:
                 *blobs[1:],
             ),
         )
+
+
+def record_imported_run_if_absent(conn: sqlite3.Connection, run: RunRecord) -> bool:
+    """Insert an imported run once without changing a live run with the same session id.
+
+    The check and the insert share one transaction, and a run that exists leaves its job alone.
+    """
+    blobs = _run_blobs(run)
+    with conn:
+        if not conn.in_transaction:
+            conn.execute("BEGIN IMMEDIATE")
+        if _run_exists(conn, run.session_id):
+            return False
+        key = _upsert_run_job(conn, run)
+        cursor = conn.execute(_INSERT_RUN_IF_ABSENT, _run_values(run, key, blobs))
+    return cursor.rowcount == 1
+
+
+def _upsert_run_job(conn: sqlite3.Connection, run: RunRecord) -> str:
+    """Upsert the run's job.
+
+    A session already in `runs` stays on its job (a retry). A new run with no URL may join the
+    one same-name job that has no runs; a new run with a URL joins a pasted job carrying it.
+    """
+    existing = conn.execute(
+        "SELECT job_key FROM runs WHERE session_id = ?", (run.session_id,)
+    ).fetchone()
+    key = existing[0] if existing else _same_name_job_key(conn, run)
+    if key is None and (cleaned := _clean_url(run.jd_url)):
+        key = _pasted_job_with_url(conn, cleaned)
+    return _upsert_job(
+        conn,
+        url=run.jd_url,
+        company=run.company,
+        title=run.title,
+        seen_at=run.timestamp,
+        salary_range=_salary_range(run.keywords),
+        jd_text=run.jd_text,
+        key=key,
+    )
+
+
+def _pasted_job_with_url(conn: sqlite3.Connection, url: str) -> str | None:
+    """A company + title job that was later given this URL (its key stays pasted:), if any."""
+    url_key = job_key(url, None, None)
+    if conn.execute("SELECT 1 FROM jobs WHERE job_key = ?", (url_key,)).fetchone():
+        return None
+    row = conn.execute(
+        "SELECT job_key FROM jobs WHERE url = ? ORDER BY first_seen DESC LIMIT 1", (url,)
+    ).fetchone()
+    return row[0] if row else None
+
+
+def _same_name_job_key(conn: sqlite3.Connection, run: RunRecord) -> str | None:
+    """Key of the one job a URL-less run belongs to (the scan-then-tailor case), else None.
+
+    Joins only when the company and title match exactly one job and that job has no other
+    runs. A job that already has runs may be a different posting, so the run keeps its own
+    pasted key and the possible twin is logged.
+    """
+    if _clean_url(run.jd_url) or not (run.company and run.title):
+        return None
+    match = job_key_by_name(conn, run.company, run.title)
+    own = job_key(None, run.company, run.title, run.jd_text)
+    if len(match.candidates) > 1:
+        _log.warning(
+            json.dumps(
+                {
+                    "event": "ledger_ambiguous_name_match",
+                    "session_id": run.session_id,
+                    "candidate_job_keys": list(match.candidates),
+                    "action": "created_new_pasted_job",
+                }
+            )
+        )
+        return None
+    if match.job_key is None or match.job_key == own:
+        return None
+    other_runs = conn.execute(
+        "SELECT 1 FROM runs WHERE job_key = ? AND session_id != ?", (match.job_key, run.session_id)
+    ).fetchone()
+    if other_runs is None:
+        _log.warning(
+            json.dumps(
+                {
+                    "event": "ledger_run_name_match",
+                    "session_id": run.session_id,
+                    "job_key": match.job_key,
+                }
+            )
+        )
+        return match.job_key
+    _log.warning(
+        json.dumps(
+            {"event": "ledger_possible_twin_job", "matched_key": match.job_key, "own_key": own}
+        )
+    )
+    return None
+
+
+def _run_exists(conn: sqlite3.Connection, session_id: str) -> bool:
+    row = conn.execute("SELECT 1 FROM runs WHERE session_id = ?", (session_id,)).fetchone()
+    return row is not None
+
+
+def _name_form(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def job_key_by_name(conn: sqlite3.Connection, company: str, title: str) -> JobNameMatch:
+    """The same-name job key, plus all candidates when several jobs match."""
+    wanted = (_name_form(company), _name_form(title))
+    rows = conn.execute(
+        "SELECT job_key, company, title FROM jobs WHERE company IS NOT NULL AND title IS NOT NULL"
+    )
+    matches = [key for key, name, role in rows if (_name_form(name), _name_form(role)) == wanted]
+    return JobNameMatch(matches[0] if len(matches) == 1 else None, tuple(matches))
+
+
+def _run_blobs(run: RunRecord) -> tuple[str | None, str, str, str, str]:
+    return (
+        _json_or_null(run.keywords),
+        json.dumps(run.render_warnings),
+        json.dumps(run.scores),
+        json.dumps(run.uncovered_skills),
+        json.dumps(run.outcome),
+    )
+
+
+def _run_values(run: RunRecord, key: str, blobs: tuple[str | None, str, str, str, str]) -> tuple:
+    return (
+        run.session_id,
+        key,
+        run.timestamp,
+        run.jd_text,
+        blobs[0],
+        run.tailored_resume_text,
+        run.pdf_path,
+        run.render_page_count,
+        *blobs[1:],
+    )
 
 
 def _salary_range(keywords: dict | None) -> str | None:
