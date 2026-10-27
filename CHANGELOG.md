@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Tailor handoff: explicit keyword-mapping (not stuffing) guidance — problems first via
+  `key_responsibilities`, map only evidenced keywords, leave unsupported gaps uncovered.
+  KeywordMatch scoring unchanged (#146).
+
 ### Features
 
 - Two-pass keyword extraction: `load_jd` and pass 1 are unchanged. On the tailor route, `submit_keywords` returns `responsibilities_protocol` and asks the host to run it in a fresh subagent, then send the list to the new `submit_responsibilities` tool. Hosts without subagents skip it. `key_responsibilities` come back as short keywords instead of sentences. Scoring is unchanged. kw-eval v3 responsibilities recall: 15% before, about 88–95% after, depending on the model.

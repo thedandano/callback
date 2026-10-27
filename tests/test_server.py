@@ -793,6 +793,20 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
     assert actual == expected
 
 
+def test_tailor_skill_and_eval_prompt_forbid_keyword_stuffing():
+    from callback.server import _TAILOR_INSTRUCTIONS
+    from evals.runner import tailor_prompt
+    from evals.tailor_checks import TailorCase
+
+    skill = Path("skills/tailor-resume/SKILL.md").read_text()
+    assert "Keyword mapping, not stuffing" in _TAILOR_INSTRUCTIONS
+    assert "keyword mapping" in skill.lower()
+    case = TailorCase.from_dir(Path("evals/tailor/jane-doe-backend"))
+    prompt = tailor_prompt(case)
+    assert "Keyword mapping, not stuffing" in prompt
+    assert "keyword-stuff" in prompt
+
+
 def test_submit_keywords_returns_ranked_project_candidates(tmp_path, monkeypatch):
     from callback.server import load_jd, submit_keywords
     from callback.wiki import WikiStore
