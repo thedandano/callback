@@ -755,6 +755,7 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
         "host_task_mentions_pass_2": "data.responsibilities_protocol"
         in result["workflow"]["host_task"],
         "host_task_mentions_sections": "data.sections" in result["workflow"]["host_task"],
+        "host_task_mentions_problems": "problems" in result["workflow"]["host_task"],
         "mentions_project_descriptions": "existing project descriptions or bullets" in instructions,
         "mentions_wiki_source": "source resume or profile wiki" in instructions,
         "rejects_invented_project_facts": "MUST NOT invent project facts" in instructions,
@@ -778,6 +779,7 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
         "responsibilities_protocol": RESPONSIBILITIES_PROTOCOL,
         "host_task_mentions_pass_2": True,
         "host_task_mentions_sections": True,
+        "host_task_mentions_problems": True,
         "mentions_project_descriptions": True,
         "mentions_wiki_source": True,
         "rejects_invented_project_facts": True,
@@ -2315,6 +2317,11 @@ def test_submit_responsibilities_replaces_trims_and_keeps_tailor_pending(
         "next_tool": result["workflow"]["next_tool"],
         "host_task_mentions_submit_keywords_reply": "submit_keywords reply"
         in result["workflow"]["host_task"],
+        "host_task_mentions_problems_first": (
+            "key_responsibilities" in result["workflow"]["host_task"]
+            and "problems" in result["workflow"]["host_task"]
+        ),
+        "host_task_leave_unsupported": "unsupported" in result["workflow"]["host_task"],
         "dropped_log": [e["dropped"] for e in _logged(caplog, "responsibilities_deduped")],
         "tailor_status": tailored["status"],
     }
@@ -2326,6 +2333,8 @@ def test_submit_responsibilities_replaces_trims_and_keeps_tailor_pending(
         "still_before_tailor": True,
         "next_tool": "get_wiki_pages",
         "host_task_mentions_submit_keywords_reply": True,
+        "host_task_mentions_problems_first": True,
+        "host_task_leave_unsupported": True,
         "dropped_log": [["swift", "Agent  Loop"]],
         "tailor_status": "ok",
     }
