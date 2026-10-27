@@ -760,6 +760,11 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
         "rejects_invented_project_facts": "MUST NOT invent project facts" in instructions,
         "rejects_keyword_only_text": "keyword-only text" in instructions,
         "keeps_skills_coverage_dated": "dated experience bullet" in instructions,
+        "mentions_keyword_mapping": "Keyword mapping, not stuffing" in instructions,
+        "mentions_problems_first": "key_responsibilities" in instructions
+        and "problems" in instructions,
+        "prefers_fewer_strong": "fewer strong" in instructions,
+        "leave_unsupported_uncovered": "leave it uncovered" in instructions,
     }
     expected = {
         "next_action": "fetch_wiki_then_tailor",
@@ -778,6 +783,10 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
         "rejects_invented_project_facts": True,
         "rejects_keyword_only_text": True,
         "keeps_skills_coverage_dated": True,
+        "mentions_keyword_mapping": True,
+        "mentions_problems_first": True,
+        "prefers_fewer_strong": True,
+        "leave_unsupported_uncovered": True,
     }
     assert actual == expected
 
