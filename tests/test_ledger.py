@@ -1373,8 +1373,9 @@ def test_find_job_and_record_status_reject_ambiguous_company_title(tmp_path):
                 conn, _update(company="Acme", title="Engineer", status="Seen", url=None)
             )
 
-    keys = found.pop("candidate_job_keys")
-    assert found == {
+    keys = set(found.pop("candidate_job_keys"))
+    company_jobs = {job["job_key"]: job for job in found.pop("company_jobs")}
+    expected = {
         "found": False,
         "company": None,
         "title": None,
@@ -1387,7 +1388,30 @@ def test_find_job_and_record_status_reject_ambiguous_company_title(tmp_path):
         "score_after": None,
         "matched_by": "company_title_ambiguous",
     }
-    assert (set(keys), set(raised.value.candidates)) == ({a, b}, {a, b})
+    expected_jobs = {
+        a: {
+            "job_key": a,
+            "url": "https://a.com/1",
+            "title": "Engineer",
+            "status": "Applied",
+            "status_date": "2026-10-10",
+            "ever_applied": True,
+        },
+        b: {
+            "job_key": b,
+            "url": "https://b.com/2",
+            "title": "Engineer",
+            "status": "Rejected",
+            "status_date": "2026-10-05",
+            "ever_applied": True,
+        },
+    }
+    assert (found, keys, company_jobs, set(raised.value.candidates)) == (
+        expected,
+        {a, b},
+        expected_jobs,
+        {a, b},
+    )
 
 
 def test_record_status_prefers_existing_url_key_over_same_name_pasted_job(tmp_path):
@@ -1460,6 +1484,7 @@ def test_find_job_url_less_lookup_flags_pasted_and_url_twins_as_ambiguous(tmp_pa
         found = ledger.find_job(conn, url=None, company="Acme", title="Engineer")
 
     keys = set(found.pop("candidate_job_keys"))
+    company_jobs = {job["job_key"]: job for job in found.pop("company_jobs")}
     expected = {
         "found": False,
         "company": None,
@@ -1473,7 +1498,25 @@ def test_find_job_url_less_lookup_flags_pasted_and_url_twins_as_ambiguous(tmp_pa
         "score_after": None,
         "matched_by": "company_title_ambiguous",
     }
-    assert (found, keys) == (expected, {url_key, pasted})
+    expected_jobs = {
+        url_key: {
+            "job_key": url_key,
+            "url": "https://a.com/1",
+            "title": "Engineer",
+            "status": "Saved",
+            "status_date": "2026-10-01",
+            "ever_applied": False,
+        },
+        pasted: {
+            "job_key": pasted,
+            "url": None,
+            "title": "Engineer",
+            "status": "Applied",
+            "status_date": "2026-10-02",
+            "ever_applied": True,
+        },
+    }
+    assert (found, keys, company_jobs) == (expected, {url_key, pasted}, expected_jobs)
 
 
 def test_find_job_flags_a_key_match_with_a_different_title(tmp_path):

@@ -1030,7 +1030,9 @@ def _key_match_kind(row: tuple | None, title: str | None) -> str:
     return "key"
 
 
-def _ambiguous_name_result(candidates: tuple[str, ...]) -> dict:
+def _ambiguous_name_result(
+    conn: sqlite3.Connection, company: str | None, candidates: tuple[str, ...]
+) -> dict:
     result: dict[str, object | None] = dict(zip(_FIND_KEYS, (None,) * len(_FIND_KEYS), strict=True))
     result["ever_applied"] = False
     return {
@@ -1038,6 +1040,8 @@ def _ambiguous_name_result(candidates: tuple[str, ...]) -> dict:
         **result,
         "matched_by": "company_title_ambiguous",
         "candidate_job_keys": list(candidates),
+        # Callers need URLs and ever_applied to confirm pasted: keys and the prior-application gate.
+        "company_jobs": _other_company_jobs(conn, company, None, None),
     }
 
 
@@ -1051,9 +1055,10 @@ def find_job(
     spacing. Returns the stored URL, whether any status event proves submission, and the latest
     run's score totals when a run exists. A key match whose stored title differs from `title` or
     is missing reports matched_by='key_title_mismatch'. When more than one job shares the company
-    and title, returns found=False with matched_by='company_title_ambiguous' and
-    candidate_job_keys for the caller to disambiguate — including when a URL-less lookup would
-    otherwise hit a pasted key while a URL-keyed twin exists. When nothing is found, or the match
+    and title, returns found=False with matched_by='company_title_ambiguous',
+    candidate_job_keys, and company_jobs (URLs, statuses, ever_applied) for the caller to
+    disambiguate — including when a URL-less lookup would otherwise hit a pasted key while a
+    URL-keyed twin exists. When nothing is found, or the match
     is weak (not 'key') or a key match whose job has no status event (a run-only job), and a
     company is given,
     company_jobs lists that company's other jobs (up to 20, newest first, the matched job left
@@ -1066,7 +1071,7 @@ def find_job(
     if row is not None and cleaned is None and company and title:
         match = job_key_by_name(conn, company, title)
         if len(match.candidates) > 1:
-            return _ambiguous_name_result(match.candidates)
+            return _ambiguous_name_result(conn, company, match.candidates)
     matched_by = _key_match_kind(row, title) if row else None
     if row is None and cleaned:
         row = _find_row(conn, _BY_STORED_URL, (cleaned,))
@@ -1074,7 +1079,7 @@ def find_job(
     if row is None and company and title:
         match = job_key_by_name(conn, company, title)
         if len(match.candidates) > 1:
-            return _ambiguous_name_result(match.candidates)
+            return _ambiguous_name_result(conn, company, match.candidates)
         if match.job_key is not None:
             row = _find_row(conn, _BY_KEY, (match.job_key,))
             matched_by = "company_title"

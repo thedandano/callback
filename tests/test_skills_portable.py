@@ -85,6 +85,9 @@ def test_ledger_skills_keep_posting_identity_and_edd_contact_details():
         "setup_keeps_legacy_on_skips": (
             "Keep those keys when the CLI lists any `skipped:` lines" in setup_skill
         ),
+        "scan_keeps_legacy_on_skips": (
+            "Remove those keys only when the import prints `skipped 0`" in scan_skill
+        ),
         "export_explains_contact_method": "that prefix is the contact-method field" in export_skill,
     }
     expected = {
@@ -101,6 +104,7 @@ def test_ledger_skills_keep_posting_identity_and_edd_contact_details():
         "setup_removes_legacy_config_after_success": True,
         "apply_confirms_weak_match_before_ever_applied": True,
         "setup_keeps_legacy_on_skips": True,
+        "scan_keeps_legacy_on_skips": True,
         "export_explains_contact_method": True,
     }
 
