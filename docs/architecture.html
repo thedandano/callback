@@ -280,6 +280,16 @@ h1 {
               <span class="route-path">onboard_user · compile_profile · create_story</span>
               <span class="route-note">→ direct JSON</span>
             </div>
+            <div class="route">
+              <span class="method">LEDGER</span>
+              <span class="route-path">find_job · record_status · export_ledger</span>
+              <span class="route-note">→ ledger.db (SQLite)</span>
+            </div>
+            <div class="route">
+              <span class="method">PREFS</span>
+              <span class="route-path">set_search_preferences · get_search_preferences</span>
+              <span class="route-note">→ direct JSON</span>
+            </div>
           </div>
         </div>
       </div>
@@ -380,6 +390,8 @@ h1 {
           <code>render</code>, <code>parse_final</code>, <code>score_final</code>,
           <code>report</code>, and <code>finalize</code> remain graph nodes behind
           <code>submit_keywords</code> and <code>submit_tailor</code>.
+          <code>finalize</code> writes the run (scores, PDF path, tailored text) and its job to
+          the ledger (<code>callback/ledger.py</code>, one SQLite file for every job seen).
         </div>
       </div>
 

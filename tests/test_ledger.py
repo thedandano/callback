@@ -3,6 +3,7 @@ import json
 import logging
 import sqlite3
 from contextlib import closing
+from unittest.mock import patch
 
 import pytest
 
@@ -600,7 +601,7 @@ def test_canonical_timestamp_converts_to_utc_and_keeps_plain_dates(raw, expected
     assert ledger.canonical_timestamp(raw) == expected
 
 
-@pytest.mark.parametrize("raw", ["oops", "2026-02-31", "2026-00-01"])
+@pytest.mark.parametrize("raw", ["oops", "2026-02-31", "2026-00-01", "0001-01-01T00:00:00+23:59"])
 def test_canonical_timestamp_warns_on_malformed_text(caplog, raw):
     with caplog.at_level("WARNING", logger="callback.ledger"):
         result = ledger.canonical_timestamp(raw)
@@ -813,3 +814,834 @@ def test_url_run_joins_pasted_job_that_already_carries_that_url(tmp_path):
         "runs": [("s1", pasted)],
         "jobs": [(pasted, "https://jobs.example.com/a")],
     }
+
+
+def _status(conn, key, status, day):
+    ledger.add_status(conn, job_key=key, status=status, recorded_at=day, note=None, source="t")
+
+
+def test_export_rows_shows_latest_status_and_latest_run_per_job(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_run(conn, _run("s1", pdf="/a.pdf"))
+        key = ledger.upsert_job(
+            conn, url="https://jobs.example.com/a", company=None, title=None, seen_at="2026-10-01"
+        )
+        ledger.add_status(
+            conn, job_key=key, status="Applied", recorded_at="2026-10-02", note="n1", source="t"
+        )
+        _status(conn, key, "Rejected", "2026-10-09")
+        other = ledger.upsert_job(
+            conn, url="https://b.com/1", company="B", title="Dev", seen_at="2026-10-03"
+        )
+        _status(conn, other, "Applied - confirmed", "2026-10-03")
+
+        everything = ledger.export_rows(conn)
+        applied_since = ledger.export_rows(conn, status_prefix="Applied", since="2026-10-03")
+        applied_from_oct_1 = ledger.export_rows(conn, status_prefix="Applied", since="2026-10-01")
+
+    acme = {
+        "Company": "Acme",
+        "Title": "Engineer",
+        "URL": "https://jobs.example.com/a",
+        "Salary range": None,
+        "Status": "Rejected",
+        "Status date": "2026-10-09",
+        "Notes": None,
+        "Score before": 50.0,
+        "Score after": 70.0,
+        "Resume PDF": "/a.pdf",
+    }
+    b = {
+        "Company": "B",
+        "Title": "Dev",
+        "URL": "https://b.com/1",
+        "Salary range": None,
+        "Status": "Applied - confirmed",
+        "Status date": "2026-10-03",
+        "Notes": None,
+        "Score before": None,
+        "Score after": None,
+        "Resume PDF": None,
+    }
+    assert (everything, applied_since, applied_from_oct_1) == ([acme, b], [b], [acme, b])
+
+
+def test_export_rows_orders_run_timestamps_by_instant_not_text(tmp_path):
+    earlier = _run("earlier").model_copy(
+        update={
+            "timestamp": "2026-10-01T18:00:00+00:00",
+            "pdf_path": "/earlier.pdf",
+            "scores": {"initial": {"total": 10.0}, "final": {"total": 20.0}},
+        }
+    )
+    later = _run("later").model_copy(
+        update={
+            "timestamp": "2026-10-01T12:00:00-07:00",
+            "pdf_path": "/later.pdf",
+            "scores": {"initial": {"total": 30.0}, "final": {"total": 40.0}},
+        }
+    )
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_run(conn, earlier)
+        ledger.record_run(conn, later)
+        row = ledger.export_rows(conn)[0]
+    assert (row["Score before"], row["Score after"], row["Resume PDF"]) == (
+        30.0,
+        40.0,
+        "/later.pdf",
+    )
+
+
+def test_upsert_job_strips_metadata_and_replaces_existing_blanks(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        key = ledger.upsert_job(
+            conn,
+            url="https://a.com/1",
+            company="  Acme  ",
+            title="  Engineer  ",
+            salary_range="  $100k  ",
+            seen_at="2026-10-01",
+        )
+        conn.execute(
+            "UPDATE jobs SET company = '', title = '', salary_range = '' WHERE job_key = ?", (key,)
+        )
+        ledger.upsert_job(
+            conn,
+            url="https://a.com/1",
+            company="Beta",
+            title="Developer",
+            salary_range="$120k",
+            seen_at="2026-10-02",
+        )
+        row = conn.execute(
+            "SELECT company, title, salary_range FROM jobs WHERE job_key = ?", (key,)
+        ).fetchone()
+    assert row == ("Beta", "Developer", "$120k")
+
+
+def test_find_job_returns_latest_status_or_not_found(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        key = ledger.upsert_job(
+            conn, url="https://a.com/1", company="A", title="Dev", seen_at="2026-10-01"
+        )
+        _status(conn, key, "Applied", "2026-10-01")
+        _status(conn, key, "Rejected", "2026-10-05")
+        found = ledger.find_job(conn, url="https://a.com/1/?utm_source=x", company=None, title=None)
+        by_name = ledger.find_job(conn, url="https://other.com/9", company="a", title=" dev ")
+        missing = ledger.find_job(conn, url="https://a.com/2", company=None, title=None)
+        half_name = ledger.find_job(conn, url="https://a.com/3", company="A", title=None)
+
+    hit = {"found": True, "company": "A", "title": "Dev", "status": "Rejected"}
+    hit = {
+        **hit,
+        "status_date": "2026-10-05",
+        "job_key": "https://a.com/1",
+        "score_before": None,
+        "score_after": None,
+    }
+    none = {
+        "found": False,
+        "company": None,
+        "title": None,
+        "status": None,
+        "status_date": None,
+        "job_key": None,
+        "score_before": None,
+        "score_after": None,
+    }
+    assert (found, by_name, missing, half_name) == (
+        {**hit, "matched_by": "key"},
+        {**hit, "matched_by": "company_title"},
+        {**none, "matched_by": None},
+        {**none, "matched_by": None},
+    )
+
+
+def test_find_job_normalizes_unicode_and_whitespace_and_returns_run_scores(tmp_path):
+    run = _run().model_copy(
+        update={
+            "keywords": {"company": "MÜNCHEN GmbH", "title": "Senior  Engineer"},
+            "scores": {"initial": {"total": 50.0}, "final": {"total": 70.0}},
+        }
+    )
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_run(conn, run)
+        found = ledger.find_job(
+            conn,
+            url="https://other.example/job",
+            company="münchen gmbh",
+            title="Senior Engineer",
+        )
+    assert found == {
+        "found": True,
+        "company": "MÜNCHEN GmbH",
+        "title": "Senior  Engineer",
+        "status": None,
+        "status_date": None,
+        "job_key": "https://jobs.example.com/a",
+        "score_before": 50.0,
+        "score_after": 70.0,
+        "matched_by": "company_title",
+    }
+
+
+def test_spreadsheet_safe_defuses_formulas_only():
+    row = {
+        "a": "=HYPERLINK(1)",
+        "b": "Applied - confirmed",
+        "c": "-5",
+        "d": "\tx",
+        "e": 3.5,
+        "f": None,
+        "g": "@x",
+        "h": "+1",
+        "i": "\rx",
+        "j": "\nx",
+        "k": " =1+1",
+        "l": "\xa0=SUM(1)",
+    }
+    assert ledger.spreadsheet_safe(row) == {
+        "a": "'=HYPERLINK(1)",
+        "b": "Applied - confirmed",
+        "c": "'-5",
+        "d": "'\tx",
+        "e": 3.5,
+        "f": None,
+        "g": "'@x",
+        "h": "'+1",
+        "i": "'\rx",
+        "j": "'\nx",
+        "k": "'=1+1",
+        "l": "'=SUM(1)",
+    }
+
+
+def test_export_rows_status_filter_ignores_empty_and_escapes_wildcards(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        for url, status in (("https://a.com/1", "Applied"), ("https://a.com/2", "A_plied")):
+            key = ledger.upsert_job(conn, url=url, company="C", title=url, seen_at="2026-10-01")
+            _status(conn, key, status, "2026-10-01")
+        bare = ledger.upsert_job(
+            conn, url="https://a.com/3", company="C", title="none", seen_at="2026-10-01"
+        )
+        everything = ledger.export_rows(conn, status_prefix="")
+        underscore = ledger.export_rows(conn, status_prefix="A_p")
+        percent = ledger.export_rows(conn, status_prefix="%")
+
+    assert (
+        [r["URL"] for r in everything],
+        [r["URL"] for r in underscore],
+        percent,
+        bare,
+    ) == (
+        ["https://a.com/1", "https://a.com/2", "https://a.com/3"],
+        ["https://a.com/2"],
+        [],
+        "https://a.com/3",
+    )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("  https://a.com/1 ", "https://a.com/1"),
+        ("HTTP://a.com/1", "HTTP://a.com/1"),
+        ("Gmail thread: Jane", None),
+        ("linkedin.com", None),
+        ("https://a.com:bad", None),
+        ("https://a.com:99999", None),
+        ("  ", None),
+        (None, None),
+    ],
+)
+def test_url_or_none_accepts_only_http_urls(value, expected):
+    assert ledger.url_or_none(value) == expected
+
+
+def _update(**fields) -> ledger.StatusUpdate:
+    base = {"status": "Applied", "recorded_at": "2026-10-01", "source": "t"}
+    return ledger.StatusUpdate(**{**base, **fields})
+
+
+def test_record_status_writes_job_and_event_in_one_transaction(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        with (
+            patch.object(ledger, "_insert_status", side_effect=sqlite3.OperationalError("locked")),
+            pytest.raises(sqlite3.OperationalError),
+        ):
+            ledger.record_status(conn, _update(url="https://a.com/1", company="A", title="E"))
+        jobs = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()
+
+    assert jobs == (0,)
+
+
+def test_export_events_filters_on_the_event_itself_newest_first(tmp_path):
+    events = [("Applied", "2026-09-20"), ("Applied", "2026-10-01"), ("Rejected", "2026-10-10")]
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        for i, (status, date) in enumerate(events):
+            url = f"https://a.com/{i % 2}"
+            ledger.record_status(
+                conn, _update(status=status, recorded_at=date, url=url, company="A", title="E")
+            )
+        applied = ledger.export_events(conn, status_prefix="applied", since="2026-09-25")
+        everything = ledger.export_events(conn)
+
+    assert (applied, [row["Date"] for row in everything]) == (
+        [
+            {
+                "Date": "2026-10-01",
+                "Company": "A",
+                "Title": "E",
+                "URL": "https://a.com/1",
+                "Status": "Applied",
+                "Notes": None,
+                "Source": "t",
+            }
+        ],
+        ["2026-10-10", "2026-10-01", "2026-09-20"],
+    )
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("2026-10-01T12:00:00-07:00", "2026-10-01T19:00:00+00:00"),
+        ("2026-10-01T12:00:00", "2026-10-01T12:00:00+00:00"),
+        ("2026-10-01T12:00:00.250000+00:00", "2026-10-01T12:00:00.250000+00:00"),
+        ("20261001T120000+00:00", "2026-10-01T12:00:00+00:00"),
+        ("2026-W40-4T12:00:00+00:00", "2026-10-01T12:00:00+00:00"),
+    ],
+)
+def test_canonical_timestamp_is_utc_iso(raw, expected):
+    assert ledger.canonical_timestamp(raw) == expected
+
+
+def test_canonical_timestamp_keeps_unparseable_value_and_warns(caplog):
+    with caplog.at_level(logging.WARNING, logger="callback.ledger"):
+        result = ledger.canonical_timestamp("not a time")
+    assert (result, [json.loads(r.message)["event"] for r in caplog.records]) == (
+        "not a time",
+        ["ledger_timestamp_unparsed"],
+    )
+
+
+def test_runs_with_basic_and_week_date_timestamps_order_by_instant(tmp_path):
+    basic = _run("basic").model_copy(
+        update={
+            "timestamp": "20261001T120000+00:00",
+            "pdf_path": "/basic.pdf",
+            "scores": {"initial": {"total": 1.0}, "final": {"total": 2.0}},
+        }
+    )
+    week = _run("week").model_copy(
+        update={
+            "timestamp": "2026-W40-4T13:00:00+00:00",
+            "pdf_path": "/week.pdf",
+            "scores": {"initial": {"total": 3.0}, "final": {"total": 4.0}},
+        }
+    )
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_run(conn, basic)
+        ledger.record_run(conn, week)
+        stored = conn.execute("SELECT finalized_at FROM runs ORDER BY session_id").fetchall()
+        row = ledger.export_rows(conn)[0]
+        found = ledger.find_job(conn, url="https://jobs.example.com/a", company=None, title=None)
+    assert (stored, row["Resume PDF"], (found["score_before"], found["score_after"])) == (
+        [("2026-10-01T12:00:00+00:00",), ("2026-10-01T13:00:00+00:00",)],
+        "/week.pdf",
+        (3.0, 4.0),
+    )
+
+
+def test_imported_run_stores_canonical_timestamp(tmp_path):
+    run = _run("imp").model_copy(update={"timestamp": "2026-10-01T12:00:00-07:00"})
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_imported_run_if_absent(conn, run)
+        stored = conn.execute("SELECT finalized_at FROM runs").fetchone()
+    assert stored == ("2026-10-01T19:00:00+00:00",)
+
+
+def test_record_status_without_url_reuses_job_matching_company_and_title(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        for day, company in (("2026-10-01", "MÜNCHEN GmbH"), ("2026-10-02", "münchen gmbh")):
+            ledger.record_status(conn, _update(recorded_at=day, company=company, title="Engineer"))
+        jobs = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()
+        events = conn.execute("SELECT COUNT(*) FROM status_events").fetchone()
+    assert (jobs, events) == ((1,), (2,))
+
+
+def test_status_filter_is_unicode_case_insensitive_prefix(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(
+            conn, _update(status="Überprüft", url="https://a.com/1", company="A", title="E")
+        )
+        rows = ledger.export_rows(conn, status_prefix="über")
+        events = ledger.export_events(conn, status_prefix="über")
+        none = ledger.export_events(conn, status_prefix="x_")
+    assert ([row["Status"] for row in rows], [e["Status"] for e in events], none) == (
+        ["Überprüft"],
+        ["Überprüft"],
+        [],
+    )
+
+
+def test_export_contacts_keeps_contact_notes_and_applications_only(tmp_path):
+    events = [
+        ("Applied - confirmed", None),
+        ("already applied", None),
+        ("Seen", "Contact method: phone | Notes: called"),
+        ("Seen", "just browsing"),
+        ("Rejected", None),
+        ("Needs review - not applied", None),
+        ("Applied", "Not reportable | Contact: Email"),
+        ("Applied", "  NOT REPORTABLE  "),
+        ("Seen", "Contact method: Email | Not reportable"),
+    ]
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        for i, (status, note) in enumerate(events):
+            ledger.record_status(
+                conn,
+                _update(
+                    status=status,
+                    note=note,
+                    recorded_at=f"2026-10-{i + 1:02d}",
+                    url=f"https://a.com/{i}",
+                    company="A",
+                    title="E",
+                ),
+            )
+        rows = ledger.export_contacts(conn)
+    assert [(row["Status"], row["Notes"]) for row in rows] == [
+        ("Seen", "Contact method: phone | Notes: called"),
+        ("already applied", None),
+        ("Applied - confirmed", None),
+    ]
+
+
+def test_record_status_with_url_reuses_same_name_job_without_url(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(
+            conn, _update(company="Acme", title="Engineer", status="Applied", url=None)
+        )
+        ledger.record_status(
+            conn,
+            _update(
+                company="Acme",
+                title="Engineer",
+                status="Rejected",
+                url="https://jobs.acme.com/1",
+                recorded_at="2026-10-02",
+            ),
+        )
+        jobs = [tuple(r) for r in conn.execute("SELECT job_key, url FROM jobs")]
+        by_url = ledger.find_job(conn, url="https://jobs.acme.com/1", company=None, title=None)
+        by_name = ledger.find_job(conn, url="https://other.com/9", company="Acme", title="Engineer")
+
+    pasted = ledger.job_key(None, "Acme", "Engineer")
+    assert (jobs, by_url["job_key"], by_name["job_key"], by_url["status"], by_name["status"]) == (
+        [(pasted, "https://jobs.acme.com/1")],
+        pasted,
+        pasted,
+        "Rejected",
+        "Rejected",
+    )
+
+
+def test_record_run_with_url_joins_same_name_pasted_job(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(
+            conn, _update(company="Acme", title="Engineer", status="Applied", url=None)
+        )
+        ledger.record_run(
+            conn,
+            _run().model_copy(
+                update={
+                    "jd_url": "https://jobs.acme.com/1",
+                    "keywords": {"company": "Acme", "title": "Engineer"},
+                }
+            ),
+        )
+        jobs = [tuple(r) for r in conn.execute("SELECT job_key, url FROM jobs")]
+        found = ledger.find_job(conn, url="https://jobs.acme.com/1", company=None, title=None)
+
+    pasted = ledger.job_key(None, "Acme", "Engineer")
+    assert (jobs, found["job_key"], found["status"], found["score_after"]) == (
+        [(pasted, "https://jobs.acme.com/1")],
+        pasted,
+        "Applied",
+        70.0,
+    )
+
+
+def test_find_job_and_record_status_reject_ambiguous_company_title(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        a = ledger.upsert_job(
+            conn, url="https://a.com/1", company="Acme", title="Engineer", seen_at="2026-10-10"
+        )
+        b = ledger.upsert_job(
+            conn, url="https://b.com/2", company="Acme", title="Engineer", seen_at="2026-10-05"
+        )
+        _status(conn, a, "Applied", "2026-10-10")
+        _status(conn, b, "Rejected", "2026-10-05")
+        found = ledger.find_job(conn, url="https://other.com/9", company="Acme", title="Engineer")
+        with pytest.raises(ledger.AmbiguousJobMatchError) as raised:
+            ledger.record_status(
+                conn, _update(company="Acme", title="Engineer", status="Seen", url=None)
+            )
+
+    keys = found.pop("candidate_job_keys")
+    assert found == {
+        "found": False,
+        "company": None,
+        "title": None,
+        "status": None,
+        "status_date": None,
+        "job_key": None,
+        "score_before": None,
+        "score_after": None,
+        "matched_by": "company_title_ambiguous",
+    }
+    assert (set(keys), set(raised.value.candidates)) == ({a, b}, {a, b})
+
+
+def test_record_status_prefers_existing_url_key_over_same_name_pasted_job(tmp_path):
+    url = "https://jobs.acme.com/1"
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(conn, _update(url=url, company=None, title=None, status="Saved"))
+        pasted = ledger.upsert_job(
+            conn, url=None, company="Acme", title="Engineer", seen_at="2026-10-01"
+        )
+        ledger.record_status(
+            conn,
+            _update(
+                url=url,
+                company="Acme",
+                title="Engineer",
+                status="Applied",
+                recorded_at="2026-10-02",
+            ),
+        )
+        jobs = [tuple(r) for r in conn.execute("SELECT job_key, url FROM jobs ORDER BY job_key")]
+        found = ledger.find_job(conn, url=url, company=None, title=None)
+
+    assert (jobs, found["job_key"], found["status"]) == (
+        [(url, url), (pasted, None)],
+        url,
+        "Applied",
+    )
+
+
+def test_record_run_prefers_existing_url_key_over_same_name_pasted_job(tmp_path):
+    url = "https://jobs.acme.com/1"
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(conn, _update(url=url, company=None, title=None, status="Saved"))
+        pasted = ledger.upsert_job(
+            conn, url=None, company="Acme", title="Engineer", seen_at="2026-10-01"
+        )
+        ledger.record_run(
+            conn,
+            _run().model_copy(
+                update={
+                    "jd_url": url,
+                    "keywords": {"company": "Acme", "title": "Engineer"},
+                    "scores": {"initial": {"total": 50.0}, "final": {"total": 70.0}},
+                }
+            ),
+        )
+        jobs = [tuple(r) for r in conn.execute("SELECT job_key, url FROM jobs ORDER BY job_key")]
+        runs = [tuple(r) for r in conn.execute("SELECT session_id, job_key FROM runs")]
+        found = ledger.find_job(conn, url=url, company=None, title=None)
+
+    assert (jobs, runs, found["job_key"], found["status"], found["score_after"]) == (
+        [(url, url), (pasted, None)],
+        [("s1", url)],
+        url,
+        "Saved",
+        70.0,
+    )
+
+
+def test_find_job_url_less_lookup_flags_pasted_and_url_twins_as_ambiguous(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        url_key = ledger.upsert_job(
+            conn, url="https://a.com/1", company="Acme", title="Engineer", seen_at="2026-10-01"
+        )
+        pasted = ledger.upsert_job(
+            conn, url=None, company="Acme", title="Engineer", seen_at="2026-10-02"
+        )
+        _status(conn, url_key, "Saved", "2026-10-01")
+        _status(conn, pasted, "Applied", "2026-10-02")
+        found = ledger.find_job(conn, url=None, company="Acme", title="Engineer")
+
+    keys = set(found.pop("candidate_job_keys"))
+    expected = {
+        "found": False,
+        "company": None,
+        "title": None,
+        "status": None,
+        "status_date": None,
+        "job_key": None,
+        "score_before": None,
+        "score_after": None,
+        "matched_by": "company_title_ambiguous",
+    }
+    assert (found, keys) == (expected, {url_key, pasted})
+
+
+def test_find_job_flags_a_key_match_with_a_different_title(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.upsert_job(
+            conn,
+            url="https://acme.com/careers#backend",
+            company="Acme",
+            title="Backend Engineer",
+            seen_at="2026-10-01",
+        )
+        kinds = [
+            ledger.find_job(
+                conn, url="https://acme.com/careers#designer", company="Acme", title=title
+            )["matched_by"]
+            for title in ("Product Designer", "backend  ENGINEER", None)
+        ]
+    assert kinds == ["key_title_mismatch", "key", "key"]
+
+
+def test_find_job_flags_a_key_match_with_a_missing_stored_title(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.upsert_job(
+            conn,
+            url="https://acme.com/careers#unlabeled",
+            company="Acme",
+            title=None,
+            seen_at="2026-10-01",
+        )
+        found = ledger.find_job(
+            conn,
+            url="https://acme.com/careers#backend",
+            company="Acme",
+            title="Backend Engineer",
+        )
+    assert found["matched_by"] == "key_title_mismatch"
+
+
+def test_record_status_by_job_key_ignores_a_placeholder_salary(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        key = ledger.upsert_job(
+            conn, url="https://a.com/1", company="A", title="E", seen_at="2026-10-01"
+        )
+        for salary in ("Not listed", "$150K-$180K"):
+            ledger.record_status(
+                conn,
+                _update(job_key=key, salary_range=salary, status="Seen", recorded_at="2026-10-02"),
+            )
+        stored = conn.execute("SELECT salary_range FROM jobs").fetchall()
+    assert stored == [("$150K-$180K",)]
+
+
+def test_record_status_by_pasted_job_key_fills_blank_job_metadata(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        key = ledger.job_key(None, "Acme", "Engineer")
+        ledger.record_status(
+            conn,
+            _update(company="Acme", title="Engineer", recorded_at="2026-10-01"),
+        )
+        ledger.record_status(
+            conn,
+            _update(
+                job_key=key,
+                url="https://jobs.acme.com/engineer/",
+                company="Acme",
+                title="Engineer",
+                recorded_at="2026-10-02",
+            ),
+        )
+        stored = conn.execute(
+            "SELECT job_key, url, company, title FROM jobs WHERE job_key = ?", (key,)
+        ).fetchone()
+    assert stored == (key, "https://jobs.acme.com/engineer", "Acme", "Engineer")
+
+
+def test_find_job_by_url_finds_a_pasted_job_that_later_got_that_url(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        key = ledger.upsert_job(conn, url=None, company="Acme", title="Eng", seen_at="2026-10-01")
+        ledger.record_status(
+            conn,
+            _update(job_key=key, url="https://acme.com/jobs/9", status="Seen"),
+        )
+        found = ledger.find_job(
+            conn, url="https://acme.com/jobs/9/?utm_source=x", company=None, title=None
+        )
+    assert (found["found"], found["job_key"], found["matched_by"]) == (True, key, "key")
+
+
+def test_record_status_by_url_lands_on_the_pasted_job_that_has_that_url(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        key = ledger.upsert_job(conn, url=None, company="Acme", title="Eng", seen_at="2026-10-01")
+        ledger.record_status(
+            conn, _update(job_key=key, url="https://acme.com/jobs/9", status="Seen")
+        )
+        ledger.record_status(conn, _update(url="https://acme.com/jobs/9", status="Applied"))
+        rows = conn.execute("SELECT job_key, status FROM status_events ORDER BY id").fetchall()
+    assert rows == [(key, "Seen"), (key, "Applied")]
+
+
+def test_run_after_status_url_assignment_uses_the_pasted_job(tmp_path):
+    url = "https://jobs.acme.com/engineer"
+    pasted_key = "pasted:acme-engineer-b4083d9b"
+    run = _run(url=url)
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(conn, _update(company="Acme", title="Engineer", status="Seen"))
+        ledger.record_status(
+            conn,
+            _update(job_key=pasted_key, url=url, status="Applied", recorded_at="2026-10-02"),
+        )
+        ledger.record_run(conn, run)
+        jobs = conn.execute("SELECT job_key, url FROM jobs").fetchall()
+        runs = conn.execute("SELECT job_key FROM runs").fetchall()
+        found = ledger.find_job(conn, url=url, company=None, title=None)
+
+    assert (jobs, runs, found) == (
+        [(pasted_key, url)],
+        [(pasted_key,)],
+        {
+            "found": True,
+            "company": "Acme",
+            "title": "Engineer",
+            "status": "Applied",
+            "status_date": "2026-10-02",
+            "job_key": pasted_key,
+            "score_before": 50.0,
+            "score_after": 70.0,
+            "matched_by": "key",
+        },
+    )
+
+
+def test_status_url_assignment_moves_url_job_runs_to_the_pasted_job(tmp_path):
+    url = "https://jobs.acme.com/engineer"
+    pasted_key = "pasted:acme-engineer-b4083d9b"
+    run = _run(url=url)
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(conn, _update(company="Acme", title="Engineer", status="Seen"))
+        ledger.record_run(conn, run)
+        ledger.record_status(
+            conn,
+            _update(job_key=pasted_key, url=url, status="Applied", recorded_at="2026-10-02"),
+        )
+        jobs = conn.execute("SELECT job_key, url FROM jobs").fetchall()
+        runs = conn.execute("SELECT job_key FROM runs").fetchall()
+        found = ledger.find_job(conn, url=url, company=None, title=None)
+
+    assert (jobs, runs, found) == (
+        [(pasted_key, url)],
+        [(pasted_key,)],
+        {
+            "found": True,
+            "company": "Acme",
+            "title": "Engineer",
+            "status": "Applied",
+            "status_date": "2026-10-02",
+            "job_key": pasted_key,
+            "score_before": 50.0,
+            "score_after": 70.0,
+            "matched_by": "key",
+        },
+    )
+
+
+def test_status_url_assignment_keeps_a_different_url_job_and_its_runs(tmp_path):
+    target_url = "https://jobs.acme.com/engineer-a"
+    run_url = "https://jobs.acme.com/engineer-b"
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        pasted_key = ledger.upsert_job(
+            conn,
+            url=None,
+            company="Acme",
+            title="Engineer",
+            seen_at="2026-10-01",
+        )
+        ledger.record_status(
+            conn,
+            _update(
+                job_key=pasted_key,
+                url=target_url,
+                company="Acme",
+                title="Engineer",
+                status="Seen",
+            ),
+        )
+        ledger.record_run(conn, _run(url=run_url))
+        ledger.record_status(
+            conn,
+            _update(job_key=pasted_key, url=run_url, status="Applied", recorded_at="2026-10-02"),
+        )
+        jobs = conn.execute("SELECT job_key, url FROM jobs ORDER BY job_key").fetchall()
+        runs = conn.execute("SELECT job_key FROM runs ORDER BY job_key").fetchall()
+
+    assert (jobs, runs) == (
+        [(run_url, run_url), (pasted_key, target_url)],
+        [(run_url,)],
+    )
+
+
+def test_status_url_assignment_keeps_the_url_jobs_salary_range(tmp_path):
+    url = "https://jobs.acme.com/engineer"
+    pasted_key = "pasted:acme-engineer-b4083d9b"
+    run = _run(url=url).model_copy(
+        update={
+            "keywords": {
+                "company": "Acme",
+                "title": "Engineer",
+                "pay_range_min": 150000.0,
+                "pay_range_max": 200000.0,
+            }
+        }
+    )
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(conn, _update(company="Acme", title="Engineer", status="Seen"))
+        ledger.record_run(conn, run)
+        ledger.record_status(conn, _update(job_key=pasted_key, url=url, status="Applied"))
+        jobs = conn.execute("SELECT job_key, salary_range FROM jobs").fetchall()
+    assert jobs == [(pasted_key, "150000-200000")]
+
+
+def test_status_url_assignment_keeps_job_with_a_different_url(tmp_path):
+    url = "https://jobs.acme.com/engineer"
+    other = "https://jobs.acme.com/other"
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(conn, _update(url=other, company="Acme", title="Engineer"))
+        ledger.record_status(conn, _update(url=url, status="Saved", recorded_at="2026-10-02"))
+        ledger.record_status(
+            conn,
+            _update(job_key=other, url=url, status="Applied", recorded_at="2026-10-03"),
+        )
+        jobs = conn.execute("SELECT job_key, url FROM jobs ORDER BY job_key").fetchall()
+
+    assert jobs == [(url, url), (other, other)]
+
+
+def test_status_url_assignment_moves_url_job_status_events(tmp_path):
+    url = "https://jobs.acme.com/engineer"
+    pasted_key = "pasted:acme-engineer-b4083d9b"
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        ledger.record_status(conn, _update(company="Acme", title="Engineer", status="Seen"))
+        ledger.record_status(conn, _update(url=url, status="Saved", recorded_at="2026-10-02"))
+        ledger.record_status(
+            conn,
+            _update(job_key=pasted_key, url=url, status="Applied", recorded_at="2026-10-03"),
+        )
+        jobs = conn.execute("SELECT job_key FROM jobs").fetchall()
+        found = ledger.find_job(conn, url=url, company=None, title=None)
+
+    assert (jobs, found["status"]) == ([(pasted_key,)], "Applied")
+
+
+def test_latest_run_keeps_microsecond_order(tmp_path):
+    with closing(ledger.connect(tmp_path / "l.db")) as conn:
+        for session, stamp, pdf in [
+            ("s1", "2026-10-12T12:00:00.000001+00:00", "/old.pdf"),
+            ("s2", "2026-10-12T12:00:00.000100+00:00", "/new.pdf"),
+        ]:
+            ledger.record_run(conn, _run(session, pdf=pdf).model_copy(update={"timestamp": stamp}))
+        pdfs = [row["Resume PDF"] for row in ledger.export_rows(conn)]
+    assert pdfs == ["/new.pdf"]
