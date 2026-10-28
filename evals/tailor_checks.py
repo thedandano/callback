@@ -34,7 +34,10 @@ BANNED_TERMS = (
     "passionate",
     "driven",
     "results-oriented",
+    "results-driven",
     "proven track record",
+    "cross-functional",
+    "operational excellence",
 )
 DEFAULT_GROUNDING_RATIO = 85
 _TOKEN_RE = re.compile(r"[A-Za-z0-9$%+#./!?:-]+")

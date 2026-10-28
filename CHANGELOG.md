@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Readability: treat AI buzzphrases (spearheaded, cross-functional, operational
+  excellence, results-driven, proven track record, results-oriented) as filler
+  (−2 each, existing rule). Score-changing for resumes that use those phrases (#147).
 - Tailor handoff: explicit keyword-mapping (not stuffing) guidance — problems first via
   `key_responsibilities`, map only evidenced keywords, leave unsupported gaps uncovered.
   KeywordMatch scoring unchanged (#146).

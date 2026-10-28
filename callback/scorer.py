@@ -86,6 +86,13 @@ class ScoringConfig:
             "familiar with",
             "exposure to",
             "knowledge of",
+            # AI / buzzphrase fillers (issue #147) — same −2/hit Readability rule
+            "spearheaded",
+            "cross-functional",
+            "operational excellence",
+            "results-driven",
+            "proven track record",
+            "results-oriented",
         ]
     )
     readability_penalty_per_filler: float = 2.0

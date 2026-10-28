@@ -766,6 +766,7 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
         and "problems" in instructions,
         "prefers_fewer_strong": "fewer strong" in instructions,
         "leave_unsupported_uncovered": "leave it uncovered" in instructions,
+        "mentions_facts_first": "without changing any facts" in instructions,
     }
     expected = {
         "next_action": "fetch_wiki_then_tailor",
@@ -789,6 +790,7 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
         "mentions_problems_first": True,
         "prefers_fewer_strong": True,
         "leave_unsupported_uncovered": True,
+        "mentions_facts_first": True,
     }
     assert actual == expected
 
@@ -813,6 +815,17 @@ def test_tailor_skill_and_eval_prompt_forbid_keyword_stuffing():
     prompt = tailor_prompt(case)
     assert "Keyword mapping, not stuffing" in prompt
     assert "keyword-stuff" in prompt
+
+
+def test_tailor_banned_lists_align_with_readability_filler_phrases():
+    from callback.server import _TAILOR_INSTRUCTIONS
+    from evals.tailor_checks import BANNED_TERMS
+
+    skill = Path("skills/tailor-resume/SKILL.md").read_text().lower()
+    for term in ("cross-functional", "operational excellence", "results-driven"):
+        assert term in _TAILOR_INSTRUCTIONS.lower()
+        assert term in skill
+        assert term in BANNED_TERMS
 
 
 def test_submit_keywords_returns_ranked_project_candidates(tmp_path, monkeypatch):
