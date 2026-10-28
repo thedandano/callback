@@ -7,6 +7,7 @@ import pytest
 
 from callback import scorer
 from callback.scorer import (
+    DEFAULT_SCORING_CONFIG,
     ATSHeaderDiagnostic,
     KeywordResult,
     ScoringConfig,
@@ -370,6 +371,55 @@ class TestReadabilityScoring:
         cfg = ScoringConfig()
         expected = max(cfg.weights.readability - 3 * cfg.readability_penalty_per_filler, 0.0)
         assert result.breakdown.readability == pytest.approx(expected)
+
+    def test_ai_buzzphrase_fillers_detected(self):
+        resume = (
+            "Spearheaded cross-functional initiatives to drive operational excellence. "
+            "Results-driven professional with a proven track record of success. "
+            "Results-oriented leader."
+        )
+        result = score(resume, required=[], preferred=[])
+        for phrase in (
+            "spearheaded",
+            "cross-functional",
+            "operational excellence",
+            "results-driven",
+            "proven track record",
+            "results-oriented",
+        ):
+            assert phrase in result.filler_phrases, phrase
+
+    def test_ai_buzzphrase_fillers_penalize_readability(self):
+        cfg = DEFAULT_SCORING_CONFIG
+        resume = "Spearheaded delivery of operational excellence with a proven track record."
+        result = score(resume, required=[], preferred=[])
+        # three distinct phrases: spearheaded, operational excellence, proven track record
+        expected_readability = max(
+            cfg.weights.readability - 3 * cfg.readability_penalty_per_filler,
+            0.0,
+        )
+        expected = {
+            "readability": pytest.approx(expected_readability),
+            "filler_phrases": {
+                "spearheaded",
+                "operational excellence",
+                "proven track record",
+            },
+        }
+        actual = {
+            "readability": result.breakdown.readability,
+            "filler_phrases": set(result.filler_phrases),
+        }
+        assert actual == expected
+
+    def test_event_driven_not_flagged_as_results_driven(self):
+        result = score(
+            "Built event-driven pipelines and a data-driven dashboard.",
+            required=[],
+            preferred=[],
+        )
+        assert "results-driven" not in result.filler_phrases
+        assert "driven" not in result.filler_phrases
 
 
 class TestExperienceScoring:
