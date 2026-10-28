@@ -817,6 +817,17 @@ def test_tailor_skill_and_eval_prompt_forbid_keyword_stuffing():
     assert "keyword-stuff" in prompt
 
 
+def test_tailor_banned_lists_align_with_readability_filler_phrases():
+    from callback.server import _TAILOR_INSTRUCTIONS
+    from evals.tailor_checks import BANNED_TERMS
+
+    skill = Path("skills/tailor-resume/SKILL.md").read_text().lower()
+    for term in ("cross-functional", "operational excellence", "results-driven"):
+        assert term in _TAILOR_INSTRUCTIONS.lower()
+        assert term in skill
+        assert term in BANNED_TERMS
+
+
 def test_submit_keywords_returns_ranked_project_candidates(tmp_path, monkeypatch):
     from callback.server import load_jd, submit_keywords
     from callback.wiki import WikiStore

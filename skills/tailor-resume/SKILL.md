@@ -42,7 +42,7 @@ This is a one-job workflow. Do not scan Gmail, Google Jobs, FAANG careers, the j
 - Rewrite bullets only when the mechanism and impact are supported by the resume or fetched wiki stories.
 - If no real experience backs a keyword, leave it uncovered — delete the suggestion. Do not keyword-stuff skills.
 - Facts first: polish wording without changing any facts. Keep only wording you could explain in an interview.
-- Do not use banned filler language: spearheaded, orchestrated, championed, leveraged, utilized, streamlined, passionate, driven, results-oriented, proven track record.
+- Do not use banned filler language: spearheaded, orchestrated, championed, leveraged, utilized, streamlined, passionate, driven, cross-functional, results-oriented, results-driven, proven track record, operational excellence.
 - Prefer fewer strong edits over many weak edits.
 
 ## Output
