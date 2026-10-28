@@ -7,7 +7,7 @@ description: This skill should be used when the user asks to "set up callback in
 
 ## North Star
 
-Get the user past the ATS gate by preparing an honest candidate profile and project structure before any job search or tailoring begins.
+Land an interview by preparing an honest candidate profile and project structure before any job search or tailoring begins.
 
 ## Flow
 

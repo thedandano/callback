@@ -7,16 +7,25 @@ forward and feeds the roadmap. Update it when intent changes, not when code chan
 
 Last audit: 2026-09-03 (ponytail audit + correctness + architecture pass).
 Baseline at audit: v1.4.1, 587 tests passing, ruff and pyright clean, 147 runtime packages.
+North star revised: 2026-10-27 (land an interview; AI screening + human skim).
 
 ---
 
 ## North star
 
-Get the user past the ATS gate so they talk to a human recruiter.
+**Land an interview.**
+
+Clear AI screening and survive the human skim — with honest, interviewable
+evidence. Hiring increasingly uses software to read, rank, and sort; most final
+pass/reject is still human. Callback serves both stages of that path.
 
 Every change is judged by one question: does it make the tailored resume more
-retrievable by a recruiter's search, or more survivable in the recruiter's skim,
-without misrepresenting the candidate? If not, it does not ship.
+likely to land an interview — by clearing AI screening and/or surviving a human
+skim — without misrepresenting the candidate? If not, it does not ship.
+
+The deterministic score remains a lower bound on AI-screening retrievability and
+skim survival. Fuller human-gate craft (for example Google XYZ bullets) belongs
+in host tailor protocol and evals unless an explicit proposal puts it elsewhere.
 
 ## Why callback exists (the second job)
 
@@ -48,7 +57,8 @@ Data flow, before and after: https://claude.ai/code/artifact/49338a2d-dca0-4ab7-
 - No LLM calls inside the server. The host owns reasoning; the server owns state,
   scoring, rendering, and persistence.
 - No multi-user, no remote transport, no auth. Single user, stdio, local disk.
-- No vendor ATS emulation. The score predicts retrievability and skim survival, nothing more.
+- No vendor ATS emulation. The score predicts retrievability and skim survival toward
+  an interview, nothing more.
 - No pgvector, RAG, or LLM-as-judge unless a written proposal in `openspec/changes/`
   ties it to the north star.
 - No eval framework. Evals are fixtures plus pytest plus one runner script (see M6).

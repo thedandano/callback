@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- North Star: **Land an interview** — clear AI screening and survive the human
+  skim with honest, interviewable evidence. Same destination as before (a human
+  conversation), wider path (both gates). Deterministic score stays a lower
+  bound; fuller human-gate craft stays in host tailor protocol / evals.
 - Readability: treat AI buzzphrases (spearheaded, cross-functional, operational
   excellence, results-driven, proven track record, results-oriented) as filler
   (−2 each, existing rule). Score-changing for resumes that use those phrases (#147).

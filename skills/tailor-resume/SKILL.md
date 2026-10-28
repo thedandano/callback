@@ -7,7 +7,7 @@ description: Tailors one resume for one job description using callback. Use when
 
 ## North Star
 
-Use callback to produce one honest, ATS-aware tailored resume for one validated job description.
+Use callback to produce one honest tailored resume that clears AI screening and survives a human skim — aiming to land an interview — for one validated job description.
 
 ## Scope
 

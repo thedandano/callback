@@ -23,4 +23,4 @@ Second interface when: N/A — the protocol handles it.
 - Differentiator is a learning/career goal, not a product capability. Legitimate — but scope discipline is critical. Any complexity beyond "teaches LangGraph" is wasted on a project with a finite maintenance horizon.
 - Finite maintenance horizon declared upfront. Don't add polish that won't ship.
 
-**Verdict:** Keep building only what the walking skeleton needs. The moment you feel the urge to add pgvector, LLM-as-judge, provider clients, RAG, or an eval harness, stop unless an explicit proposal makes that complexity serve the ATS-gate North Star.
+**Verdict:** Keep building only what the walking skeleton needs. The moment you feel the urge to add pgvector, LLM-as-judge, provider clients, RAG, or an eval harness, stop unless an explicit proposal makes that complexity serve the North Star (land an interview).
