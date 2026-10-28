@@ -212,6 +212,8 @@ _TAILOR_INSTRUCTIONS = (
     "- Context line per role: <Role> · <Domain/Team> · <Scale signal> · <Stack>"
     " — factual only, no adjectives.\n"
     "- Skills: every keyword added to skills MUST appear in ≥1 dated experience bullet.\n"
+    "- Facts first: base every edit on wiki or resume evidence; polish wording "
+    "without changing any facts. Keep only wording you could explain in an interview.\n"
     "- Keyword mapping, not stuffing: treat key_responsibilities (pass 2) as the "
     "employer's problems to solve first. Map only keywords that are truthfully backed "
     "by dated experience, project evidence, or wiki stories into real bullets that show "

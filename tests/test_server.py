@@ -766,6 +766,7 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
         and "problems" in instructions,
         "prefers_fewer_strong": "fewer strong" in instructions,
         "leave_unsupported_uncovered": "leave it uncovered" in instructions,
+        "mentions_facts_first": "without changing any facts" in instructions,
     }
     expected = {
         "next_action": "fetch_wiki_then_tailor",
@@ -789,6 +790,7 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
         "mentions_problems_first": True,
         "prefers_fewer_strong": True,
         "leave_unsupported_uncovered": True,
+        "mentions_facts_first": True,
     }
     assert actual == expected
 
