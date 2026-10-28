@@ -7,7 +7,7 @@ description: Registers a resume and compiles the callback profile wiki. Use when
 
 ## North Star
 
-Prepare callback with truthful candidate evidence so future resume tailoring can improve ATS fit without inventing skills, metrics, or experience. The candidate owns how their experience is organized — your job is to capture their structure faithfully, not to impose one.
+Prepare callback with truthful candidate evidence so future resume tailoring can clear AI screening and survive a human skim without inventing skills, metrics, or experience. The candidate owns how their experience is organized — your job is to capture their structure faithfully, not to impose one.
 
 ## Use This Skill For
 

@@ -4,13 +4,20 @@ This file provides guidance to Codex when working in this repository.
 
 ## Northstar
 
-**Get the user past the ATS gate so they talk to a human recruiter.**
+**Land an interview.**
+
+Clear AI screening and survive the human skim — with honest, interviewable
+evidence. Hiring increasingly uses software to read, rank, and sort; most final
+pass/reject is still human. Callback serves both stages of that path. The
+deterministic score is a lower bound on AI-screening retrievability and skim
+survival; host tailoring owns fuller human-gate craft (for example quantified
+XYZ bullets) without inventing facts.
 
 Every scoring, tailoring, and feedback decision must serve this goal:
 - Surface real keyword and format gaps - don't paper over them.
 - Never fabricate experience, skills, or metrics.
 - Never keyword-stuff. Honest signal only.
-- A resume that passes ATS but misrepresents the candidate is a failure.
+- A resume that gets interviews by misrepresenting the candidate is a failure.
 
 ## Constitution
 
@@ -426,7 +433,7 @@ committed and public, so there is nothing to withhold.
 ## Change Discipline
 
 - Touch only what the current task requires.
-- New scoring heuristics must map to a real ATS gate mechanism and stay deterministic.
+- New scoring heuristics must map to a real hiring-gate mechanism and stay deterministic.
 - Scoring weights live in config - don't hardcode them.
 - All fallbacks must be explicit, logged, and approved.
 - Don't add complexity beyond the walking skeleton. When tempted toward pgvector, LLM-as-judge, provider clients, RAG, or an eval harness, stop unless there is an explicit OpenSpec proposal for it.

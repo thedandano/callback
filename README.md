@@ -6,11 +6,11 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/downloads/)
 [![MCP compatible](https://img.shields.io/badge/MCP-compatible-brightgreen)](https://modelcontextprotocol.io/)
 
-### Your resume is probably being rejected by software, not by people.
+### Your resume has to clear software *and* a human skim to land an interview.
 
-You send out forty applications and hear nothing. Most of the time that silence isn't a hiring manager passing on you. It's a filter that scanned your resume for the words the posting asked for, didn't find enough of them, and sorted you below the line where a recruiter stops reading.
+You send out forty applications and hear nothing. Often that silence starts with a filter that scanned your resume for the words the posting asked for, didn't find enough of them, and sorted you below the line where a recruiter stops reading. Even after that, a person still has to want to talk to you.
 
-callback closes that gap without lying on your behalf.
+callback closes both gaps without lying on your behalf.
 
 Give it a job posting. It scores your resume against that specific posting, tells you which keywords you're missing and what they're worth, rewrites your bullets using work you actually did, and hands back a finished PDF. It runs inside the AI assistant you already have open, so there's no new app to learn.
 
@@ -29,7 +29,7 @@ callback: Score 58/100. Missing required: Kubernetes, Terraform, gRPC.
 
 **The score is real arithmetic, not a vibe.** Plain Python, no model in the loop. The same resume and the same posting always produce the same number, so when you change something you can tell whether it actually helped.
 
-**It admits what it can't see.** The score predicts whether a recruiter's keyword search surfaces you and whether your resume survives a ten-second skim. It doesn't know about work authorization, location, or job-title match, and it will never promise you an interview.
+**It admits what it can't see.** The score predicts whether AI screening and a recruiter's keyword search surface you and whether your resume survives a ten-second skim — a lower bound on the path to an interview. It doesn't know about work authorization, location, or job-title match, and it will never promise you an interview.
 
 ---
 

@@ -4,13 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Northstar
 
-**Get the user past the ATS gate so they talk to a human recruiter.**
+**Land an interview.**
+
+Clear AI screening and survive the human skim — with honest, interviewable
+evidence. Hiring increasingly uses software to read, rank, and sort; most final
+pass/reject is still human. Callback serves both stages of that path. The
+deterministic score is a lower bound on AI-screening retrievability and skim
+survival; host tailoring owns fuller human-gate craft (for example quantified
+XYZ bullets) without inventing facts.
 
 Every scoring, tailoring, and feedback decision must serve this goal:
 - Surface real keyword and format gaps — don't paper over them.
 - Never fabricate experience, skills, or metrics.
 - Never keyword-stuff. Honest signal only.
-- A resume that passes ATS but misrepresents the candidate is a failure.
+- A resume that gets interviews by misrepresenting the candidate is a failure.
 
 ## Project Context
 
@@ -275,17 +282,21 @@ Pure deterministic Python — no I/O, no LLM calls.
 | ATSFormat       | 10  | Standard section headers present          |
 | Readability     | 10  | Absence of filler phrases                 |
 
-**Rubric grounding:** each dimension must proxy a real ATS gate mechanism —
-recruiter keyword/boolean search (KeywordMatch), knockout filters on
+**Rubric grounding:** each scoring dimension must proxy a real hiring-gate
+mechanism — recruiter keyword/boolean search (KeywordMatch), knockout filters on
 years/seniority (ExperienceFit), parse failures (ATSFormat), and the recruiter
-skim (ImpactEvidence, Readability). The score predicts "will a recruiter's
-search find this resume and will the skim survive it" — it does not emulate any
-specific ATS vendor's ranker, and must stay deterministic.
+skim (ImpactEvidence, Readability). The score predicts "will AI screening and a
+recruiter's search find this resume, and will the skim survive it" — it does not
+emulate any specific ATS vendor's ranker, and must stay deterministic. Fuller
+human-gate craft (for example Google XYZ bullet shape) lives in host tailor
+protocol and evals, not in the scorer, unless an explicit design proposal says
+otherwise.
 
 **What this score cannot see:** work-authorization and location knockouts (the
 most common auto-dispositions), title match against the req, skill recency, and
 degree/clearance filters. The score is a predictor of search retrievability and
-skim survival, not a guarantee — do not oversell the number in report copy.
+skim survival toward landing an interview, not a guarantee — do not oversell the
+number in report copy.
 
 The apply graph's `render` node uses HTML + Playwright via `callback.render.html_builder`.
 
@@ -336,7 +347,7 @@ committed and public, so there is nothing to withhold.
 ## Change Discipline
 
 - Touch only what the current task requires.
-- New scoring heuristics must map to a real ATS gate mechanism (see Scoring) and stay deterministic.
+- New scoring heuristics must map to a real hiring-gate mechanism (see Scoring) and stay deterministic.
 - Scoring weights and thresholds live in `ScoringConfig` (`scorer.py`) — change them there; never scatter new hardcoded weights.
 - All fallbacks must be explicit, logged, and approved.
 - Don't add complexity beyond the walking skeleton (see `BRIEF.md`). When tempted toward pgvector / LLM-as-judge / eval harness before the graph runs end-to-end, stop.
