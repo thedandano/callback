@@ -96,7 +96,7 @@ Collect, confirming each; never invent an answer:
 - `core_domains` / `skip_domains` — the domain gate.
 - `comp_currency`, `comp_annual_target`, and `comp_hard_gate` — set `comp_hard_gate=true` only if the user wants to skip below-target roles; default `false` (target is a priority signal, not a gate).
 - `referral_companies` — each `{name, note}` (e.g. Netflix, "ask friend for referral").
-- `lead_recency_days` — default 3.
+- `lead_recency_days` — default 3; soft window (dated leads only; undated kept as `unknown` and deduped via `find_job`).
 - **PII (ask directly; do not assume):** `needs_sponsorship` (bool), `work_authorization` (e.g. "US Citizen", "H-1B needs transfer"), `yoe_actual` (real total years — drives the experience gate), `yoe_gap_multiplier` (default 1.75; skip a role when its required years ≥ `yoe_actual × this`).
 
 ### 3. Curators (`scan_sources`) — instruction specs
@@ -106,8 +106,8 @@ Each source is a portable instruction spec, not a fixed name the skill hard-code
 Seed three defaults, letting the user edit each:
 
 - `{name: "gmail", kind: "email", instructions: "Search is:unread newer_than:{recency}d job alerts, recruiter threads, application confirmations, rejection/status. Return discovery leads only. After the parent reconciles a message, remove the UNREAD label."}`
-- `{name: "google_jobs", kind: "web_search", instructions: "Search Google Jobs / web for postings from the last {recency} days matching target titles/domains, home_location + remote-workable. Cards and snippets are discovery only."}`
-- `{name: "faang_careers", kind: "careers_page", instructions: "Search official careers pages for the target_companies. Prefer official employer source over mirrors. Capture canonical URL, req ID, work type, location, salary, posting date, level."}`
+- `{name: "google_jobs", kind: "web_search", instructions: "Search Google Jobs / web for postings matching target titles/domains, home_location + remote-workable. Recency is soft: when a posting date is visible, prefer leads from the last {recency} days; keep undated leads as posted date unknown and dedupe later. Cards and snippets are discovery only."}`
+- `{name: "faang_careers", kind: "careers_page", instructions: "Search official careers pages for the target_companies. Prefer official employer source over mirrors. Capture canonical URL, req ID, work type, location, salary, posting date, level. Recency is soft: when a posting date is visible, prefer leads from the last {recency} days; keep undated leads as posted date unknown and dedupe later."}`
 
 Tell the user: **adding a new job board later is just another `scan_sources` entry here — no skill edit.**
 

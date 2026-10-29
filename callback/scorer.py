@@ -28,6 +28,13 @@ METRIC_RE = re.compile(
     r"|\d[\d,.]*\s*[kKmMbB]\b"  # magnitude: 50k, 1.2M
     r"|\d+x\b"  # multiplier: 2x, 10x
     r"|\d{3,}"  # large int ≥ 100 (years stripped first)
+    # Time / duration literals (e.g. "2 hours", "30 minutes") — #154.
+    # Full words are case-insensitive; abbreviations stay lowercase-only so
+    # "8 SEC" / "3 HR" / "2 second-round" do not score as metrics.
+    r"|\d+\.?\d*\s*(?:hours?|minutes?|days?|weeks?|seconds)\b"
+    r"|\d+\.?\d*\s*(?-i:hrs?|mins?|secs?)\b"
+    # Before→after counts (e.g. "50 → 10", "50->10") — not bare small ints alone
+    r"|\d[\d,.]*\s*(?:→|->)\s*\d[\d,.]*"
     r")"
 )
 

@@ -24,7 +24,7 @@ Call `get_search_preferences` at the start of every run. Apply the returned valu
 - **Target companies** (`target_companies`): always check and surface leads from these companies.
 - **Referral companies** (`referral_companies`): read the list; surface referral leads for those companies with status `Referral lead - ask friend`.
 - **Scan sources** (`scan_sources`): scan only the user's configured sources.
-- **Lead recency** (`lead_recency_days`): constrain discovery to postings within this window.
+- **Lead recency** (`lead_recency_days`): soft window. Apply it only when a posting date is visible; keep undated leads with posted date `unknown` and dedupe them with `find_job` instead of dropping them.
 
 ## Subagent Dispatch
 

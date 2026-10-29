@@ -44,6 +44,7 @@ This is a one-job workflow. Do not scan Gmail, Google Jobs, FAANG careers, the j
 - Facts first: polish wording without changing any facts. Keep only wording you could explain in an interview.
 - Do not use banned filler language: spearheaded, orchestrated, championed, leveraged, utilized, streamlined, passionate, driven, cross-functional, results-oriented, results-driven, proven track record, operational excellence.
 - Prefer fewer strong edits over many weak edits.
+- When the JD asks for AI / LLM / Copilot / ChatGPT (or similar) skills, prefer evidenced AI outcomes in experience or project bullets (tool + problem + result, grounded in resume/wiki/stories) over only listing the tool name in Skills. Never invent AI work. Do not auto-reorder bullets solely to put an AI win first.
 
 ## Output
 

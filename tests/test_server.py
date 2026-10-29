@@ -828,6 +828,20 @@ def test_tailor_banned_lists_align_with_readability_filler_phrases():
         assert term in BANNED_TERMS
 
 
+def test_tailor_instructions_prefer_evidenced_ai_outcomes():
+    """#149: protocol-only AI skills guidance — outcomes over tool-name Skills."""
+    from callback.server import _TAILOR_INSTRUCTIONS
+
+    skill = Path("skills/tailor-resume/SKILL.md").read_text().lower()
+    instructions = _TAILOR_INSTRUCTIONS.lower()
+    assert "evidenced ai" in instructions
+    assert (
+        "tool name in skills" in instructions or "listing the tool name in skills" in instructions
+    )
+    assert "evidenced ai outcomes" in skill
+    assert "auto-reorder" in instructions or "auto-reorder" in skill
+
+
 def test_submit_keywords_returns_ranked_project_candidates(tmp_path, monkeypatch):
     from callback.server import load_jd, submit_keywords
     from callback.wiki import WikiStore
