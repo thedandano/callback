@@ -581,6 +581,49 @@ class TestImpactContactExclusion:
         assert result.metric_bullets == ["- Reduced cost by 40% across 100 200 3000 records"]
 
 
+class TestImpactTimeAndBeforeAfter:
+    """#154: credit literal time-savings and before→after without bare small ints."""
+
+    def test_time_to_time_savings_counts(self):
+        resume = (
+            "Experience\n- Cut weekly reporting from 2 hours to 30 minutes with a shared database\n"
+        )
+        result = score(resume, ["Python"], [])
+        assert result.metric_bullets == [
+            "- Cut weekly reporting from 2 hours to 30 minutes with a shared database"
+        ]
+
+    def test_before_after_arrow_counts(self):
+        resume = "Experience\n- Reduced open tickets 50 → 10 in one quarter\n"
+        result = score(resume, ["Python"], [])
+        assert result.metric_bullets == ["- Reduced open tickets 50 → 10 in one quarter"]
+
+    def test_before_after_ascii_arrow_counts(self):
+        resume = "Experience\n- Reduced open tickets 50->10 in one quarter\n"
+        result = score(resume, ["Python"], [])
+        assert result.metric_bullets == ["- Reduced open tickets 50->10 in one quarter"]
+
+    def test_duration_literal_counts(self):
+        resume = "Experience\n- Saved 4 hours per deploy by automating rollbacks\n"
+        result = score(resume, ["Python"], [])
+        assert result.metric_bullets == ["- Saved 4 hours per deploy by automating rollbacks"]
+
+    def test_bare_small_int_does_not_count(self):
+        resume = "Experience\n- Mentored 5 engineers on the platform team\n"
+        result = score(resume, ["Python"], [])
+        assert result.metric_bullets == []
+
+    def test_org_acronyms_and_second_round_do_not_count(self):
+        resume = (
+            "Experience\n"
+            "- Prepared 8 SEC comment responses\n"
+            "- Owned hiring for 3 HR teams\n"
+            "- Ran 2 second-round interviews for the platform team\n"
+        )
+        result = score(resume, ["Python"], [])
+        assert result.metric_bullets == []
+
+
 class TestEmptyKeyword:
     def test_empty_or_blank_keyword_never_matches(self):
         # Defense-in-depth: an unsanitized empty keyword must not match everything.

@@ -1,6 +1,7 @@
 """Tests for real parse_initial and score_initial node implementations."""
 
 import json
+import logging
 import sqlite3
 from contextlib import closing
 from datetime import date
@@ -22,7 +23,7 @@ from callback.apply_nodes import (
     tailor,
 )
 from callback.repository import stories
-from callback.section_map import ExperienceEntry
+from callback.section_map import ContactInfo, ExperienceEntry, SectionMap
 from callback.state import ApplyState, CreatedStory, TailoredResume
 from callback.wiki import WikiStore
 
@@ -398,7 +399,8 @@ class TestTailorNode:
             max_pages=1,
         )
 
-    def test_tailor_uses_jd_title_when_summary_has_no_title_line(self):
+    def test_tailor_does_not_use_jd_title_when_summary_has_no_title_line(self, caplog):
+        """#142: no base headline and no summary headline → empty title, not JD title."""
         state = ApplyState(
             session_id="s",
             keywords={"title": "Staff Software Engineer, Applied AI"},
@@ -410,18 +412,20 @@ class TestTailorNode:
             },
         )
 
-        result = tailor(state)
+        with caplog.at_level(logging.WARNING, logger="callback.apply_nodes"):
+            result = tailor(state)
 
         actual = {
             "title": result["tailored"].title,
             "summary": result["tailored"].summary,
         }
         expected = {
-            "title": "STAFF SOFTWARE ENGINEER, APPLIED AI",
+            "title": None,
             "summary": "Backend engineer with applied AI experience.",
         }
 
         assert actual == expected
+        assert any("no resume headline" in r.message for r in caplog.records)
 
     def test_tailor_no_coverage_returns_empty(self):
         state = ApplyState(session_id="s", no_coverage=True)
@@ -604,3 +608,64 @@ def test_render_stores_the_folder_it_used(tmp_path, monkeypatch):
         "render_warnings": [],
         "artifact_dir": str(folder),
     }
+
+
+def test_tailor_keeps_base_headline_when_summary_edit_drops_it():
+    """#142: never fall back to the JD title when the summary omits the headline."""
+    base = SectionMap(
+        contact=ContactInfo(name="Jane Doe"),
+        summary="SOFTWARE ENGINEER – BACKEND & AI\nBackend engineer with LLM experience.",
+    )
+    tailored_sections = SectionMap(
+        contact=ContactInfo(name="Jane Doe"),
+        summary="Backend engineer who builds LLM tooling.",  # no ALL-CAPS headline line
+        experience=[
+            ExperienceEntry(
+                company="Acme",
+                role="Engineer",
+                bullets=["Built APIs"],
+            )
+        ],
+    )
+    state = ApplyState(
+        session_id="s1",
+        keywords={"title": "Software Engineer 2 AI Builder", "required": [], "preferred": []},
+        sections=base.model_dump(),
+        tailored_sections=tailored_sections.model_dump(),
+    )
+    result = tailor(state)
+    actual = {
+        "title": result["tailored"].title,
+        "summary": result["tailored"].summary,
+    }
+    expected = {
+        "title": "SOFTWARE ENGINEER – BACKEND & AI",
+        "summary": "Backend engineer who builds LLM tooling.",
+    }
+    assert actual == expected
+
+
+def test_tailor_leaves_title_empty_when_no_resume_headline(caplog):
+    """#142: no silent JD-title substitute when base resume also lacks a headline."""
+    base = SectionMap(
+        contact=ContactInfo(name="Jane Doe"),
+        summary="Backend engineer with LLM experience.",
+    )
+    tailored_sections = SectionMap(
+        contact=ContactInfo(name="Jane Doe"),
+        summary="Backend engineer who builds LLM tooling.",
+    )
+    state = ApplyState(
+        session_id="s1",
+        keywords={"title": "Software Engineer 2 AI Builder"},
+        sections=base.model_dump(),
+        tailored_sections=tailored_sections.model_dump(),
+    )
+    with caplog.at_level(logging.WARNING, logger="callback.apply_nodes"):
+        result = tailor(state)
+    actual = {
+        "title": result["tailored"].title,
+        "warned": any("no resume headline" in r.message for r in caplog.records),
+    }
+    expected = {"title": None, "warned": True}
+    assert actual == expected

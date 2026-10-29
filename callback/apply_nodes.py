@@ -438,6 +438,21 @@ def _normalize_resume_title(title: str | None) -> str | None:
     return stripped.upper() if stripped else None
 
 
+def _headline_from_sections(sections: dict | None) -> str | None:
+    """ALL-CAPS headline from the base resume summary, if present.
+
+    Never use the JD title — inventing a role the candidate never held is an
+    honesty failure (#142).
+    """
+    if not isinstance(sections, dict):
+        return None
+    summary = sections.get("summary")
+    if not isinstance(summary, str):
+        return None
+    title, _ = _split_title_summary(summary)
+    return title
+
+
 def _section_map_to_tailored_resume(
     section_map: SectionMap,
     fallback_title: str | None = None,
@@ -483,10 +498,15 @@ def tailor(state: ApplyState) -> dict:
     if state.tailored_sections:
         try:
             section_map = SectionMap.model_validate(state.tailored_sections)
-            fallback_title = None
-            if isinstance(state.keywords, dict):
-                fallback_title = state.keywords.get("title")
-            return {"tailored": _section_map_to_tailored_resume(section_map, fallback_title)}
+            # Base resume headline only — never the JD title (#142).
+            fallback_title = _headline_from_sections(state.sections)
+            tailored = _section_map_to_tailored_resume(section_map, fallback_title)
+            if tailored.title is None:
+                logger.warning(
+                    "tailor: no resume headline in tailored summary or base sections; "
+                    "leaving title empty rather than substituting JD title"
+                )
+            return {"tailored": tailored}
         except (ValidationError, ValueError) as exc:
             return {"error": f"tailor: invalid tailored_sections: {exc}"}
     return {"error": "tailor: no tailored_sections and no_coverage not set"}

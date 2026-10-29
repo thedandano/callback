@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Fix: tailored resume headline no longer falls back to the JD title when a
+  summary edit drops the ALL-CAPS headline line — use the base resume headline,
+  or leave empty with a warning (#142).
+- ImpactEvidence: credit literal time/duration metrics and before→after patterns
+  (`2 hours to 30 minutes`, `50 → 10`) without scoring bare small integers.
+  Score-changing (#154).
+- Tailor protocol: when the JD asks for AI skills, prefer evidenced AI outcomes
+  in bullets over tool-name-only Skills listings; still grounded, no AI-proof
+  score dimension (#149).
+- Skills: soft lead-recency wording in scan-job-leads / auto-job-apply /
+  onboard-profile; remove bogus `Needs source - not scored` status (#134, #74).
 - North Star: **Land an interview** — clear AI screening and survive the human
   skim with honest, interviewable evidence. Same destination as before (a human
   conversation), wider path (both gates). Deterministic score stays a lower
