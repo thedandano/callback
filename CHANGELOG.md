@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Skills: persist chat-supplied XYZ facts via `create_story` (confirm first; metric in
+  impact) so later tailor runs can ground rewrites (#162).
 - E2: metric-introducing bullet edits must also include a HOW marker (`by`/`via`/`using`/`through`);
   opt out per case with `skip_metric_how_check` (#161).
 - Tailor protocol: XYZ honesty guards — scope ≠ result, no duplicate metrics, no
