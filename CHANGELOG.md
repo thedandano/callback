@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Tailor protocol: when XYZ has no real Y, use a verifiable outcome and surface a
+  `missing_metric` list for the host to ask the user — never invent numbers (#160).
 - Skills: persist chat-supplied XYZ facts via `create_story` (confirm first; metric in
   impact) so later tailor runs can ground rewrites (#162).
 - E2: metric-introducing bullet edits must also include a HOW marker (`by`/`via`/`using`/`through`);
