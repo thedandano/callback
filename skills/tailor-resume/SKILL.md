@@ -46,6 +46,7 @@ This is a one-job workflow. Do not scan Gmail, Google Jobs, FAANG careers, the j
   - No duplicate metrics — do not credit the same figure to two different bullets.
   - Do not strengthen X past the evidence; context can demote a stronger-sounding claim.
   - Ambiguous bullets need a specific X (what broke, who was affected) before rewriting.
+- When a bullet has no real measure (no number for Y), use a verifiable outcome for X (for example approved for production, won the hackathon, zero incidents). Never invent a number. Collect those bullets in a `missing_metric` list and ask the user for a real metric before treating Y as final.
 - If no real experience backs a keyword, leave it uncovered — delete the suggestion. Do not keyword-stuff skills.
 - Facts first: polish wording without changing any facts. Keep only wording you could explain in an interview.
 - Do not use banned filler language: spearheaded, orchestrated, championed, leveraged, utilized, streamlined, passionate, driven, cross-functional, results-oriented, results-driven, proven track record, operational excellence.
@@ -76,3 +77,4 @@ Then add:
 - remaining gaps
 - whether the result is review-ready
 - exact artifact paths
+- `missing_metric`: bullets that still lack a real numeric Y (ask the user; do not invent)

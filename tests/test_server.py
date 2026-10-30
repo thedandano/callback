@@ -901,6 +901,35 @@ def test_tailor_instructions_xyz_honesty_guards():
     assert actual == expected
 
 
+def test_tailor_instructions_missing_metric_handoff():
+    """#160: when Y is missing, protocol+skill require missing_metric handoff."""
+    from callback.server import _TAILOR_INSTRUCTIONS
+
+    skill = Path("skills/tailor-resume/SKILL.md").read_text().lower()
+    instructions = _TAILOR_INSTRUCTIONS.lower()
+    required = (
+        "missing_metric",
+        "verifiable outcome",
+        "no real measure",
+        "never invent",
+    )
+    forbidden = (
+        "data.missing_metric",
+        "story.metrics",
+    )
+    actual = {
+        "instructions": {p: p in instructions for p in required},
+        "skill": {p: p in skill for p in required},
+        "forbidden_absent": {p: (p not in instructions and p not in skill) for p in forbidden},
+    }
+    expected = {
+        "instructions": {p: True for p in required},
+        "skill": {p: True for p in required},
+        "forbidden_absent": {p: True for p in forbidden},
+    }
+    assert actual == expected
+
+
 def test_skills_document_xyz_chat_fact_story_intake():
     """#162: skills persist chat-supplied XYZ facts via create_story."""
     from callback.server import _TAILOR_INSTRUCTIONS
