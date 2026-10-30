@@ -40,6 +40,7 @@ This is a one-job workflow. Do not scan Gmail, Google Jobs, FAANG careers, the j
 - Keyword mapping, not stuffing: use `key_responsibilities` (pass 2) as the employer's problems first. Map keywords to real experience that solves those problems.
 - Add a keyword only when it is supported by dated experience or clear project evidence.
 - Rewrite bullets only when the mechanism and impact are supported by the resume or fetched wiki stories.
+- Bullet craft uses Google XYZ: Accomplished X (result), as measured by Y, by doing Z (how). Prefer this shape when polishing quantified bullets. Never invent or change numbers — Y must come from the resume, wiki, or stories.
 - If no real experience backs a keyword, leave it uncovered — delete the suggestion. Do not keyword-stuff skills.
 - Facts first: polish wording without changing any facts. Keep only wording you could explain in an interview.
 - Do not use banned filler language: spearheaded, orchestrated, championed, leveraged, utilized, streamlined, passionate, driven, cross-functional, results-oriented, results-driven, proven track record, operational excellence.

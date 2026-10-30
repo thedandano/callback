@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Tailor protocol: name Google XYZ bullet craft (result X, measure Y, how Z) in
+  `_TAILOR_INSTRUCTIONS` and `skills/tailor-resume`; never invent or change
+  numbers (#158).
 - Fix: tailored resume headline no longer falls back to the JD title when a
   summary edit drops the ALL-CAPS headline line — use the base resume headline,
   or leave empty with a warning (#142).

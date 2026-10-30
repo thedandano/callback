@@ -205,7 +205,9 @@ async def _lifespan(server: object) -> AsyncIterator[None]:
 
 _TAILOR_INSTRUCTIONS = (
     "V4 voice constraints:\n"
-    "- Bullets: past-tense action verb + mechanism (HOW) + metric from wiki. "
+    "- Bullets: Google XYZ — Accomplished X (result), as measured by Y (metric from "
+    "resume/wiki/stories), by doing Z (mechanism / HOW). Past-tense action verb; "
+    "never invent or change numbers. "
     "Banned verbs: spearheaded, orchestrated, championed, leveraged, utilized, streamlined.\n"
     "- Summary: ≤3 sentences, ≥1 quantified anchor. "
     "Banned: passionate, driven, cross-functional, results-oriented, results-driven, "
