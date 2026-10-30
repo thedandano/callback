@@ -842,6 +842,30 @@ def test_tailor_instructions_prefer_evidenced_ai_outcomes():
     assert "auto-reorder" in instructions or "auto-reorder" in skill
 
 
+def test_tailor_instructions_name_google_xyz_formula():
+    """#158: Google XYZ named in protocol + skill; never invent/change numbers."""
+    from callback.server import _TAILOR_INSTRUCTIONS
+
+    skill = Path("skills/tailor-resume/SKILL.md").read_text().lower()
+    instructions = _TAILOR_INSTRUCTIONS.lower()
+    required = (
+        "google xyz",
+        "accomplished x",
+        "as measured by y",
+        "by doing z",
+        "never invent or change numbers",
+    )
+    actual = {
+        "instructions": {phrase: phrase in instructions for phrase in required},
+        "skill": {phrase: phrase in skill for phrase in required},
+    }
+    expected = {
+        "instructions": {phrase: True for phrase in required},
+        "skill": {phrase: True for phrase in required},
+    }
+    assert actual == expected
+
+
 def test_submit_keywords_returns_ranked_project_candidates(tmp_path, monkeypatch):
     from callback.server import load_jd, submit_keywords
     from callback.wiki import WikiStore
