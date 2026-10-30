@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Tailor protocol: XYZ honesty guards — scope ≠ result, no duplicate metrics, no
+  overclaim past evidence, ambiguous bullets need a specific X (#159).
 - Tailor protocol: name Google XYZ bullet craft (result X, measure Y, how Z) in
   `_TAILOR_INSTRUCTIONS` and `skills/tailor-resume`; never invent or change
   numbers (#158).
