@@ -51,6 +51,53 @@
 - Existing users must re-run `onboard_user` after upgrading to the HTML renderer + extractor fixes. Older `sections.json` files may contain corrupted contact fields (for example duplicated email or incorrect location).
 - A host that emits `required_any` or `preferred_any` against an OLD callback server is silently degraded: `dataclass_wizard` drops the unknown key, so the group is ignored (not matched, not reported). Upgrade the server before relying on either.
 
+## [2.0.0](https://github.com/thedandano/callback/compare/v1.8.0...v2.0.0) (2026-10-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* record every run in a global ledger ([#135](https://github.com/thedandano/callback/issues/135))
+* tools return structured envelopes instead of JSON strings ([#124](https://github.com/thedandano/callback/issues/124))
+
+### Features
+
+* add find_job, record_status and export_ledger tools ([#137](https://github.com/thedandano/callback/issues/137)) ([e814bbe](https://github.com/thedandano/callback/commit/e814bbe5cc3e109789b8ad6f3e19df6d9ce6a0ed))
+* add XYZ honesty guards to _TAILOR_INSTRUCTIONS ([#159](https://github.com/thedandano/callback/issues/159)) ([fc38536](https://github.com/thedandano/callback/commit/fc385367287897fe6e36ca86caf1ea7a3f53acab))
+* E2 check metric edits include HOW ([#161](https://github.com/thedandano/callback/issues/161)) ([45cb2b4](https://github.com/thedandano/callback/commit/45cb2b4ff6db5816f7ea4007408818c735ee5d3d))
+* E2 metric edits must include HOW ([#161](https://github.com/thedandano/callback/issues/161)) ([afb7518](https://github.com/thedandano/callback/commit/afb75186c822d2b46c35e25737e0b7ebec941371))
+* Google XYZ in tailor protocol ([#158](https://github.com/thedandano/callback/issues/158)) ([8c7e209](https://github.com/thedandano/callback/commit/8c7e209d47e7c33f2e0faa9f09089b8d8e56a306))
+* import old archives, record CSV and contacts into the ledger ([#136](https://github.com/thedandano/callback/issues/136)) ([edcaad6](https://github.com/thedandano/callback/commit/edcaad6f05ea3b1214ce35f6841f14c5ceaf1a4e))
+* job-hunt skills use the ledger; add /export-ledger ([#138](https://github.com/thedandano/callback/issues/138)) ([87b4b55](https://github.com/thedandano/callback/commit/87b4b55f34d6f22ba0fe51dccfeb8ae2372f6cff))
+* keyword mapping (not stuffing) tailor handoff ([#146](https://github.com/thedandano/callback/issues/146)) ([#151](https://github.com/thedandano/callback/issues/151)) ([af2edf6](https://github.com/thedandano/callback/commit/af2edf67a110a086ceb03aa56f506474d74a8cf3))
+* label traces when the resume has no section headers ([#131](https://github.com/thedandano/callback/issues/131)) ([73d9de0](https://github.com/thedandano/callback/commit/73d9de00fe5caf2625a4d5ec72b293127ec3a941))
+* missing_metric handoff when XYZ has no Y ([#160](https://github.com/thedandano/callback/issues/160)) ([1416a6a](https://github.com/thedandano/callback/commit/1416a6a06452558235d05151e5e2ca2ccfaaac26))
+* missing_metric handoff when XYZ has no Y ([#160](https://github.com/thedandano/callback/issues/160)) ([8f22787](https://github.com/thedandano/callback/commit/8f227875a0c928eaf133ebde2e4d4975400c0aea))
+* name Google XYZ in _TAILOR_INSTRUCTIONS ([#158](https://github.com/thedandano/callback/issues/158)) ([850853e](https://github.com/thedandano/callback/commit/850853edb492049c63795ff0eea25b9cb119a8d1))
+* penalize AI buzzphrases in Readability fillers ([#147](https://github.com/thedandano/callback/issues/147)) ([#152](https://github.com/thedandano/callback/issues/152)) ([8d3bc3c](https://github.com/thedandano/callback/commit/8d3bc3c7298c9c382152e908975d656765247326))
+* record every run in a global ledger ([#135](https://github.com/thedandano/callback/issues/135)) ([3af5829](https://github.com/thedandano/callback/commit/3af58293cbf0d013a25870da1d39c8fdda56d539))
+* second extraction pass for key_responsibilities ([#141](https://github.com/thedandano/callback/issues/141)) ([c86d6f2](https://github.com/thedandano/callback/commit/c86d6f2e8a00fe5e102a9cbf479b6add407f2bbd))
+* surface ats_input_suspect in submit_keywords score_gap ([#129](https://github.com/thedandano/callback/issues/129)) ([5ab50d0](https://github.com/thedandano/callback/commit/5ab50d06a27b720bf5d705ff90ba72757ce138a5))
+* tools return structured envelopes instead of JSON strings ([#124](https://github.com/thedandano/callback/issues/124)) ([0a7a713](https://github.com/thedandano/callback/commit/0a7a713b5038fd36866de27395e8f49d4f49ad7b))
+* XYZ honesty guards in tailor protocol ([#159](https://github.com/thedandano/callback/issues/159)) ([e9ae1a0](https://github.com/thedandano/callback/commit/e9ae1a07f5579f1b5fcb77895c5cababfec768bb))
+
+
+### Bug Fixes
+
+* address Codex P1s on metric_how check ([#161](https://github.com/thedandano/callback/issues/161)) ([158bc56](https://github.com/thedandano/callback/commit/158bc562fdaed74a997f9598a7a93d7daca7c248))
+* blast-S slices for [#142](https://github.com/thedandano/callback/issues/142) [#74](https://github.com/thedandano/callback/issues/74) [#134](https://github.com/thedandano/callback/issues/134) [#154](https://github.com/thedandano/callback/issues/154) [#149](https://github.com/thedandano/callback/issues/149) ([4b8c694](https://github.com/thedandano/callback/commit/4b8c694f98218055672a0048bea0ca8bff9c6621))
+* **render:** even out resume glyph spacing and link contact URLs ([#143](https://github.com/thedandano/callback/issues/143)) ([22c8e99](https://github.com/thedandano/callback/commit/22c8e99047c9bb54f7eecab7a40a12ca6d230e8e))
+* **render:** use plain ATS section headers in Jeff order ([#150](https://github.com/thedandano/callback/issues/150)) ([9c75a83](https://github.com/thedandano/callback/commit/9c75a83e13b8b4da0107e848b2eb102d307dd21d))
+* ship blast-S honesty, impact, and skill-docs slices ([d5b4b18](https://github.com/thedandano/callback/commit/d5b4b184db625467241f908c7e1e56a648fab013))
+
+
+### Documentation
+
+* lock North Star to land an interview ([#153](https://github.com/thedandano/callback/issues/153)) ([0f047d9](https://github.com/thedandano/callback/commit/0f047d9748c4f9999e234da2f61f06252080c5c0))
+* mirror Google XYZ in tailor-resume skill ([#158](https://github.com/thedandano/callback/issues/158)) ([597d89a](https://github.com/thedandano/callback/commit/597d89a91d499b5f53571be9b3d513c63be6e07c))
+* mirror XYZ honesty guards in tailor-resume skill ([#159](https://github.com/thedandano/callback/issues/159)) ([e9ea4d0](https://github.com/thedandano/callback/commit/e9ea4d0f5ef698ff60880a09a0c74304a7f9af94))
+* story intake for chat-supplied XYZ facts ([#162](https://github.com/thedandano/callback/issues/162)) ([d36ff0b](https://github.com/thedandano/callback/commit/d36ff0be11458b6124dda092af8b61d3e17943cb))
+* story intake for chat-supplied XYZ facts ([#162](https://github.com/thedandano/callback/issues/162)) ([3bb4f89](https://github.com/thedandano/callback/commit/3bb4f897d496b9ad6579294a76e470bfa9eee945))
+
 ## [1.8.0](https://github.com/thedandano/callback/compare/v1.7.0...v1.8.0) (2026-10-03)
 
 
