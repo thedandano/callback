@@ -39,6 +39,22 @@ BANNED_TERMS = (
     "cross-functional",
     "operational excellence",
 )
+# Mechanism markers seen in honest bullets / saved hosts.
+# "by adding Redis" / "with Redis" / "via Terraform" / "behind a flag" /
+# "around retries" / "after migrating" / "using 3 Redis replicas" → HOW
+# "by 40%" / "by $1M" / "by over 40%" → NOT HOW
+HOW_RE = re.compile(
+    r"(?i)(?:"
+    r"\b(?:via|using|through|behind|around|after)\s+[A-Za-z0-9]"
+    r"|\bwith\s+[A-Za-z0-9]"
+    r"|\bby\s+(?!\d)(?!\$)"
+    r"(?!(?:over|approximately|nearly|about|around|almost|under)\b)"
+    r"(?!(?:more|less)\s+than\b)"
+    r"[A-Za-z]"
+    r")"
+)
+_BULLET_TARGET_RE = re.compile(r"^(?:exp|proj)-\d+-b\d+$")
+_WHOLE_PROJECT_TARGET_RE = re.compile(r"^(?:proj-end|proj-\d+)$")
 DEFAULT_GROUNDING_RATIO = 85
 _TOKEN_RE = re.compile(r"[A-Za-z0-9$%+#./!?:-]+")
 _SENTENCE_END = (".", "!", "?", ":")
@@ -294,6 +310,65 @@ def _coverage_check(case: TailorCase, host: HostTailor) -> Check:
     return Check("no_coverage_as_expected", ok, detail)
 
 
+def _text_has_metric(text: str) -> bool:
+    """Same noise stripping as scorer._score_impact before METRIC_RE."""
+    stripped = scorer.CONTACT_LINE_RE.sub("", text)
+    stripped = scorer.VERSION_RE.sub("", stripped)
+    stripped = scorer.YEAR_RE.sub("", stripped)
+    return bool(scorer.METRIC_RE.search(stripped))
+
+
+def _metric_without_how(text: str) -> bool:
+    return _text_has_metric(text) and not HOW_RE.search(text)
+
+
+def _offenders_from_bullet_edit(target: str, value: object) -> list[str]:
+    if isinstance(value, str) and _metric_without_how(value):
+        return [target]
+    return []
+
+
+def _offenders_from_project_dict(target: str, value: object) -> list[str]:
+    if not isinstance(value, dict):
+        return []
+    bullets = value.get("bullets")
+    if not isinstance(bullets, list):
+        return []
+    return [
+        f"{target}-b{i}"
+        for i, bullet in enumerate(bullets)
+        if isinstance(bullet, str) and _metric_without_how(bullet)
+    ]
+
+
+def _metric_without_how_targets(edits: list[dict]) -> list[str]:
+    offenders: list[str] = []
+    for edit in edits:
+        if edit.get("section") not in ("experience", "projects"):
+            continue
+        if edit.get("op") not in ("replace", "add"):
+            continue
+        target = edit.get("target")
+        if not isinstance(target, str):
+            continue
+        value = edit.get("value")
+        if _BULLET_TARGET_RE.match(target):
+            offenders.extend(_offenders_from_bullet_edit(target, value))
+        elif edit.get("section") == "projects" and _WHOLE_PROJECT_TARGET_RE.match(target):
+            offenders.extend(_offenders_from_project_dict(target, value))
+    return offenders
+
+
+def _metric_how_check(case: TailorCase, edits: list[dict]) -> Check:
+    """Bullet edits that introduce a metric must also show a HOW marker (XYZ's Z)."""
+    if case.constraints.get("skip_metric_how_check"):
+        return Check("metric_edits_include_how", True, "skipped via constraints")
+    offenders = _metric_without_how_targets(edits)
+    ok = not offenders
+    detail = "" if ok else f"metric without HOW in edits: {offenders}"
+    return Check("metric_edits_include_how", ok, detail)
+
+
 def _edit_checks(case: TailorCase, host: HostTailor) -> list[Check]:
     checks: list[Check] = []
     has_edits = bool(host.edits)
@@ -311,6 +386,7 @@ def _edit_checks(case: TailorCase, host: HostTailor) -> list[Check]:
     checks.append(_introduced_keywords_in_source_check(case, host.edits))
     checks.append(_grounding_check(case, host.edits))
     checks.append(_banned_check(case, host.edits))
+    checks.append(_metric_how_check(case, host.edits))
     checks.append(_score_check(case, section_map))
     return checks
 

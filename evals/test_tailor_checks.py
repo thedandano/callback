@@ -94,6 +94,7 @@ def test_honest_edits_pass_every_check():
         "introduced_keywords_in_source": True,
         "grounded": True,
         "no_banned_terms": True,
+        "metric_edits_include_how": True,
         "score_not_lower": True,
     }
     assert actual == expected
@@ -123,6 +124,7 @@ def test_keyword_stuffed_output_fails():
         Check("introduced_keywords_in_source", False, "not in the resume or wiki: ['Kubernetes']"),
         Check("grounded", False, "ungrounded: ['Kubernetes', '70%', '12']"),
         Check("no_banned_terms", False, "banned: ['leveraged']"),
+        Check("metric_edits_include_how", False, "metric without HOW in edits: ['exp-0-b1']"),
     ]
     assert actual == expected
 
@@ -449,4 +451,181 @@ def test_grounded_word_tokens_are_exact_matched_before_the_fuzzy_fallback():
     }
 
     expected = {"go_in_golang": False, "rust_in_trust": False, "golang_in_golang": True}
+    assert actual == expected
+
+
+def _by_name(checks: list[Check]) -> dict[str, Check]:
+    return {c.name: c for c in checks}
+
+
+def test_metric_edit_without_how_fails_metric_how_check():
+    host = {
+        "edits": [
+            {
+                "section": "experience",
+                "op": "replace",
+                "target": "exp-0-b0",
+                "value": "Improved checkout latency 40% for peak traffic",
+            }
+        ],
+        "no_coverage": False,
+    }
+    checks = _by_name(run_checks(CASE, host))
+    assert "metric_edits_include_how" in checks
+    assert checks["metric_edits_include_how"].passed is False
+
+
+def test_metric_edit_by_percent_is_not_how():
+    """'by 40%' introduces the metric; it must not count as mechanism Z."""
+    host = {
+        "edits": [
+            {
+                "section": "experience",
+                "op": "replace",
+                "target": "exp-0-b0",
+                "value": "Improved checkout latency by 40% for peak traffic",
+            }
+        ],
+        "no_coverage": False,
+    }
+    checks = _by_name(run_checks(CASE, host))
+    assert checks["metric_edits_include_how"].passed is False
+
+
+def test_metric_edit_by_over_percent_is_not_how():
+    """'by over 40%' is still a metric introducer, not a mechanism."""
+    host = {
+        "edits": [
+            {
+                "section": "experience",
+                "op": "replace",
+                "target": "exp-0-b0",
+                "value": "Improved checkout latency by over 40% for peak traffic",
+            }
+        ],
+        "no_coverage": False,
+    }
+    checks = _by_name(run_checks(CASE, host))
+    assert checks["metric_edits_include_how"].passed is False
+
+
+def test_metric_edit_using_digit_prefix_counts_as_how():
+    """'using 3 Redis replicas' is a real HOW even though it starts with a digit."""
+    host = {
+        "edits": [
+            {
+                "section": "experience",
+                "op": "replace",
+                "target": "exp-0-b0",
+                "value": "Cut checkout latency 40% using 3 Redis replicas",
+            }
+        ],
+        "no_coverage": False,
+    }
+    checks = _by_name(run_checks(CASE, host))
+    assert checks["metric_edits_include_how"].passed is True
+
+
+def test_year_only_bullet_is_not_a_metric_for_how_check():
+    """Years must be stripped like scorer ImpactEvidence before METRIC_RE."""
+    host = {
+        "edits": [
+            {
+                "section": "experience",
+                "op": "replace",
+                "target": "exp-0-b0",
+                "value": "Maintained the checkout API since 2021",
+            }
+        ],
+        "no_coverage": False,
+    }
+    checks = _by_name(run_checks(CASE, host))
+    assert checks["metric_edits_include_how"].passed is True
+
+
+def test_whole_project_add_checks_embedded_bullets_for_metric_how():
+    """proj-end / proj-N dict values must not skip bullet HOW inspection."""
+    host = {
+        "edits": [
+            {
+                "section": "projects",
+                "op": "add",
+                "target": "proj-end",
+                "value": {
+                    "name": "Latency Lab",
+                    "description": "Checkout experiments",
+                    "bullets": ["Improved checkout latency 40% for peak traffic"],
+                },
+            }
+        ],
+        "no_coverage": False,
+    }
+    checks = _by_name(run_checks(CASE, host))
+    assert checks["metric_edits_include_how"].passed is False
+    assert "proj-end-b0" in checks["metric_edits_include_how"].detail
+
+
+def test_metric_edit_with_how_passes_metric_how_check():
+    host = {
+        "edits": [
+            {
+                "section": "experience",
+                "op": "replace",
+                "target": "exp-0-b0",
+                "value": (
+                    "Cut checkout p95 latency 40% for 2M monthly orders by adding "
+                    "Redis caching on cart reads"
+                ),
+            }
+        ],
+        "no_coverage": False,
+    }
+    checks = _by_name(run_checks(CASE, host))
+    assert checks["metric_edits_include_how"].passed is True
+
+
+def test_metric_how_check_skipped_when_constraint_set():
+    case = TailorCase(
+        sections=SECTIONS,
+        keywords=KEYWORDS,
+        wiki_pages=WIKI,
+        constraints={**CONSTRAINTS, "skip_metric_how_check": True},
+    )
+    host = {
+        "edits": [
+            {
+                "section": "experience",
+                "op": "replace",
+                "target": "exp-0-b0",
+                "value": "Improved checkout latency 40% for peak traffic",
+            }
+        ],
+        "no_coverage": False,
+    }
+    checks = _by_name(run_checks(case, host))
+    assert checks["metric_edits_include_how"].passed is True
+
+
+def test_metric_how_check_source_gates():
+    """#161: lock check identity + forbid wiki/LLM coupling drift."""
+    src = Path("evals/tailor_checks.py").read_text()
+    required = (
+        "metric_edits_include_how",
+        "METRIC_RE",
+        "HOW_RE",
+        "skip_metric_how_check",
+    )
+    forbidden = (
+        "story.metrics",
+        "create_story",
+        "get_wiki_pages",
+    )
+    actual = {
+        "required": {p: p in src for p in required},
+        "forbidden_absent": {p: p not in src for p in forbidden},
+    }
+    expected = {
+        "required": {p: True for p in required},
+        "forbidden_absent": {p: True for p in forbidden},
+    }
     assert actual == expected
