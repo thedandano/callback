@@ -39,6 +39,18 @@ BANNED_TERMS = (
     "cross-functional",
     "operational excellence",
 )
+# Mechanism markers seen in honest bullets / saved hosts.
+# "by adding Redis" / "with Redis" / "via Terraform" / "behind a flag" /
+# "around retries" / "after migrating" → HOW
+# "by 40%" / "by $1M" → NOT HOW
+HOW_RE = re.compile(
+    r"(?i)(?:"
+    r"\b(?:via|using|through|behind|around|after)\s+[A-Za-z]"
+    r"|\bwith\s+[A-Za-z]"
+    r"|\bby\s+(?!\d)(?!\$)[A-Za-z]"
+    r")"
+)
+_BULLET_TARGET_RE = re.compile(r"^(?:exp|proj)-\d+-b\d+$")
 DEFAULT_GROUNDING_RATIO = 85
 _TOKEN_RE = re.compile(r"[A-Za-z0-9$%+#./!?:-]+")
 _SENTENCE_END = (".", "!", "?", ":")
@@ -294,6 +306,32 @@ def _coverage_check(case: TailorCase, host: HostTailor) -> Check:
     return Check("no_coverage_as_expected", ok, detail)
 
 
+def _metric_without_how_targets(edits: list[dict]) -> list[str]:
+    offenders: list[str] = []
+    for edit in edits:
+        if edit.get("section") not in ("experience", "projects"):
+            continue
+        if edit.get("op") not in ("replace", "add"):
+            continue
+        target = edit.get("target")
+        if not isinstance(target, str) or not _BULLET_TARGET_RE.match(target):
+            continue  # skip context lines and non-bullet targets
+        value = edit.get("value")
+        if isinstance(value, str) and scorer.METRIC_RE.search(value) and not HOW_RE.search(value):
+            offenders.append(target)
+    return offenders
+
+
+def _metric_how_check(case: TailorCase, edits: list[dict]) -> Check:
+    """Bullet edits that introduce a metric must also show a HOW marker (XYZ's Z)."""
+    if case.constraints.get("skip_metric_how_check"):
+        return Check("metric_edits_include_how", True, "skipped via constraints")
+    offenders = _metric_without_how_targets(edits)
+    ok = not offenders
+    detail = "" if ok else f"metric without HOW in edits: {offenders}"
+    return Check("metric_edits_include_how", ok, detail)
+
+
 def _edit_checks(case: TailorCase, host: HostTailor) -> list[Check]:
     checks: list[Check] = []
     has_edits = bool(host.edits)
@@ -311,6 +349,7 @@ def _edit_checks(case: TailorCase, host: HostTailor) -> list[Check]:
     checks.append(_introduced_keywords_in_source_check(case, host.edits))
     checks.append(_grounding_check(case, host.edits))
     checks.append(_banned_check(case, host.edits))
+    checks.append(_metric_how_check(case, host.edits))
     checks.append(_score_check(case, section_map))
     return checks
 
