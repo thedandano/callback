@@ -866,6 +866,41 @@ def test_tailor_instructions_name_google_xyz_formula():
     assert actual == expected
 
 
+def test_tailor_instructions_xyz_honesty_guards():
+    """#159: XYZ field-note honesty guards in protocol + skill."""
+    from callback.server import _TAILOR_INSTRUCTIONS
+
+    skill = Path("skills/tailor-resume/SKILL.md").read_text().lower()
+    instructions = _TAILOR_INSTRUCTIONS.lower()
+    actual = {
+        "scope_not_result": (
+            "scope" in instructions
+            and ("not a result" in instructions or "not stand in for x" in instructions)
+        ),
+        "no_duplicate_metrics": "duplicate" in instructions and "metric" in instructions,
+        "no_overclaim": (
+            (
+                "strengthen" in instructions
+                or "overclaim" in instructions
+                or "past the evidence" in instructions
+            )
+            and ("evidence" in instructions or "x" in instructions)
+        ),
+        "ambiguous_needs_specific_x": ("ambiguous" in instructions and "specific" in instructions),
+        "skill_scope": "scope" in skill and ("result" in skill or "not" in skill),
+        "skill_duplicate": "duplicate" in skill and "metric" in skill,
+        "skill_overclaim": (
+            "strengthen" in skill
+            or "overclaim" in skill
+            or "past the evidence" in skill
+            or "evidence supports" in skill
+        ),
+        "skill_ambiguous": "ambiguous" in skill and "specific" in skill,
+    }
+    expected = {k: True for k in actual}
+    assert actual == expected
+
+
 def test_submit_keywords_returns_ranked_project_candidates(tmp_path, monkeypatch):
     from callback.server import load_jd, submit_keywords
     from callback.wiki import WikiStore
