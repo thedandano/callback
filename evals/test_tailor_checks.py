@@ -492,6 +492,79 @@ def test_metric_edit_by_percent_is_not_how():
     assert checks["metric_edits_include_how"].passed is False
 
 
+def test_metric_edit_by_over_percent_is_not_how():
+    """'by over 40%' is still a metric introducer, not a mechanism."""
+    host = {
+        "edits": [
+            {
+                "section": "experience",
+                "op": "replace",
+                "target": "exp-0-b0",
+                "value": "Improved checkout latency by over 40% for peak traffic",
+            }
+        ],
+        "no_coverage": False,
+    }
+    checks = _by_name(run_checks(CASE, host))
+    assert checks["metric_edits_include_how"].passed is False
+
+
+def test_metric_edit_using_digit_prefix_counts_as_how():
+    """'using 3 Redis replicas' is a real HOW even though it starts with a digit."""
+    host = {
+        "edits": [
+            {
+                "section": "experience",
+                "op": "replace",
+                "target": "exp-0-b0",
+                "value": "Cut checkout latency 40% using 3 Redis replicas",
+            }
+        ],
+        "no_coverage": False,
+    }
+    checks = _by_name(run_checks(CASE, host))
+    assert checks["metric_edits_include_how"].passed is True
+
+
+def test_year_only_bullet_is_not_a_metric_for_how_check():
+    """Years must be stripped like scorer ImpactEvidence before METRIC_RE."""
+    host = {
+        "edits": [
+            {
+                "section": "experience",
+                "op": "replace",
+                "target": "exp-0-b0",
+                "value": "Maintained the checkout API since 2021",
+            }
+        ],
+        "no_coverage": False,
+    }
+    checks = _by_name(run_checks(CASE, host))
+    assert checks["metric_edits_include_how"].passed is True
+
+
+def test_whole_project_add_checks_embedded_bullets_for_metric_how():
+    """proj-end / proj-N dict values must not skip bullet HOW inspection."""
+    host = {
+        "edits": [
+            {
+                "section": "projects",
+                "op": "add",
+                "target": "proj-end",
+                "value": {
+                    "name": "Latency Lab",
+                    "description": "Checkout experiments",
+                    "bullets": ["Improved checkout latency 40% for peak traffic"],
+                },
+            }
+        ],
+        "no_coverage": False,
+    }
+    checks = _by_name(run_checks(CASE, host))
+    assert checks["metric_edits_include_how"].passed is False
+    assert "proj-end-b0" in checks["metric_edits_include_how"].detail
+
+
 def test_metric_edit_with_how_passes_metric_how_check():
     host = {
         "edits": [

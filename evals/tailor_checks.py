@@ -41,16 +41,20 @@ BANNED_TERMS = (
 )
 # Mechanism markers seen in honest bullets / saved hosts.
 # "by adding Redis" / "with Redis" / "via Terraform" / "behind a flag" /
-# "around retries" / "after migrating" → HOW
-# "by 40%" / "by $1M" → NOT HOW
+# "around retries" / "after migrating" / "using 3 Redis replicas" → HOW
+# "by 40%" / "by $1M" / "by over 40%" → NOT HOW
 HOW_RE = re.compile(
     r"(?i)(?:"
-    r"\b(?:via|using|through|behind|around|after)\s+[A-Za-z]"
-    r"|\bwith\s+[A-Za-z]"
-    r"|\bby\s+(?!\d)(?!\$)[A-Za-z]"
+    r"\b(?:via|using|through|behind|around|after)\s+[A-Za-z0-9]"
+    r"|\bwith\s+[A-Za-z0-9]"
+    r"|\bby\s+(?!\d)(?!\$)"
+    r"(?!(?:over|approximately|nearly|about|around|almost|under)\b)"
+    r"(?!(?:more|less)\s+than\b)"
+    r"[A-Za-z]"
     r")"
 )
 _BULLET_TARGET_RE = re.compile(r"^(?:exp|proj)-\d+-b\d+$")
+_WHOLE_PROJECT_TARGET_RE = re.compile(r"^(?:proj-end|proj-\d+)$")
 DEFAULT_GROUNDING_RATIO = 85
 _TOKEN_RE = re.compile(r"[A-Za-z0-9$%+#./!?:-]+")
 _SENTENCE_END = (".", "!", "?", ":")
@@ -306,6 +310,37 @@ def _coverage_check(case: TailorCase, host: HostTailor) -> Check:
     return Check("no_coverage_as_expected", ok, detail)
 
 
+def _text_has_metric(text: str) -> bool:
+    """Same noise stripping as scorer._score_impact before METRIC_RE."""
+    stripped = scorer.CONTACT_LINE_RE.sub("", text)
+    stripped = scorer.VERSION_RE.sub("", stripped)
+    stripped = scorer.YEAR_RE.sub("", stripped)
+    return bool(scorer.METRIC_RE.search(stripped))
+
+
+def _metric_without_how(text: str) -> bool:
+    return _text_has_metric(text) and not HOW_RE.search(text)
+
+
+def _offenders_from_bullet_edit(target: str, value: object) -> list[str]:
+    if isinstance(value, str) and _metric_without_how(value):
+        return [target]
+    return []
+
+
+def _offenders_from_project_dict(target: str, value: object) -> list[str]:
+    if not isinstance(value, dict):
+        return []
+    bullets = value.get("bullets")
+    if not isinstance(bullets, list):
+        return []
+    return [
+        f"{target}-b{i}"
+        for i, bullet in enumerate(bullets)
+        if isinstance(bullet, str) and _metric_without_how(bullet)
+    ]
+
+
 def _metric_without_how_targets(edits: list[dict]) -> list[str]:
     offenders: list[str] = []
     for edit in edits:
@@ -314,11 +349,13 @@ def _metric_without_how_targets(edits: list[dict]) -> list[str]:
         if edit.get("op") not in ("replace", "add"):
             continue
         target = edit.get("target")
-        if not isinstance(target, str) or not _BULLET_TARGET_RE.match(target):
-            continue  # skip context lines and non-bullet targets
+        if not isinstance(target, str):
+            continue
         value = edit.get("value")
-        if isinstance(value, str) and scorer.METRIC_RE.search(value) and not HOW_RE.search(value):
-            offenders.append(target)
+        if _BULLET_TARGET_RE.match(target):
+            offenders.extend(_offenders_from_bullet_edit(target, value))
+        elif edit.get("section") == "projects" and _WHOLE_PROJECT_TARGET_RE.match(target):
+            offenders.extend(_offenders_from_project_dict(target, value))
     return offenders
 
 
