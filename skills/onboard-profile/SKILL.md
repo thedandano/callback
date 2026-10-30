@@ -125,6 +125,10 @@ When callback reports a missing/orphaned skill, collect only truthful details an
 
 Set `job_title` per the confirmed plan (step 3), not by guesswork. `create_story` recompiles the profile in the same call and returns `orphaned_skills`; calling `compile_profile()` afterwards is optional.
 
+### Chat-supplied metrics (from tailor sessions)
+
+When a tailor session surfaces chat-supplied XYZ facts the user confirms, persist them with `create_story` using `primary_skill`, `skills` (including `primary_skill`), SBI body fields, and the metric/outcome in `impact`, so later compiles and tailor runs can reuse them. Do not invent facts. This is separate from collecting phone/LinkedIn (#61).
+
 ## Rules
 
 - Never invent experience, skills, dates, employers, metrics, scope, or tools.

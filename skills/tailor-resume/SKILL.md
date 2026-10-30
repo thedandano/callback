@@ -52,6 +52,17 @@ This is a one-job workflow. Do not scan Gmail, Google Jobs, FAANG careers, the j
 - Prefer fewer strong edits over many weak edits.
 - When the JD asks for AI / LLM / Copilot / ChatGPT (or similar) skills, prefer evidenced AI outcomes in experience or project bullets (tool + problem + result, grounded in resume/wiki/stories) over only listing the tool name in Skills. Never invent AI work. Do not auto-reorder bullets solely to put an AI win first.
 
+## Chat-supplied XYZ facts
+
+If the user provides new truthful metrics or context in chat (chat-supplied facts not yet in the resume or wiki):
+
+1. Confirm the fact list with the user before persisting.
+2. Call `create_story` with: `primary_skill` (required label), `skills` (must include `primary_skill`), `story_type` (SBI), `job_title` (confirmed role), and SBI fields `situation` / `behavior` / `impact` — put the metric or verifiable outcome in `impact`. Omit `session_id` unless a profile tool reply set `next_action` to `create_story` (never pass an apply `session_id`).
+3. Continue or re-run tailor so wiki evidence can ground Google XYZ bullets.
+4. If the user declines, use the facts for this session only and say later runs will not see them.
+
+Never invent numbers or context to fill XYZ.
+
 ## Output
 
 Use a compact Markdown summary:

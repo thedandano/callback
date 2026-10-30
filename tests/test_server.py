@@ -901,6 +901,53 @@ def test_tailor_instructions_xyz_honesty_guards():
     assert actual == expected
 
 
+def test_skills_document_xyz_chat_fact_story_intake():
+    """#162: skills persist chat-supplied XYZ facts via create_story."""
+    from callback.server import _TAILOR_INSTRUCTIONS
+
+    tailor = Path("skills/tailor-resume/SKILL.md").read_text().lower()
+    onboard = Path("skills/onboard-profile/SKILL.md").read_text().lower()
+    instructions = _TAILOR_INSTRUCTIONS.lower()
+    # Lock real create_story args — not fictional title/tags.
+    required_tailor = (
+        "chat-supplied",
+        "create_story",
+        "primary_skill",
+        "confirm",
+        "situation",
+        "behavior",
+        "impact",
+    )
+    required_onboard = (
+        "chat-supplied",
+        "primary_skill",
+    )
+    forbidden = ("story.metrics",)
+    actual = {
+        "tailor": {p: p in tailor for p in required_tailor},
+        "onboard": {p: p in onboard for p in required_onboard},
+        "forbidden_absent": {p: (p not in tailor and p not in onboard) for p in forbidden},
+        "y_in_impact": "impact" in tailor and "metric" in tailor,
+        "protocol": {
+            "chat-supplied": "chat-supplied" in instructions,
+            "create_story": "create_story" in instructions,
+            "primary_skill": "primary_skill" in instructions,
+        },
+    }
+    expected = {
+        "tailor": {p: True for p in required_tailor},
+        "onboard": {p: True for p in required_onboard},
+        "forbidden_absent": {p: True for p in forbidden},
+        "y_in_impact": True,
+        "protocol": {
+            "chat-supplied": True,
+            "create_story": True,
+            "primary_skill": True,
+        },
+    }
+    assert actual == expected
+
+
 def test_submit_keywords_returns_ranked_project_candidates(tmp_path, monkeypatch):
     from callback.server import load_jd, submit_keywords
     from callback.wiki import WikiStore
