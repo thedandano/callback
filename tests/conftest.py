@@ -1,8 +1,8 @@
-import sys
-
 import pytest
 
 from callback import paths
+from callback.apply_graph import get_apply_graph
+from callback.profile_graph import get_profile_graph
 
 
 @pytest.fixture(autouse=True)
@@ -20,15 +20,13 @@ def isolate_server_db(tmp_path, monkeypatch):
     """Redirect SQLite DBs to tmp dir before server import."""
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
 
-    for mod in ("callback.server", "callback.apply_graph", "callback.profile_graph"):
-        sys.modules.pop(mod, None)
-
-    import callback.server  # noqa: F401
+    get_apply_graph.cache_clear()
+    get_profile_graph.cache_clear()
 
     yield
 
-    for mod in ("callback.server", "callback.apply_graph", "callback.profile_graph"):
-        sys.modules.pop(mod, None)
+    get_apply_graph.cache_clear()
+    get_profile_graph.cache_clear()
 
 
 @pytest.fixture(autouse=True)
