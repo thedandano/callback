@@ -19,8 +19,9 @@ from pathlib import Path
 
 from callback import scorer
 from callback.apply_nodes import _sections_to_text
+from callback.models.section_map import SectionMap
 from callback.profilecompiler import _token_sort_ratio
-from callback.section_map import SectionMap, apply_edit
+from callback.section_map import apply_edit
 from evals.checks import Check
 from evals.recall import all_terms, term_present
 

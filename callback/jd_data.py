@@ -1,8 +1,8 @@
 """JDData contract for host-owned keyword extraction."""
 
-from typing import Literal
+from pydantic import ValidationError
 
-from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
+from callback.models.jd_data import JDData, JDDataError, clean_strings
 
 EXTRACTION_PROTOCOL = """Extract keywords from jd_text using this exact protocol:
 
@@ -61,94 +61,6 @@ Output only: {"key_responsibilities":["<term1>","<term2>",...]}  (use [] if the 
 
 _MAX_ATOMIC_WORDS = 6
 
-Seniority = Literal["junior", "mid", "senior", "lead", "director"]
-SUPPORTED_SENIORITIES = {"junior", "mid", "senior", "lead", "director", "unspecified"}
-
-
-class JDDataError(Exception):
-    """Validation failure for host-submitted JDData."""
-
-    def __init__(self, code: str, message: str) -> None:
-        super().__init__(message)
-        self.code = code
-
-
-_LIST_FIELDS = ("required", "preferred", "key_responsibilities", "required_any", "preferred_any")
-
-
-def _clean_strings(values: object, field_name: str) -> list[str]:
-    if not isinstance(values, list):
-        raise JDDataError("invalid_jd", f"{field_name} must be a list")
-    cleaned: list[str] = []
-    for value in values:
-        if not isinstance(value, str):
-            raise JDDataError("invalid_jd", f"{field_name} entries must be strings")
-        if value.strip():
-            cleaned.append(value.strip())
-    return cleaned
-
-
-def _clean_groups(groups: object, field_name: str) -> list[list[str]]:
-    if not isinstance(groups, list):
-        raise JDDataError("invalid_jd", f"{field_name} must be a list")
-    cleaned_groups: list[list[str]] = []
-    for group in groups:
-        if not isinstance(group, list):
-            raise JDDataError("invalid_jd", f"{field_name} entries must be lists")
-        cleaned_group = _clean_strings(group, field_name)
-        if cleaned_group:
-            cleaned_groups.append(cleaned_group)
-    return cleaned_groups
-
-
-class JDData(BaseModel):
-    """JSON-compatible JDData contract."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    title: str | None = None
-    company: str | None = None
-    required: list[str] = []
-    preferred: list[str] = []
-    required_any: list[list[str]] = []
-    preferred_any: list[list[str]] = []
-    location: str | None = None
-    seniority: Seniority | str = "unspecified"
-    required_years: float = 0.0
-    team: str | None = None
-    key_responsibilities: list[str] = []
-    pay_range_min: float | None = None
-    pay_range_max: float | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def _clean(cls, data: object) -> object:
-        if not isinstance(data, dict):
-            raise JDDataError("invalid_jd", "jd_json must encode an object")
-        cleaned = dict(data)
-        if cleaned.get("seniority") in (None, ""):
-            cleaned["seniority"] = "unspecified"
-        for field_name in _LIST_FIELDS:
-            if not isinstance(cleaned.get(field_name, []), list):
-                raise JDDataError("invalid_jd", f"{field_name} must be a list")
-        cleaned["required"] = _clean_strings(cleaned.get("required", []), "required")
-        cleaned["preferred"] = _clean_strings(cleaned.get("preferred", []), "preferred")
-        cleaned["required_any"] = _clean_groups(cleaned.get("required_any", []), "required_any")
-        cleaned["preferred_any"] = _clean_groups(cleaned.get("preferred_any", []), "preferred_any")
-        if not any(
-            (
-                cleaned["required"],
-                cleaned["required_any"],
-                cleaned["preferred"],
-                cleaned["preferred_any"],
-            )
-        ):
-            raise JDDataError("invalid_jd", "no keywords extracted")
-        seniority = cleaned["seniority"]
-        if not isinstance(seniority, str) or seniority not in SUPPORTED_SENIORITIES:
-            raise JDDataError("invalid_jd", f"unsupported seniority: {seniority!r}")
-        return cleaned
-
 
 def parse_jd_json(jd_json: str) -> dict:
     """Parse and validate host-submitted JDData JSON."""
@@ -189,4 +101,4 @@ def non_atomic_responsibilities(terms: list[str]) -> list[str]:
 
 def clean_responsibilities(values: object) -> list[str]:
     """Validate a pass-2 key_responsibilities list: strings only, blanks dropped."""
-    return _clean_strings(values, "key_responsibilities")
+    return clean_strings(values, "key_responsibilities")

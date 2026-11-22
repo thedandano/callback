@@ -7,12 +7,11 @@ from pydantic import BaseModel
 from callback.jd_data import (
     EXTRACTION_PROTOCOL,
     RESPONSIBILITIES_PROTOCOL,
-    JDData,
-    JDDataError,
     drop_scored_duplicates,
     non_atomic_responsibilities,
     parse_jd_json,
 )
+from callback.models.jd_data import JDData, JDDataError
 
 FULL_JD = {
     "title": "Senior Platform Engineer",

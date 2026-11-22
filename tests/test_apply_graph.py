@@ -6,7 +6,7 @@ import logging
 import pytest
 
 from callback.apply_graph import build_apply_graph, make_config
-from callback.state import ApplyState
+from callback.models.state import ApplyState
 
 
 def test_get_apply_graph_returns_the_same_instance():
@@ -17,7 +17,7 @@ def test_get_apply_graph_returns_the_same_instance():
 
 def test_render_error_routes_back_to_tailor():
     from callback.apply_graph import TAILOR_NODE, _route_or_retry
-    from callback.state import ApplyState
+    from callback.models.state import ApplyState
 
     router = _route_or_retry("parse_final")
     assert router(ApplyState(session_id="s", error="render: boom")) == TAILOR_NODE
@@ -28,7 +28,7 @@ def test_finalize_error_routes_back_to_tailor():
     from langgraph.graph import END
 
     from callback.apply_graph import TAILOR_NODE, _route_or_retry
-    from callback.state import ApplyState
+    from callback.models.state import ApplyState
 
     router = _route_or_retry(END)
     assert router(ApplyState(session_id="s", error="finalize: boom")) == TAILOR_NODE

@@ -30,11 +30,11 @@ from langsmith.utils import LangSmithError
 from callback.jd_data import (
     EXTRACTION_PROTOCOL,
     RESPONSIBILITIES_PROTOCOL,
-    JDDataError,
     clean_responsibilities,
     drop_scored_duplicates,
     parse_jd_json,
 )
+from callback.models.jd_data import JDDataError
 from callback.server import _TAILOR_INSTRUCTIONS
 from evals import experiments
 from evals.cases import case_dirs, case_id

@@ -3,7 +3,7 @@
 from unittest.mock import AsyncMock, patch
 
 from callback.apply_graph import build_apply_graph
-from callback.state import ApplyState
+from callback.models.state import ApplyState
 
 FIXTURE_MD = """# Senior Python Engineer
 

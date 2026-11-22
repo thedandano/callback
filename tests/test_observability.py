@@ -894,7 +894,7 @@ def test_sanitize_node_inputs_profile_state_no_story_or_tag_content_leaks():
     only — the exact-dict result must not contain the secret narrative or skill name.
     """
     from callback.config.observability import _sanitize_node_inputs
-    from callback.state import ProfileState
+    from callback.models.state import ProfileState
 
     state = ProfileState(
         session_id="session-2",

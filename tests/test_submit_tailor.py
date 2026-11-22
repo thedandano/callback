@@ -10,7 +10,7 @@ import pytest
 
 from callback import ledger
 from callback.config import paths
-from callback.section_map import (
+from callback.models.section_map import (
     ContactInfo,
     ExperienceEntry,
     ProjectEntry,

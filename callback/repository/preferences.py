@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from callback.config import paths
-from callback.preferences import SearchPreferences
+from callback.models.preferences import SearchPreferences
 
 
 class PreferencesStore:

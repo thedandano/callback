@@ -2,7 +2,7 @@
 
 import json
 
-from callback.preferences import ScanSource, SearchPreferences, WorkType
+from callback.models.preferences import ScanSource, SearchPreferences, WorkType
 from callback.repository.preferences import PreferencesStore
 
 

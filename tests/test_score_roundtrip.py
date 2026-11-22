@@ -7,9 +7,10 @@ from contextlib import closing
 from callback import ledger
 from callback.apply_nodes import _sections_to_text, finalize, report
 from callback.config import paths
+from callback.models.section_map import EducationEntry, ExperienceEntry, SectionMap, SkillsSection
+from callback.models.state import ApplyState
+from callback.models.tailored_resume import TailoredResume
 from callback.scorer import ATS_SECTION_PATTERNS
-from callback.section_map import EducationEntry, ExperienceEntry, SectionMap, SkillsSection
-from callback.state import ApplyState, TailoredResume
 
 _SCORE_INITIAL = {
     "total": 35.0,

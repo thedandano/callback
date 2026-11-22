@@ -1,5 +1,5 @@
+from callback.models.profile import CompiledProfile, CreatedStory
 from callback.repository import stories
-from callback.state import CompiledProfile, CreatedStory
 from callback.wiki import WikiStore
 
 

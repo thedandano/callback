@@ -19,8 +19,8 @@ from callback import ledger
 from callback.config import paths
 from callback.jd_data import EXTRACTION_PROTOCOL
 from callback.jd_fetcher import MIN_MARKDOWN_CHARS
+from callback.models.section_map import ContactInfo, ExperienceEntry, SectionMap, SkillsSection
 from callback.repository.resumes import save_resume
-from callback.section_map import ContactInfo, ExperienceEntry, SectionMap, SkillsSection
 from callback.server import load_jd, submit_keywords, submit_tailor
 from callback.wiki import WikiStore
 

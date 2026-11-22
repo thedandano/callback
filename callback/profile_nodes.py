@@ -9,6 +9,9 @@ import logging
 
 import callback.extractor as extractor
 from callback.config.observability import trace_node
+from callback.models.profile import CreatedStory
+from callback.models.section_map import SectionMap
+from callback.models.state import ProfileState
 from callback.profilecompiler import (
     ProfileMissingError,
     load_compiled_profile,
@@ -18,8 +21,6 @@ from callback.profilecompiler import compile_profile as build_profile
 from callback.repository import stories
 from callback.repository.accomplishments import AccomplishmentsStore
 from callback.repository.resumes import list_resumes, replace_resume
-from callback.section_map import SectionMap
-from callback.state import CreatedStory, ProfileState
 from callback.wiki import WikiStore
 from callback.wikirenderer import render_index
 

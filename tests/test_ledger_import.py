@@ -14,6 +14,7 @@ from callback.ledger_import import (
     import_contact_ledger,
     import_record_csv,
 )
+from callback.models.ledger import RunRecord
 
 _CSV = (
     "Company,Title,Recorded Date,Email Date,URL,Salary range,Status,Notes,"
@@ -90,7 +91,7 @@ def test_reimport_never_overwrites_a_newer_run(tmp_path):
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
         ledger.record_run(
             conn,
-            ledger.RunRecord(
+            RunRecord(
                 session_id="s1",
                 timestamp="2026-10-05T00:00:00+00:00",
                 jd_url="https://a.com/1",
@@ -983,7 +984,7 @@ def test_existing_run_leaves_its_job_untouched(tmp_path):
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
         ledger.record_run(
             conn,
-            ledger.RunRecord(
+            RunRecord(
                 session_id="s1", timestamp="2026-10-05T00:00:00+00:00", jd_url="https://a.com/1"
             ),
         )
@@ -1210,7 +1211,7 @@ def test_run_import_reuses_a_runless_scan_job_by_name(tmp_path):
             title="Staff Engineer",
             seen_at="2026-10-01",
         )
-        run = ledger.RunRecord(
+        run = RunRecord(
             session_id="s1",
             timestamp="2026-10-02T10:00:00+00:00",
             keywords={"company": "Acme", "title": "Staff Engineer"},

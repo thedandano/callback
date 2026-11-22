@@ -61,21 +61,24 @@ from callback.config.observability import (
 from callback.jd_data import (
     EXTRACTION_PROTOCOL,
     RESPONSIBILITIES_PROTOCOL,
-    JDDataError,
     clean_responsibilities,
     drop_scored_duplicates,
     non_atomic_responsibilities,
     parse_jd_json,
 )
 from callback.jd_fetcher import JDFetchError
-from callback.preferences import SearchPreferences
+from callback.models.jd_data import JDDataError
+from callback.models.ledger import StatusUpdate
+from callback.models.preferences import SearchPreferences
+from callback.models.profile import CreatedStory
+from callback.models.section_map import SectionMap, SkillsSection
+from callback.models.state import ApplyState, ProfileState
 from callback.profile_graph import get_profile_graph, story_pending
 from callback.profile_graph import make_config as make_profile_config
 from callback.repository.preferences import PreferencesStore
 from callback.repository.resumes import list_resumes
 from callback.repository.stories import label_line_field, tags_from_meta
-from callback.section_map import SectionMap, SkillsSection, apply_edit
-from callback.state import ApplyState, CreatedStory, ProfileState
+from callback.section_map import apply_edit
 from callback.wiki import WikiPageError, WikiPageIdError, WikiStore, split_frontmatter
 
 # Must run before any module-level os.environ read below (e.g. LOG_LEVEL): callback
@@ -2196,7 +2199,7 @@ def record_status(
     web_url = ledger.url_or_none(url)
     if error := _record_status_error(status, web_url, company, title, date, job_key):
         return error
-    update = ledger.StatusUpdate(
+    update = StatusUpdate(
         status=status.strip(),
         recorded_at=date or _today_iso(),
         note=_contact_note(url, note),

@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 SESSION_MAX_AGE = timedelta(hours=24)
 # Types LangGraph's msgpack serde must be allowed to rebuild from a checkpoint.
-_ALLOWED_TYPES = [("callback.state", "TailoredResume")]
+_ALLOWED_TYPES = [("callback.models.tailored_resume", "TailoredResume")]
 _GREGORIAN_EPOCH = datetime(1582, 10, 15, tzinfo=UTC)
 
 

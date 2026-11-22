@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
+from callback.models.profile import CompiledProfile, CreatedStory
 from callback.profilecompiler import compile_profile
-from callback.state import CompiledProfile, CreatedStory
 from callback.wikirenderer import render_index
 
 

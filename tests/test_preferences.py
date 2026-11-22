@@ -1,9 +1,9 @@
-"""Unit tests for callback.preferences domain model."""
+"""Unit tests for callback.models.preferences domain model."""
 
 import pytest
 from pydantic import ValidationError
 
-from callback.preferences import CompanyPref, ScanSource, SearchPreferences, WorkType
+from callback.models.preferences import CompanyPref, ScanSource, SearchPreferences, WorkType
 
 
 def _valid_kwargs(**overrides) -> dict:
@@ -95,7 +95,7 @@ def test_new_fields_default_empty():
 
 
 def test_referral_company_nested_serialization():
-    from callback.preferences import ReferralCompany  # noqa: F401
+    from callback.models.preferences import ReferralCompany  # noqa: F401
 
     prefs = SearchPreferences(
         **_valid_kwargs(

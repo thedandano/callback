@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from callback.section_map import SectionMap
+from callback.models.section_map import SectionMap
 from evals.checks import Check, first_failure
 from evals.tailor_checks import (
     HostTailor,

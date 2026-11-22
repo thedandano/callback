@@ -13,7 +13,7 @@ from callback.extractor import (
     extract,
     extract_sections,
 )
-from callback.section_map import ContactInfo
+from callback.models.section_map import ContactInfo
 
 
 class TestTxtExtraction:

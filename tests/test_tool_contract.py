@@ -12,7 +12,7 @@ import callback.server as server
 from callback.apply_graph import get_apply_graph
 from callback.apply_nodes import resume_extractor
 from callback.config import paths
-from callback.section_map import ContactInfo, ExperienceEntry, SectionMap, SkillsSection
+from callback.models.section_map import ContactInfo, ExperienceEntry, SectionMap, SkillsSection
 from callback.wiki import WikiStore
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"

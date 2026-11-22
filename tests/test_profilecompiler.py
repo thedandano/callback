@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from callback.models.profile import CompiledProfile, CreatedStory, OrphanedSkill
 from callback.profilecompiler import (
     ProfileMissingError,
     _token_sort_ratio,
@@ -11,7 +12,6 @@ from callback.profilecompiler import (
     load_compiled_profile,
     save_compiled_profile,
 )
-from callback.state import CompiledProfile, CreatedStory, OrphanedSkill
 
 
 def _make_story(

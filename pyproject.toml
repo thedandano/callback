@@ -68,7 +68,6 @@ forbidden_modules = [
     "callback.ledger",
     "callback.ledger_import",
     "callback.plugin_install",
-    "callback.preferences",
     "callback.profile_graph",
     "callback.profile_nodes",
     "callback.profilecompiler",
@@ -77,7 +76,36 @@ forbidden_modules = [
     "callback.scorer",
     "callback.section_map",
     "callback.session_store",
-    "callback.state",
+    "callback.version_check",
+    "callback.wiki",
+    "callback.wikirenderer",
+]
+
+[[tool.importlinter.contracts]]
+name = "models import nothing from the project"
+type = "forbidden"
+source_modules = ["callback.models"]
+forbidden_modules = [
+    "callback._build_info",
+    "callback.server",
+    "callback.cli",
+    "callback.apply_graph",
+    "callback.apply_nodes",
+    "callback.config",
+    "callback.extractor",
+    "callback.jd_data",
+    "callback.jd_fetcher",
+    "callback.ledger",
+    "callback.ledger_import",
+    "callback.plugin_install",
+    "callback.profile_graph",
+    "callback.profile_nodes",
+    "callback.profilecompiler",
+    "callback.render",
+    "callback.repository",
+    "callback.scorer",
+    "callback.section_map",
+    "callback.session_store",
     "callback.version_check",
     "callback.wiki",
     "callback.wikirenderer",

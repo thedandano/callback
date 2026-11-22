@@ -1,45 +1,6 @@
 from pydantic import BaseModel, Field
 
-
-class CreatedStory(BaseModel):
-    id: str
-    primary_skill: str
-    skills: list[str]
-    story_type: str
-    job_title: str
-    situation: str
-    behavior: str
-    impact: str
-
-
-class OrphanedSkill(BaseModel):
-    skill: str
-    deferred: bool = False
-
-
-class CompiledProfile(BaseModel):
-    schema_version: str
-    skills_index: list[str]  # union of all compiled_story.skills across stories
-    stories: list[CreatedStory]
-    orphaned_skills: list[OrphanedSkill]
-    compiled_at: str
-
-
-class TailoredResume(BaseModel):
-    name: str
-    location: str | None = None
-    email: str | None = None
-    phone: str | None = None
-    linkedin: str | None = None
-    website: str | None = None
-    title: str | None = None
-    summary: str | None = None
-    skills_raw: str | None = None
-    experience_raw: str | None = None
-    projects_raw: str | None = None
-    education_raw: str | None = None
-    candidate_experience_years: float | None = None
-    max_pages: int = 1
+from callback.models.tailored_resume import TailoredResume
 
 
 class ApplyState(BaseModel):

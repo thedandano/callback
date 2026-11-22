@@ -8,7 +8,7 @@ import pytest
 
 from callback import ledger
 from callback.config import paths
-from callback.state import TailoredResume
+from callback.models.tailored_resume import TailoredResume
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SAMPLE_JD = (FIXTURES / "sample_jd.txt").read_text()

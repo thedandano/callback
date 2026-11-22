@@ -30,12 +30,14 @@ from callback import ledger, scorer
 from callback.config import paths
 from callback.config.observability import record_decision, trace_node
 from callback.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError, fetch_url_to_markdown
+from callback.models.ledger import RunRecord
+from callback.models.section_map import SectionMap
+from callback.models.state import ApplyState
+from callback.models.tailored_resume import TailoredResume
 from callback.render import render_resume
 from callback.repository import stories
 from callback.repository.resumes import ResumeNotFoundError, get_resume
 from callback.scorer import normalize_for_match
-from callback.section_map import SectionMap
-from callback.state import ApplyState, TailoredResume
 from callback.wiki import WikiStore
 
 logger = logging.getLogger(__name__)
@@ -759,7 +761,7 @@ def finalize(state: ApplyState) -> dict:
 
     finalized_at = datetime.now(UTC).isoformat()
     try:
-        run = ledger.RunRecord(
+        run = RunRecord(
             session_id=state.session_id,
             timestamp=finalized_at,
             jd_url=state.jd_url,

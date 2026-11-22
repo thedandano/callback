@@ -4,7 +4,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 from callback.config import paths
-from callback.state import CompiledProfile, CreatedStory, OrphanedSkill
+from callback.models.profile import CompiledProfile, CreatedStory, OrphanedSkill
 
 _SCHEMA_VERSION = "1"
 _COMPILED_PROFILE_FILE = "compiled_profile.json"

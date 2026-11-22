@@ -8,13 +8,14 @@ from unittest.mock import patch
 import pytest
 
 from callback import ledger
+from callback.models.ledger import RunRecord, StatusUpdate
 from scripts import build_fetch_fixtures
 
 
 def _run(
     session_id: str = "s1", url: str | None = "https://jobs.example.com/a", pdf: str = "/p.pdf"
-) -> ledger.RunRecord:
-    return ledger.RunRecord(
+) -> RunRecord:
+    return RunRecord(
         session_id=session_id,
         timestamp="2026-10-12T10:00:00+00:00",
         jd_url=url,
@@ -1142,9 +1143,9 @@ def test_url_or_none_accepts_only_http_urls(value, expected):
     assert ledger.url_or_none(value) == expected
 
 
-def _update(**fields) -> ledger.StatusUpdate:
+def _update(**fields) -> StatusUpdate:
     base = {"status": "Applied", "recorded_at": "2026-10-01", "source": "t"}
-    return ledger.StatusUpdate(**{**base, **fields})
+    return StatusUpdate(**{**base, **fields})
 
 
 def test_record_status_writes_job_and_event_in_one_transaction(tmp_path):

@@ -26,6 +26,7 @@ from langgraph.types import RunnableConfig  # pyright: ignore[reportPrivateImpor
 
 from callback.config import paths
 from callback.config.observability import build_graph_config
+from callback.models.state import ProfileState
 from callback.profile_nodes import (
     check_orphans,
     check_profile,
@@ -34,7 +35,6 @@ from callback.profile_nodes import (
     onboard,
 )
 from callback.session_store import open_checkpointer
-from callback.state import ProfileState
 
 
 def make_config(

@@ -1862,7 +1862,7 @@ def test_load_jd_returns_no_resume_registered_error_when_empty():
 def test_parse_initial_wiki_miss_calls_get_resume_and_extracts_text(tmp_path):
     """Wiki miss: get_resume is called and text is extracted from the returned path."""
     from callback.apply_nodes import parse_initial
-    from callback.state import ApplyState
+    from callback.models.state import ApplyState
 
     resume = tmp_path / "resume.txt"
     resume.write_text("Lead Engineer with Python and Kubernetes experience")
@@ -1878,8 +1878,8 @@ def test_parse_initial_wiki_miss_calls_get_resume_and_extracts_text(tmp_path):
 def test_parse_initial_wiki_miss_resume_not_found_returns_noop_sentinel():
     """Wiki miss with ResumeNotFoundError returns noop sentinel."""
     from callback.apply_nodes import parse_initial
+    from callback.models.state import ApplyState
     from callback.repository.resumes import ResumeNotFoundError
-    from callback.state import ApplyState
 
     state = ApplyState(session_id="s1", resume_label="ghost")
 
@@ -1905,7 +1905,7 @@ MINIMAL_SECTIONS_JSON = json.dumps(
 
 def test_parse_initial_labels_the_resume_file_as_score_source(tmp_path, decisions):
     from callback.apply_nodes import parse_initial
-    from callback.state import ApplyState
+    from callback.models.state import ApplyState
 
     resume = tmp_path / "resume.txt"
     resume.write_text("Lead Engineer with Python and Kubernetes experience")
@@ -1918,8 +1918,8 @@ def test_parse_initial_labels_the_resume_file_as_score_source(tmp_path, decision
 
 def test_parse_initial_labels_sections_text_when_the_resume_file_is_missing(decisions):
     from callback.apply_nodes import parse_initial
+    from callback.models.state import ApplyState
     from callback.repository.resumes import ResumeNotFoundError
-    from callback.state import ApplyState
 
     with (
         patch(
@@ -1940,8 +1940,8 @@ def test_parse_initial_labels_sections_text_when_the_resume_file_is_missing(deci
 
 def test_parse_initial_labels_no_source_when_nothing_is_available(decisions):
     from callback.apply_nodes import parse_initial
+    from callback.models.state import ApplyState
     from callback.repository.resumes import ResumeNotFoundError
-    from callback.state import ApplyState
 
     parse_initial(ApplyState(session_id="s1"))
     no_label = dict(decisions)
@@ -2003,7 +2003,7 @@ def test_tailor_retry_update_labels_the_attempt(decisions):
 def test_parse_initial_wiki_hit_uses_pdf_for_parsed_initial(tmp_path):
     """Wiki hit: parsed_initial comes from PDF, sections/wiki_index from wiki."""
     from callback.apply_nodes import parse_initial
-    from callback.state import ApplyState
+    from callback.models.state import ApplyState
 
     resume = tmp_path / "resume.txt"
     resume.write_text("Experience\nBuilt Python services.\n\nSkills\nPython")
@@ -2036,8 +2036,8 @@ def test_parse_initial_wiki_hit_uses_pdf_for_parsed_initial(tmp_path):
 def test_parse_initial_wiki_hit_pdf_missing_falls_back_to_sections_text():
     """Wiki hit + ResumeNotFoundError: falls back to _sections_to_text, emits warning."""
     from callback.apply_nodes import parse_initial
+    from callback.models.state import ApplyState
     from callback.repository.resumes import ResumeNotFoundError
-    from callback.state import ApplyState
 
     state = ApplyState(session_id="s1", resume_label="eng")
     sections_text = "Python ACME Engineer built things"

@@ -10,11 +10,11 @@ import callback.profile_nodes as pnodes
 import callback.server as server_module
 import callback.wiki as wiki_module
 from callback.config import paths
+from callback.models.profile import CompiledProfile, OrphanedSkill
 from callback.profile_graph import get_profile_graph
 from callback.profilecompiler import save_compiled_profile
 from callback.repository.resumes import save_resume
 from callback.server import compile_profile, create_story, onboard_user
-from callback.state import CompiledProfile, OrphanedSkill
 
 
 def _fake_graph(state_values: dict):

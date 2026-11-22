@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
+from callback.models.profile import CreatedStory
 from callback.repository import stories
 from callback.repository.accomplishments import AccomplishmentsStore
-from callback.state import CreatedStory
 from callback.wiki import WikiPageError, WikiStore
 
 _FIELDS = {

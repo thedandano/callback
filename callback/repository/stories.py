@@ -12,9 +12,9 @@ from datetime import UTC, datetime
 
 from pydantic import ValidationError
 
+from callback.models.profile import CreatedStory
 from callback.repository.accomplishments import AccomplishmentsStore
 from callback.repository.resumes import list_resumes
-from callback.state import CreatedStory
 from callback.wiki import (
     WikiPageError,
     WikiPageIdError,

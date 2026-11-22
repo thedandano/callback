@@ -9,7 +9,7 @@ import pytest
 
 import callback.apply_nodes as apply_nodes
 from callback.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError
-from callback.state import ApplyState
+from callback.models.state import ApplyState
 
 
 @pytest.fixture

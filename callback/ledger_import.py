@@ -18,6 +18,7 @@ from typing import NamedTuple
 from pydantic import BaseModel, ValidationError
 
 from callback import ledger
+from callback.models.ledger import RunRecord
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ def _skip(report: ImportReport, label: str, reason: str) -> None:
 class _Archive(NamedTuple):
     label: str
     path: Path
-    run: ledger.RunRecord
+    run: RunRecord
     root: Path
 
 
@@ -111,7 +112,7 @@ def _pdf_candidates(archive: _Archive, name: str) -> list[Path]:
     return _find_pdf(archive.root, name)
 
 
-def _relink_pdf(archive: _Archive) -> ledger.RunRecord:
+def _relink_pdf(archive: _Archive) -> RunRecord:
     """Point a run at a PDF found near its archive when its recorded path is gone."""
     run = archive.run
     if not run.pdf_path or Path(run.pdf_path).exists():
@@ -149,7 +150,7 @@ def _read_archives(archive_dir: Path, report: ImportReport, *, qualify: bool) ->
         relative = str(path.relative_to(archive_dir))
         label = f"{archive_dir}/{relative}" if qualify else relative
         try:
-            run = ledger.RunRecord.model_validate_json(path.read_text("utf-8"))
+            run = RunRecord.model_validate_json(path.read_text("utf-8"))
         except (OSError, UnicodeDecodeError, ValidationError) as exc:
             _skip(report, label, str(exc).splitlines()[0])
             continue
@@ -166,7 +167,7 @@ def _read_archives(archive_dir: Path, report: ImportReport, *, qualify: bool) ->
     return runs
 
 
-def _run_time(run: ledger.RunRecord) -> datetime.datetime | None:
+def _run_time(run: RunRecord) -> datetime.datetime | None:
     """A valid archive timestamp in UTC, or None when it is not ISO or overflows UTC."""
     try:
         moment = datetime.datetime.fromisoformat(run.timestamp)

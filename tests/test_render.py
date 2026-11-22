@@ -16,6 +16,8 @@ from pdfminer.psparser import PSLiteral
 import callback.render.html_builder as render_builder
 from callback import extractor as resume_extractor
 from callback.apply_nodes import parse_final, render
+from callback.models.state import ApplyState
+from callback.models.tailored_resume import TailoredResume
 from callback.render.html_builder import (
     _contact_link,
     _render_async,
@@ -28,7 +30,6 @@ from callback.render.html_builder import (
     render_resume,
 )
 from callback.scorer import ScoringConfig, _score_ats
-from callback.state import ApplyState, TailoredResume
 
 
 def test_render_produces_real_pdf(tmp_path, monkeypatch):

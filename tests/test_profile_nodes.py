@@ -9,6 +9,8 @@ import pytest
 import callback.extractor as ext
 import callback.repository.resumes as resumes_module
 from callback.config import paths
+from callback.models.profile import CompiledProfile, CreatedStory, OrphanedSkill
+from callback.models.state import ProfileState
 from callback.profile_nodes import (
     _resume_skills,
     check_orphans,
@@ -25,12 +27,6 @@ from callback.repository.resumes import (
     list_resumes,
     replace_resume,
     save_resume,
-)
-from callback.state import (
-    CompiledProfile,
-    CreatedStory,
-    OrphanedSkill,
-    ProfileState,
 )
 
 RESUME_TXT = """\
