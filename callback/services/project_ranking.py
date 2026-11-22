@@ -193,7 +193,7 @@ def project_swap_recommendation(
         return None
     return {
         "replace_target": f"proj-{replace_index}",
-        "visibleproject_score": visible_score,
+        "visible_project_score": visible_score,
         "candidate": candidate,
     }
 
@@ -225,7 +225,7 @@ def project_layout_recommendation(candidates: list[dict], keywords: dict, sectio
         **recommendation,
         "strategy": "replace",
         "replace_target": swap["replace_target"],
-        "visibleproject_score": swap["visibleproject_score"],
+        "visible_project_score": swap["visible_project_score"],
         "candidate": swap["candidate"],
     }
 

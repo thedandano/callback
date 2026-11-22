@@ -27,6 +27,8 @@ from urllib.request import ProxyHandler, Request, build_opener
 import yaml
 from langsmith.utils import LangSmithError
 
+from callback.config import settings
+from callback.config.logging import configure_logging
 from callback.models.jd_data import JDDataError
 from callback.services.host_protocols import (
     EXTRACTION_PROTOCOL,
@@ -944,6 +946,9 @@ def _run_one_eval(name: str, args: argparse.Namespace, run_meta: dict) -> list[E
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
+    # Same bootstrap callback.server runs on import: env.json first, then logging.
+    settings.apply_env_file()
+    configure_logging(os.environ.get("CALLBACK_LOG_PATH"))
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s", stream=sys.stderr)
     wanted = args.eval or list(EVALS)
     rows: list[EvalRow] = []
