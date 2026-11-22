@@ -15,7 +15,8 @@ from pathlib import Path
 # Add current directory to path for running via uv
 sys.path.insert(0, os.getcwd())
 
-from callback.config import paths
+from callback.config import paths, settings
+from callback.config.logging import configure_logging
 from callback.models.section_map import ContactInfo, ExperienceEntry, SectionMap, SkillsSection
 from callback.repositories import ledger
 from callback.repositories.resumes import save_resume
@@ -57,6 +58,9 @@ def _load_phase(jd_url: str | None, jd_text: str) -> dict:
 
 
 def main():
+    # Same bootstrap callback.server runs on import: env.json first, then logging.
+    settings.apply_env_file()
+    configure_logging(os.environ.get("CALLBACK_LOG_PATH"))
     jd_url = sys.argv[1] if len(sys.argv) > 1 else None
 
     # Run under isolated data and state roots so the temp resume is the only one

@@ -10,6 +10,8 @@ import traceback
 # Add current directory to path for running via uv
 sys.path.insert(0, os.getcwd())
 
+from callback.config import settings
+from callback.config.logging import configure_logging
 from callback.tools.compile_profile import compile_profile
 from callback.tools.create_story import create_story
 from callback.tools.onboard_user import onboard_user
@@ -29,6 +31,9 @@ Terraform, AWS, GitHub Actions, Python
 
 
 def main():
+    # Same bootstrap callback.server runs on import: env.json first, then logging.
+    settings.apply_env_file()
+    configure_logging(os.environ.get("CALLBACK_LOG_PATH"))
     try:
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".txt", delete=False, encoding="utf-8"
