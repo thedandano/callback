@@ -222,3 +222,29 @@ def detect_uncovered_skills(section_map: SectionMap) -> list[str]:
         return bool(re.search(rf"\b{re.escape(skill)}\b", bullet_text, re.IGNORECASE))
 
     return [s for s in all_skills if not _covered(s)]
+
+
+def apply_edits(
+    section_map: SectionMap, edits: list[dict]
+) -> tuple[list[int], list[dict], list[str]]:
+    """Apply edits in order; return applied indexes, rejected edits, applied skill values."""
+    edits_applied = []
+    edits_rejected = []
+
+    for i, edit in enumerate(edits):
+        result = apply_edit(section_map, edit)
+        if result.applied:
+            edits_applied.append(i)
+        else:
+            edits_rejected.append({"index": i, "reason": result.rejection_reason})
+
+    applied_set = set(edits_applied)
+    applied_skill_values = [
+        edit["value"]
+        for i, edit in enumerate(edits)
+        if i in applied_set
+        and edit.get("section") == "skills"
+        and edit.get("op") in ("add", "replace")
+        and "value" in edit
+    ]
+    return edits_applied, edits_rejected, applied_skill_values

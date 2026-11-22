@@ -16,6 +16,7 @@ from callback.config import logging as config_logging
 from callback.config import paths
 from callback.repositories import ledger
 from callback.services.host_protocols import EXTRACTION_PROTOCOL, RESPONSIBILITIES_PROTOCOL
+from callback.services.ledger_notes import contact_note
 
 PARTIAL_JD_JSON = """
 {
@@ -123,7 +124,7 @@ def test_run_starts_mcp_without_browser_install():
     import callback.server as server
 
     with (
-        patch.object(server, "_ensure_browsers") as ensure_browsers,
+        patch.object(server, "ensure_browsers") as ensure_browsers,
         patch.object(server, "log") as log,
         patch.object(server.mcp, "run") as mcp_run,
     ):
@@ -142,7 +143,7 @@ async def test_startup_ensure_browsers_invokes_ensure_browsers():
     import callback.server as server
 
     with (
-        patch.object(server, "_ensure_browsers") as ensure_browsers,
+        patch.object(server, "ensure_browsers") as ensure_browsers,
         patch.object(server, "log"),
     ):
         await server._startup_ensure_browsers()
@@ -800,13 +801,13 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
 
 
 def test_tailor_skill_and_eval_prompt_forbid_keyword_stuffing():
-    from callback.server import _TAILOR_INSTRUCTIONS
+    from callback.services.host_protocols import TAILOR_INSTRUCTIONS
     from evals.runner import tailor_prompt
     from evals.tailor_checks import TailorCase
 
     skill = Path("skills/tailor-resume/SKILL.md").read_text()
     skill_lower = skill.lower()
-    assert "Keyword mapping, not stuffing" in _TAILOR_INSTRUCTIONS
+    assert "Keyword mapping, not stuffing" in TAILOR_INSTRUCTIONS
     assert "keyword mapping" in skill_lower
     assert "keyword-stuff" in skill_lower or "do not keyword-stuff" in skill_lower
     assert (
@@ -822,22 +823,22 @@ def test_tailor_skill_and_eval_prompt_forbid_keyword_stuffing():
 
 
 def test_tailor_banned_lists_align_with_readability_filler_phrases():
-    from callback.server import _TAILOR_INSTRUCTIONS
+    from callback.services.host_protocols import TAILOR_INSTRUCTIONS
     from evals.tailor_checks import BANNED_TERMS
 
     skill = Path("skills/tailor-resume/SKILL.md").read_text().lower()
     for term in ("cross-functional", "operational excellence", "results-driven"):
-        assert term in _TAILOR_INSTRUCTIONS.lower()
+        assert term in TAILOR_INSTRUCTIONS.lower()
         assert term in skill
         assert term in BANNED_TERMS
 
 
 def test_tailor_instructions_prefer_evidenced_ai_outcomes():
     """#149: protocol-only AI skills guidance — outcomes over tool-name Skills."""
-    from callback.server import _TAILOR_INSTRUCTIONS
+    from callback.services.host_protocols import TAILOR_INSTRUCTIONS
 
     skill = Path("skills/tailor-resume/SKILL.md").read_text().lower()
-    instructions = _TAILOR_INSTRUCTIONS.lower()
+    instructions = TAILOR_INSTRUCTIONS.lower()
     assert "evidenced ai" in instructions
     assert (
         "tool name in skills" in instructions or "listing the tool name in skills" in instructions
@@ -848,10 +849,10 @@ def test_tailor_instructions_prefer_evidenced_ai_outcomes():
 
 def test_tailor_instructions_name_google_xyz_formula():
     """#158: Google XYZ named in protocol + skill; never invent/change numbers."""
-    from callback.server import _TAILOR_INSTRUCTIONS
+    from callback.services.host_protocols import TAILOR_INSTRUCTIONS
 
     skill = Path("skills/tailor-resume/SKILL.md").read_text().lower()
-    instructions = _TAILOR_INSTRUCTIONS.lower()
+    instructions = TAILOR_INSTRUCTIONS.lower()
     required = (
         "google xyz",
         "accomplished x",
@@ -872,10 +873,10 @@ def test_tailor_instructions_name_google_xyz_formula():
 
 def test_tailor_instructions_xyz_honesty_guards():
     """#159: XYZ field-note honesty guards in protocol + skill."""
-    from callback.server import _TAILOR_INSTRUCTIONS
+    from callback.services.host_protocols import TAILOR_INSTRUCTIONS
 
     skill = Path("skills/tailor-resume/SKILL.md").read_text().lower()
-    instructions = _TAILOR_INSTRUCTIONS.lower()
+    instructions = TAILOR_INSTRUCTIONS.lower()
     actual = {
         "scope_not_result": (
             "scope" in instructions
@@ -907,10 +908,10 @@ def test_tailor_instructions_xyz_honesty_guards():
 
 def test_tailor_instructions_missing_metric_handoff():
     """#160: when Y is missing, protocol+skill require missing_metric handoff."""
-    from callback.server import _TAILOR_INSTRUCTIONS
+    from callback.services.host_protocols import TAILOR_INSTRUCTIONS
 
     skill = Path("skills/tailor-resume/SKILL.md").read_text().lower()
-    instructions = _TAILOR_INSTRUCTIONS.lower()
+    instructions = TAILOR_INSTRUCTIONS.lower()
     required = (
         "missing_metric",
         "verifiable outcome",
@@ -936,11 +937,11 @@ def test_tailor_instructions_missing_metric_handoff():
 
 def test_skills_document_xyz_chat_fact_story_intake():
     """#162: skills persist chat-supplied XYZ facts via create_story."""
-    from callback.server import _TAILOR_INSTRUCTIONS
+    from callback.services.host_protocols import TAILOR_INSTRUCTIONS
 
     tailor = Path("skills/tailor-resume/SKILL.md").read_text().lower()
     onboard = Path("skills/onboard-profile/SKILL.md").read_text().lower()
-    instructions = _TAILOR_INSTRUCTIONS.lower()
+    instructions = TAILOR_INSTRUCTIONS.lower()
     # Lock real create_story args — not fictional title/tags.
     required_tailor = (
         "chat-supplied",
@@ -1500,7 +1501,7 @@ def test_get_wiki_pages_rejects_embedded_nul(tmp_path, monkeypatch):
 
 def test_rank_project_candidates_skips_invalid_index_links(tmp_path, monkeypatch):
     from callback.repositories.wiki import WikiStore
-    from callback.server import _rank_project_candidates
+    from callback.services.project_ranking import rank_project_candidates
 
     resume_label = "invalid_link_resume"
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -1536,9 +1537,9 @@ story_type: SBI
     keywords = {"required": ["Python", "RAG"], "preferred": []}
 
     mock_log = Mock()
-    monkeypatch.setattr("callback.server.log", mock_log)
+    monkeypatch.setattr("callback.services.project_ranking.log", mock_log)
 
-    candidates = _rank_project_candidates(resume_label, keywords, wiki_index)
+    candidates = rank_project_candidates(resume_label, keywords, wiki_index)
 
     assert candidates == [
         {
@@ -1568,7 +1569,7 @@ def test_rank_project_candidates_skips_pages_without_frontmatter_and_warns(
     tmp_path, monkeypatch, caplog
 ):
     from callback.repositories.wiki import WikiStore
-    from callback.server import _rank_project_candidates
+    from callback.services.project_ranking import rank_project_candidates
 
     caplog.set_level("WARNING", logger="callback.server")
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -1584,7 +1585,7 @@ def test_rank_project_candidates_skips_pages_without_frontmatter_and_warns(
     )
     wiki_index = "- [old](experience/story-001.md)\n- [Real](experience/story-002.md)\n"
     keywords = {"required": ["Python"], "preferred": []}
-    candidates = _rank_project_candidates("r", keywords, wiki_index)
+    candidates = rank_project_candidates("r", keywords, wiki_index)
     actual = {
         "names": [c["name"] for c in candidates],
         "warned": any("story-001.md" in r.message for r in caplog.records),
@@ -1595,7 +1596,7 @@ def test_rank_project_candidates_skips_pages_without_frontmatter_and_warns(
 
 def test_rank_project_candidates_matches_body_and_tags_not_raw_frontmatter(tmp_path, monkeypatch):
     from callback.repositories.wiki import WikiStore
-    from callback.server import _rank_project_candidates
+    from callback.services.project_ranking import rank_project_candidates
 
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     store = WikiStore()
@@ -1607,7 +1608,7 @@ def test_rank_project_candidates_matches_body_and_tags_not_raw_frontmatter(tmp_p
     )
     wiki_index = "- [Site](experience/story-001.md)\n"
     keywords = {"required": ["accessibility WCAG"], "preferred": ["accessibility"]}
-    candidates = _rank_project_candidates("r", keywords, wiki_index)
+    candidates = rank_project_candidates("r", keywords, wiki_index)
     actual = {
         "required_matched": candidates[0]["required_matched"],
         "preferred_matched": candidates[0]["preferred_matched"],
@@ -1627,7 +1628,7 @@ class TestOrphanDetection:
     """Tests for _detect_orphaned_required orphan classification logic."""
 
     def test_orphan_detected_when_skill_in_sections_not_in_wiki(self):
-        from callback.server import _detect_orphaned_required
+        from callback.services.keyword_coverage import detect_orphaned_required
 
         sections = {
             "skills": {
@@ -1637,12 +1638,12 @@ class TestOrphanDetection:
         }
         wiki_index = "# Stories\n\n## Docker\n- Built containers\n"
 
-        result = _detect_orphaned_required(["Python", "Docker"], sections, wiki_index)
+        result = detect_orphaned_required(["Python", "Docker"], sections, wiki_index)
 
         assert result == ["Python"]
 
     def test_genuine_gap_not_flagged_as_orphan(self):
-        from callback.server import _detect_orphaned_required
+        from callback.services.keyword_coverage import detect_orphaned_required
 
         sections = {
             "skills": {
@@ -1652,12 +1653,12 @@ class TestOrphanDetection:
         }
         wiki_index = "# Stories\n\n## Docker\n- Built containers\n"
 
-        result = _detect_orphaned_required(["Kubernetes"], sections, wiki_index)
+        result = detect_orphaned_required(["Kubernetes"], sections, wiki_index)
 
         assert result == []
 
     def test_skill_covered_in_wiki_not_flagged(self):
-        from callback.server import _detect_orphaned_required
+        from callback.services.keyword_coverage import detect_orphaned_required
 
         sections = {
             "skills": {
@@ -1667,25 +1668,23 @@ class TestOrphanDetection:
         }
         wiki_index = "# Stories\n\n## Python\n- Built services in python\n"
 
-        result = _detect_orphaned_required(["Python"], sections, wiki_index)
+        result = detect_orphaned_required(["Python"], sections, wiki_index)
 
         assert result == []
 
     def test_none_skills_values_tolerated_like_empty_section(self):
-        from callback.server import _detect_orphaned_required
+        from callback.services.keyword_coverage import detect_orphaned_required
 
         wiki_index = "# Stories\n\n## Docker\n- Built containers\n"
         required_missing = ["Python"]
 
         actual = {
-            "none_values": _detect_orphaned_required(
+            "none_values": detect_orphaned_required(
                 required_missing,
                 {"skills": {"flat": None, "categorized": None}},
                 wiki_index,
             ),
-            "empty_section": _detect_orphaned_required(
-                required_missing, {"skills": {}}, wiki_index
-            ),
+            "empty_section": detect_orphaned_required(required_missing, {"skills": {}}, wiki_index),
         }
         expected = {"none_values": [], "empty_section": []}
         assert actual == expected
@@ -2335,7 +2334,7 @@ def test_rank_project_candidates_skips_project_pages_with_non_list_tags(
     tmp_path, monkeypatch, caplog
 ):
     from callback.repositories.wiki import WikiStore
-    from callback.server import _rank_project_candidates
+    from callback.services.project_ranking import rank_project_candidates
 
     caplog.set_level("WARNING", logger="callback.server")
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -2360,9 +2359,7 @@ def test_rank_project_candidates_skips_project_pages_with_non_list_tags(
         "- [b](experience/story-002.md)\n"
         "- [c](experience/story-003.md)\n"
     )
-    candidates = _rank_project_candidates(
-        "r", {"required": ["Python"], "preferred": []}, wiki_index
-    )
+    candidates = rank_project_candidates("r", {"required": ["Python"], "preferred": []}, wiki_index)
     warned = sorted(
         pid
         for pid in ("story-001.md", "story-002.md")
@@ -2383,7 +2380,7 @@ def test_rank_project_candidates_skips_project_pages_with_non_list_tags(
 
 def test_rank_project_candidates_matches_the_frontmatter_title(tmp_path, monkeypatch):
     from callback.repositories.wiki import WikiStore
-    from callback.server import _rank_project_candidates
+    from callback.services.project_ranking import rank_project_candidates
 
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     page = (
@@ -2391,7 +2388,7 @@ def test_rank_project_candidates_matches_the_frontmatter_title(tmp_path, monkeyp
         "# old heading\n\n**Situation:** Ran containers.\n"
     )
     WikiStore().write_page("r", "experience/story-001.md", page)
-    candidates = _rank_project_candidates(
+    candidates = rank_project_candidates(
         "r", {"required": ["Kubernetes"], "preferred": []}, "- [k](experience/story-001.md)\n"
     )
     actual = {
@@ -2404,7 +2401,7 @@ def test_rank_project_candidates_matches_the_frontmatter_title(tmp_path, monkeyp
 
 def test_rank_project_candidates_ignores_a_stale_body_heading(tmp_path, monkeypatch):
     from callback.repositories.wiki import WikiStore
-    from callback.server import _rank_project_candidates
+    from callback.services.project_ranking import rank_project_candidates
 
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     page = (
@@ -2413,7 +2410,7 @@ def test_rank_project_candidates_ignores_a_stale_body_heading(tmp_path, monkeypa
     )
     WikiStore().write_page("r", "experience/story-001.md", page)
     keywords = {"required": ["AWS"], "preferred": ["Azure"]}
-    candidates = _rank_project_candidates("r", keywords, "- [a](experience/story-001.md)\n")
+    candidates = rank_project_candidates("r", keywords, "- [a](experience/story-001.md)\n")
     actual = [(c["name"], c["required_matched"], c["preferred_matched"]) for c in candidates]
     expected = [("Azure", [], ["Azure"])]
     assert actual == expected
@@ -2421,7 +2418,7 @@ def test_rank_project_candidates_ignores_a_stale_body_heading(tmp_path, monkeypa
 
 def test_rank_project_candidates_skips_an_undecodable_page(tmp_path, monkeypatch, caplog):
     from callback.repositories.wiki import WikiStore
-    from callback.server import _rank_project_candidates
+    from callback.services.project_ranking import rank_project_candidates
 
     caplog.set_level("WARNING", logger="callback.server")
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -2432,9 +2429,7 @@ def test_rank_project_candidates_skips_an_undecodable_page(tmp_path, monkeypatch
     bad = tmp_path / "wiki" / "r" / "experience" / "story-001.md"
     bad.write_bytes("---\ntype: project\ntitle: caf\xe9\n---\n".encode("latin-1"))
     wiki_index = "- [a](experience/story-001.md)\n- [b](experience/story-002.md)\n"
-    candidates = _rank_project_candidates(
-        "r", {"required": ["Python"], "preferred": []}, wiki_index
-    )
+    candidates = rank_project_candidates("r", {"required": ["Python"], "preferred": []}, wiki_index)
     actual = {
         "names": [c["name"] for c in candidates],
         "warned": any("story-001.md" in r.message for r in caplog.records),
@@ -2779,7 +2774,7 @@ async def test_find_job_returns_ledger_error_when_ledger_path_has_no_home():
 
     with (
         patch.object(paths, "ledger_path", side_effect=RuntimeError("no home directory")),
-        patch.object(server, "_ensure_browsers"),
+        patch.object(server, "ensure_browsers"),
     ):
         async with Client(FastMCPTransport(server.mcp)) as client:
             result = await client.call_tool("find_job", {"url": "https://a.com/1"})
@@ -3041,9 +3036,8 @@ async def test_export_ledger_contacts_mode_keeps_only_reportable_events(tmp_path
     ],
 )
 def test_contact_note_keeps_the_contact_method_first(url, note, expected):
-    import callback.server as server
 
-    assert server._contact_note(url, note) == expected
+    assert contact_note(url, note) == expected
 
 
 @pytest.mark.anyio
