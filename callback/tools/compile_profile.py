@@ -7,8 +7,7 @@ from callback.config.logging import log
 from callback.config.observability import (
     trace_tool,
 )
-from callback.graphs.profile.graph import get_profile_graph
-from callback.graphs.profile.graph import make_config as make_profile_config
+from callback.graphs.profile import api as profile_api
 from callback.models.envelope import err, ok
 from callback.models.state import ProfileState
 from callback.tools.errors import graph_or_err
@@ -76,15 +75,12 @@ def compile_profile(story_tags: str | None = None, session_id: str | None = None
 def _compile_profile_impl(
     session_id: str, host_tags: list[str], *, resumed: bool, explicit_tags: bool
 ) -> dict:
-    graph, graph_error = graph_or_err(get_profile_graph, session_id)
+    _, graph_error = graph_or_err(profile_api.ensure_ready, session_id)
     if graph_error is not None:
         return graph_error
-    config = make_profile_config(session_id, tool_name="compile_profile")
     if resumed:
         update = {"host_tags": host_tags} if explicit_tags else None
-        error = resume_profile_thread(
-            graph, config, session_id, "compile_profile", "compile_profile", update
-        )
+        error = resume_profile_thread(session_id, "compile_profile", "compile_profile", update)
         if error:
             return error
         graph_input = None
@@ -93,9 +89,9 @@ def _compile_profile_impl(
         graph_input = ProfileState(
             session_id=session_id, resume_label=resume_label, host_tags=host_tags or None
         )
-    snapshot, error = run_profile_thread(graph, config, graph_input, session_id, "compile_profile")
+    session, error = run_profile_thread(session_id, graph_input, "compile_profile")
     if error:
         return error
-    assert snapshot is not None
-    next_action, data = profile_thread_data(snapshot)
+    assert session is not None
+    next_action, data = profile_thread_data(session)
     return ok(session_id, next_action, data)

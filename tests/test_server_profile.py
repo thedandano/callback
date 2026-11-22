@@ -9,11 +9,9 @@ import pytest
 import callback.graphs.profile.nodes.compile_profile as compile_node
 import callback.repositories.wiki as wiki_module
 import callback.tools.compile_profile as compile_tool
-import callback.tools.create_story as create_story_tool
-import callback.tools.onboard_user as onboard_tool
-import callback.tools.profile_thread as profile_thread_module
 import callback.tools.resume_label as resume_label_module
 from callback.config import paths
+from callback.graphs.profile import api as profile_api
 from callback.graphs.profile.graph import get_profile_graph
 from callback.graphs.profile.graph import make_config as make_profile_config
 from callback.models.profile import CompiledProfile, OrphanedSkill
@@ -26,9 +24,8 @@ from callback.tools.onboard_user import onboard_user
 
 
 def _patch_profile_graph(monkeypatch, factory) -> None:
-    """Swap the graph accessor in every tool module that looks it up."""
-    for module in (onboard_tool, compile_tool, create_story_tool):
-        monkeypatch.setattr(module, "get_profile_graph", factory)
+    """Swap the graph accessor the profile front door looks up."""
+    monkeypatch.setattr(profile_api, "get_profile_graph", factory)
 
 
 def _fake_graph(state_values: dict):
@@ -637,7 +634,7 @@ class TestCreateStory:
         _isolate_profile(tmp_path, monkeypatch)
         _save_profile_with_resumes(tmp_path)
 
-        monkeypatch.setattr(profile_thread_module, "story_pending", lambda intake: False)
+        monkeypatch.setattr(profile_api, "story_pending", lambda intake: False)
 
         result = create_story(
             primary_skill="Python",

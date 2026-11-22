@@ -2195,13 +2195,14 @@ class TestTailorDiagnostics:
 
 def test_onboard_user_returns_envelope_when_extractor_raises(tmp_path, monkeypatch):
     import callback.tools.onboard_user as onboard_tool
+    from callback.graphs.profile import api as profile_api
     from callback.graphs.profile.graph import build_profile_graph
 
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
     db_path = tmp_path / "profile-sessions.db"
     monkeypatch.setattr(
-        onboard_tool, "get_profile_graph", lambda: build_profile_graph(db_path=db_path)
+        profile_api, "get_profile_graph", lambda: build_profile_graph(db_path=db_path)
     )
 
     def broken_extract(path):

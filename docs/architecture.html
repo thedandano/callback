@@ -303,7 +303,7 @@ h1 {
       <div class="layer-label">Orchestration</div>
       <div class="node sched">
         <div class="node-title">Workflow Tool Handler
-          <span class="node-file">callback/server.py · per-tool guard</span>
+          <span class="node-file">callback/tools/ · per-tool guard</span>
         </div>
         <div class="node-body">
           Handoff guard before keyword submission:
@@ -324,7 +324,7 @@ h1 {
 
       <div class="node sched">
         <div class="node-title">LangGraph StateGraph
-          <span class="node-file">callback/apply_graph.py · build_apply_graph()</span>
+          <span class="node-file">callback/graphs/apply/graph.py · build_apply_graph()</span>
         </div>
         <div class="node-body">
           <code>StateGraph(ApplyState)</code> with edges
@@ -347,7 +347,7 @@ h1 {
 
       <div class="node logic">
         <div class="node-title">jd_fetch node
-          <span class="node-file">callback/apply_nodes.py</span>
+          <span class="node-file">callback/graphs/apply/nodes/</span>
         </div>
         <div class="node-body">
           Input: <code>state.jd_url</code> and/or <code>state.jd_raw_text</code>.
@@ -365,7 +365,7 @@ h1 {
 
       <div class="node logic">
         <div class="node-title">keywords_accept node
-          <span class="node-file">callback/apply_nodes.py</span>
+          <span class="node-file">callback/graphs/apply/nodes/</span>
         </div>
         <div class="node-body">
           Input: validated host-extracted <code>state.keywords</code>.
@@ -383,7 +383,7 @@ h1 {
 
       <div class="node logic">
         <div class="node-title">Later apply nodes
-          <span class="node-file">callback/apply_nodes.py</span>
+          <span class="node-file">callback/graphs/apply/nodes/</span>
         </div>
         <div class="node-body">
           <code>parse_initial</code>, <code>score_initial</code>, <code>tailor</code>,
@@ -391,7 +391,7 @@ h1 {
           <code>report</code>, and <code>finalize</code> remain graph nodes behind
           <code>submit_keywords</code> and <code>submit_tailor</code>.
           <code>finalize</code> writes the run (scores, PDF path, tailored text) and its job to
-          the ledger (<code>callback/ledger.py</code>, one SQLite file for every job seen).
+          the ledger (<code>callback/repositories/ledger.py</code>, one SQLite file for every job seen).
         </div>
       </div>
 
@@ -449,7 +449,7 @@ h1 {
 
         <div class="node api">
           <div class="node-title">onboard_user
-            <span class="node-file">server.py</span>
+            <span class="node-file">tools/</span>
           </div>
           <div class="node-body">
             Accepts <code>resume_content</code>, <code>resume_label</code>, <code>skills</code>,
@@ -461,7 +461,7 @@ h1 {
 
         <div class="node api">
           <div class="node-title">compile_profile / create_story
-            <span class="node-file">server.py</span>
+            <span class="node-file">tools/</span>
           </div>
           <div class="node-body">
             Profile compilation and SBI story stubs. The profile graph exists separately,
@@ -494,42 +494,42 @@ h1 {
       <tbody>
         <tr>
           <td>ApplyState</td>
-          <td><code>state.py</code></td>
+          <td><code>models/state.py</code></td>
           <td>Constructor kwargs (session_id required, 13 optional)</td>
           <td>Pydantic BaseModel instance</td>
           <td class="pure">✓ pure fn</td>
         </tr>
         <tr>
           <td>jd_fetch node</td>
-          <td><code>apply_nodes.py</code></td>
+          <td><code>graphs/apply/nodes/</code></td>
           <td><code>state.jd_url</code> / <code>state.jd_raw_text</code></td>
           <td><code>{"jd_text": str}</code></td>
           <td class="pure">✓ pure fn</td>
         </tr>
         <tr>
           <td>keywords_accept node</td>
-          <td><code>apply_nodes.py</code></td>
+          <td><code>graphs/apply/nodes/</code></td>
           <td><code>state.keywords</code></td>
           <td>preserved validated JDData</td>
           <td class="pure">✓ pure fn</td>
         </tr>
         <tr>
           <td>build_apply_graph / make_config</td>
-          <td><code>apply_graph.py</code></td>
+          <td><code>graphs/apply/graph.py</code></td>
           <td><code>db_path: Path</code>, <code>session_id: str</code></td>
           <td>Compiled <code>StateGraph</code> · <code>RunnableConfig</code></td>
           <td class="isolated">✓ full</td>
         </tr>
         <tr>
           <td>FastMCP Server — workflow tools</td>
-          <td><code>server.py</code></td>
+          <td><code>tools/</code></td>
           <td>MCP stdio tool call JSON</td>
           <td>JSON envelope response</td>
           <td class="hub">orchestration hub</td>
         </tr>
         <tr>
           <td>FastMCP Server — profile tools</td>
-          <td><code>server.py</code></td>
+          <td><code>tools/</code></td>
           <td>MCP stdio tool call JSON</td>
           <td>JSON envelope response</td>
           <td class="isolated">✓ full</td>
@@ -545,7 +545,7 @@ h1 {
     </table>
     <p class="iso-note">
       "Isolated" means the component can be replaced by editing one file with no cascading edits.
-      The workflow tool handlers in <code>server.py</code> are the <strong>orchestration hub</strong> — they
+      The workflow tool handlers in <code>tools/</code> are the <strong>orchestration hub</strong> — they
       intentionally coordinate session validation, state injection, and graph invocation in sequence.
       This is expected and correct. The handoff nodes take an <code>ApplyState</code>,
       return a partial dict delta, and do not perform hidden keyword extraction.

@@ -8,9 +8,7 @@ from pathlib import Path
 
 import pytest
 
-import callback.tools.compile_profile as compile_tool
-import callback.tools.create_story as create_story_tool
-import callback.tools.onboard_user as onboard_tool
+from callback.graphs.profile import api as profile_api
 from callback.graphs.profile.graph import build_profile_graph
 from callback.tools.compile_profile import compile_profile
 from callback.tools.create_story import create_story
@@ -31,9 +29,8 @@ Python, Kubernetes, Docker
 
 
 def _patch_profile_graph(monkeypatch, factory) -> None:
-    """Swap the graph accessor in every tool module that looks it up."""
-    for module in (onboard_tool, compile_tool, create_story_tool):
-        monkeypatch.setattr(module, "get_profile_graph", factory)
+    """Swap the graph accessor the profile front door looks up."""
+    monkeypatch.setattr(profile_api, "get_profile_graph", factory)
 
 
 def _make_resume(tmp_path: Path) -> Path:

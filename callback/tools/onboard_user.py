@@ -4,12 +4,8 @@ import uuid
 from pathlib import Path
 
 from callback.config.logging import log
-from callback.config.observability import (
-    invoke_graph_without_native_tracing,
-    trace_tool,
-)
-from callback.graphs.profile.graph import get_profile_graph
-from callback.graphs.profile.graph import make_config as make_profile_config
+from callback.config.observability import trace_tool
+from callback.graphs.profile import api as profile_api
 from callback.models.envelope import err, ok
 from callback.models.state import ProfileState
 from callback.tools.errors import graph_or_err, unexpected_error
@@ -110,11 +106,10 @@ def _onboard_user_impl(
         resume_path=resume_path,
         intake=intake if intake else None,
     )
-    graph, graph_error = graph_or_err(get_profile_graph, session_id)
+    _, graph_error = graph_or_err(profile_api.ensure_ready, session_id)
     if graph_error is not None:
         return graph_error
-    config = make_profile_config(session_id, tool_name="onboard_user")
-    state_values, invoke_error = _onboard_user_invoke(graph, initial_state, config, session_id)
+    state_values, invoke_error = _onboard_user_invoke(initial_state, session_id)
     if invoke_error is not None:
         return invoke_error
     assert state_values is not None
@@ -123,11 +118,10 @@ def _onboard_user_impl(
 
 
 def _onboard_user_invoke(
-    graph, initial_state: ProfileState, config, session_id: str
+    initial_state: ProfileState, session_id: str
 ) -> tuple[dict, None] | tuple[None, dict]:
     """Invoke the profile graph and fetch its state, mapping raised errors to envelopes."""
     try:
-        invoke_graph_without_native_tracing(graph, initial_state, config)
-        return graph.get_state(config).values, None
+        return profile_api.start(initial_state), None
     except Exception:
         return None, unexpected_error("onboard_user", session_id)

@@ -6,8 +6,7 @@ from callback.config.logging import log
 from callback.config.observability import (
     trace_tool,
 )
-from callback.graphs.profile.graph import get_profile_graph
-from callback.graphs.profile.graph import make_config as make_profile_config
+from callback.graphs.profile import api as profile_api
 from callback.models.envelope import err, ok
 from callback.models.profile import CreatedStory
 from callback.models.state import ProfileState
@@ -95,13 +94,12 @@ def create_story(
 
 @trace_tool("create_story", graph_name="profile")
 def _create_story_impl(session_id: str, intake: dict, *, resumed: bool) -> dict:
-    graph, graph_error = graph_or_err(get_profile_graph, session_id)
+    _, graph_error = graph_or_err(profile_api.ensure_ready, session_id)
     if graph_error is not None:
         return graph_error
-    config = make_profile_config(session_id, tool_name="create_story")
     if resumed:
         error = resume_profile_thread(
-            graph, config, session_id, "create_story", "create_story", {"intake": intake}
+            session_id, "create_story", "create_story", {"intake": intake}
         )
         if error:
             return error
@@ -109,11 +107,11 @@ def _create_story_impl(session_id: str, intake: dict, *, resumed: bool) -> dict:
     else:
         resume_label = resolve_new_thread_resume_label("create_story", session_id)
         graph_input = ProfileState(session_id=session_id, resume_label=resume_label, intake=intake)
-    snapshot, error = run_profile_thread(graph, config, graph_input, session_id, "create_story")
+    session, error = run_profile_thread(session_id, graph_input, "create_story")
     if error:
         return error
-    assert snapshot is not None
-    values = snapshot.values
+    assert session is not None
+    values = session.values
     if not (values.get("intake") or {}).get("story_id"):
         log(
             "ERROR",
@@ -126,7 +124,7 @@ def _create_story_impl(session_id: str, intake: dict, *, resumed: bool) -> dict:
             session_id,
             retriable=False,
         )
-    next_action, data = profile_thread_data(snapshot)
+    next_action, data = profile_thread_data(session)
     data = {
         "story_id": (values.get("intake") or {}).get("story_id"),
         "primary_skill": intake["primary_skill"],
