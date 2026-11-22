@@ -14,7 +14,7 @@ from urllib.error import HTTPError, URLError
 import pytest
 from langsmith.utils import LangSmithError
 
-from callback.jd_data import EXTRACTION_PROTOCOL, RESPONSIBILITIES_PROTOCOL
+from callback.services.host_protocols import EXTRACTION_PROTOCOL, RESPONSIBILITIES_PROTOCOL
 from evals import runner
 from evals.checks import Check
 from evals.runner import (

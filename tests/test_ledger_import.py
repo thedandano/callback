@@ -6,15 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from callback.ledger_import import (
+from callback.models.ledger import RunRecord
+from callback.repositories import ledger
+from callback.services.ledger_import import (
     ImportReport,
     _iso_date,
     import_archives,
     import_contact_ledger,
     import_record_csv,
 )
-from callback.models.ledger import RunRecord
-from callback.repositories import ledger
 
 _CSV = (
     "Company,Title,Recorded Date,Email Date,URL,Salary range,Status,Notes,"
@@ -488,7 +488,7 @@ def test_url_less_csv_row_skips_when_same_name_is_ambiguous(tmp_path, caplog):
     )
 
     with (
-        caplog.at_level(logging.WARNING, logger="callback.ledger_import"),
+        caplog.at_level(logging.WARNING, logger="callback.services.ledger_import"),
         closing(ledger.connect(tmp_path / "l.db")) as conn,
     ):
         report = import_record_csv(conn, path)
@@ -935,7 +935,7 @@ def test_csv_name_match_is_logged(tmp_path, caplog):
             title="Eng",
             seen_at="2026-09-01",
         )
-        with caplog.at_level(logging.WARNING, logger="callback.ledger_import"):
+        with caplog.at_level(logging.WARNING, logger="callback.services.ledger_import"):
             import_record_csv(conn, path)
 
     assert [json.loads(record.message) for record in caplog.records] == [

@@ -14,8 +14,8 @@ from fastmcp.client.transports import FastMCPTransport
 
 from callback.config import logging as config_logging
 from callback.config import paths
-from callback.jd_data import EXTRACTION_PROTOCOL, RESPONSIBILITIES_PROTOCOL
 from callback.repositories import ledger
+from callback.services.host_protocols import EXTRACTION_PROTOCOL, RESPONSIBILITIES_PROTOCOL
 
 PARTIAL_JD_JSON = """
 {
@@ -2190,7 +2190,7 @@ def test_onboard_user_returns_envelope_when_extractor_raises(tmp_path, monkeypat
 @pytest.mark.anyio
 async def test_check_update_tool_returns_update_available():
     import callback.server as server
-    import callback.version_check as vc
+    import callback.services.version_check as vc
 
     vc._cached = None
     check_result = {
@@ -2211,7 +2211,7 @@ async def test_check_update_tool_returns_update_available():
 @pytest.mark.anyio
 async def test_check_update_tool_returns_already_current():
     import callback.server as server
-    import callback.version_check as vc
+    import callback.services.version_check as vc
 
     vc._cached = None
     check_result = {

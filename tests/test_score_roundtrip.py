@@ -10,7 +10,7 @@ from callback.models.section_map import EducationEntry, ExperienceEntry, Section
 from callback.models.state import ApplyState
 from callback.models.tailored_resume import TailoredResume
 from callback.repositories import ledger
-from callback.scorer import ATS_SECTION_PATTERNS
+from callback.services.scorer import ATS_SECTION_PATTERNS
 
 _SCORE_INITIAL = {
     "total": 35.0,

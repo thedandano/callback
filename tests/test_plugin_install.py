@@ -1,6 +1,6 @@
 import pytest
 
-from callback.plugin_install import PluginInstallError, install, resolve_targets
+from callback.services.plugin_install import PluginInstallError, install, resolve_targets
 
 
 def test_resolve_both_returns_claude_and_codex():

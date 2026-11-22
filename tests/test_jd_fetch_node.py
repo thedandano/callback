@@ -8,8 +8,8 @@ from unittest.mock import ANY
 import pytest
 
 import callback.apply_nodes as apply_nodes
-from callback.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError
 from callback.models.state import ApplyState
+from callback.services.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError
 
 
 @pytest.fixture

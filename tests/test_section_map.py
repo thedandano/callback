@@ -12,7 +12,7 @@ from callback.models.section_map import (
     SectionMap,
     SkillsSection,
 )
-from callback.section_map import EditResult, apply_edit
+from callback.services.section_edits import EditResult, apply_edit
 
 
 def make_full_section_map() -> SectionMap:

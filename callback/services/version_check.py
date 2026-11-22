@@ -10,7 +10,7 @@ import urllib.request
 
 from packaging.version import InvalidVersion, Version
 
-logger = logging.getLogger("callback.version_check")
+logger = logging.getLogger("callback.services.version_check")
 
 _LATEST_URL = "https://api.github.com/repos/thedandano/callback/releases/latest"
 _cached: dict | None = None

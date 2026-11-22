@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from callback.jd_data import clean_responsibilities
+from callback.services.jd_parsing import clean_responsibilities
 from evals.checks import first_failure
 from evals.extract_checks import run_checks
 from evals.runner import merge_passes

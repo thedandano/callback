@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-import callback.extractor as ext
 import callback.repositories.resumes as resumes_module
+import callback.services.extractor as ext
 from callback.config import paths
 from callback.models.profile import CompiledProfile, CreatedStory, OrphanedSkill
 from callback.models.state import ProfileState

@@ -17,11 +17,11 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from callback import scorer
 from callback.apply_nodes import _sections_to_text
 from callback.models.section_map import SectionMap
-from callback.profilecompiler import _token_sort_ratio
-from callback.section_map import apply_edit
+from callback.services import scorer
+from callback.services.profilecompiler import token_sort_ratio
+from callback.services.section_edits import apply_edit
 from evals.checks import Check
 from evals.recall import all_terms, term_present
 
@@ -261,7 +261,7 @@ def _grounded(token: str, source_text: str, source_tokens: set[str], ratio_min: 
         return True
     if any(ch.isdigit() for ch in token):
         return False
-    return any(_token_sort_ratio(lowered, s) >= ratio_min for s in source_tokens)
+    return any(token_sort_ratio(lowered, s) >= ratio_min for s in source_tokens)
 
 
 def _grounding_check(case: TailorCase, edits: list[dict]) -> Check:

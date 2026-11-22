@@ -34,7 +34,7 @@ def test_fixture_recall_matches_recorded(board):
 @pytest.mark.local
 @pytest.mark.parametrize("board", sorted(SOURCES))
 def test_live_fetch_recall_within_tolerance(board):
-    from callback.jd_fetcher import fetch_url_to_markdown
+    from callback.services.jd_fetcher import fetch_url_to_markdown
 
     expected_jd = json.loads((EXTRACT_DIR / f"{board}.expected.json").read_text())
     text = asyncio.run(fetch_url_to_markdown(SOURCES[board]["jd_url"]))

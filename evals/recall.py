@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 
-from callback.scorer import fold_quotes
+from callback.services.scorer import fold_quotes
 
 _BOUNDARY = r"(?<![a-z0-9+#]){}(?![a-z0-9+#])"
 

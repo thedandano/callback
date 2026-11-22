@@ -62,20 +62,11 @@ forbidden_modules = [
     "callback.cli",
     "callback.apply_graph",
     "callback.apply_nodes",
-    "callback.extractor",
-    "callback.jd_data",
-    "callback.jd_fetcher",
-    "callback.ledger_import",
-    "callback.plugin_install",
     "callback.profile_graph",
     "callback.profile_nodes",
-    "callback.profilecompiler",
     "callback.render",
     "callback.repositories",
-    "callback.scorer",
-    "callback.section_map",
-    "callback.version_check",
-    "callback.wikirenderer",
+    "callback.services",
 ]
 
 [[tool.importlinter.contracts]]
@@ -89,20 +80,11 @@ forbidden_modules = [
     "callback.apply_graph",
     "callback.apply_nodes",
     "callback.config",
-    "callback.extractor",
-    "callback.jd_data",
-    "callback.jd_fetcher",
-    "callback.ledger_import",
-    "callback.plugin_install",
     "callback.profile_graph",
     "callback.profile_nodes",
-    "callback.profilecompiler",
     "callback.render",
     "callback.repositories",
-    "callback.scorer",
-    "callback.section_map",
-    "callback.version_check",
-    "callback.wikirenderer",
+    "callback.services",
 ]
 
 [[tool.importlinter.contracts]]
@@ -116,17 +98,21 @@ forbidden_modules = [
     "callback.apply_nodes",
     "callback.profile_graph",
     "callback.profile_nodes",
-    "callback.scorer",
-    "callback.extractor",
-    "callback.jd_fetcher",
-    "callback.profilecompiler",
-    "callback.section_map",
-    "callback.jd_data",
-    "callback.wikirenderer",
-    "callback.version_check",
-    "callback.plugin_install",
-    "callback.ledger_import",
     "callback.render",
+    "callback.services",
+]
+
+[[tool.importlinter.contracts]]
+name = "services and render sit below graphs, server and cli"
+type = "forbidden"
+source_modules = ["callback.services", "callback.render"]
+forbidden_modules = [
+    "callback.server",
+    "callback.cli",
+    "callback.apply_graph",
+    "callback.apply_nodes",
+    "callback.profile_graph",
+    "callback.profile_nodes",
 ]
 
 [tool.ruff]

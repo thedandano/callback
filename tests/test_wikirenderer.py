@@ -1,12 +1,12 @@
-"""Tests for callback.wikirenderer — render_index."""
+"""Tests for callback.services.wikirenderer — render_index."""
 
 from pathlib import Path
 
 import pytest
 
 from callback.models.profile import CompiledProfile, CreatedStory
-from callback.profilecompiler import compile_profile
-from callback.wikirenderer import render_index
+from callback.services.profilecompiler import compile_profile
+from callback.services.wikirenderer import render_index
 
 
 def _make_story(

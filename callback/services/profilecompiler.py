@@ -33,7 +33,7 @@ def _detect_orphans(host_tags: list[str], covered: set[str]) -> list[OrphanedSki
     return [OrphanedSkill(skill=tag) for tag in host_tags if tag.lower() not in covered]
 
 
-def _token_sort_ratio(a: str, b: str) -> int:
+def token_sort_ratio(a: str, b: str) -> int:
     """0-100 similarity after lowercasing and sorting whitespace-separated tokens."""
     left = " ".join(sorted(a.lower().split()))
     right = " ".join(sorted(b.lower().split()))
@@ -47,7 +47,7 @@ def _lint_story_coverage(story: CreatedStory) -> str | None:
     if not story.skills:
         return f"{story.id}: primary_skill {primary!r} not found in skills (best match: none at 0%)"
     best_skill, best_score = max(
-        ((s, _token_sort_ratio(primary, s)) for s in story.skills),
+        ((s, token_sort_ratio(primary, s)) for s in story.skills),
         key=lambda pair: pair[1],
     )
     if best_score < _FUZZY_THRESHOLD:

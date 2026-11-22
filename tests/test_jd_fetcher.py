@@ -1,4 +1,4 @@
-"""Tests for callback.jd_fetcher (Playwright + trafilatura)."""
+"""Tests for callback.services.jd_fetcher (Playwright + trafilatura)."""
 
 import asyncio
 import json
@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-import callback.jd_fetcher as jd_fetcher
+import callback.services.jd_fetcher as jd_fetcher
 
 _ARTICLE = (
     "<html><head><title>Senior Python Engineer - ExampleCo</title></head><body>"
@@ -791,7 +791,7 @@ def test_extract_worker_runs_trafilatura_in_child():
 
 def test_importing_jd_fetcher_does_not_import_trafilatura():
     """trafilatura is imported lazily inside the fetch so server start-up does not pay for it."""
-    code = "import sys, callback.jd_fetcher; print('trafilatura' in sys.modules)"
+    code = "import sys, callback.services.jd_fetcher; print('trafilatura' in sys.modules)"
     out = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, check=True
     ).stdout.strip()

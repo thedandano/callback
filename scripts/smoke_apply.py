@@ -16,13 +16,13 @@ from pathlib import Path
 sys.path.insert(0, os.getcwd())
 
 from callback.config import paths
-from callback.jd_data import EXTRACTION_PROTOCOL
-from callback.jd_fetcher import MIN_MARKDOWN_CHARS
 from callback.models.section_map import ContactInfo, ExperienceEntry, SectionMap, SkillsSection
 from callback.repositories import ledger
 from callback.repositories.resumes import save_resume
 from callback.repositories.wiki import WikiStore
 from callback.server import load_jd, submit_keywords, submit_tailor
+from callback.services.host_protocols import EXTRACTION_PROTOCOL
+from callback.services.jd_fetcher import MIN_MARKDOWN_CHARS
 
 JD_JSON = json.dumps(
     {

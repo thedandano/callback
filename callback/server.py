@@ -33,8 +33,8 @@ from typing import Any
 from fastmcp import FastMCP
 from pydantic import ValidationError
 
-import callback.scorer as scorer
-import callback.version_check as version_check
+import callback.services.scorer as scorer
+import callback.services.version_check as version_check
 from callback.apply_graph import (
     FINALIZE_NODE,
     KEYWORDS_ACCEPT_NODE,
@@ -57,15 +57,6 @@ from callback.config.observability import (
     record_decision,
     trace_tool,
 )
-from callback.jd_data import (
-    EXTRACTION_PROTOCOL,
-    RESPONSIBILITIES_PROTOCOL,
-    clean_responsibilities,
-    drop_scored_duplicates,
-    non_atomic_responsibilities,
-    parse_jd_json,
-)
-from callback.jd_fetcher import JDFetchError
 from callback.models.jd_data import JDDataError
 from callback.models.ledger import StatusUpdate
 from callback.models.preferences import SearchPreferences
@@ -80,7 +71,15 @@ from callback.repositories.preferences import PreferencesStore
 from callback.repositories.resumes import list_resumes
 from callback.repositories.story_pages import label_line_field, tags_from_meta
 from callback.repositories.wiki import WikiPageError, WikiPageIdError, WikiStore, split_frontmatter
-from callback.section_map import apply_edit
+from callback.services.host_protocols import EXTRACTION_PROTOCOL, RESPONSIBILITIES_PROTOCOL
+from callback.services.jd_fetcher import JDFetchError
+from callback.services.jd_parsing import (
+    clean_responsibilities,
+    drop_scored_duplicates,
+    non_atomic_responsibilities,
+    parse_jd_json,
+)
+from callback.services.section_edits import apply_edit
 
 # Must run before any module-level os.environ read below (e.g. LOG_LEVEL): callback
 # owns its own settings file (~/.config/callback/env.json) independent of any MCP
@@ -233,7 +232,7 @@ def _keyword_matches_text(keyword: str, text: str) -> bool:
     if not normalized_keyword:
         return False
     normalized_text = scorer.normalize_for_match(text)
-    return bool(scorer._compile_keyword_pattern(normalized_keyword).search(normalized_text))
+    return bool(scorer.compile_keyword_pattern(normalized_keyword).search(normalized_text))
 
 
 def _matched_keywords(keywords: list[str], text: str) -> list[str]:

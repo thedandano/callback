@@ -1033,7 +1033,7 @@ def test_setup_plugin_plugin_source_override_passes_resolved_path(tmp_path):
 
 
 def test_setup_plugin_plugin_install_error_exits_nonzero():
-    from callback.plugin_install import PluginInstallError
+    from callback.services.plugin_install import PluginInstallError
 
     with (
         patch("callback.cli.install", side_effect=PluginInstallError("runner failed")),

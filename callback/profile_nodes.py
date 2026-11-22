@@ -7,12 +7,11 @@ I/O only — no LLM/API calls. All inference is performed by the host (calling L
 import json
 import logging
 
-import callback.extractor as extractor
+import callback.services.extractor as extractor
 from callback.config.observability import trace_node
 from callback.models.profile import CreatedStory
 from callback.models.section_map import SectionMap
 from callback.models.state import ProfileState
-from callback.profilecompiler import compile_profile as build_profile
 from callback.repositories import stories, story_migration
 from callback.repositories.accomplishments import AccomplishmentsStore
 from callback.repositories.compiled_profile import (
@@ -22,7 +21,8 @@ from callback.repositories.compiled_profile import (
 )
 from callback.repositories.resumes import list_resumes, replace_resume
 from callback.repositories.wiki import WikiStore
-from callback.wikirenderer import render_index
+from callback.services.profilecompiler import compile_profile as build_profile
+from callback.services.wikirenderer import render_index
 
 logger = logging.getLogger(__name__)
 

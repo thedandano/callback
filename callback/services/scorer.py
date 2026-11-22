@@ -271,7 +271,7 @@ def _plural_tolerant(token: str) -> str:
     return re.escape(stem) + r"(?:e?s)?"
 
 
-def _compile_keyword_pattern(kw: str) -> re.Pattern:
+def compile_keyword_pattern(kw: str) -> re.Pattern:
     prefix = r"\b" if kw and _is_word_char(kw[0]) else ""
     suffix = r"\b" if kw and _is_word_char(kw[-1]) else ""
     head, sep, last = kw.rpartition(" ")
@@ -282,7 +282,7 @@ def _compile_keyword_pattern(kw: str) -> re.Pattern:
 def _keyword_hit(kw: str, normalized_resume: str) -> bool:
     norm_kw = normalize_for_match(kw)
     # An empty normalized keyword would match anything — never credit it.
-    return bool(norm_kw) and bool(_compile_keyword_pattern(norm_kw).search(normalized_resume))
+    return bool(norm_kw) and bool(compile_keyword_pattern(norm_kw).search(normalized_resume))
 
 
 def _group_matches(group: list[str], normalized_resume: str) -> bool:

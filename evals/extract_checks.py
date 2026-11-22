@@ -39,9 +39,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from callback.jd_data import parse_jd_json
 from callback.models.jd_data import JDDataError
-from callback.scorer import normalize_for_match
+from callback.services.jd_parsing import parse_jd_json
+from callback.services.scorer import normalize_for_match
 from evals.checks import Check
 from evals.recall import all_terms, term_present
 

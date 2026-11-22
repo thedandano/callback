@@ -20,7 +20,6 @@ from typing import Annotated, Any
 
 import typer
 
-from callback import ledger_import
 from callback.config import paths, settings
 from callback.config.logging import configure_logging
 from callback.config.observability import (
@@ -29,9 +28,10 @@ from callback.config.observability import (
     emit_trace_check_probe,
 )
 from callback.config.settings import ENV_NAME_RE
-from callback.plugin_install import PluginInstallError, install, resolve_targets
 from callback.repositories import ledger
 from callback.repositories.atomic import write_json_atomic, write_text_atomic
+from callback.services import ledger_import
+from callback.services.plugin_install import PluginInstallError, install, resolve_targets
 
 app = typer.Typer(no_args_is_help=True)
 config_app = typer.Typer(no_args_is_help=True)
