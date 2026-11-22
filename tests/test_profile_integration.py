@@ -8,9 +8,13 @@ from pathlib import Path
 
 import pytest
 
-import callback.server as server_module
+import callback.tools.compile_profile as compile_tool
+import callback.tools.create_story as create_story_tool
+import callback.tools.onboard_user as onboard_tool
 from callback.graphs.profile.graph import build_profile_graph
-from callback.server import compile_profile, create_story, onboard_user
+from callback.tools.compile_profile import compile_profile
+from callback.tools.create_story import create_story
+from callback.tools.onboard_user import onboard_user
 
 RESUME_TEXT = """\
 Jane Doe
@@ -24,6 +28,12 @@ Acme Corp | Software Engineer | 2020 - 2024
 Skills
 Python, Kubernetes, Docker
 """
+
+
+def _patch_profile_graph(monkeypatch, factory) -> None:
+    """Swap the graph accessor in every tool module that looks it up."""
+    for module in (onboard_tool, compile_tool, create_story_tool):
+        monkeypatch.setattr(module, "get_profile_graph", factory)
 
 
 def _make_resume(tmp_path: Path) -> Path:
@@ -43,9 +53,7 @@ class TestProfileToolsEndToEnd:
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
         monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
         db_path = tmp_path / "profile-sessions.db"
-        monkeypatch.setattr(
-            server_module, "get_profile_graph", lambda: build_profile_graph(db_path=db_path)
-        )
+        _patch_profile_graph(monkeypatch, lambda: build_profile_graph(db_path=db_path))
 
         resume = _make_resume(tmp_path)
 
@@ -149,9 +157,7 @@ class TestProfileToolsEndToEnd:
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
         monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
         db_path = tmp_path / "profile-sessions.db"
-        monkeypatch.setattr(
-            server_module, "get_profile_graph", lambda: build_profile_graph(db_path=db_path)
-        )
+        _patch_profile_graph(monkeypatch, lambda: build_profile_graph(db_path=db_path))
 
         resume = _make_resume(tmp_path)
 

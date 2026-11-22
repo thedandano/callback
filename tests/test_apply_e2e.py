@@ -97,7 +97,8 @@ MINIMAL_TAILORED_SECTIONS = {
 def setup_e2e_session(tmp_path, monkeypatch):
     """Setup e2e test session: return session_id at the tailor interrupt."""
     from callback.repositories.resumes import save_resume
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
@@ -254,7 +255,8 @@ class TestApplyGraphE2E:
 def setup_m3_session_with_graph(tmp_path, monkeypatch):
     """M3 fixture: pipeline run through finalize with Redis as extra required keyword."""
     from callback.repositories.resumes import save_resume
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
@@ -361,7 +363,8 @@ class TestRequiredAnyOrGroups:
         self, tmp_path, monkeypatch
     ):
         from callback.repositories.resumes import save_resume
-        from callback.server import load_jd, submit_keywords
+        from callback.tools.load_jd import load_jd
+        from callback.tools.submit_keywords import submit_keywords
 
         monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
@@ -401,7 +404,8 @@ class TestPreferredAnyOrGroups:
         self, tmp_path, monkeypatch
     ):
         from callback.repositories.resumes import save_resume
-        from callback.server import load_jd, submit_keywords
+        from callback.tools.load_jd import load_jd
+        from callback.tools.submit_keywords import submit_keywords
 
         monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
@@ -447,7 +451,8 @@ class TestAtsInputSuspectHandoff:
     ):
         from callback.graphs.apply.graph import get_apply_graph, make_config
         from callback.repositories.resumes import save_resume
-        from callback.server import load_jd, submit_keywords
+        from callback.tools.load_jd import load_jd
+        from callback.tools.submit_keywords import submit_keywords
 
         monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))

@@ -10,7 +10,9 @@ import traceback
 # Add current directory to path for running via uv
 sys.path.insert(0, os.getcwd())
 
-from callback.server import compile_profile, create_story, onboard_user
+from callback.tools.compile_profile import compile_profile
+from callback.tools.create_story import create_story
+from callback.tools.onboard_user import onboard_user
 
 RESUME_TEXT = """\
 Jane Doe

@@ -200,7 +200,7 @@ def test_run_logs_crash_traceback_before_raising():
 
 
 def test_load_jd_rejects_missing_jd_input():
-    from callback.server import load_jd
+    from callback.tools.load_jd import load_jd
 
     result = load_jd()
     session_id = result["session_id"]
@@ -220,11 +220,11 @@ def test_load_jd_rejects_missing_jd_input():
 
 
 def test_load_jd_returns_handoff_envelope():
-    from callback.server import load_jd
+    from callback.tools.load_jd import load_jd
 
     jd_text = "Python engineer needed"
 
-    with patch("callback.server.list_resumes", return_value=["resume"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
         result = load_jd(jd_raw_text=jd_text)
     session_id = result["session_id"]
     uuid.UUID(session_id)
@@ -243,9 +243,9 @@ def test_load_jd_returns_handoff_envelope():
 
 
 def test_load_jd_returns_dict_envelope():
-    from callback.server import load_jd
+    from callback.tools.load_jd import load_jd
 
-    with patch("callback.server.list_resumes", return_value=["resume"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
         result = load_jd(jd_raw_text="Python engineer needed")
 
     assert isinstance(result, dict)
@@ -254,7 +254,7 @@ def test_load_jd_returns_dict_envelope():
 
 
 def test_load_jd_error_returns_dict_envelope():
-    from callback.server import load_jd
+    from callback.tools.load_jd import load_jd
 
     result = load_jd()
 
@@ -264,8 +264,7 @@ def test_load_jd_error_returns_dict_envelope():
 
 
 def test_load_jd_trace_payload_carries_jd_text_and_full_output_data(monkeypatch):
-    import callback.server as server
-    from callback.server import load_jd
+    from callback.tools.load_jd import load_jd
 
     captured: dict = {}
 
@@ -297,8 +296,8 @@ def test_load_jd_trace_payload_carries_jd_text_and_full_output_data(monkeypatch)
     monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2-secret")
 
     with (
-        patch.object(server, "list_resumes", return_value=["resume"]),
-        patch.object(server, "get_apply_graph", return_value=FakeGraph()),
+        patch("callback.tools.resume_label.list_resumes", return_value=["resume"]),
+        patch("callback.tools.load_jd.get_apply_graph", return_value=FakeGraph()),
         patch("callback.config.observability._get_traceable", return_value=fake_traceable),
     ):
         result = load_jd(jd_raw_text="secret jd body")
@@ -322,15 +321,15 @@ def test_load_jd_trace_payload_carries_jd_text_and_full_output_data(monkeypatch)
 
 
 def test_load_jd_returns_error_when_session_store_is_readonly():
-    from callback.server import load_jd
+    from callback.tools.load_jd import load_jd
 
     class ReadonlyGraph:
         def invoke(self, initial_state, config):
             raise sqlite3.OperationalError("attempt to write a readonly database")
 
     with (
-        patch("callback.server.list_resumes", return_value=["resume"]),
-        patch("callback.server.get_apply_graph", return_value=ReadonlyGraph()),
+        patch("callback.tools.resume_label.list_resumes", return_value=["resume"]),
+        patch("callback.tools.load_jd.get_apply_graph", return_value=ReadonlyGraph()),
     ):
         result = load_jd(jd_raw_text="Python engineer needed")
 
@@ -348,15 +347,15 @@ def test_load_jd_returns_error_when_session_store_is_readonly():
 
 
 def test_load_jd_returns_error_when_unexpected_exception_escapes_graph():
-    from callback.server import load_jd
+    from callback.tools.load_jd import load_jd
 
     class BrokenGraph:
         def invoke(self, initial_state, config):
             raise ValueError("boom")
 
     with (
-        patch("callback.server.list_resumes", return_value=["resume"]),
-        patch("callback.server.get_apply_graph", return_value=BrokenGraph()),
+        patch("callback.tools.resume_label.list_resumes", return_value=["resume"]),
+        patch("callback.tools.load_jd.get_apply_graph", return_value=BrokenGraph()),
     ):
         result = load_jd(jd_raw_text="Python engineer needed")
 
@@ -428,7 +427,7 @@ def test_log_writes_one_line_per_event(tmp_path):
 
 
 def test_load_jd_accepts_url_with_raw_text_fallback():
-    from callback.server import load_jd
+    from callback.tools.load_jd import load_jd
 
     jd_url = "https://example.test/job"
     jd_text = "# Python Engineer\n\nBuild Python services and own APIs."
@@ -436,7 +435,7 @@ def test_load_jd_accepts_url_with_raw_text_fallback():
 
     with (
         patch("callback.graphs.apply.nodes.jd_fetch.fetch_url_to_markdown", fetch_mock),
-        patch("callback.server.list_resumes", return_value=["resume"]),
+        patch("callback.tools.resume_label.list_resumes", return_value=["resume"]),
     ):
         result = load_jd(
             jd_url=jd_url,
@@ -460,9 +459,10 @@ def test_load_jd_accepts_url_with_raw_text_fallback():
 
 
 def test_submit_keywords_stores_jddata_and_routes_missing_wiki_to_onboarding():
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
-    with patch("callback.server.list_resumes", return_value=["resume"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
         loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
 
@@ -502,7 +502,7 @@ def test_submit_keywords_stores_jddata_and_routes_missing_wiki_to_onboarding():
 
 
 def test_submit_keywords_rejects_invalid_jd_json():
-    from callback.server import submit_keywords
+    from callback.tools.submit_keywords import submit_keywords
 
     session_id = "session-123"
     expected = {
@@ -520,7 +520,7 @@ def test_submit_keywords_rejects_invalid_jd_json():
 
 
 def test_submit_keywords_rejects_empty_jd_json():
-    from callback.server import submit_keywords
+    from callback.tools.submit_keywords import submit_keywords
 
     session_id = "session-123"
     expected = {
@@ -538,7 +538,7 @@ def test_submit_keywords_rejects_empty_jd_json():
 
 
 def test_submit_keywords_rejects_unknown_session():
-    from callback.server import submit_keywords
+    from callback.tools.submit_keywords import submit_keywords
 
     session_id = "missing-session"
     result = submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
@@ -557,7 +557,7 @@ def test_submit_keywords_rejects_unknown_session():
 
 
 def test_submit_keywords_rejects_blank_session_with_session_id():
-    from callback.server import submit_keywords
+    from callback.tools.submit_keywords import submit_keywords
 
     session_id = ""
     result = submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
@@ -576,9 +576,10 @@ def test_submit_keywords_rejects_blank_session_with_session_id():
 
 
 def test_submit_keywords_returns_envelope_when_extractor_raises(tmp_path, monkeypatch):
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
-    with patch("callback.server.list_resumes", return_value=["resume"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
         loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
 
@@ -606,9 +607,10 @@ def test_submit_keywords_returns_envelope_when_extractor_raises(tmp_path, monkey
 
 
 def test_submit_keywords_reports_extractor_value_error_as_unexpected_error(tmp_path, monkeypatch):
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
-    with patch("callback.server.list_resumes", return_value=["resume"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
         loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
 
@@ -636,9 +638,10 @@ def test_submit_keywords_reports_extractor_value_error_as_unexpected_error(tmp_p
 
 
 def test_submit_keywords_reports_checkpoint_value_error_as_invalid_session():
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
-    with patch("callback.server.list_resumes", return_value=["resume"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
         loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
 
@@ -653,7 +656,7 @@ def test_submit_keywords_reports_checkpoint_value_error_as_invalid_session():
         def update_state(self, config, values):
             raise ValueError("checkpoint missing")
 
-    with patch("callback.server.get_apply_graph", return_value=FakeGraph()):
+    with patch("callback.tools.submit_keywords.get_apply_graph", return_value=FakeGraph()):
         result = submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
 
     expected = {
@@ -670,9 +673,10 @@ def test_submit_keywords_reports_checkpoint_value_error_as_invalid_session():
 
 
 def test_submit_keywords_rejects_session_not_waiting_for_keywords():
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
-    with patch("callback.server.list_resumes", return_value=["resume"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
         loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
     submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
@@ -694,9 +698,10 @@ def test_submit_keywords_rejects_session_not_waiting_for_keywords():
 
 def test_submit_keywords_ats_format_gap_has_three_entries():
     """submit_keywords returns one ATS gap entry per required header."""
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
-    with patch("callback.server.list_resumes", return_value=["resume"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
         loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
 
@@ -715,7 +720,8 @@ def test_submit_keywords_ats_format_gap_has_three_entries():
 
 def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, monkeypatch):
     from callback.repositories.wiki import WikiStore
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
     resume_label = "project_guidance_resume"
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -745,7 +751,7 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
     store.write_page(resume_label, "sections.json", json.dumps(sections))
     store.write_index(resume_label, "Python evidence in dated experience")
 
-    with patch("callback.server.list_resumes", return_value=[resume_label]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=[resume_label]):
         loaded = load_jd(jd_raw_text="Python engineer needed")
     result = submit_keywords(session_id=loaded["session_id"], jd_json=PARTIAL_JD_JSON)
 
@@ -984,7 +990,8 @@ def test_skills_document_xyz_chat_fact_story_intake():
 
 def test_submit_keywords_returns_ranked_project_candidates(tmp_path, monkeypatch):
     from callback.repositories.wiki import WikiStore
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
     resume_label = "project_candidate_resume"
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -1095,7 +1102,7 @@ story_type: SBI
         }
     )
 
-    with patch("callback.server.list_resumes", return_value=[resume_label]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=[resume_label]):
         loaded = load_jd(jd_raw_text="GenAI engineer needed")
         result = submit_keywords(session_id=loaded["session_id"], jd_json=jd_json)
 
@@ -1125,7 +1132,8 @@ story_type: SBI
 
 def test_submit_keywords_recommends_project_append_and_trim_candidates(tmp_path, monkeypatch):
     from callback.repositories.wiki import WikiStore
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
     resume_label = "project_append_resume"
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -1193,7 +1201,7 @@ story_type: SBI
         }
     )
 
-    with patch("callback.server.list_resumes", return_value=[resume_label]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=[resume_label]):
         loaded = load_jd(jd_raw_text="GenAI engineer needed")
         result = submit_keywords(session_id=loaded["session_id"], jd_json=jd_json)
 
@@ -1226,7 +1234,8 @@ def test_submit_keywords_recommends_project_replace_when_two_visible_projects(
     tmp_path, monkeypatch
 ):
     from callback.repositories.wiki import WikiStore
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
     resume_label = "project_replace_layout_resume"
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -1296,7 +1305,7 @@ story_type: SBI
         }
     )
 
-    with patch("callback.server.list_resumes", return_value=[resume_label]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=[resume_label]):
         loaded = load_jd(jd_raw_text="GenAI engineer needed")
         result = submit_keywords(session_id=loaded["session_id"], jd_json=jd_json)
 
@@ -1318,7 +1327,8 @@ story_type: SBI
 
 def test_submit_keywords_orphaned_required_routes_to_create_story(tmp_path, monkeypatch):
     from callback.repositories.wiki import WikiStore
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
     resume_label = "orphan_workflow_resume"
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -1343,7 +1353,7 @@ def test_submit_keywords_orphaned_required_routes_to_create_story(tmp_path, monk
 
     jd_json = json.dumps({"title": "Backend Engineer", "company": "Co", "required": ["Kafka"]})
     with (
-        patch("callback.server.list_resumes", return_value=[resume_label]),
+        patch("callback.tools.resume_label.list_resumes", return_value=[resume_label]),
         patch(
             "callback.graphs.apply.nodes.parse_initial.get_resume", return_value=str(resume_path)
         ),
@@ -1373,7 +1383,9 @@ def test_submit_keywords_orphaned_required_routes_to_create_story(tmp_path, monk
 
 def test_get_wiki_pages_returns_submit_tailor_workflow(tmp_path, monkeypatch):
     from callback.repositories.wiki import WikiStore
-    from callback.server import get_wiki_pages, load_jd, submit_keywords
+    from callback.tools.get_wiki_pages import get_wiki_pages
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
     resume_label = "wiki_pages_workflow_resume"
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -1392,7 +1404,7 @@ def test_get_wiki_pages_returns_submit_tailor_workflow(tmp_path, monkeypatch):
     store.write_index(resume_label, "- experience/acme.md")
     store.write_page(resume_label, "experience/acme.md", "Built Python services.")
 
-    with patch("callback.server.list_resumes", return_value=[resume_label]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=[resume_label]):
         loaded = load_jd(jd_raw_text="Python engineer needed")
     submit_keywords(session_id=loaded["session_id"], jd_json=PARTIAL_JD_JSON)
 
@@ -1419,7 +1431,9 @@ def test_get_wiki_pages_returns_submit_tailor_workflow(tmp_path, monkeypatch):
 
 def test_get_wiki_pages_rejects_page_id_outside_wiki_root(tmp_path, monkeypatch):
     from callback.repositories.wiki import WikiStore
-    from callback.server import get_wiki_pages, load_jd, submit_keywords
+    from callback.tools.get_wiki_pages import get_wiki_pages
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
     resume_label = "wiki_pages_traversal_resume"
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -1439,7 +1453,7 @@ def test_get_wiki_pages_rejects_page_id_outside_wiki_root(tmp_path, monkeypatch)
     secret = tmp_path / "secret.txt"
     secret.write_text("hunter2", encoding="utf-8")
 
-    with patch("callback.server.list_resumes", return_value=[resume_label]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=[resume_label]):
         loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
     submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
@@ -1461,7 +1475,9 @@ def test_get_wiki_pages_rejects_page_id_outside_wiki_root(tmp_path, monkeypatch)
 
 def test_get_wiki_pages_rejects_embedded_nul(tmp_path, monkeypatch):
     from callback.repositories.wiki import WikiStore
-    from callback.server import get_wiki_pages, load_jd, submit_keywords
+    from callback.tools.get_wiki_pages import get_wiki_pages
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
     resume_label = "wiki_pages_nul_resume"
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -1479,7 +1495,7 @@ def test_get_wiki_pages_rejects_embedded_nul(tmp_path, monkeypatch):
     store.write_page(resume_label, "sections.json", json.dumps(sections))
     store.write_index(resume_label, "- experience/acme.md")
 
-    with patch("callback.server.list_resumes", return_value=[resume_label]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=[resume_label]):
         loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
     submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
@@ -1704,11 +1720,13 @@ class TestSubmitTailorNoCoverage:
 
     def test_submit_tailor_no_coverage_sets_outcome(self, tmp_path, monkeypatch):
         """no_coverage=True skips edits, runs graph to finalize, and returns no_coverage outcome."""
-        from callback.server import load_jd, submit_keywords, submit_tailor
+        from callback.tools.load_jd import load_jd
+        from callback.tools.submit_keywords import submit_keywords
+        from callback.tools.submit_tailor import submit_tailor
 
         monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
 
-        with patch("callback.server.list_resumes", return_value=["resume"]):
+        with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
             session_id = load_jd(jd_raw_text="Python engineer needed")["session_id"]
         submit_keywords(session_id=session_id, jd_json=_NO_COVERAGE_JD_JSON)
 
@@ -1751,11 +1769,13 @@ class TestSubmitTailorNoCoverage:
 
     def test_submit_tailor_no_coverage_report_notes_is_list(self, tmp_path, monkeypatch):
         """submit_tailor report.notes is present and is a list."""
-        from callback.server import load_jd, submit_keywords, submit_tailor
+        from callback.tools.load_jd import load_jd
+        from callback.tools.submit_keywords import submit_keywords
+        from callback.tools.submit_tailor import submit_tailor
 
         monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
 
-        with patch("callback.server.list_resumes", return_value=["resume"]):
+        with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
             session_id = load_jd(jd_raw_text="Python engineer needed")["session_id"]
         submit_keywords(session_id=session_id, jd_json=_NO_COVERAGE_JD_JSON)
 
@@ -1786,9 +1806,9 @@ class TestSubmitTailorNoCoverage:
 def test_load_jd_auto_selects_single_registered_resume():
     """Single registered resume is auto-selected when resume_label is omitted."""
     from callback.graphs.apply.graph import get_apply_graph, make_config
-    from callback.server import load_jd
+    from callback.tools.load_jd import load_jd
 
-    with patch("callback.server.list_resumes", return_value=["default"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["default"]):
         result = load_jd(jd_raw_text="Python engineer needed")
 
     session_id = result["session_id"]
@@ -1808,9 +1828,9 @@ def test_load_jd_auto_selects_single_registered_resume():
 def test_load_jd_stores_first_registered_resume_when_several():
     """Two registered resumes without a label stores the first one on the graph state."""
     from callback.graphs.apply.graph import get_apply_graph, make_config
-    from callback.server import load_jd
+    from callback.tools.load_jd import load_jd
 
-    with patch("callback.server.list_resumes", return_value=["a", "b"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["a", "b"]):
         result = load_jd(jd_raw_text="Python engineer needed")
 
     session_id = result["session_id"]
@@ -1826,11 +1846,11 @@ def test_load_jd_stores_first_registered_resume_when_several():
 
 def test_load_jd_uses_first_registered_resume_and_warns_when_several(caplog):
     """Multiple resumes registered without a label takes the first and warns."""
-    import callback.server as server
+    from callback.tools.resume_label import resolve_resume_label
 
     caplog.set_level("WARNING", logger="callback.server")
-    with patch("callback.server.list_resumes", return_value=["a", "b"]):
-        resolved, err = server._resolve_resume_label("sess-1")
+    with patch("callback.tools.resume_label.list_resumes", return_value=["a", "b"]):
+        resolved, err = resolve_resume_label("sess-1")
     actual = {
         "resolved": resolved,
         "err": err,
@@ -1842,9 +1862,9 @@ def test_load_jd_uses_first_registered_resume_and_warns_when_several(caplog):
 
 def test_load_jd_returns_no_resume_registered_error_when_empty():
     """No registered resumes returns no_resume_registered error."""
-    from callback.server import load_jd
+    from callback.tools.load_jd import load_jd
 
-    with patch("callback.server.list_resumes", return_value=[]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=[]):
         result = load_jd(jd_raw_text="Python engineer needed")
 
     expected = {
@@ -1976,13 +1996,13 @@ def test_parse_initial_labels_no_source_when_nothing_is_available(decisions):
 
 
 def test_resolve_resume_label_labels_the_pick(decisions):
-    import callback.server as server
+    from callback.tools.resume_label import resolve_resume_label
 
-    with patch("callback.server.list_resumes", return_value=["a"]):
-        server._resolve_resume_label("sess-1")
+    with patch("callback.tools.resume_label.list_resumes", return_value=["a"]):
+        resolve_resume_label("sess-1")
     one = dict(decisions)
-    with patch("callback.server.list_resumes", return_value=["a", "b"]):
-        server._resolve_resume_label("sess-1")
+    with patch("callback.tools.resume_label.list_resumes", return_value=["a", "b"]):
+        resolve_resume_label("sess-1")
 
     actual = {"one": one, "several": decisions}
     expected = {"one": {"resume_pick": "only_one"}, "several": {"resume_pick": "first_of_many"}}
@@ -2002,11 +2022,11 @@ class _FakeApplyGraph:
 
 
 def test_tailor_retry_update_labels_the_attempt(decisions):
-    import callback.server as server
+    from callback.tools.submit_tailor import _tailor_retry_update
 
-    server._tailor_retry_update(_FakeApplyGraph({}), {}, {"no_coverage": True}, "sess-1")
+    _tailor_retry_update(_FakeApplyGraph({}), {}, {"no_coverage": True}, "sess-1")
     first = dict(decisions)
-    server._tailor_retry_update(
+    _tailor_retry_update(
         _FakeApplyGraph({"error": "render: boom"}), {}, {"no_coverage": True}, "sess-1"
     )
 
@@ -2173,13 +2193,15 @@ class TestTailorDiagnostics:
 
 
 def test_onboard_user_returns_envelope_when_extractor_raises(tmp_path, monkeypatch):
-    from callback import server
+    import callback.tools.onboard_user as onboard_tool
     from callback.graphs.profile.graph import build_profile_graph
 
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
     db_path = tmp_path / "profile-sessions.db"
-    monkeypatch.setattr(server, "get_profile_graph", lambda: build_profile_graph(db_path=db_path))
+    monkeypatch.setattr(
+        onboard_tool, "get_profile_graph", lambda: build_profile_graph(db_path=db_path)
+    )
 
     def broken_extract(path):
         raise ValueError("boom")
@@ -2190,7 +2212,7 @@ def test_onboard_user_returns_envelope_when_extractor_raises(tmp_path, monkeypat
     resume.write_text("Jane Doe\n", encoding="utf-8")
 
     session_id = "onboard-extractor-raises"
-    result = server._onboard_user_impl(session_id, str(resume))
+    result = onboard_tool._onboard_user_impl(session_id, str(resume))
 
     expected = {
         "status": "error",
@@ -2276,7 +2298,8 @@ class TestSearchPreferencesTools:
         }
 
     def test_set_then_get_round_trip(self):
-        from callback.server import get_search_preferences, set_search_preferences
+        from callback.tools.get_search_preferences import get_search_preferences
+        from callback.tools.set_search_preferences import set_search_preferences
 
         set_env = set_search_preferences(self._valid_payload())
         assert set_env["status"] == "ok"
@@ -2287,7 +2310,7 @@ class TestSearchPreferencesTools:
         assert get_env["data"]["preferences"] == stored
 
     def test_set_persists_scan_source_and_pii(self):
-        from callback.server import set_search_preferences
+        from callback.tools.set_search_preferences import set_search_preferences
 
         prefs = set_search_preferences(self._valid_payload())["data"]["preferences"]
 
@@ -2308,13 +2331,13 @@ class TestSearchPreferencesTools:
         }
 
     def test_set_stamps_updated_at(self):
-        from callback.server import set_search_preferences
+        from callback.tools.set_search_preferences import set_search_preferences
 
         set_env = set_search_preferences(self._valid_payload())
         assert set_env["data"]["preferences"]["updated_at"]  # non-empty ISO string
 
     def test_get_when_missing_returns_next_action(self):
-        from callback.server import get_search_preferences
+        from callback.tools.get_search_preferences import get_search_preferences
 
         get_env = get_search_preferences()
         assert get_env["status"] == "ok"
@@ -2322,7 +2345,7 @@ class TestSearchPreferencesTools:
         assert "data" not in get_env
 
     def test_set_invalid_payload_returns_error(self):
-        from callback.server import set_search_preferences
+        from callback.tools.set_search_preferences import set_search_preferences
 
         env = set_search_preferences({"work_types": ["remote"]})  # no home_location
         assert env["status"] == "error"
@@ -2448,14 +2471,14 @@ def test_rank_project_candidates_skips_an_undecodable_page(tmp_path, monkeypatch
     ids=["suspect", "normal", "legacy-score"],
 )
 def test_submit_keywords_propagates_ats_input_suspect(score, expected_suspect):
-    from callback.server import submit_keywords
+    from callback.tools.submit_keywords import submit_keywords
 
     state = {"keywords": EXPECTED_PARTIAL_KEYWORDS, "score_initial": score}
     original_score = score.copy()
     with (
-        patch("callback.server.get_apply_graph"),
-        patch("callback.server._submit_keywords_state_error", return_value=None),
-        patch("callback.server._submit_keywords_invoke", return_value=(state, None)),
+        patch("callback.tools.submit_keywords.get_apply_graph"),
+        patch("callback.tools.submit_keywords._submit_keywords_state_error", return_value=None),
+        patch("callback.tools.submit_keywords._submit_keywords_invoke", return_value=(state, None)),
     ):
         result = submit_keywords(session_id="session-123", jd_json=PARTIAL_JD_JSON)
 
@@ -2478,9 +2501,10 @@ _RESP_JD_JSON = json.dumps(
 
 
 def _session_at_tailor() -> str:
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
-    with patch("callback.server.list_resumes", return_value=["resume"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
         session_id = load_jd(jd_raw_text="Swift engineer needed")["session_id"]
     submit_keywords(session_id=session_id, jd_json=_RESP_JD_JSON)
     return session_id
@@ -2495,7 +2519,8 @@ def test_submit_responsibilities_replaces_trims_and_keeps_tailor_pending(
     tmp_path, monkeypatch, caplog
 ):
     from callback.graphs.apply.graph import TAILOR_NODE, get_apply_graph, make_config
-    from callback.server import submit_responsibilities, submit_tailor
+    from callback.tools.submit_responsibilities import submit_responsibilities
+    from callback.tools.submit_tailor import submit_tailor
 
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
     caplog.set_level("INFO", logger="callback.server")
@@ -2540,7 +2565,7 @@ def test_submit_responsibilities_replaces_trims_and_keeps_tailor_pending(
 
 
 def test_submit_responsibilities_twice_replaces_list():
-    from callback.server import submit_responsibilities
+    from callback.tools.submit_responsibilities import submit_responsibilities
 
     session_id = _session_at_tailor()
     submit_responsibilities(session_id=session_id, key_responsibilities=["agent loop"])
@@ -2550,7 +2575,7 @@ def test_submit_responsibilities_twice_replaces_list():
 
 
 def test_submit_responsibilities_warns_on_sentences(caplog):
-    from callback.server import submit_responsibilities
+    from callback.tools.submit_responsibilities import submit_responsibilities
 
     caplog.set_level("WARNING", logger="callback.server")
     session_id = _session_at_tailor()
@@ -2567,7 +2592,7 @@ def test_submit_responsibilities_warns_on_sentences(caplog):
 
 
 def test_submit_responsibilities_rejects_non_string_terms():
-    from callback.server import submit_responsibilities
+    from callback.tools.submit_responsibilities import submit_responsibilities
 
     session_id = _session_at_tailor()
     result = submit_responsibilities(session_id=session_id, key_responsibilities=["ok", 5])  # type: ignore[list-item]  # bad host input
@@ -2577,7 +2602,8 @@ def test_submit_responsibilities_rejects_non_string_terms():
 
 
 def test_submit_responsibilities_rejects_finished_session(tmp_path, monkeypatch):
-    from callback.server import submit_responsibilities, submit_tailor
+    from callback.tools.submit_responsibilities import submit_responsibilities
+    from callback.tools.submit_tailor import submit_tailor
 
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
     session_id = _session_at_tailor()
@@ -2590,7 +2616,7 @@ def test_submit_responsibilities_rejects_finished_session(tmp_path, monkeypatch)
 
 
 def test_submit_responsibilities_rejects_unknown_session():
-    from callback.server import submit_responsibilities
+    from callback.tools.submit_responsibilities import submit_responsibilities
 
     result = submit_responsibilities(session_id=str(uuid.uuid4()), key_responsibilities=["x"])
 
@@ -2690,13 +2716,13 @@ async def test_export_ledger_defuses_formulas_and_replaces_existing_file(tmp_pat
 
 
 def test_export_ledger_returns_invalid_path_when_path_expansion_fails(tmp_path, caplog):
-    import callback.server as server
+    import callback.tools.export_ledger as export_tool
 
     with (
-        patch.object(server, "_output_path_error", side_effect=RuntimeError("bad path check")),
+        patch.object(export_tool, "_output_path_error", side_effect=RuntimeError("bad path check")),
         caplog.at_level("WARNING", logger="callback.server"),
     ):
-        result = server.export_ledger(str(tmp_path / "x.csv"))
+        result = export_tool.export_ledger(str(tmp_path / "x.csv"))
 
     error = result["error"]
     logged = any("invalid_output_path" in record.getMessage() for record in caplog.records)
@@ -2791,9 +2817,9 @@ async def test_find_job_returns_ledger_error_when_ledger_path_has_no_home():
 
 
 def test_export_ledger_rejects_an_output_path_with_a_lone_surrogate():
-    import callback.server as server
+    from callback.tools.export_ledger import export_ledger
 
-    result = server.export_ledger(output_path="/tmp/\ud800.csv")
+    result = export_ledger(output_path="/tmp/\ud800.csv")
 
     assert result == {
         "status": "error",
@@ -2807,9 +2833,9 @@ def test_export_ledger_rejects_an_output_path_with_a_lone_surrogate():
 
 
 def test_record_status_returns_ledger_error_for_a_lone_surrogate():
-    import callback.server as server
+    from callback.tools.record_status import record_status
 
-    result = server.record_status(status="\ud800", url="https://a.com/1")
+    result = record_status(status="\ud800", url="https://a.com/1")
 
     assert result == {
         "status": "error",

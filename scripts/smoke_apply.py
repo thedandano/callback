@@ -20,9 +20,11 @@ from callback.models.section_map import ContactInfo, ExperienceEntry, SectionMap
 from callback.repositories import ledger
 from callback.repositories.resumes import save_resume
 from callback.repositories.wiki import WikiStore
-from callback.server import load_jd, submit_keywords, submit_tailor
 from callback.services.host_protocols import EXTRACTION_PROTOCOL
 from callback.services.jd_fetcher import MIN_MARKDOWN_CHARS
+from callback.tools.load_jd import load_jd
+from callback.tools.submit_keywords import submit_keywords
+from callback.tools.submit_tailor import submit_tailor
 
 JD_JSON = json.dumps(
     {

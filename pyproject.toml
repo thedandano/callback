@@ -64,6 +64,7 @@ forbidden_modules = [
     "callback.render",
     "callback.repositories",
     "callback.services",
+    "callback.tools",
 ]
 
 [[tool.importlinter.contracts]]
@@ -79,6 +80,7 @@ forbidden_modules = [
     "callback.render",
     "callback.repositories",
     "callback.services",
+    "callback.tools",
 ]
 
 [[tool.importlinter.contracts]]
@@ -91,22 +93,34 @@ forbidden_modules = [
     "callback.graphs",
     "callback.render",
     "callback.services",
+    "callback.tools",
 ]
 
 [[tool.importlinter.contracts]]
-name = "services and render sit below graphs, server and cli"
+name = "services and render sit below graphs, tools, server and cli"
 type = "forbidden"
 source_modules = ["callback.services", "callback.render"]
 forbidden_modules = [
     "callback.server",
     "callback.cli",
     "callback.graphs",
+    "callback.tools",
 ]
 
 [[tool.importlinter.contracts]]
-name = "graphs sit below server and cli"
+name = "graphs sit below tools, server and cli"
 type = "forbidden"
 source_modules = ["callback.graphs"]
+forbidden_modules = [
+    "callback.server",
+    "callback.cli",
+    "callback.tools",
+]
+
+[[tool.importlinter.contracts]]
+name = "tools sit below server and cli"
+type = "forbidden"
+source_modules = ["callback.tools"]
 forbidden_modules = [
     "callback.server",
     "callback.cli",
