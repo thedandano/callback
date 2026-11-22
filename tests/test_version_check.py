@@ -75,7 +75,7 @@ def test_cached_result_no_second_network_call():
 
 
 def test_fetch_latest_tag_returns_none_and_logs_when_request_fails(caplog):
-    caplog.set_level("WARNING", logger="callback.services.version_check")
+    caplog.set_level("WARNING", logger="callback.version_check")
     with patch.object(vc.urllib.request, "urlopen", side_effect=OSError("offline")):
         tag = vc.fetch_latest_tag()
     actual = {"tag": tag, "warned": any("latest release" in r.message for r in caplog.records)}
@@ -84,7 +84,7 @@ def test_fetch_latest_tag_returns_none_and_logs_when_request_fails(caplog):
 
 
 def test_fetch_latest_tag_treats_truncated_body_as_failure(caplog):
-    caplog.set_level("WARNING", logger="callback.services.version_check")
+    caplog.set_level("WARNING", logger="callback.version_check")
     truncated = http.client.IncompleteRead(b"")
     with patch.object(vc.urllib.request, "urlopen", side_effect=truncated):
         tag = vc.fetch_latest_tag()
@@ -94,7 +94,7 @@ def test_fetch_latest_tag_treats_truncated_body_as_failure(caplog):
 
 
 def test_fetch_latest_tag_treats_non_object_payload_as_failure(caplog):
-    caplog.set_level("WARNING", logger="callback.services.version_check")
+    caplog.set_level("WARNING", logger="callback.version_check")
     response = contextlib.nullcontext(io.BytesIO(b"[1, 2]"))
     with patch.object(vc.urllib.request, "urlopen", return_value=response):
         tag = vc.fetch_latest_tag()
