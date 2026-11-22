@@ -17,10 +17,11 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from callback import scorer
-from callback.apply_nodes import _sections_to_text
-from callback.profilecompiler import _token_sort_ratio
-from callback.section_map import SectionMap, apply_edit
+from callback.models.section_map import SectionMap
+from callback.services import scorer
+from callback.services.profilecompiler import token_sort_ratio
+from callback.services.section_edits import apply_edit
+from callback.services.section_text import sections_to_text
 from evals.checks import Check
 from evals.recall import all_terms, term_present
 
@@ -120,7 +121,7 @@ def _malformed_edit_reason(edits: list) -> str | None:
 
 
 def _score(sections: dict, keywords: dict) -> scorer.ScoreResult:
-    text = _sections_to_text(SectionMap.model_validate(sections))
+    text = sections_to_text(SectionMap.model_validate(sections))
     return scorer.score(
         text,
         keywords.get("required", []),
@@ -260,7 +261,7 @@ def _grounded(token: str, source_text: str, source_tokens: set[str], ratio_min: 
         return True
     if any(ch.isdigit() for ch in token):
         return False
-    return any(_token_sort_ratio(lowered, s) >= ratio_min for s in source_tokens)
+    return any(token_sort_ratio(lowered, s) >= ratio_min for s in source_tokens)
 
 
 def _grounding_check(case: TailorCase, edits: list[dict]) -> Check:

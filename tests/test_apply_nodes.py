@@ -11,21 +11,22 @@ from unittest.mock import patch
 
 import pytest
 
-from callback import apply_nodes, ledger, paths
-from callback.apply_nodes import (
-    _candidate_experience_years,
-    finalize,
-    parse_final,
-    parse_initial,
-    render,
-    score_final,
-    score_initial,
-    tailor,
-)
-from callback.repository import stories
-from callback.section_map import ContactInfo, ExperienceEntry, SectionMap
-from callback.state import ApplyState, CreatedStory, TailoredResume
-from callback.wiki import WikiStore
+import callback.graphs.apply.nodes.render as render_node
+from callback.config import paths
+from callback.graphs.apply.nodes.finalize import finalize
+from callback.graphs.apply.nodes.parse_final import parse_final
+from callback.graphs.apply.nodes.parse_initial import parse_initial
+from callback.graphs.apply.nodes.render import render
+from callback.graphs.apply.nodes.score_final import score_final
+from callback.graphs.apply.nodes.score_initial import score_initial
+from callback.graphs.apply.nodes.tailor import tailor
+from callback.models.profile import CreatedStory
+from callback.models.section_map import ContactInfo, ExperienceEntry, SectionMap
+from callback.models.state import ApplyState
+from callback.models.tailored_resume import TailoredResume
+from callback.repositories import ledger, stories
+from callback.repositories.wiki import WikiStore
+from callback.services.experience_years import candidate_experience_years
 
 
 def test_parse_initial_falls_back_to_text_extraction(tmp_path):
@@ -36,7 +37,7 @@ def test_parse_initial_falls_back_to_text_extraction(tmp_path):
         resume_label="resume",
         keywords={"required": ["Python"], "preferred": [], "required_years": 0.0},
     )
-    with patch("callback.apply_nodes.get_resume", return_value=str(resume)):
+    with patch("callback.graphs.apply.nodes.parse_initial.get_resume", return_value=str(resume)):
         result = parse_initial(state)
     expected = {
         "parsed_initial": "EXPERIENCE\nAcme | Engineer\nBuilt REST API",
@@ -89,7 +90,7 @@ def test_score_initial_succeeds_with_only_preferred_keywords(tmp_path):
 
 def test_render_produces_pdf_from_tailored_resume(tmp_path, monkeypatch):
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
-    monkeypatch.setattr("callback.apply_nodes._today", lambda: date(2026, 10, 12))
+    monkeypatch.setattr("callback.graphs.apply.nodes.render._today", lambda: date(2026, 10, 12))
     state = ApplyState(
         session_id="s1",
         tailored=TailoredResume(name="Jane Doe", summary="Experienced engineer"),
@@ -104,7 +105,7 @@ def test_render_produces_pdf_from_tailored_resume(tmp_path, monkeypatch):
 
 def test_render_names_pdf_from_candidate_and_company(tmp_path, monkeypatch):
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
-    monkeypatch.setattr("callback.apply_nodes._today", lambda: date(2026, 10, 12))
+    monkeypatch.setattr("callback.graphs.apply.nodes.render._today", lambda: date(2026, 10, 12))
     calls: list[str] = []
 
     def fake_render_resume(_tailored: dict, output_path: str) -> dict:
@@ -112,7 +113,7 @@ def test_render_names_pdf_from_candidate_and_company(tmp_path, monkeypatch):
         Path(output_path).write_bytes(b"%PDF fake")
         return {"success": True, "pdf_path": output_path, "page_count": 1, "warnings": []}
 
-    monkeypatch.setattr("callback.apply_nodes.render_resume", fake_render_resume)
+    monkeypatch.setattr("callback.graphs.apply.nodes.render.render_resume", fake_render_resume)
     state = ApplyState(
         session_id="legacy-session-id",
         keywords={"company": "Brain Corp / Robotics"},
@@ -134,13 +135,13 @@ def test_render_names_pdf_from_candidate_and_company(tmp_path, monkeypatch):
 
 def test_render_proper_cases_uppercase_name_and_company(tmp_path, monkeypatch):
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
-    monkeypatch.setattr("callback.apply_nodes._today", lambda: date(2026, 10, 12))
+    monkeypatch.setattr("callback.graphs.apply.nodes.render._today", lambda: date(2026, 10, 12))
 
     def fake_render_resume(_tailored: dict, output_path: str) -> dict:
         Path(output_path).write_bytes(b"%PDF fake")
         return {"success": True, "pdf_path": output_path, "page_count": 1, "warnings": []}
 
-    monkeypatch.setattr("callback.apply_nodes.render_resume", fake_render_resume)
+    monkeypatch.setattr("callback.graphs.apply.nodes.render.render_resume", fake_render_resume)
     state = ApplyState(
         session_id="caps-session",
         keywords={"company": "GOOGLE"},
@@ -168,7 +169,7 @@ def test_render_redirects_to_output_dir(tmp_path, monkeypatch):
         Path(output_path).write_bytes(b"%PDF fake")
         return {"success": True, "pdf_path": output_path, "page_count": 1, "warnings": []}
 
-    monkeypatch.setattr("callback.apply_nodes.render_resume", fake_render_resume)
+    monkeypatch.setattr("callback.graphs.apply.nodes.render.render_resume", fake_render_resume)
     state = ApplyState(
         session_id="redirect-session",
         keywords={"company": "Acme Corp"},
@@ -193,13 +194,13 @@ def test_retry_without_output_dir_uses_the_dated_default_not_the_earlier_explici
 ):
     apps_dir = tmp_path / "apps"
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(apps_dir))
-    monkeypatch.setattr("callback.apply_nodes._today", lambda: date(2026, 10, 12))
+    monkeypatch.setattr("callback.graphs.apply.nodes.render._today", lambda: date(2026, 10, 12))
 
     def fake_render_resume(_tailored: dict, output_path: str) -> dict:
         Path(output_path).write_bytes(b"%PDF fake")
         return {"success": True, "pdf_path": output_path, "page_count": 1, "warnings": []}
 
-    monkeypatch.setattr("callback.apply_nodes.render_resume", fake_render_resume)
+    monkeypatch.setattr("callback.graphs.apply.nodes.render.render_resume", fake_render_resume)
     fields: dict[str, Any] = {
         "session_id": "retry-session",
         "keywords": {"company": "Acme Corp"},
@@ -244,7 +245,7 @@ def test_parse_final_returns_error_when_extract_raises(tmp_path, monkeypatch):
     def raising_extract(path):
         raise RuntimeError("corrupt pdf")
 
-    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", raising_extract)
+    monkeypatch.setattr("callback.services.extractor.extract", raising_extract)
 
     state = ApplyState(session_id="s3", pdf_path=str(pdf_path))
     actual = parse_final(state)
@@ -283,8 +284,8 @@ def _final_state(tmp_path) -> ApplyState:
 
 def test_finalize_records_one_run_even_when_retried(tmp_path):
     state = _final_state(tmp_path)
-    apply_nodes.finalize(state)
-    apply_nodes.finalize(state)
+    finalize(state)
+    finalize(state)
     with closing(ledger.connect(paths.ledger_path())) as conn:
         rows = conn.execute(
             "SELECT r.session_id, j.job_key, j.company, r.pdf_path, "
@@ -302,7 +303,7 @@ def test_finalize_returns_a_retriable_error_when_the_ledger_is_locked(tmp_path, 
         raise sqlite3.OperationalError("database is locked")
 
     monkeypatch.setattr(ledger, "connect", locked)
-    assert apply_nodes.finalize(_final_state(tmp_path)) == {
+    assert finalize(_final_state(tmp_path)) == {
         "error": "finalize: cannot write ledger: database is locked"
     }
 
@@ -312,7 +313,7 @@ def test_finalize_returns_a_retriable_error_when_the_record_cannot_be_stored(tmp
         raise TypeError("not serializable")
 
     monkeypatch.setattr(ledger, "record_run", unserializable)
-    assert apply_nodes.finalize(_final_state(tmp_path)) == {
+    assert finalize(_final_state(tmp_path)) == {
         "error": "finalize: cannot write ledger: not serializable"
     }
 
@@ -322,16 +323,14 @@ def test_finalize_returns_a_retriable_error_when_the_data_dir_is_unwritable(tmp_
         raise PermissionError("denied")
 
     monkeypatch.setattr(ledger, "connect", denied)
-    assert apply_nodes.finalize(_final_state(tmp_path)) == {
-        "error": "finalize: cannot write ledger: denied"
-    }
+    assert finalize(_final_state(tmp_path)) == {"error": "finalize: cannot write ledger: denied"}
 
 
 def test_render_failure_still_pins_the_dated_folder(tmp_path, monkeypatch):
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
-    monkeypatch.setattr("callback.apply_nodes._today", lambda: date(2026, 10, 12))
+    monkeypatch.setattr("callback.graphs.apply.nodes.render._today", lambda: date(2026, 10, 12))
     monkeypatch.setattr(
-        "callback.apply_nodes.render_resume",
+        "callback.graphs.apply.nodes.render.render_resume",
         lambda _tailored, _output_path: {"success": False, "error": "chromium crashed"},
     )
     state = ApplyState(
@@ -350,7 +349,7 @@ def test_render_failure_still_pins_the_dated_folder(tmp_path, monkeypatch):
 
 def test_render_failure_with_explicit_output_dir_stores_nothing(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        "callback.apply_nodes.render_resume",
+        "callback.graphs.apply.nodes.render.render_resume",
         lambda _tailored, _output_path: {"success": False, "error": "chromium crashed"},
     )
     state = ApplyState(
@@ -444,25 +443,25 @@ class TestCandidateExperienceYears:
             ExperienceEntry(company="B", role="Eng", start_date="2020-06", end_date="2021-12"),
         ]
         # merged Jan 2020 – Dec 2021 = 24 months, not 12 + 19 = 31
-        assert _candidate_experience_years(experience) == 2.0
+        assert candidate_experience_years(experience) == 2.0
 
     def test_disjoint_roles_sum(self):
         experience = [
             ExperienceEntry(company="A", role="Eng", start_date="2020-01", end_date="2020-06"),
             ExperienceEntry(company="B", role="Eng", start_date="2022-01", end_date="2022-06"),
         ]
-        assert _candidate_experience_years(experience) == 1.0
+        assert candidate_experience_years(experience) == 1.0
 
     def test_all_unparseable_returns_none(self):
         experience = [ExperienceEntry(company="A", role="Eng", start_date="??", end_date=None)]
-        assert _candidate_experience_years(experience) is None
+        assert candidate_experience_years(experience) is None
 
 
 def test_parse_initial_migrates_legacy_stories_before_reading_the_wiki(tmp_path, monkeypatch):
 
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
-    monkeypatch.setattr("callback.repository.stories.list_resumes", lambda: ["primary"])
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.repositories.story_migration.list_resumes", lambda: ["primary"])
     data_dir = tmp_path / "callback"
     data_dir.mkdir(parents=True, exist_ok=True)
     legacy = {
@@ -494,7 +493,7 @@ class TestDecisionLabels:
             ExperienceEntry(company="A", role="Eng", start_date="2020-01", end_date="2020-12")
         ]
 
-        _candidate_experience_years(experience)
+        candidate_experience_years(experience)
 
         assert decisions == {"experience_years": "computed"}
 
@@ -504,14 +503,14 @@ class TestDecisionLabels:
             ExperienceEntry(company="B", role="Eng", start_date="??", end_date=None),
         ]
 
-        _candidate_experience_years(experience)
+        candidate_experience_years(experience)
 
         assert decisions == {"experience_years": "partial"}
 
     def test_experience_years_unavailable(self, decisions):
         experience = [ExperienceEntry(company="A", role="Eng", start_date="??", end_date=None)]
 
-        _candidate_experience_years(experience)
+        candidate_experience_years(experience)
 
         assert decisions == {"experience_years": "unavailable"}
 
@@ -521,7 +520,7 @@ class TestDecisionLabels:
             ExperienceEntry(company="B", role="Eng", start_date="2022-05", end_date="2021-01"),
         ]
 
-        _candidate_experience_years(experience)
+        candidate_experience_years(experience)
 
         assert decisions == {"experience_years": "partial"}
 
@@ -580,21 +579,21 @@ def test_artifact_dir_prefers_output_dir_then_stored_then_dated_default(
     fields, expected_suffix, tmp_path, monkeypatch
 ):
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "apps"))
-    monkeypatch.setattr(apply_nodes, "_today", lambda: date(2026, 10, 12))
+    monkeypatch.setattr(render_node, "_today", lambda: date(2026, 10, 12))
     absolute: dict[str, Any] = {k: str(tmp_path / v) for k, v in fields.items()}
     state = ApplyState(
         session_id="s1",
         keywords={"company": "ExpertVoice", "title": "Frontend AI Engineer"},
         **absolute,
     )
-    assert apply_nodes._artifact_dir(state) == tmp_path / expected_suffix
+    assert render_node._artifact_dir(state) == tmp_path / expected_suffix
 
 
 def test_render_stores_the_folder_it_used(tmp_path, monkeypatch):
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
-    monkeypatch.setattr(apply_nodes, "_today", lambda: date(2026, 10, 12))
+    monkeypatch.setattr(render_node, "_today", lambda: date(2026, 10, 12))
     monkeypatch.setattr(
-        apply_nodes, "render_resume", lambda data, path: {"success": True, "page_count": 1}
+        render_node, "render_resume", lambda data, path: {"success": True, "page_count": 1}
     )
     state = ApplyState(
         session_id="s1",
@@ -602,7 +601,7 @@ def test_render_stores_the_folder_it_used(tmp_path, monkeypatch):
         tailored=TailoredResume(name="Jane Doe"),
     )
     folder = tmp_path / "2026-10-12" / "acme-engineer"
-    assert apply_nodes.render(state) == {
+    assert render(state) == {
         "pdf_path": str(folder / "Jane_Doe_Acme_Resume.pdf"),
         "render_page_count": 1,
         "render_warnings": [],

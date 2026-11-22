@@ -176,7 +176,7 @@ Five dimensions, 100 points. Each one stands in for a real gate your application
 | ATSFormat | 10 | Standard section headings, so the parser doesn't mangle your resume. |
 | Readability | 10 | Absence of filler like "responsible for" and "worked on". |
 
-Passing mark is 70. Weights live in `ScoringConfig` in `callback/scorer.py` if you want to argue with them.
+Passing mark is 70. Weights live in `ScoringConfig` in `callback/services/scorer.py` if you want to argue with them.
 
 The number is worth what it's worth. It can't see your work authorization, your location, whether your job title matches the req, how recent your skills are, or degree and clearance filters. Those account for a lot of automatic rejections and callback has no visibility into any of them. Read the score as "will I survive the search and the skim", not "will I get called".
 

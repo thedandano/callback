@@ -4,11 +4,9 @@ import json
 import pytest
 from pydantic import BaseModel
 
-from callback.jd_data import (
-    EXTRACTION_PROTOCOL,
-    RESPONSIBILITIES_PROTOCOL,
-    JDData,
-    JDDataError,
+from callback.models.jd_data import JDData, JDDataError
+from callback.services.host_protocols import EXTRACTION_PROTOCOL, RESPONSIBILITIES_PROTOCOL
+from callback.services.jd_parsing import (
     drop_scored_duplicates,
     non_atomic_responsibilities,
     parse_jd_json,

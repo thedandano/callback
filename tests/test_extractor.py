@@ -1,8 +1,9 @@
-"""Unit tests for callback.extractor."""
+"""Unit tests for callback.services.extractor."""
 
 import pytest
 
-from callback.extractor import (
+from callback.models.section_map import ContactInfo
+from callback.services.extractor import (
     MAX_FILE_BYTES,
     _parse_contact_info,
     _parse_experience,
@@ -13,7 +14,6 @@ from callback.extractor import (
     extract,
     extract_sections,
 )
-from callback.section_map import ContactInfo
 
 
 class TestTxtExtraction:

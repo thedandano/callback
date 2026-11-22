@@ -14,7 +14,7 @@ from langgraph.graph import END, StateGraph
 from langsmith import Client, traceable
 from pydantic import BaseModel
 
-import callback.observability as observability
+import callback.config.observability as observability
 
 LABEL_KEYS = ("in_tool", "in_node", "in_async", "in_thread")
 

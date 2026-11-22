@@ -1,14 +1,9 @@
 import pytest
 from pydantic import ValidationError
 
-from callback.state import (
-    ApplyState,
-    CompiledProfile,
-    CreatedStory,
-    OrphanedSkill,
-    ProfileState,
-    TailoredResume,
-)
+from callback.models.profile import CompiledProfile, CreatedStory, OrphanedSkill
+from callback.models.state import ApplyState, ProfileState
+from callback.models.tailored_resume import TailoredResume
 
 
 class TestApplyStateBasic:

@@ -1,0 +1,111 @@
+"""Instruction text sent to the host model for keyword extraction."""
+
+EXTRACTION_PROTOCOL = """Extract keywords from jd_text using this exact protocol:
+
+1. Find sections labeled "Required", "Requirements", "Must Have", "Basic Qualifications", or similar. Extract every technical skill, tool, framework, platform, methodology, and credential as an ATOMIC term, never a whole sentence or clause - a requirement bullet is often a full sentence, so pull out only the individual skills/tools/tech/methodologies/credentials named inside it. Copy the EXACT string from the JD - do NOT paraphrase, generalize, or substitute synonyms (e.g. if JD says "k8s", use "k8s", not "Kubernetes").
+2. A disjunction - two or more NAMED alternatives where satisfying ANY ONE fulfills the whole requirement - goes into a required_any GROUP: a list of the named alternatives, appended to the required_any list of groups. Do NOT dump these into preferred. A disjunction must actually mean "any one is enough" - decide that from what the requirement is asking for, not from the connector word alone:
+   - "X or Y" is a disjunction (exactly two alternatives is still a group, not two separate flat terms).
+   - A slash is a disjunction ONLY when splitting it passes this test: could a candidate have JUST ONE of the slash-joined words and still fully satisfy this requirement? "AWS/GCP" passes (either cloud alone is enough) -> ["AWS","GCP"]. If instead the slash-joined words are normally used together as one practice, system, or job function, it is a compound term, not alternatives - keep it as one atomic string (fails the test: "CI/CD", "I/O", and a compound job-function name like "personalization / recommendation / ranking algorithms" all describe one combined thing, not options - never split these).
+   - "such as X, Y, Z" / "like X, Y, Z" / "(e.g., X, Y, Z)" is a disjunction ONLY when the requirement names a single role or category that any one item satisfies (e.g. "a programming language such as C, C++, Java" - proficiency in just one language is enough; "SQL & NoSQL datastores (e.g., PostgreSQL, Cassandra, DynamoDB, MySQL)" - experience with just one datastore from the list is enough). When the sentence instead plausibly wants several of the named items together as a toolset or stack (e.g. "security tools such as Snyk, SonarQube, and Dependabot"), it is NOT a disjunction - extract the named items as separate flat atomic terms instead.
+   - "one or more of X, Y, Z" is always a disjunction.
+   The opposite case: a list joined by "and", where the posting expects ALL of the named items together, is NOT a disjunction - keep those as separate flat atomic terms, one per item. For "X or some other Y" / "X or equivalent" phrasing that names only ONE concrete alternative, extract just X as a normal atomic required term - do NOT create a one-member group for it (a one-member group is scoring-identical to a scalar).
+   A stated requirement that names a general category and illustrates it with exactly ONE example via "(e.g., X)" / "such as X" / "like X" (not a list of several) is NOT asking for that specific X - extract only the general category phrase as the required term, and do NOT also add the example as its own separate required term (e.g. "a big-data framework (e.g., Apache Spark)" -> extract "big-data framework" only, not "Apache Spark" too). This applies only inside a stated Required/Preferred bullet (rules 1-3) - it does NOT apply to rule 4's unlabeled-prose extraction, where a named technology mentioned as color/context (e.g. "as sources adopt CDC") is still a real signal worth extracting on its own.
+3. Find sections labeled "Preferred", "Nice to Have", "Bonus", "Preferred Qualifications", or similar. Extract genuine nice-to-haves the same way, as atomic terms. Disjunctions inside these sections (the same signals as step 2) go into a preferred_any GROUP, appended to the preferred_any list of groups - the required_any rule applied on the preferred side.
+4. If no labeled sections exist, extract all technical nouns from responsibilities and description paragraphs as atomic terms. Do NOT mine keywords from: the interview process or hiring-steps section, benefits/compensation/equity text, EEO/legal/accommodation boilerplate, staffing-agency notices, or company awards/marketing copy - these describe the process or the company, not the job's requirements.
+5. A keyword is a NAMED technology, tool, framework, platform, language, credential, or named methodology or domain, explicitly stated in an eligible JD section (per rule 4's exclusions above) - include every one that meets this definition, do not filter by perceived importance. Bare activity words a reader could guess from the job title alone are NOT keywords - e.g. "training", "evaluating", "tooling", "cloud", "analytics", "data processing", "software engineering fundamentals".
+6. Do NOT deduplicate across required/preferred/required_any - keep each term in whichever section it appears.
+
+Encode as compact JSON (no extra whitespace):
+{"title":"<exact job title>","company":"<exact company name>","required":["<term1>","<term2>",...],"required_any":[["<altA>","<altB>",...],...],"preferred":["<term1>",...],"preferred_any":[["<altA>","<altB>",...],...],"location":"<city or Remote>","seniority":"junior|mid|senior|lead|director","required_years":<number>,"team":"<team name>","key_responsibilities":["<responsibility1>",...],"pay_range_min":<number>,"pay_range_max":<number>}
+Omit optional fields entirely if not present. Do NOT invent values.
+
+Examples:
+  JD says: "Requirements: Go, Kubernetes, PostgreSQL, REST APIs. Preferred: GraphQL, Terraform."
+  -> {"title":"Software Engineer","company":"Acme Corp","required":["Go","Kubernetes","PostgreSQL","REST APIs"],"preferred":["GraphQL","Terraform"]}
+
+  JD says: "Must have experience building distributed systems in Java, C++, or Go. 5+ years backend. Nice to have: familiarity with Datadog, Grafana, or Prometheus."
+  -> {"title":"Software Engineer","company":"Acme Corp","required":["distributed systems","backend"],"required_any":[["Java","C++","Go"]],"preferred_any":[["Datadog","Grafana","Prometheus"]],"required_years":5}
+
+  JD says: "Experience with cloud infrastructure (AWS or GCP). Nice to have: exposure to Kubernetes and Terraform."
+  -> {"title":"Software Engineer","company":"Acme Corp","required_any":[["AWS","GCP"]],"preferred":["Kubernetes","Terraform"]}
+
+  JD says: "Experience with CI/CD pipelines and AWS/GCP infrastructure. Nice to have: familiarity with security tools such as Snyk, SonarQube, and Dependabot."
+  -> {"title":"Software Engineer","company":"Acme Corp","required":["CI/CD pipelines"],"required_any":[["AWS","GCP"]],"preferred":["Snyk","SonarQube","Dependabot"]}
+
+  JD says (no labeled Required/Preferred sections - rule 4 applies): "Some of the problems you'll work on: **Data Pipeline Performance:** we push the limits of what our warehouse can handle, exploring query optimization and pre-computed state using dbt. **Real-time Sync:** as sources adopt CDC, we're building real-time computation with Kafka."
+  -> {"title":"Software Engineer","company":"Acme Corp","required":["query optimization","pre-computed state","dbt","CDC","Kafka"]}"""  # noqa: E501
+
+# kw-eval v3 "C" responsibilities pass, word for word. Pass 2 of the hybrid extraction.
+RESPONSIBILITIES_PROTOCOL = """You are extracting ONE field of a structured record from a job description (jd_text). A resume-scoring tool matches the strings you output against candidates' resumes. Other fields are extracted separately, so output only the field asked for here.
+
+Shared definitions (apply to every term you output):
+- ATOMIC term: an individual skill, tool, technology, framework, platform, language, methodology, or named domain. Never a whole sentence or clause. A requirement bullet is often a full sentence, so pull out only the individual items named inside it.
+- Copy the EXACT string from the JD. Do NOT paraphrase, generalize, or substitute synonyms (e.g. if the JD says "k8s", use "k8s", not "Kubernetes").
+- A keyword is a NAMED technology, tool, framework, platform, language, credential, or named methodology or domain, explicitly stated in an eligible JD section. Include every one that meets this definition; do not filter by perceived importance. Bare activity words a reader could guess from the job title alone are NOT keywords (e.g. "training", "evaluating", "tooling", "cloud", "analytics", "data processing", "software engineering fundamentals").
+- Do NOT mine terms from: the interview process or hiring-steps section, benefits/compensation/equity text, EEO/legal/accommodation boilerplate, staffing-agency notices, or company awards/marketing copy.
+- Degrees, fields of study, and years of experience are never terms (they are a separate field). Soft skills are not terms.
+
+FIELD: key_responsibilities (terms describing the work itself)
+
+1. Find the sections that describe the work: "Responsibilities", "What you'll do", "Duties", "The role", "Day to day", or similar, plus description paragraphs that describe what the person will build, run, or own.
+2. Extract every technical noun there as an ATOMIC term: each named system, component, technique, technology, method, or domain the person will build, operate, or work with. A line that lists several components ("the X: the A, B, C, and D") yields one term per component.
+3. Terms are noun phrases of 1-4 words in the JD's own wording. Drop leading verbs and filler ("build", "own", "help", "work on").
+4. Bare activity words anyone could guess from the job title, and generic nouns with no skill content ("features", "results", "the system", "production"), are not terms. Skip company/product marketing, team and culture lines, and logistics.
+5. Include a term even if it also appears in a qualifications section, but list each term only once.
+
+Output only: {"key_responsibilities":["<term1>","<term2>",...]}  (use [] if the JD describes no work)"""  # noqa: E501
+
+
+TAILOR_INSTRUCTIONS = (
+    "V4 voice constraints:\n"
+    "- Bullets: Google XYZ — Accomplished X (result), as measured by Y (metric from "
+    "resume/wiki/stories), by doing Z (mechanism / HOW). Past-tense action verb; "
+    "never invent or change numbers. "
+    "Banned verbs: spearheaded, orchestrated, championed, leveraged, utilized, streamlined.\n"
+    "- XYZ honesty: (1) Scope is not a result — counts like 'across 20+ sources' or "
+    "'in six countries' alone must not stand in for X. (2) No duplicate metrics — "
+    "do not credit the same figure to two bullets. (3) Do not strengthen X past the "
+    "evidence (context can demote the claim). (4) Ambiguous bullets need a specific X "
+    "before rewriting.\n"
+    "- missing_metric: when a bullet has no real measure (no number for Y), use a "
+    "verifiable outcome for X (e.g. approved for production, won the hackathon, "
+    "zero incidents) — never invent a number. Collect those bullets in a "
+    "missing_metric list and ask the user for a real metric before treating Y as "
+    "final.\n"
+    "- Chat-supplied facts: if the user provides new truthful metrics or context in "
+    "chat, confirm them, persist via create_story (primary_skill + skills including "
+    "it; SBI; metric in impact; omit apply session_id), then continue tailor — "
+    "never invent facts to fill XYZ.\n"
+    "- Summary: ≤3 sentences, ≥1 quantified anchor. "
+    "Banned: passionate, driven, cross-functional, results-oriented, results-driven, "
+    "proven track record, operational excellence.\n"
+    "- Context line per role: <Role> · <Domain/Team> · <Scale signal> · <Stack>"
+    " — factual only, no adjectives.\n"
+    "- Skills: every keyword added to skills MUST appear in ≥1 dated experience bullet.\n"
+    "- AI skills: when the JD asks for AI / LLM / Copilot / ChatGPT (or similar) skills, "
+    "prefer evidenced AI *outcomes* in experience or project bullets (tool + problem + "
+    "result, grounded in resume/wiki/stories) over only listing the tool name in Skills. "
+    "Never invent AI work the candidate did not do. Do not auto-reorder bullets solely "
+    "to put an AI win first — host owns edit order.\n"
+    "- Facts first: base every edit on wiki or resume evidence; polish wording "
+    "without changing any facts. Keep only wording you could explain in an interview.\n"
+    "- Keyword mapping, not stuffing: treat key_responsibilities (pass 2) as the "
+    "employer's problems to solve first. Map only keywords that are truthfully backed "
+    "by dated experience, project evidence, or wiki stories into real bullets that show "
+    "how you solved similar problems. Prefer fewer strong, evidenced keywords over "
+    "maximum coverage. If a keyword has no real experience behind it, leave it "
+    "uncovered — do not invent facts, do not add keyword-only text, and do not pile "
+    "synonyms into Skills.\n"
+    "- Projects: use existing project descriptions or bullets when a missing required or "
+    "preferred keyword is truthfully supported by project evidence rather than dated "
+    "experience evidence. Project edits MUST be grounded in the source resume or "
+    "profile wiki and MUST NOT invent project facts, metrics, scope, users, dates, "
+    "employer context, or keyword-only text. Project evidence does not satisfy Skills "
+    "coverage unless the keyword also appears in a dated experience bullet. When "
+    "project_candidates are present, compare them against the visible resume project "
+    "and prefer up to two visible projects when both projects improve JD keyword "
+    "match or theme. Remove or shorten low-score, off-theme visible bullets before "
+    "adding a second project. If two projects are already visible, replace the "
+    "weakest visible project only when the candidate better fits the JD keywords "
+    "or theme."
+)

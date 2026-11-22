@@ -27,15 +27,19 @@ from urllib.request import ProxyHandler, Request, build_opener
 import yaml
 from langsmith.utils import LangSmithError
 
-from callback.jd_data import (
+from callback.config import settings
+from callback.config.logging import configure_logging
+from callback.models.jd_data import JDDataError
+from callback.services.host_protocols import (
     EXTRACTION_PROTOCOL,
     RESPONSIBILITIES_PROTOCOL,
-    JDDataError,
+    TAILOR_INSTRUCTIONS,
+)
+from callback.services.jd_parsing import (
     clean_responsibilities,
     drop_scored_duplicates,
     parse_jd_json,
 )
-from callback.server import _TAILOR_INSTRUCTIONS
 from evals import experiments
 from evals.cases import case_dirs, case_id
 from evals.checks import Check, first_failure
@@ -176,7 +180,7 @@ def tailor_prompt(case: TailorCase) -> str:
         f"{EDIT_SCHEMA}\n"
         'Set "no_coverage": true with "edits": [] only when no truthful, evidence-backed edit '
         "exists.\n\n"
-        f"{_TAILOR_INSTRUCTIONS}\n"
+        f"{TAILOR_INSTRUCTIONS}\n"
         "- Keyword mapping, not stuffing: use key_responsibilities as the employer's "
         "problems first. Map only evidenced keywords into real bullets.\n"
         "- Add a keyword only when it is supported by dated experience or clear project evidence.\n"
@@ -942,6 +946,9 @@ def _run_one_eval(name: str, args: argparse.Namespace, run_meta: dict) -> list[E
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
+    # Same bootstrap callback.server runs on import: env.json first, then logging.
+    settings.apply_env_file()
+    configure_logging(os.environ.get("CALLBACK_LOG_PATH"))
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s", stream=sys.stderr)
     wanted = args.eval or list(EVALS)
     rows: list[EvalRow] = []

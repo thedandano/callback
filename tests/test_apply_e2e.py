@@ -6,8 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from callback import ledger, paths
-from callback.state import TailoredResume
+from callback.config import paths
+from callback.models.tailored_resume import TailoredResume
+from callback.repositories import ledger
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SAMPLE_JD = (FIXTURES / "sample_jd.txt").read_text()
@@ -95,8 +96,9 @@ MINIMAL_TAILORED_SECTIONS = {
 @pytest.fixture
 def setup_e2e_session(tmp_path, monkeypatch):
     """Setup e2e test session: return session_id at the tailor interrupt."""
-    from callback.repository.resumes import save_resume
-    from callback.server import load_jd, submit_keywords
+    from callback.repositories.resumes import save_resume
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
@@ -120,7 +122,7 @@ def _inject_tailored_sections_and_invoke(session_id: str, tailored_sections: dic
 
     Returns (graph, config) after the graph has run to completion.
     """
-    from callback.apply_graph import get_apply_graph, make_config
+    from callback.graphs.apply.graph import get_apply_graph, make_config
 
     graph = get_apply_graph()
     config = make_config(session_id)
@@ -142,7 +144,7 @@ class TestApplyGraphE2E:
 
     def test_tailor_produces_tailored_resume_object(self, setup_e2e_session):
         """Injecting tailored_sections at tailor interrupt produces TailoredResume."""
-        from callback.apply_graph import get_apply_graph, make_config
+        from callback.graphs.apply.graph import get_apply_graph, make_config
 
         session_id = setup_e2e_session
         graph = get_apply_graph()
@@ -192,7 +194,7 @@ class TestApplyGraphE2E:
 
     def test_m1_scenario_tailored_resume_has_name(self, setup_e2e_session):
         """M1 scenario: tailored resume object populated after tailor node."""
-        from callback.apply_graph import get_apply_graph, make_config
+        from callback.graphs.apply.graph import get_apply_graph, make_config
 
         session_id = setup_e2e_session
         graph = get_apply_graph()
@@ -252,8 +254,9 @@ class TestApplyGraphE2E:
 @pytest.fixture
 def setup_m3_session_with_graph(tmp_path, monkeypatch):
     """M3 fixture: pipeline run through finalize with Redis as extra required keyword."""
-    from callback.repository.resumes import save_resume
-    from callback.server import load_jd, submit_keywords
+    from callback.repositories.resumes import save_resume
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
@@ -359,8 +362,9 @@ class TestRequiredAnyOrGroups:
     def test_submit_keywords_reports_required_missing_any_for_unmatched_group(
         self, tmp_path, monkeypatch
     ):
-        from callback.repository.resumes import save_resume
-        from callback.server import load_jd, submit_keywords
+        from callback.repositories.resumes import save_resume
+        from callback.tools.load_jd import load_jd
+        from callback.tools.submit_keywords import submit_keywords
 
         monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
@@ -399,8 +403,9 @@ class TestPreferredAnyOrGroups:
     def test_submit_keywords_reports_preferred_missing_any_for_unmatched_group(
         self, tmp_path, monkeypatch
     ):
-        from callback.repository.resumes import save_resume
-        from callback.server import load_jd, submit_keywords
+        from callback.repositories.resumes import save_resume
+        from callback.tools.load_jd import load_jd
+        from callback.tools.submit_keywords import submit_keywords
 
         monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
@@ -444,9 +449,10 @@ class TestAtsInputSuspectHandoff:
     def test_submit_keywords_surfaces_suspect_flag(
         self, tmp_path, monkeypatch, resume_text, expected_suspect
     ):
-        from callback.apply_graph import get_apply_graph, make_config
-        from callback.repository.resumes import save_resume
-        from callback.server import load_jd, submit_keywords
+        from callback.graphs.apply.graph import get_apply_graph, make_config
+        from callback.repositories.resumes import save_resume
+        from callback.tools.load_jd import load_jd
+        from callback.tools.submit_keywords import submit_keywords
 
         monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))

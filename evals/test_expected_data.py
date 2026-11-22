@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from callback.scorer import normalize_for_match
+from callback.services.scorer import normalize_for_match
 from evals.recall import all_terms, term_present
 
 EXTRACT_DIR = Path(__file__).resolve().parent / "extract"

@@ -1,0 +1,250 @@
+"""Edit validation and application for holistic-tailor."""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import Any
+
+from callback.models.section_map import ExperienceEntry, ProjectEntry, SectionMap
+
+_EXP_BULLET_RE = re.compile(r"^exp-(\d+)-b(\d+)$")
+_EXP_CTX_RE = re.compile(r"^exp-(\d+)-context$")
+_PROJ_ENTRY_RE = re.compile(r"^proj-(\d+)$")
+_PROJ_DESC_RE = re.compile(r"^proj-(\d+)-desc$")
+_PROJ_BULLET_RE = re.compile(r"^proj-(\d+)-b(\d+)$")
+_PROJ_END_TARGET = "proj-end"
+_SKILLS_IDX_RE = re.compile(r"^skills-(\d+)$")
+
+_EDITABLE = {"summary", "skills", "experience", "projects"}
+
+
+@dataclass
+class EditResult:
+    applied: bool
+    rejection_reason: str | None = None
+
+
+def _validate_experience_target(entries: list[ExperienceEntry], target: str) -> str | None:
+    m = _EXP_BULLET_RE.match(target)
+    if m:
+        i, j = int(m.group(1)), int(m.group(2))
+        if i >= len(entries):
+            return f"experience index {i} out of bounds (have {len(entries)})"
+        if j >= len(entries[i].bullets):
+            n = len(entries[i].bullets)
+            return f"experience[{i}] bullet index {j} out of bounds (have {n})"
+        return None
+    m = _EXP_CTX_RE.match(target)
+    if m:
+        i = int(m.group(1))
+        if i >= len(entries):
+            return f"experience index {i} out of bounds (have {len(entries)})"
+        return None
+    if target:
+        return f"invalid experience target format: {target}"
+    return "experience edit requires a target"
+
+
+def _validate_project_target(
+    projects: list[ProjectEntry], target: str, edit: dict[str, Any]
+) -> str | None:
+    op = edit.get("op", "replace")
+    if target == _PROJ_END_TARGET:
+        return _validate_project_append_target(edit, op)
+    m = _PROJ_ENTRY_RE.match(target)
+    if m:
+        return _validate_project_entry_target_for_op(projects, int(m.group(1)), edit, op)
+    m = _PROJ_DESC_RE.match(target)
+    if m:
+        return _validate_project_index(projects, int(m.group(1)))
+    m = _PROJ_BULLET_RE.match(target)
+    if m:
+        return _validate_project_bullet_target(projects, int(m.group(1)), int(m.group(2)))
+    if target:
+        return f"invalid project target format: {target}"
+    return "project edit requires a target"
+
+
+def _validate_project_append_target(edit: dict[str, Any], op: str) -> str | None:
+    if op != "add":
+        return "proj-end target only supports add"
+    return _validate_project_value(edit, "add")
+
+
+def _validate_project_index(projects: list[ProjectEntry], index: int) -> str | None:
+    if index >= len(projects):
+        return f"project index {index} out of bounds (have {len(projects)})"
+    return None
+
+
+def _validate_project_entry_target_for_op(
+    projects: list[ProjectEntry], index: int, edit: dict[str, Any], op: str
+) -> str | None:
+    if op != "replace":
+        return "project entry target only supports replace"
+    return _validate_project_entry_target(projects, index, edit)
+
+
+def _validate_project_entry_target(
+    projects: list[ProjectEntry], index: int, edit: dict[str, Any]
+) -> str | None:
+    index_error = _validate_project_index(projects, index)
+    if index_error is not None:
+        return index_error
+    return _validate_project_value(edit, "replacement")
+
+
+def _validate_project_value(edit: dict[str, Any], operation: str) -> str | None:
+    value = edit.get("value")
+    if not isinstance(value, dict):
+        return f"project {operation} value must be an object"
+    if not value.get("name"):
+        return f"project {operation} value must include name"
+    return None
+
+
+def _validate_project_bullet_target(
+    projects: list[ProjectEntry], project_index: int, bullet_index: int
+) -> str | None:
+    index_error = _validate_project_index(projects, project_index)
+    if index_error is not None:
+        return index_error
+    if bullet_index >= len(projects[project_index].bullets):
+        n = len(projects[project_index].bullets)
+        return f"projects[{project_index}] bullet index {bullet_index} out of bounds (have {n})"
+    return None
+
+
+def validate_edit_target(section_map: SectionMap, edit: dict[str, Any]) -> str | None:
+    """Return rejection reason or None if valid."""
+    section = edit.get("section", "")
+    if section not in _EDITABLE:
+        return f"non-editable section: {section}"
+    target = edit.get("target", "")
+    if not isinstance(target, str):
+        return f"target must be a string, got {type(target).__name__}"
+    if section == "experience":
+        return _validate_experience_target(section_map.experience, target)
+    if section == "projects":
+        return _validate_project_target(section_map.projects, target, edit)
+    return None
+
+
+def _apply_skills_edit(section_map: SectionMap, edit: dict[str, Any]) -> None:
+    op = edit.get("op", "replace")
+    target = edit.get("target", "")
+    value: str = edit.get("value", "")
+    category = edit.get("category")
+    if category:
+        if op == "add":
+            section_map.skills.categorized.setdefault(category, []).append(value)
+        else:
+            section_map.skills.categorized[category] = [value]
+    elif op == "add":
+        section_map.skills.flat.append(value)
+    else:
+        m = _SKILLS_IDX_RE.match(target)
+        if m:
+            section_map.skills.flat[int(m.group(1))] = value
+        else:
+            section_map.skills.flat = [value]
+
+
+def _apply_experience_edit(entry: ExperienceEntry, target: str, value: str, op: str) -> None:
+    m = _EXP_BULLET_RE.match(target)
+    if m:
+        bullet_index = int(m.group(2))
+        if op == "remove":
+            del entry.bullets[bullet_index]
+        else:
+            entry.bullets[bullet_index] = value
+        return
+    m = _EXP_CTX_RE.match(target)
+    if m:
+        entry.context_line = None if op == "remove" else value
+
+
+def _apply_project_edit(projects: list[ProjectEntry], target: str, value: Any, op: str) -> None:
+    if target == _PROJ_END_TARGET:
+        projects.append(ProjectEntry.model_validate(value))
+        return
+    m = _PROJ_ENTRY_RE.match(target)
+    if m:
+        projects[int(m.group(1))] = ProjectEntry.model_validate(value)
+        return
+    target_match = _PROJ_DESC_RE.match(target) or _PROJ_BULLET_RE.match(target)
+    project = projects[int(target_match.group(1))]  # type: ignore[union-attr]
+    if _PROJ_DESC_RE.match(target):
+        project.description = None if op == "remove" else value
+        return
+    m = _PROJ_BULLET_RE.match(target)
+    if m:
+        bullet_index = int(m.group(2))
+        if op == "remove":
+            del project.bullets[bullet_index]
+        else:
+            project.bullets[bullet_index] = value
+
+
+def apply_edit(section_map: SectionMap, edit: dict[str, Any]) -> EditResult:
+    """Apply a structured edit to section_map in-place."""
+    reason = validate_edit_target(section_map, edit)
+    if reason is not None:
+        return EditResult(applied=False, rejection_reason=reason)
+
+    section = edit.get("section", "")
+    op = edit.get("op", "replace")
+    target = edit.get("target", "")
+    value: Any = edit.get("value", "")
+
+    if section == "summary":
+        section_map.summary = value
+    elif section == "skills":
+        _apply_skills_edit(section_map, edit)
+    elif section == "experience":
+        target_match = _EXP_BULLET_RE.match(target) or _EXP_CTX_RE.match(target)
+        i = int(target_match.group(1))  # type: ignore[union-attr]
+        _apply_experience_edit(section_map.experience[i], target, value, op)
+    elif section == "projects":
+        _apply_project_edit(section_map.projects, target, value, op)
+
+    return EditResult(applied=True)
+
+
+def detect_uncovered_skills(section_map: SectionMap) -> list[str]:
+    """Return skills added to skills section but absent from all experience bullets."""
+    all_skills = section_map.skills.all_skills()
+
+    bullet_text = " ".join(b for exp in section_map.experience for b in exp.bullets)
+
+    def _covered(skill: str) -> bool:
+        return bool(re.search(rf"\b{re.escape(skill)}\b", bullet_text, re.IGNORECASE))
+
+    return [s for s in all_skills if not _covered(s)]
+
+
+def apply_edits(
+    section_map: SectionMap, edits: list[dict]
+) -> tuple[list[int], list[dict], list[str]]:
+    """Apply edits in order; return applied indexes, rejected edits, applied skill values."""
+    edits_applied = []
+    edits_rejected = []
+
+    for i, edit in enumerate(edits):
+        result = apply_edit(section_map, edit)
+        if result.applied:
+            edits_applied.append(i)
+        else:
+            edits_rejected.append({"index": i, "reason": result.rejection_reason})
+
+    applied_set = set(edits_applied)
+    applied_skill_values = [
+        edit["value"]
+        for i, edit in enumerate(edits)
+        if i in applied_set
+        and edit.get("section") == "skills"
+        and edit.get("op") in ("add", "replace")
+        and "value" in edit
+    ]
+    return edits_applied, edits_rejected, applied_skill_values

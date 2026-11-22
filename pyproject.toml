@@ -33,6 +33,7 @@ include = ["callback*"]
 
 [dependency-groups]
 dev = [
+    "import-linter>=2.17",
     "pre-commit>=4.0",
     "pyright>=1.1",
     "pytest>=9.0.3",
@@ -40,6 +41,45 @@ dev = [
     "pytest-mock>=3.14",
     "ruff>=0.8",
 ]
+
+[tool.importlinter]
+root_package = "callback"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Only the CLI may start the server"
+type = "forbidden"
+source_modules = ["callback"]
+forbidden_modules = ["callback.server"]
+ignore_imports = ["callback.cli -> callback.server"]
+
+[[tool.importlinter.contracts]]
+name = "Layered architecture"
+type = "layers"
+layers = [
+    "callback.cli",
+    "callback.server",
+    "callback.tools",
+    "callback.graphs",
+    "callback.services | callback.render",
+    "callback.repositories",
+    "callback.config",
+    "callback.models",
+]
+
+[[tool.importlinter.contracts]]
+name = "Tools reach graphs only through their front doors"
+type = "forbidden"
+source_modules = ["callback.tools"]
+forbidden_modules = [
+    "callback.graphs.apply.graph",
+    "callback.graphs.apply.nodes",
+    "callback.graphs.profile.graph",
+    "callback.graphs.profile.nodes",
+    "langgraph",
+]
+# Only direct imports count: the front doors themselves import the graphs.
+allow_indirect_imports = true
 
 [tool.ruff]
 line-length = 100

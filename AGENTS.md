@@ -23,7 +23,7 @@ Every scoring, tailoring, and feedback decision must serve this goal:
 
 Non-negotiable principles. These do not change without an explicit design proposal.
 
-1. **Scoring is pure and deterministic.** The scorer (`scorer.py`) performs literal keyword
+1. **Scoring is pure and deterministic.** The scorer (`services/scorer.py`) performs literal keyword
    matching only — no synonyms, no semantic expansion, no abbreviation unfolding, no LLM
    calls. The score measures what the resume literally contains: a conservative,
    defensible lower bound, not an estimate of what a human reader would infer.
@@ -136,6 +136,9 @@ uv run pytest tests/test_scorer.py::test_keyword_match -v
 
 # Type-check
 uv run pyright
+
+# Enforce layer boundaries (import-linter contracts in pyproject.toml)
+uv run lint-imports
 
 # Smoke scripts (end-to-end exercises against the graphs)
 uv run python scripts/smoke_apply.py
@@ -251,12 +254,12 @@ Infrastructure adapters
 ```
 
 Layer rules:
-- `server.py` is the MCP adapter: tool definitions, envelope shaping, session handoff, and host-facing workflow guidance.
-- `apply_graph.py` and `profile_graph.py` own graph wiring, routing, checkpointers, and interrupt boundaries.
-- `apply_nodes.py` and `profile_nodes.py` own workflow step handlers. Keep them focused on graph state transitions and use existing services/adapters for specialized work.
-- Domain services stay deterministic and easy to test: `scorer.py`, `section_map.py`, `jd_data.py`, and `profilecompiler.py`.
-- Infrastructure adapters own I/O boundaries: `jd_fetcher.py`, `extractor.py`, `render/`, `wiki.py`, `repository/`, and `version_check.py`.
-- Observability adapters live behind `observability.py`; graph code may ask for trace config, but workflow nodes should not know vendor details.
+- `server.py` registers the MCP tools; each tool lives in `tools/` (envelope shaping, session handoff, host-facing workflow guidance).
+- `graphs/apply/graph.py` and `graphs/profile/graph.py` own graph wiring, routing, checkpointers, and interrupt boundaries. Tools reach them only through `graphs/*/api.py`.
+- `graphs/apply/nodes/` and `graphs/profile/nodes/` own workflow step handlers. Keep them focused on graph state transitions and use existing services/adapters for specialized work.
+- Domain services stay deterministic and easy to test: `services/scorer.py`, `services/section_edits.py`, `models/jd_data.py`, and `services/profilecompiler.py`.
+- Infrastructure adapters own I/O boundaries: `services/jd_fetcher.py`, `services/extractor.py`, `render/`, `repositories/`, and `services/version_check.py`.
+- Observability adapters live behind `config/observability.py`; graph code may ask for trace config, but workflow nodes should not know vendor details.
 
 The key boundary: the host owns LLM reasoning and judgment. callback owns state,
 validation, deterministic scoring, rendering, ledger recording, and explicit workflow
@@ -264,7 +267,7 @@ handoff metadata.
 
 ### Two graphs, one server
 
-`server.py` (FastMCP) exposes thirteen tools: eight wired to two distinct LangGraph state graphs, two for search preferences, and three that read and write the application ledger (`ledger.py`):
+`server.py` (FastMCP) exposes fourteen tools: eight wired to two distinct LangGraph state graphs, one update check, two for search preferences, and three that read and write the application ledger (`repositories/ledger.py`):
 
 | Tool | Graph | Behavior |
 |---|---|---|
@@ -282,7 +285,7 @@ handoff metadata.
 | `record_status` | ledger | Adds a status event to a job (by URL, company + title, or the `job_key` from `find_job`); creates the job if new; never overwrites history. A `url` without http(s):// (e.g. a recruiter thread) goes into the note and the job is keyed by company + title. |
 | `export_ledger` | ledger | Writes the ledger as CSV to an absolute `.csv` path: `mode="jobs"` (default) is one row per job (latest status and scores); `mode="events"` is one row per status event with its own date; `mode="contacts"` is those events kept to EDD-reportable ones (notes starting `Contact method:`, statuses starting `Applied` or `Already applied`) - use for EDD. |
 
-All tools return JSON envelopes via `_ok` / `_err`:
+All tools return JSON envelopes via `ok` / `err` (`models/envelope.py`):
 - Success: `{"session_id", "status": "ok", "next_action"?, "data"?, "workflow"?}`
 - Error: `{"status": "error", "error": {"stage", "code", "message", "retriable"}, "session_id"?}`
 
@@ -301,9 +304,9 @@ When the user asks to use callback for a job, the host should follow the workflo
 
 The host owns keyword extraction and tailoring judgment. callback owns state, validation, rendering, scoring, and ledger recording.
 
-### Apply graph (`apply_graph.py`, `apply_nodes.py`)
+### Apply graph (`graphs/apply/graph.py`, `graphs/apply/nodes/`)
 
-Linear graph with host handoff interrupts after `jd_fetch` and `keywords_accept`:
+Linear graph with host handoff interrupts after `jd_fetch` and before `tailor`:
 
 ```text
 jd_fetch -> keywords_accept -> parse_initial -> score_initial -> tailor -> render
@@ -315,10 +318,10 @@ jd_fetch -> keywords_accept -> parse_initial -> score_initial -> tailor -> rende
 Errors in `tailor`, `render`, `parse_final`, or `finalize` route back to the `tailor` interrupt; `submit_tailor` returns `pipeline_error` with `retriable: true` and may be called again with the same session to retry.
 
 Checkpointer DB: `<temp folder>/callback-<uid>/apply-sessions.db` (`paths.apply_db_path()`; the temp folder is `tempfile.gettempdir()`). Sessions idle more than 24 h are deleted when the DB is opened.
-State schema: `ApplyState` in `state.py` (single Pydantic model - entire graph state).
+State schema: `ApplyState` in `models/state.py` (single Pydantic model - entire graph state).
 Keyword extraction is host-owned: `load_jd` returns the JD markdown and extraction protocol, then `submit_keywords` stores only validated JDData submitted by the host.
 
-### Profile graph (`profile_graph.py`, `profile_nodes.py`)
+### Profile graph (`graphs/profile/graph.py`, `graphs/profile/nodes/`)
 
 Cyclic, with interrupts after `onboard` and before `create_story`:
 
@@ -342,9 +345,9 @@ story's body survive `compile_profile`. `accomplishments.json` holds only
 runs automatically at the start of the first `onboard` or `compile_profile`.
 
 Checkpointer DB: `<temp folder>/callback-<uid>/profile-sessions.db` (`paths.profile_db_path()`; the temp folder is `tempfile.gettempdir()`). Sessions idle more than 24 h are deleted when the DB is opened.
-State schema: `ProfileState` in `state.py`.
+State schema: `ProfileState` in `models/state.py`.
 
-### JD Fetching (`jd_fetcher.py`)
+### JD Fetching (`services/jd_fetcher.py`)
 
 URL fetching uses Playwright plus trafilatura. The fetch surface is controlled by:
 - `CALLBACK_FETCH_PAGE_TIMEOUT_MS`
@@ -355,7 +358,7 @@ URL fetching uses Playwright plus trafilatura. The fetch surface is controlled b
 
 Do not add a silent fallback path if URL fetch fails.
 
-### Scoring (`scorer.py`)
+### Scoring (`services/scorer.py`)
 
 Pure deterministic Python - no I/O, no LLM calls.
 
@@ -404,30 +407,16 @@ committed and public, so there is nothing to withhold.
 
 | Module | Role |
 |---|---|
-| `server.py` | FastMCP tool definitions, envelope helpers, structured JSON logging |
-| `apply_graph.py` | `get_apply_graph()` cached accessor; linear apply pipeline with host handoff interrupts and error routing |
-| `apply_nodes.py` | Apply nodes (`jd_fetch`, `keywords_accept`, `parse_initial`, `score_initial`, `tailor`, `render`, `parse_final`, `score_final`, `report`, `finalize`) |
-| `profile_graph.py` | `get_profile_graph()` cached accessor; cyclic profile graph with router edges and interrupts |
-| `profile_nodes.py` | Profile nodes (`check_profile`, `onboard`, `compile_profile`, `check_orphans`, `create_story`) |
-| `state.py` | `ApplyState`, `ProfileState`, and related profile data models |
-| `scorer.py` | Deterministic ATS scorer |
-| `jd_data.py` | JD JSON schema, extraction protocol, and validators |
-| `jd_fetcher.py` | Playwright + trafilatura job-description fetcher |
-| `extractor.py` | Resume text extraction (PDF, DOCX, TXT, Markdown/plain text) |
-| `section_map.py` | Resume section editing helpers |
-| `wiki.py` | Wiki storage for resume-linked behavioral stories |
-| `repository/` | Resume, onboard text, and story-page persistence |
-| `repository/stories.py` | Story pages: read, write, migrate legacy JSON stories to OKF pages |
-| `profilecompiler.py` | `compile_profile()` function |
-| `wikirenderer.py` | Renders `index.md` |
-| `render/` | HTML + Playwright resume rendering |
-| `paths.py` | Every data directory and the atomic writers |
-| `ledger.py` | Global application ledger in SQLite (`paths.ledger_path()`): jobs, runs, append-only status events |
-| `cli.py` | `callback` CLI entry point |
-| `plugin_install.py` | Plugin installation functions (replaces `HarnessTarget` dataclass) |
-| `ledger_import.py` | One-time, re-runnable import of old run archives, the record CSV, and the old contact ledger into the ledger |
-| `observability.py` | Trace config port and LangSmith adapter |
-| `version_check.py` | Current-vs-latest release comparison |
+| `server.py` | FastMCP server: registers one function per tool from `tools/`; stdio entry point |
+| `cli.py` | `callback` CLI entry point (config, ledger import, install/update, `serve`) |
+| `tools/` | One module per MCP tool, plus shared helpers (`errors.py`, `workflow.py`, `profile_thread.py`, `resume_label.py`). Reach graphs only through `graphs/*/api.py` |
+| `graphs/apply/` | Apply graph: `graph.py` (wiring, checkpointer), `nodes/` (10 nodes: `jd_fetch`, `keywords_accept`, `parse_initial`, `score_initial`, `tailor`, `render`, `parse_final`, `score_final`, `report`, `finalize`), `scoring.py`, and `api.py` (front door) |
+| `graphs/profile/` | Profile graph: `graph.py` (wiring, router edges, interrupts), `nodes/` (`check_profile`, `onboard`, `compile_profile`, `check_orphans`, `create_story`), and `api.py` (front door) |
+| `services/` | Deterministic logic and I/O adapters: `scorer.py` (ATS scorer, no I/O, no LLM), `jd_fetcher.py`, `extractor.py`, `profilecompiler.py`, `wikirenderer.py`, ledger CSV/import, `version_check.py` |
+| `repositories/` | Persistence: resumes, stories, wiki, compiled profile, ledger (SQLite), session checkpointer, atomic writers |
+| `models/` | Pydantic schemas: `state.py` (`ApplyState`, `ProfileState`), `envelope.py` (`ok`/`err`), JD data, profile, ledger |
+| `config/` | Settings, `paths.py` (every data directory), logging, `observability.py` (trace config port and LangSmith adapter) |
+| `render/` | HTML + Playwright resume rendering (`html_builder.py`, template, fonts) |
 | `evals/` | Eval checks, fixtures, runner; see Evals |
 
 ## Change Discipline

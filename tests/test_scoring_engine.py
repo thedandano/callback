@@ -1,9 +1,13 @@
-"""Tests for scoring engine: _run_score, score_initial, score_final, parse_final, report."""
+"""Tests for scoring engine: run_score, score_initial, score_final, parse_final, report."""
 
 import pytest
 
-from callback.apply_nodes import _run_score, parse_final, report, score_final, score_initial
-from callback.state import ApplyState
+from callback.graphs.apply.nodes.parse_final import parse_final
+from callback.graphs.apply.nodes.report import report
+from callback.graphs.apply.nodes.score_final import score_final
+from callback.graphs.apply.nodes.score_initial import score_initial
+from callback.graphs.apply.scoring import run_score
+from callback.models.state import ApplyState
 
 RESUME_WITH_KEYWORDS = (
     "Experience\n"
@@ -39,7 +43,7 @@ def _expected_ats_diagnostics(
 
 class TestRunScore:
     def test_returns_full_breakdown(self):
-        result = _run_score(
+        result = run_score(
             RESUME_WITH_KEYWORDS,
             {"required": ["Python"], "preferred": ["AWS"], "required_years": 0.0},
         )
@@ -67,7 +71,7 @@ class TestRunScore:
 
     def test_keyword_classification(self):
         kws = {"required": ["Python", "Go"], "preferred": ["AWS"], "required_years": 0.0}
-        result = _run_score(RESUME_WITH_KEYWORDS, kws)
+        result = run_score(RESUME_WITH_KEYWORDS, kws)
         expected = {
             "total": result["total"],
             "keyword_match": result["keyword_match"],
@@ -92,7 +96,7 @@ class TestRunScore:
 
     def test_experience_evaluated_with_candidate_years(self):
         kws = {"required": ["ZZZNONEXISTENT"], "preferred": [], "required_years": 10.0}
-        result = _run_score("some resume text", kws, candidate_years=5.0)
+        result = run_score("some resume text", kws, candidate_years=5.0)
         expected = {
             "total": 10.0 + 7.5,  # readability 10.0 + exp 0.5 × 15.0
             "keyword_match": 0.0,
@@ -117,26 +121,26 @@ class TestRunScore:
 
     def test_experience_not_evaluated_without_candidate_years(self):
         kws = {"required": ["ZZZNONEXISTENT"], "preferred": [], "required_years": 10.0}
-        result = _run_score("some resume text", kws)
+        result = run_score("some resume text", kws)
         assert result["experience_fit"] is None
         assert result["experience_evaluated"] is False
         assert result["total"] == 10.0 * (100.0 / 85.0)  # readability only, renormalized
 
     def test_raises_on_empty_text(self):
         with pytest.raises(ValueError, match="must not be empty"):
-            _run_score("", {"required": ["Python"]})
+            run_score("", {"required": ["Python"]})
 
     def test_raises_on_whitespace_text(self):
         with pytest.raises(ValueError, match="must not be empty"):
-            _run_score("   \n  ", {"required": ["Python"]})
+            run_score("   \n  ", {"required": ["Python"]})
 
     def test_raises_on_empty_keywords(self):
         with pytest.raises(ValueError, match="at least one non-empty bucket"):
-            _run_score("some text", {})
+            run_score("some text", {})
 
     def test_raises_on_none_required(self):
         with pytest.raises(ValueError, match="at least one non-empty bucket"):
-            _run_score("some text", {"required": None})
+            run_score("some text", {"required": None})
 
     def test_coverage_full_match(self):
         """Every required and preferred keyword present -> both coverages are 100.0."""
@@ -145,7 +149,7 @@ class TestRunScore:
             "preferred": ["Docker"],
             "required_years": 0.0,
         }
-        result = _run_score(RESUME_WITH_KEYWORDS, kws)
+        result = run_score(RESUME_WITH_KEYWORDS, kws)
         expected = {
             "total": result["total"],
             "keyword_match": 55.0,
@@ -175,7 +179,7 @@ class TestRunScore:
             "preferred": [],
             "required_years": 0.0,
         }
-        result = _run_score(RESUME_WITH_KEYWORDS, kws)
+        result = run_score(RESUME_WITH_KEYWORDS, kws)
         expected = {
             "total": result["total"],
             "keyword_match": result["keyword_match"],
@@ -213,7 +217,7 @@ class TestRunScore:
             "preferred": [],
             "required_years": 0.0,
         }
-        result = _run_score(RESUME_WITH_KEYWORDS, kws)
+        result = run_score(RESUME_WITH_KEYWORDS, kws)
         expected = {
             "total": result["total"],
             "keyword_match": result["keyword_match"],
@@ -239,12 +243,12 @@ class TestRunScore:
     def test_no_required_keywords_raises_rather_than_scoring_zero(self):
         """A JD with zero required keywords (and no OR-groups) is rejected upstream.
 
-        _run_score's own guard (at least one non-empty bucket) means
+        run_score's own guard (at least one non-empty bucket) means
         req_total == 0 can never reach the coverage calculation, so
         required_coverage can never silently come back as 0.0 for this case.
         """
         with pytest.raises(ValueError, match="at least one non-empty bucket"):
-            _run_score(
+            run_score(
                 "some text",
                 {"required": [], "required_any": [], "preferred": [], "required_years": 0.0},
             )
@@ -252,7 +256,7 @@ class TestRunScore:
     def test_preferred_coverage_none_when_no_preferred_keywords(self):
         """No preferred keywords listed -> preferred_coverage is None, not 0.0."""
         kws = {"required": ["Python"], "preferred": [], "required_years": 0.0}
-        result = _run_score(RESUME_WITH_KEYWORDS, kws)
+        result = run_score(RESUME_WITH_KEYWORDS, kws)
         expected = {
             "total": result["total"],
             "keyword_match": result["keyword_match"],
@@ -449,7 +453,7 @@ class TestReport:
 
 
 def test_run_score_stamps_engine_version():
-    result = _run_score(
+    result = run_score(
         RESUME_WITH_KEYWORDS,
         {"required": ["Python"], "preferred": ["AWS"], "required_years": 0.0},
     )

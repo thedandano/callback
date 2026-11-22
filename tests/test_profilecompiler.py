@@ -1,17 +1,16 @@
-"""Tests for callback.profilecompiler — compile_profile and I/O helpers."""
+"""Tests for callback.services.profilecompiler — compile_profile and I/O helpers."""
 
 from pathlib import Path
 
 import pytest
 
-from callback.profilecompiler import (
+from callback.models.profile import CompiledProfile, CreatedStory, OrphanedSkill
+from callback.repositories.compiled_profile import (
     ProfileMissingError,
-    _token_sort_ratio,
-    compile_profile,
     load_compiled_profile,
     save_compiled_profile,
 )
-from callback.state import CompiledProfile, CreatedStory, OrphanedSkill
+from callback.services.profilecompiler import compile_profile, token_sort_ratio
 
 
 def _make_story(
@@ -205,9 +204,9 @@ class TestProfileMissingError:
 class TestTokenSortRatio:
     def test_order_insensitive_and_case_insensitive(self):
         actual = {
-            "reordered": _token_sort_ratio("REST APIs", "apis rest"),
-            "unrelated": _token_sort_ratio("Kubernetes", "k8s"),
-            "close": _token_sort_ratio("PostgreSQL", "Postgres"),
+            "reordered": token_sort_ratio("REST APIs", "apis rest"),
+            "unrelated": token_sort_ratio("Kubernetes", "k8s"),
+            "close": token_sort_ratio("PostgreSQL", "Postgres"),
         }
         expected = {"reordered": 100, "unrelated": 30, "close": 88}
         assert actual == expected

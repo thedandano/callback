@@ -15,13 +15,17 @@ from pathlib import Path
 # Add current directory to path for running via uv
 sys.path.insert(0, os.getcwd())
 
-from callback import ledger, paths
-from callback.jd_data import EXTRACTION_PROTOCOL
-from callback.jd_fetcher import MIN_MARKDOWN_CHARS
-from callback.repository.resumes import save_resume
-from callback.section_map import ContactInfo, ExperienceEntry, SectionMap, SkillsSection
-from callback.server import load_jd, submit_keywords, submit_tailor
-from callback.wiki import WikiStore
+from callback.config import paths, settings
+from callback.config.logging import configure_logging
+from callback.models.section_map import ContactInfo, ExperienceEntry, SectionMap, SkillsSection
+from callback.repositories import ledger
+from callback.repositories.resumes import save_resume
+from callback.repositories.wiki import WikiStore
+from callback.services.host_protocols import EXTRACTION_PROTOCOL
+from callback.services.jd_fetcher import MIN_MARKDOWN_CHARS
+from callback.tools.load_jd import load_jd
+from callback.tools.submit_keywords import submit_keywords
+from callback.tools.submit_tailor import submit_tailor
 
 JD_JSON = json.dumps(
     {
@@ -54,11 +58,14 @@ def _load_phase(jd_url: str | None, jd_text: str) -> dict:
 
 
 def main():
+    # Same bootstrap callback.server runs on import: env.json first, then logging.
+    settings.apply_env_file()
+    configure_logging(os.environ.get("CALLBACK_LOG_PATH"))
     jd_url = sys.argv[1] if len(sys.argv) > 1 else None
 
     # Run under isolated data and state roots so the temp resume is the only one
     # registered and nothing here touches the real wiki, ledger, or session
-    # checkpoint DBs (callback.paths).
+    # checkpoint DBs (callback.config.paths).
     data_root = tempfile.mkdtemp(prefix="callback-smoke-")
     state_root = tempfile.mkdtemp(prefix="callback-smoke-state-")
     os.environ["XDG_DATA_HOME"] = data_root

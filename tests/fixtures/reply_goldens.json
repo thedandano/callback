@@ -1,0 +1,479 @@
+{
+  "load_jd_missing_input": {
+    "status": "error",
+    "error": {
+      "stage": "load_jd",
+      "code": "missing_input",
+      "message": "neither jd_url nor jd_raw_text provided",
+      "retriable": false
+    },
+    "session_id": "<session_id>"
+  },
+  "load_jd_ok": {
+    "session_id": "<session_id>",
+    "status": "ok",
+    "next_action": "extract_keywords",
+    "data": {
+      "jd_text": "Python engineer needed",
+      "extraction_protocol": "Extract keywords from jd_text using this exact protocol:\n\n1. Find sections labeled \"Required\", \"Requirements\", \"Must Have\", \"Basic Qualifications\", or similar. Extract every technical skill, tool, framework, platform, methodology, and credential as an ATOMIC term, never a whole sentence or clause - a requirement bullet is often a full sentence, so pull out only the individual skills/tools/tech/methodologies/credentials named inside it. Copy the EXACT string from the JD - do NOT paraphrase, generalize, or substitute synonyms (e.g. if JD says \"k8s\", use \"k8s\", not \"Kubernetes\").\n2. A disjunction - two or more NAMED alternatives where satisfying ANY ONE fulfills the whole requirement - goes into a required_any GROUP: a list of the named alternatives, appended to the required_any list of groups. Do NOT dump these into preferred. A disjunction must actually mean \"any one is enough\" - decide that from what the requirement is asking for, not from the connector word alone:\n   - \"X or Y\" is a disjunction (exactly two alternatives is still a group, not two separate flat terms).\n   - A slash is a disjunction ONLY when splitting it passes this test: could a candidate have JUST ONE of the slash-joined words and still fully satisfy this requirement? \"AWS/GCP\" passes (either cloud alone is enough) -> [\"AWS\",\"GCP\"]. If instead the slash-joined words are normally used together as one practice, system, or job function, it is a compound term, not alternatives - keep it as one atomic string (fails the test: \"CI/CD\", \"I/O\", and a compound job-function name like \"personalization / recommendation / ranking algorithms\" all describe one combined thing, not options - never split these).\n   - \"such as X, Y, Z\" / \"like X, Y, Z\" / \"(e.g., X, Y, Z)\" is a disjunction ONLY when the requirement names a single role or category that any one item satisfies (e.g. \"a programming language such as C, C++, Java\" - proficiency in just one language is enough; \"SQL & NoSQL datastores (e.g., PostgreSQL, Cassandra, DynamoDB, MySQL)\" - experience with just one datastore from the list is enough). When the sentence instead plausibly wants several of the named items together as a toolset or stack (e.g. \"security tools such as Snyk, SonarQube, and Dependabot\"), it is NOT a disjunction - extract the named items as separate flat atomic terms instead.\n   - \"one or more of X, Y, Z\" is always a disjunction.\n   The opposite case: a list joined by \"and\", where the posting expects ALL of the named items together, is NOT a disjunction - keep those as separate flat atomic terms, one per item. For \"X or some other Y\" / \"X or equivalent\" phrasing that names only ONE concrete alternative, extract just X as a normal atomic required term - do NOT create a one-member group for it (a one-member group is scoring-identical to a scalar).\n   A stated requirement that names a general category and illustrates it with exactly ONE example via \"(e.g., X)\" / \"such as X\" / \"like X\" (not a list of several) is NOT asking for that specific X - extract only the general category phrase as the required term, and do NOT also add the example as its own separate required term (e.g. \"a big-data framework (e.g., Apache Spark)\" -> extract \"big-data framework\" only, not \"Apache Spark\" too). This applies only inside a stated Required/Preferred bullet (rules 1-3) - it does NOT apply to rule 4's unlabeled-prose extraction, where a named technology mentioned as color/context (e.g. \"as sources adopt CDC\") is still a real signal worth extracting on its own.\n3. Find sections labeled \"Preferred\", \"Nice to Have\", \"Bonus\", \"Preferred Qualifications\", or similar. Extract genuine nice-to-haves the same way, as atomic terms. Disjunctions inside these sections (the same signals as step 2) go into a preferred_any GROUP, appended to the preferred_any list of groups - the required_any rule applied on the preferred side.\n4. If no labeled sections exist, extract all technical nouns from responsibilities and description paragraphs as atomic terms. Do NOT mine keywords from: the interview process or hiring-steps section, benefits/compensation/equity text, EEO/legal/accommodation boilerplate, staffing-agency notices, or company awards/marketing copy - these describe the process or the company, not the job's requirements.\n5. A keyword is a NAMED technology, tool, framework, platform, language, credential, or named methodology or domain, explicitly stated in an eligible JD section (per rule 4's exclusions above) - include every one that meets this definition, do not filter by perceived importance. Bare activity words a reader could guess from the job title alone are NOT keywords - e.g. \"training\", \"evaluating\", \"tooling\", \"cloud\", \"analytics\", \"data processing\", \"software engineering fundamentals\".\n6. Do NOT deduplicate across required/preferred/required_any - keep each term in whichever section it appears.\n\nEncode as compact JSON (no extra whitespace):\n{\"title\":\"<exact job title>\",\"company\":\"<exact company name>\",\"required\":[\"<term1>\",\"<term2>\",...],\"required_any\":[[\"<altA>\",\"<altB>\",...],...],\"preferred\":[\"<term1>\",...],\"preferred_any\":[[\"<altA>\",\"<altB>\",...],...],\"location\":\"<city or Remote>\",\"seniority\":\"junior|mid|senior|lead|director\",\"required_years\":<number>,\"team\":\"<team name>\",\"key_responsibilities\":[\"<responsibility1>\",...],\"pay_range_min\":<number>,\"pay_range_max\":<number>}\nOmit optional fields entirely if not present. Do NOT invent values.\n\nExamples:\n  JD says: \"Requirements: Go, Kubernetes, PostgreSQL, REST APIs. Preferred: GraphQL, Terraform.\"\n  -> {\"title\":\"Software Engineer\",\"company\":\"Acme Corp\",\"required\":[\"Go\",\"Kubernetes\",\"PostgreSQL\",\"REST APIs\"],\"preferred\":[\"GraphQL\",\"Terraform\"]}\n\n  JD says: \"Must have experience building distributed systems in Java, C++, or Go. 5+ years backend. Nice to have: familiarity with Datadog, Grafana, or Prometheus.\"\n  -> {\"title\":\"Software Engineer\",\"company\":\"Acme Corp\",\"required\":[\"distributed systems\",\"backend\"],\"required_any\":[[\"Java\",\"C++\",\"Go\"]],\"preferred_any\":[[\"Datadog\",\"Grafana\",\"Prometheus\"]],\"required_years\":5}\n\n  JD says: \"Experience with cloud infrastructure (AWS or GCP). Nice to have: exposure to Kubernetes and Terraform.\"\n  -> {\"title\":\"Software Engineer\",\"company\":\"Acme Corp\",\"required_any\":[[\"AWS\",\"GCP\"]],\"preferred\":[\"Kubernetes\",\"Terraform\"]}\n\n  JD says: \"Experience with CI/CD pipelines and AWS/GCP infrastructure. Nice to have: familiarity with security tools such as Snyk, SonarQube, and Dependabot.\"\n  -> {\"title\":\"Software Engineer\",\"company\":\"Acme Corp\",\"required\":[\"CI/CD pipelines\"],\"required_any\":[[\"AWS\",\"GCP\"]],\"preferred\":[\"Snyk\",\"SonarQube\",\"Dependabot\"]}\n\n  JD says (no labeled Required/Preferred sections - rule 4 applies): \"Some of the problems you'll work on: **Data Pipeline Performance:** we push the limits of what our warehouse can handle, exploring query optimization and pre-computed state using dbt. **Real-time Sync:** as sources adopt CDC, we're building real-time computation with Kafka.\"\n  -> {\"title\":\"Software Engineer\",\"company\":\"Acme Corp\",\"required\":[\"query optimization\",\"pre-computed state\",\"dbt\",\"CDC\",\"Kafka\"]}"
+    },
+    "workflow": {
+      "phase": "keyword_extraction",
+      "next_tool": "submit_keywords",
+      "host_task": "Extract compact JDData JSON from data.jd_text using data.extraction_protocol, then call submit_keywords.",
+      "required_input": {
+        "session_id": "<session_id>",
+        "jd_json": "<compact JDData JSON string>"
+      }
+    }
+  },
+  "submit_keywords_ok": {
+    "session_id": "<session_id>",
+    "status": "ok",
+    "next_action": "onboard_resume_first",
+    "data": {
+      "keywords": {
+        "title": "SWE",
+        "company": "Co",
+        "required": [
+          "Python"
+        ],
+        "preferred": [],
+        "required_any": [],
+        "preferred_any": [],
+        "location": null,
+        "seniority": "unspecified",
+        "required_years": 0.0,
+        "team": null,
+        "key_responsibilities": [],
+        "pay_range_min": null,
+        "pay_range_max": null
+      },
+      "score_gap": {
+        "required_missing": [
+          "Python"
+        ],
+        "required_missing_any": [],
+        "preferred_missing": [],
+        "preferred_missing_any": [],
+        "required_coverage": 0.0,
+        "preferred_coverage": null,
+        "ats_input_suspect": true
+      },
+      "ats_format_gap": [
+        {
+          "expected": "Experience",
+          "observed": null,
+          "matched": false,
+          "closeable_by": "source_pdf"
+        },
+        {
+          "expected": "Education",
+          "observed": null,
+          "matched": false,
+          "closeable_by": "source_pdf"
+        },
+        {
+          "expected": "Skills",
+          "observed": null,
+          "matched": false,
+          "closeable_by": "source_pdf"
+        }
+      ],
+      "orphaned_required": []
+    },
+    "workflow": {
+      "phase": "onboard_resume",
+      "next_tool": "onboard_user",
+      "host_task": "Tailoring needs onboarded resume sections and profile wiki context. Call onboard_user, compile the profile, then restart this job flow with load_jd using the same job description.",
+      "required_input": {
+        "resume_path": "<path to PDF, DOCX, TXT, or Markdown resume>",
+        "skills_path": "<optional path to skills file>",
+        "accomplishments_path": "<optional path to accomplishments file>"
+      }
+    }
+  },
+  "submit_keywords_invalid_session": {
+    "status": "error",
+    "error": {
+      "stage": "submit_keywords",
+      "code": "invalid_session",
+      "message": "session_id was not found; call load_jd before submit_keywords",
+      "retriable": false
+    },
+    "session_id": "missing-session"
+  },
+  "submit_responsibilities_ok": {
+    "session_id": "<session_id>",
+    "status": "ok",
+    "next_action": "fetch_wiki_then_tailor",
+    "data": {
+      "keywords": {
+        "title": "SWE",
+        "company": "Co",
+        "required": [
+          "Python"
+        ],
+        "preferred": [],
+        "required_any": [],
+        "preferred_any": [],
+        "location": null,
+        "seniority": "unspecified",
+        "required_years": 0.0,
+        "team": null,
+        "key_responsibilities": [
+          "Build services"
+        ],
+        "pay_range_min": null,
+        "pay_range_max": null
+      }
+    },
+    "workflow": {
+      "phase": "tailor_evidence",
+      "next_tool": "get_wiki_pages",
+      "host_task": "Use data.sections, data.score_gap, data.wiki_index, and data.tailor_instructions from the submit_keywords reply, plus the keywords returned here. Treat key_responsibilities as the employer's problems to solve first; map only keywords backed by dated experience, project evidence, or wiki stories; leave unsupported gaps uncovered \u2014 do not invent facts or keyword-stuff. Choose relevant wiki pages and prepare honest SectionMap edits. If the index already contains enough evidence, submit_tailor is also valid.",
+      "required_input": {
+        "session_id": "<session_id>",
+        "page_ids": [
+          "experience/<page-id>.md"
+        ]
+      },
+      "allowed_next_tools": [
+        "get_wiki_pages",
+        "submit_tailor"
+      ]
+    }
+  },
+  "submit_tailor_ok": {
+    "session_id": "<session_id>",
+    "status": "ok",
+    "data": {
+      "edits_applied": [
+        0
+      ],
+      "edits_rejected": [],
+      "uncovered_skills": [
+        "Python"
+      ],
+      "pdf_path": "<tmp_path>/rendered/Jane_Dev_Co_Resume.pdf",
+      "ledger_path": "<tmp_path>/ledger.db",
+      "score_final": {
+        "total": 78.82352941176471,
+        "keyword_match": 55.0,
+        "required_coverage": 100.0,
+        "preferred_coverage": null,
+        "experience_fit": null,
+        "experience_evaluated": false,
+        "impact_evidence": 2.0,
+        "ats_format": 0.0,
+        "readability": 10.0,
+        "req_matched": [
+          "Python"
+        ],
+        "req_unmatched": [],
+        "req_group_unmatched": [],
+        "pref_matched": [],
+        "pref_unmatched": [],
+        "pref_group_unmatched": [],
+        "ats_diagnostics": [
+          {
+            "expected": "Experience",
+            "observed": null,
+            "matched": false,
+            "closeable_by": "render"
+          },
+          {
+            "expected": "Education",
+            "observed": null,
+            "matched": false,
+            "closeable_by": "render"
+          },
+          {
+            "expected": "Skills",
+            "observed": null,
+            "matched": false,
+            "closeable_by": "render"
+          }
+        ],
+        "ats_input_suspect": true,
+        "scoring_engine_version": "v2"
+      },
+      "report": {
+        "before": {
+          "total": 86.66666666666666,
+          "keyword_match": 55.0,
+          "required_coverage": 100.0,
+          "preferred_coverage": null,
+          "experience_fit": null,
+          "impact_evidence": 2.0,
+          "ats_format": 6.666666666666666,
+          "readability": 10.0
+        },
+        "after": {
+          "total": 78.82352941176471,
+          "keyword_match": 55.0,
+          "required_coverage": 100.0,
+          "preferred_coverage": null,
+          "experience_fit": null,
+          "impact_evidence": 2.0,
+          "ats_format": 0.0,
+          "readability": 10.0
+        },
+        "delta": {
+          "total": -7.84,
+          "keyword_match": 0.0,
+          "required_coverage": 0.0,
+          "preferred_coverage": null,
+          "experience_fit": null,
+          "impact_evidence": 0.0,
+          "ats_format": -6.67,
+          "readability": 0.0
+        },
+        "format_gap_chars": -17,
+        "no_coverage": false,
+        "uncovered_skills": [
+          "Python"
+        ],
+        "experience_evaluated": false,
+        "notes": [
+          "Experience fit not evaluated (JD states no years requirement or resume dates are unavailable); total is renormalized over the remaining dimensions.",
+          "ATS format: 'Experience' header not found in rendered PDF (closeable_by=render). Tailoring cannot fix this.",
+          "ATS format: 'Education' header not found in rendered PDF (closeable_by=render). Tailoring cannot fix this.",
+          "ATS format: 'Skills' header not found in rendered PDF (closeable_by=render). Tailoring cannot fix this."
+        ],
+        "warnings": []
+      },
+      "tailor_diagnostics": [],
+      "outcome": {
+        "no_coverage": false,
+        "reason": null
+      }
+    },
+    "workflow": {
+      "phase": "complete",
+      "next_tool": null,
+      "host_task": "Return the artifact paths, score report, and outcome to the user.",
+      "required_input": {}
+    }
+  },
+  "submit_tailor_no_coverage_ok": {
+    "session_id": "<session_id>",
+    "status": "ok",
+    "data": {
+      "edits_applied": [],
+      "edits_rejected": [],
+      "uncovered_skills": [],
+      "pdf_path": null,
+      "ledger_path": "<tmp_path>/ledger.db",
+      "score_final": null,
+      "report": {
+        "before": {
+          "total": 11.764705882352942,
+          "keyword_match": 0.0,
+          "required_coverage": 0.0,
+          "preferred_coverage": null,
+          "experience_fit": null,
+          "impact_evidence": 0.0,
+          "ats_format": 0.0,
+          "readability": 10.0
+        },
+        "after": {
+          "total": 11.764705882352942,
+          "keyword_match": 0.0,
+          "required_coverage": 0.0,
+          "preferred_coverage": null,
+          "experience_fit": null,
+          "impact_evidence": 0.0,
+          "ats_format": 0.0,
+          "readability": 10.0
+        },
+        "delta": {
+          "total": 0.0,
+          "keyword_match": 0.0,
+          "required_coverage": 0.0,
+          "preferred_coverage": null,
+          "experience_fit": null,
+          "impact_evidence": 0.0,
+          "ats_format": 0.0,
+          "readability": 0.0
+        },
+        "format_gap_chars": -22,
+        "no_coverage": true,
+        "uncovered_skills": [],
+        "experience_evaluated": false,
+        "notes": [
+          "Experience fit not evaluated (JD states no years requirement or resume dates are unavailable); total is renormalized over the remaining dimensions.",
+          "ATS format: 'Experience' header not found in rendered PDF (closeable_by=source_pdf). Tailoring cannot fix this.",
+          "ATS format: 'Education' header not found in rendered PDF (closeable_by=source_pdf). Tailoring cannot fix this.",
+          "ATS format: 'Skills' header not found in rendered PDF (closeable_by=source_pdf). Tailoring cannot fix this."
+        ],
+        "warnings": []
+      },
+      "tailor_diagnostics": [],
+      "outcome": {
+        "no_coverage": true,
+        "reason": "no wiki stories cover required keywords"
+      }
+    },
+    "workflow": {
+      "phase": "complete",
+      "next_tool": null,
+      "host_task": "Return the artifact paths, score report, and outcome to the user.",
+      "required_input": {}
+    }
+  },
+  "submit_tailor_pipeline_error": {
+    "status": "error",
+    "error": {
+      "stage": "submit_tailor",
+      "code": "pipeline_error",
+      "message": "render: chromium crashed",
+      "retriable": true,
+      "host_action": "report_and_wait"
+    },
+    "data": {
+      "score_final": null,
+      "pdf_path": null,
+      "ledger_path": null
+    },
+    "session_id": "<session_id>"
+  },
+  "onboard_user_ok": {
+    "session_id": "<session_id>",
+    "status": "ok",
+    "next_action": "compile_profile",
+    "data": {
+      "intake": {
+        "status": "onboarded",
+        "resume_label": "primary",
+        "stories": []
+      },
+      "resume_label": "primary",
+      "sections": {
+        "summary": null,
+        "skills": {
+          "flat": [
+            "Python"
+          ],
+          "categorized": {}
+        },
+        "experience": [],
+        "projects": [],
+        "education": [],
+        "contact": {
+          "name": "Jane Doe",
+          "email": "jane@example.com",
+          "phone": null,
+          "location": null,
+          "linkedin": null,
+          "website": null
+        },
+        "certifications": [],
+        "awards": []
+      },
+      "warnings": [
+        {
+          "warning": "no_skills_path",
+          "message": "No skills file provided. Skills will be extracted from resume only."
+        }
+      ]
+    }
+  },
+  "compile_profile_ok": {
+    "session_id": "<session_id>",
+    "status": "ok",
+    "next_action": "create_story",
+    "data": {
+      "compiled_profile": {
+        "schema_version": "1",
+        "skills_index": [
+          "Python"
+        ],
+        "stories": [],
+        "orphaned_skills": [
+          {
+            "skill": "Python",
+            "deferred": false
+          }
+        ],
+        "compiled_at": "<timestamp>"
+      },
+      "skill_coverage_warnings": [],
+      "skills_index": [
+        "Python"
+      ],
+      "orphaned_skills": [
+        "Python"
+      ]
+    }
+  },
+  "create_story_ok": {
+    "session_id": "<session_id>",
+    "status": "ok",
+    "data": {
+      "story_id": "story-001",
+      "primary_skill": "Python",
+      "needs_compile": false,
+      "compiled_profile": {
+        "schema_version": "1",
+        "skills_index": [
+          "Python"
+        ],
+        "stories": [
+          {
+            "id": "story-001",
+            "primary_skill": "Python",
+            "skills": [
+              "Python"
+            ],
+            "story_type": "STAR",
+            "job_title": "Backend Engineer",
+            "situation": "Legacy system.",
+            "behavior": "Rewrote it.",
+            "impact": "40% faster."
+          }
+        ],
+        "orphaned_skills": [],
+        "compiled_at": "<timestamp>"
+      },
+      "skill_coverage_warnings": [],
+      "skills_index": [
+        "Python"
+      ],
+      "orphaned_skills": []
+    }
+  },
+  "find_job_not_found": {
+    "session_id": "",
+    "status": "ok",
+    "data": {
+      "found": false,
+      "company": null,
+      "title": null,
+      "url": null,
+      "status": null,
+      "ever_applied": false,
+      "status_date": null,
+      "job_key": null,
+      "score_before": null,
+      "score_after": null,
+      "matched_by": null,
+      "company_jobs": []
+    }
+  },
+  "record_status_ok": {
+    "session_id": "",
+    "status": "ok",
+    "data": {
+      "recorded": true
+    }
+  },
+  "export_ledger_ok": {
+    "session_id": "",
+    "status": "ok",
+    "data": {
+      "path": "<tmp_path>/ledger.csv",
+      "rows": 2
+    }
+  }
+}

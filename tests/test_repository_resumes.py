@@ -1,11 +1,11 @@
-"""Unit tests for callback.repository.resumes."""
+"""Unit tests for callback.repositories.resumes."""
 
 from pathlib import Path
 
 import pytest
 
-from callback import paths
-from callback.repository.resumes import (
+from callback.config import paths
+from callback.repositories.resumes import (
     ResumeNotFoundError,
     clear_resumes,
     get_resume,

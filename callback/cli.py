@@ -19,15 +19,25 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import typer
+from langsmith import Client
 
-from callback import ledger, ledger_import, paths, settings
-from callback.observability import (
+import callback._build_info as build_info
+from callback.config import paths, settings
+from callback.config.logging import configure_logging
+from callback.config.observability import (
     DEFAULT_LANGSMITH_ENDPOINT,
     DEFAULT_LANGSMITH_PROJECT,
     emit_trace_check_probe,
 )
-from callback.plugin_install import PluginInstallError, install, resolve_targets
-from callback.settings import ENV_NAME_RE
+from callback.config.settings import ENV_NAME_RE
+from callback.repositories import ledger
+from callback.repositories.atomic import write_json_atomic, write_text_atomic
+
+# TODO: upgrade to Python 3.15 and make this a `lazy import` (PEP 810) so CLI commands
+# other than `serve` stop loading FastMCP, LangGraph and Playwright at startup.
+from callback.server import run
+from callback.services import ledger_import
+from callback.services.plugin_install import PluginInstallError, install, resolve_targets
 
 app = typer.Typer(no_args_is_help=True)
 config_app = typer.Typer(no_args_is_help=True)
@@ -347,8 +357,6 @@ def _validate_trace_env(env: Mapping[str, str]) -> None:
 
 
 def _make_langsmith_client(env: Mapping[str, str]):
-    from langsmith import Client
-
     if endpoint := env.get("LANGSMITH_ENDPOINT"):
         return Client(api_key=env["LANGSMITH_API_KEY"], api_url=endpoint)
     return Client(api_key=env["LANGSMITH_API_KEY"])
@@ -416,7 +424,7 @@ def _remove_server_from_claude(path: Path) -> None:
     servers = config.get("mcpServers")
     if isinstance(servers, dict):
         servers.pop(SERVER_NAME, None)
-    paths.write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
+    write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
 
 
 def _remove_server_from_codex(path: Path) -> None:
@@ -427,7 +435,7 @@ def _remove_server_from_codex(path: Path) -> None:
     servers = config.get("mcp_servers")
     if isinstance(servers, dict):
         servers.pop(SERVER_NAME, None)
-    paths.write_text_atomic(path, _dump_toml(config))
+    write_text_atomic(path, _dump_toml(config))
 
 
 @app.command()
@@ -470,8 +478,6 @@ def serve(
             err=True,
         )
 
-    from callback.server import configure_logging, run
-
     configure_logging(str(resolved_log_path))
 
     run()
@@ -513,7 +519,7 @@ def config_langsmith(
     env["LANGSMITH_ENDPOINT"] = endpoint
     if workspace_id:
         env["LANGSMITH_WORKSPACE_ID"] = workspace_id
-    paths.write_json_atomic(paths.env_file(), env)
+    write_json_atomic(paths.env_file(), env)
 
     typer.echo(f"Updated LangSmith settings in {paths.env_file()}")
     typer.echo("Restart your MCP host so it reloads the new environment.")
@@ -551,7 +557,7 @@ def config_env_set(key: str, value: str) -> None:
         raise typer.Exit(1) from exc
 
     env[env_key] = value
-    paths.write_json_atomic(paths.env_file(), env)
+    write_json_atomic(paths.env_file(), env)
 
     typer.echo(f"Set {env_key} in {paths.env_file()}")
     typer.echo("Restart your MCP host so it reloads the new environment.")
@@ -568,7 +574,7 @@ def config_env_unset(key: str) -> None:
         raise typer.Exit(1) from exc
 
     env.pop(env_key, None)
-    paths.write_json_atomic(paths.env_file(), env)
+    write_json_atomic(paths.env_file(), env)
 
     typer.echo(f"Unset {env_key} in {paths.env_file()}")
     typer.echo("Restart your MCP host so it reloads the new environment.")
@@ -717,11 +723,7 @@ def update() -> None:
 
 
 def _read_build_version() -> str | None:
-    try:
-        from callback._build_info import BUILD_VERSION
-    except ImportError:
-        return None
-    return BUILD_VERSION or None
+    return build_info.BUILD_VERSION or None
 
 
 def _display_version() -> str:

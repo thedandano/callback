@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from callback.extractor import extract_sections
-from callback.section_map import SectionMap
+from callback.models.section_map import SectionMap
+from callback.services.extractor import extract_sections
 
 RESUME_TEXT = """
 John Doe

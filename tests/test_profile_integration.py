@@ -8,9 +8,11 @@ from pathlib import Path
 
 import pytest
 
-import callback.server as server_module
-from callback.profile_graph import build_profile_graph
-from callback.server import compile_profile, create_story, onboard_user
+from callback.graphs.profile import api as profile_api
+from callback.graphs.profile.graph import build_profile_graph
+from callback.tools.compile_profile import compile_profile
+from callback.tools.create_story import create_story
+from callback.tools.onboard_user import onboard_user
 
 RESUME_TEXT = """\
 Jane Doe
@@ -24,6 +26,11 @@ Acme Corp | Software Engineer | 2020 - 2024
 Skills
 Python, Kubernetes, Docker
 """
+
+
+def _patch_profile_graph(monkeypatch, factory) -> None:
+    """Swap the graph accessor the profile front door looks up."""
+    monkeypatch.setattr(profile_api, "get_profile_graph", factory)
 
 
 def _make_resume(tmp_path: Path) -> Path:
@@ -41,11 +48,9 @@ class TestProfileToolsEndToEnd:
         # to compile_profile because a resume is registered on disk — profile state
         # (stories, compiled profile) lives in the stores, not the thread.
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
         db_path = tmp_path / "profile-sessions.db"
-        monkeypatch.setattr(
-            server_module, "get_profile_graph", lambda: build_profile_graph(db_path=db_path)
-        )
+        _patch_profile_graph(monkeypatch, lambda: build_profile_graph(db_path=db_path))
 
         resume = _make_resume(tmp_path)
 
@@ -147,11 +152,9 @@ class TestProfileToolsEndToEnd:
 
     def test_onboard_then_compile_then_create_story_with_session_id(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
         db_path = tmp_path / "profile-sessions.db"
-        monkeypatch.setattr(
-            server_module, "get_profile_graph", lambda: build_profile_graph(db_path=db_path)
-        )
+        _patch_profile_graph(monkeypatch, lambda: build_profile_graph(db_path=db_path))
 
         resume = _make_resume(tmp_path)
 

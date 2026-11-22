@@ -1,4 +1,4 @@
-"""Tests for server.py — profile MCP tool wrappers."""
+"""Tests for the profile MCP tool wrappers."""
 
 import os
 from datetime import UTC, datetime
@@ -6,15 +6,26 @@ from pathlib import Path
 
 import pytest
 
-import callback.profile_nodes as pnodes
-import callback.server as server_module
-import callback.wiki as wiki_module
-from callback import paths
-from callback.profile_graph import get_profile_graph
-from callback.profilecompiler import save_compiled_profile
-from callback.repository.resumes import save_resume
-from callback.server import compile_profile, create_story, onboard_user
-from callback.state import CompiledProfile, OrphanedSkill
+import callback.graphs.profile.nodes.compile_profile as compile_node
+import callback.repositories.wiki as wiki_module
+import callback.tools.compile_profile as compile_tool
+import callback.tools.resume_label as resume_label_module
+from callback.config import paths
+from callback.graphs.profile import api as profile_api
+from callback.graphs.profile.graph import get_profile_graph
+from callback.graphs.profile.graph import make_config as make_profile_config
+from callback.models.profile import CompiledProfile, OrphanedSkill
+from callback.repositories import stories
+from callback.repositories.compiled_profile import save_compiled_profile
+from callback.repositories.resumes import save_resume
+from callback.tools.compile_profile import compile_profile
+from callback.tools.create_story import create_story
+from callback.tools.onboard_user import onboard_user
+
+
+def _patch_profile_graph(monkeypatch, factory) -> None:
+    """Swap the graph accessor the profile front door looks up."""
+    monkeypatch.setattr(profile_api, "get_profile_graph", factory)
 
 
 def _fake_graph(state_values: dict):
@@ -35,7 +46,7 @@ def _fake_graph(state_values: dict):
 
 def _isolate_profile(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
 
 
 def _resume_txt(tmp_path: Path) -> Path:
@@ -96,7 +107,7 @@ class TestOnboardUser:
             "resume_label": "jane",
             "sections": {"contact": {"name": "Jane Doe"}},
         }
-        monkeypatch.setattr(server_module, "get_profile_graph", lambda: _fake_graph(state_values))
+        _patch_profile_graph(monkeypatch, lambda: _fake_graph(state_values))
 
         result = onboard_user(resume_path=str(resume), skills_path=str(skills))
 
@@ -116,7 +127,7 @@ class TestOnboardUser:
         resume.write_text("Jane Doe\n", encoding="utf-8")
 
         state_values = {"intake": {}, "resume_label": "jane", "sections": {}}
-        monkeypatch.setattr(server_module, "get_profile_graph", lambda: _fake_graph(state_values))
+        _patch_profile_graph(monkeypatch, lambda: _fake_graph(state_values))
 
         result = onboard_user(resume_path=str(resume))
 
@@ -157,7 +168,7 @@ class TestOnboardUser:
 
                 return _Snap()
 
-        monkeypatch.setattr(server_module, "get_profile_graph", _CapturingGraph)
+        _patch_profile_graph(monkeypatch, _CapturingGraph)
 
         onboard_user(resume_path=str(resume), accomplishments_path=str(acc))
 
@@ -273,7 +284,7 @@ class TestCompileProfile:
 
         _isolate_profile(tmp_path, monkeypatch)
         mock_log = Mock()
-        monkeypatch.setattr(server_module, "_log", mock_log)
+        monkeypatch.setattr(resume_label_module, "log", mock_log)
 
         result = compile_profile()
 
@@ -301,11 +312,11 @@ class TestCompileProfile:
         resume.write_text("Jane Doe\njane@example.com\n", encoding="utf-8")
         onboarded = onboard_user(resume_path=str(resume))
         session_id = onboarded["session_id"]
-        graph = server_module.get_profile_graph()
-        config = server_module.make_profile_config(session_id)
+        graph = get_profile_graph()
+        config = make_profile_config(session_id)
         graph.update_state(config, {"host_tags": ["Rust"]})
 
-        result = server_module._compile_profile_impl(
+        result = compile_tool._compile_profile_impl(
             session_id, [], resumed=True, explicit_tags=True
         )
 
@@ -323,11 +334,11 @@ class TestCompileProfile:
         resume.write_text("Jane Doe\njane@example.com\n", encoding="utf-8")
         onboarded = onboard_user(resume_path=str(resume))
         session_id = onboarded["session_id"]
-        graph = server_module.get_profile_graph()
-        config = server_module.make_profile_config(session_id)
+        graph = get_profile_graph()
+        config = make_profile_config(session_id)
         graph.update_state(config, {"host_tags": ["Rust"]})
 
-        result = server_module._compile_profile_impl(
+        result = compile_tool._compile_profile_impl(
             session_id, [], resumed=True, explicit_tags=False
         )
 
@@ -364,7 +375,7 @@ class TestCompileProfile:
         onboarded = onboard_user(resume_path=str(resume))
         session_id = onboarded["session_id"]
 
-        graph = server_module.get_profile_graph()
+        graph = get_profile_graph()
 
         def raiser(self, *args, **kwargs):
             raise sqlite3.OperationalError("database is locked")
@@ -485,7 +496,7 @@ class TestCreateStory:
         assert compiled["next_action"] == "create_story"
         session_id = compiled["session_id"]
 
-        graph = server_module.get_profile_graph()
+        graph = get_profile_graph()
 
         def raiser(self, *args, **kwargs):
             raise sqlite3.OperationalError("database is locked")
@@ -520,7 +531,7 @@ class TestCreateStory:
         def _raise(label, story):
             raise RuntimeError("disk")
 
-        monkeypatch.setattr(pnodes.stories, "save_story", _raise)
+        monkeypatch.setattr(stories, "save_story", _raise)
 
         result = create_story(
             primary_skill="Python",
@@ -623,7 +634,7 @@ class TestCreateStory:
         _isolate_profile(tmp_path, monkeypatch)
         _save_profile_with_resumes(tmp_path)
 
-        monkeypatch.setattr(server_module, "story_pending", lambda intake: False)
+        monkeypatch.setattr(profile_api, "story_pending", lambda intake: False)
 
         result = create_story(
             primary_skill="Python",
@@ -656,7 +667,7 @@ class TestCreateStory:
             def get_state(self, config):
                 raise RuntimeError("checkpoint db locked")
 
-        monkeypatch.setattr(server_module, "get_profile_graph", _BrokenGraph)
+        _patch_profile_graph(monkeypatch, _BrokenGraph)
 
         result = compile_profile()
 
@@ -679,7 +690,7 @@ class TestCreateStory:
         _isolate_profile(tmp_path, monkeypatch)
         _save_profile_with_resumes(tmp_path)
 
-        real_save = pnodes.stories.save_story
+        real_save = stories.save_story
         state = {"raised": False}
 
         def _save_then_fail(label, story):
@@ -689,7 +700,7 @@ class TestCreateStory:
                 raise RuntimeError("checkpoint write failed")
             return saved
 
-        monkeypatch.setattr(pnodes.stories, "save_story", _save_then_fail)
+        monkeypatch.setattr(stories, "save_story", _save_then_fail)
 
         first = create_story(primary_skill="Python", skills=["Python"], **_STORY_FIELDS)
         expected = {
@@ -716,7 +727,7 @@ class TestCreateStory:
         actual = {
             "status": retry["status"],
             "story_id": retry["data"]["story_id"],
-            "stored": len(pnodes.stories.list_stories("backend")[0]),
+            "stored": len(stories.list_stories("backend")[0]),
         }
         assert actual == {"status": "ok", "story_id": "story-001", "stored": 1}
 
@@ -724,7 +735,7 @@ class TestCreateStory:
         _isolate_profile(tmp_path, monkeypatch)
         _save_profile_with_resumes(tmp_path)
 
-        original_save = pnodes.save_compiled_profile
+        original_save = compile_node.save_compiled_profile
         state = {"raised": False}
 
         def _raise_once(*args, **kwargs):
@@ -733,7 +744,7 @@ class TestCreateStory:
                 raise RuntimeError("disk full")
             return original_save(*args, **kwargs)
 
-        monkeypatch.setattr(pnodes, "save_compiled_profile", _raise_once)
+        monkeypatch.setattr(compile_node, "save_compiled_profile", _raise_once)
 
         result = create_story(
             primary_skill="Python",
@@ -756,7 +767,7 @@ class TestCreateStory:
         compiled = compile_profile(session_id=result["session_id"])
         assert compiled["status"] == "ok"
 
-        stories_count = len(pnodes.stories.list_stories("backend")[0])
+        stories_count = len(stories.list_stories("backend")[0])
         assert stories_count == 1
 
 

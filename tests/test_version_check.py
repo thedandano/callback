@@ -1,4 +1,4 @@
-"""Tests for callback.version_check."""
+"""Tests for callback.services.version_check."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import http.client
 import io
 from unittest.mock import MagicMock, patch
 
-import callback.version_check as vc
+import callback.services.version_check as vc
 
 
 def _reset_cache():

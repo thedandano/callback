@@ -6,31 +6,24 @@ from pathlib import Path
 
 import pytest
 
-import callback.extractor as ext
-import callback.repository.resumes as resumes_module
-from callback import paths
-from callback.profile_nodes import (
-    _resume_skills,
-    check_orphans,
-    check_profile,
-    compile_profile,
-    create_story,
-    onboard,
-)
-from callback.profilecompiler import save_compiled_profile
-from callback.repository import stories
-from callback.repository.accomplishments import AccomplishmentsStore
-from callback.repository.resumes import (
+import callback.repositories.resumes as resumes_module
+import callback.services.extractor as ext
+from callback.config import paths
+from callback.graphs.profile.nodes.check_orphans import check_orphans
+from callback.graphs.profile.nodes.check_profile import check_profile
+from callback.graphs.profile.nodes.compile_profile import _resume_skills, compile_profile
+from callback.graphs.profile.nodes.create_story import create_story
+from callback.graphs.profile.nodes.onboard import onboard
+from callback.models.profile import CompiledProfile, CreatedStory, OrphanedSkill
+from callback.models.state import ProfileState
+from callback.repositories import stories
+from callback.repositories.accomplishments import AccomplishmentsStore
+from callback.repositories.compiled_profile import save_compiled_profile
+from callback.repositories.resumes import (
     get_resume,
     list_resumes,
     replace_resume,
     save_resume,
-)
-from callback.state import (
-    CompiledProfile,
-    CreatedStory,
-    OrphanedSkill,
-    ProfileState,
 )
 
 RESUME_TXT = """\
@@ -118,7 +111,7 @@ class TestCheckProfile:
 class TestOnboard:
     def test_no_resume_path_returns_no_resume_status(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
 
         result = onboard(_make_state())
 
@@ -126,7 +119,7 @@ class TestOnboard:
 
     def test_valid_resume_path_saves_sections_json(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
 
         resume_file = _make_resume_file(tmp_path)
         state = _make_state(resume_path=str(resume_file))
@@ -153,7 +146,7 @@ class TestOnboard:
 
     def test_onboard_saves_onboard_text_when_present(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
 
         resume_file = _make_resume_file(tmp_path)
         state = _make_state(
@@ -168,7 +161,7 @@ class TestOnboard:
 
     def test_onboard_migrates_legacy_stories_from_accomplishments_json(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
 
         legacy_story = {"id": "story-001", **_STORY_FIELDS}
         accomplishments_dir = tmp_path / "callback"
@@ -204,7 +197,7 @@ class TestOnboard:
 class TestCompileProfile:
     def test_builds_wiki_pages_and_saves_compiled_profile(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
 
         saved_story = stories.save_story("jane_doe", CreatedStory(id="", **_STORY_FIELDS))
         page_path = tmp_path / "profile-wiki" / "jane_doe" / "experience" / "story-001.md"
@@ -250,7 +243,7 @@ class TestResumeSkills:
         self, tmp_path, monkeypatch, caplog
     ):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
 
         page_dir = tmp_path / "profile-wiki" / "jane_doe"
         page_dir.mkdir(parents=True)
@@ -344,7 +337,7 @@ class TestCreateStory:
         # No resume is registered, so create_story's _registered_label falls back
         # to "default" — that fallback is what this test exercises.
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
 
         state = _make_state(intake=_STORY_FIELDS)
         result = create_story(state)
@@ -371,7 +364,7 @@ class TestCreateStory:
 class TestOnboardValidatesBeforeClearing:
     def test_onboard_keeps_old_resume_when_replacement_is_missing(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
 
         existing_resume = _make_resume_file(tmp_path)
         save_resume("existing_label", str(existing_resume))
@@ -388,7 +381,7 @@ class TestOnboardValidatesBeforeClearing:
 class TestOnboardIdempotency:
     def test_re_onboard_replaces_resume(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
+        monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
 
         resume1_txt = """\
 Jane Doe
@@ -465,8 +458,10 @@ class TestReplaceResume:
 class TestCreateStoryMigratesFirst:
     def test_create_story_does_not_claim_a_legacy_story_id(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
-        monkeypatch.setattr("callback.repository.stories.list_resumes", lambda: ["default"])
+        monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
+        monkeypatch.setattr(
+            "callback.repositories.story_migration.list_resumes", lambda: ["default"]
+        )
         legacy = {"id": "story-001", **{**_STORY_FIELDS, "primary_skill": "Legacy"}}
         data_dir = tmp_path / "callback"
         data_dir.mkdir(parents=True, exist_ok=True)

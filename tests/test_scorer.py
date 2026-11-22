@@ -1,12 +1,12 @@
-"""Unit tests for callback.scorer — pure function, no I/O."""
+"""Unit tests for callback.services.scorer — pure function, no I/O."""
 
 from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
 
-from callback import scorer
-from callback.scorer import (
+from callback.services import scorer
+from callback.services.scorer import (
     DEFAULT_SCORING_CONFIG,
     ATSHeaderDiagnostic,
     KeywordResult,
@@ -668,7 +668,7 @@ class TestMatcherNormalization:
 
 class TestPassThresholdConfig:
     def test_custom_pass_threshold_is_honored(self):
-        from callback import scorer as scorer_mod
+        from callback.services import scorer as scorer_mod
 
         cfg = scorer_mod.ScoringConfig(pass_threshold=99.0)
         result = scorer_mod.score("Experience\nPython work", ["Python"], [], cfg=cfg)
@@ -676,6 +676,6 @@ class TestPassThresholdConfig:
         assert not result.passes()
 
     def test_default_config_threshold_is_70(self):
-        from callback import scorer as scorer_mod
+        from callback.services import scorer as scorer_mod
 
         assert scorer_mod.DEFAULT_SCORING_CONFIG.pass_threshold == 70.0

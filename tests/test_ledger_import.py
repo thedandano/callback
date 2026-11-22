@@ -6,8 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from callback import ledger
-from callback.ledger_import import (
+from callback.models.ledger import RunRecord
+from callback.repositories import ledger
+from callback.services.ledger_import import (
     ImportReport,
     _iso_date,
     import_archives,
@@ -90,7 +91,7 @@ def test_reimport_never_overwrites_a_newer_run(tmp_path):
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
         ledger.record_run(
             conn,
-            ledger.RunRecord(
+            RunRecord(
                 session_id="s1",
                 timestamp="2026-10-05T00:00:00+00:00",
                 jd_url="https://a.com/1",
@@ -487,7 +488,7 @@ def test_url_less_csv_row_skips_when_same_name_is_ambiguous(tmp_path, caplog):
     )
 
     with (
-        caplog.at_level(logging.WARNING, logger="callback.ledger_import"),
+        caplog.at_level(logging.WARNING, logger="callback.services.ledger_import"),
         closing(ledger.connect(tmp_path / "l.db")) as conn,
     ):
         report = import_record_csv(conn, path)
@@ -934,7 +935,7 @@ def test_csv_name_match_is_logged(tmp_path, caplog):
             title="Eng",
             seen_at="2026-09-01",
         )
-        with caplog.at_level(logging.WARNING, logger="callback.ledger_import"):
+        with caplog.at_level(logging.WARNING, logger="callback.services.ledger_import"):
             import_record_csv(conn, path)
 
     assert [json.loads(record.message) for record in caplog.records] == [
@@ -983,7 +984,7 @@ def test_existing_run_leaves_its_job_untouched(tmp_path):
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
         ledger.record_run(
             conn,
-            ledger.RunRecord(
+            RunRecord(
                 session_id="s1", timestamp="2026-10-05T00:00:00+00:00", jd_url="https://a.com/1"
             ),
         )
@@ -1210,7 +1211,7 @@ def test_run_import_reuses_a_runless_scan_job_by_name(tmp_path):
             title="Staff Engineer",
             seen_at="2026-10-01",
         )
-        run = ledger.RunRecord(
+        run = RunRecord(
             session_id="s1",
             timestamp="2026-10-02T10:00:00+00:00",
             keywords={"company": "Acme", "title": "Staff Engineer"},

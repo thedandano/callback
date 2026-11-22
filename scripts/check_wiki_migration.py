@@ -14,7 +14,10 @@ from pathlib import Path
 
 sys.path.insert(0, os.getcwd())
 
-from callback import paths  # noqa: E402
+from callback.config import paths  # noqa: E402
+from callback.graphs.profile.nodes.compile_profile import compile_profile  # noqa: E402
+from callback.models.state import ProfileState  # noqa: E402
+from callback.repositories import stories, story_migration  # noqa: E402
 
 
 def main() -> int:
@@ -27,13 +30,9 @@ def main() -> int:
     os.environ["XDG_DATA_HOME"] = str(scratch)
     os.environ.pop("CALLBACK_APPS_DIR", None)
 
-    from callback.profile_nodes import compile_profile  # noqa: E402  (after env is set)
-    from callback.repository import stories  # noqa: E402
-    from callback.state import ProfileState  # noqa: E402
-
     label = "primary"
     before = (scratch / "callback" / "profile-wiki" / label / "index.md").read_text()
-    written = stories.migrate_legacy_stories(label)
+    written = story_migration.migrate_legacy_stories(label)
     compile_profile(ProfileState(session_id="migration-check"))
     after = (scratch / "callback" / "profile-wiki" / label / "index.md").read_text()
     diff = list(

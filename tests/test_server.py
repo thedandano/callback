@@ -12,8 +12,11 @@ import pytest
 from fastmcp import Client
 from fastmcp.client.transports import FastMCPTransport
 
-from callback import ledger, paths
-from callback.jd_data import EXTRACTION_PROTOCOL, RESPONSIBILITIES_PROTOCOL
+from callback.config import logging as config_logging
+from callback.config import paths
+from callback.repositories import ledger
+from callback.services.host_protocols import EXTRACTION_PROTOCOL, RESPONSIBILITIES_PROTOCOL
+from callback.services.ledger_notes import contact_note
 
 PARTIAL_JD_JSON = """
 {
@@ -121,8 +124,8 @@ def test_run_starts_mcp_without_browser_install():
     import callback.server as server
 
     with (
-        patch.object(server, "_ensure_browsers") as ensure_browsers,
-        patch.object(server, "_log") as log,
+        patch.object(server, "ensure_browsers") as ensure_browsers,
+        patch.object(server, "log") as log,
         patch.object(server.mcp, "run") as mcp_run,
     ):
         server.run()
@@ -140,8 +143,8 @@ async def test_startup_ensure_browsers_invokes_ensure_browsers():
     import callback.server as server
 
     with (
-        patch.object(server, "_ensure_browsers") as ensure_browsers,
-        patch.object(server, "_log"),
+        patch.object(server, "ensure_browsers") as ensure_browsers,
+        patch.object(server, "log"),
     ):
         await server._startup_ensure_browsers()
 
@@ -153,8 +156,8 @@ def test_run_logs_crash_before_raising_explicit_error():
 
     error = RuntimeError("transport failed")
     with (
-        patch.object(server, "_log") as log,
-        patch.object(server, "_log_exception") as log_exception,
+        patch.object(server, "log") as log,
+        patch.object(server, "log_exception") as log_exception,
         patch.object(server.mcp, "run", side_effect=error),
         pytest.raises(RuntimeError, match="callback MCP stdio server crashed") as exc_info,
     ):
@@ -178,16 +181,16 @@ def test_run_logs_crash_traceback_before_raising():
     import callback.server as server
 
     captured_payloads: list[dict] = []
-    original_log_exception = server._log_exception
+    original_log_exception = server.log_exception
 
     def fake_log_exception(payload: dict) -> None:
         original_log_exception(payload)
         captured_payloads.append(payload)
 
     with (
-        patch.object(server.logger, "exception"),
-        patch.object(server, "_log"),
-        patch.object(server, "_log_exception", side_effect=fake_log_exception),
+        patch.object(config_logging.logger, "exception"),
+        patch.object(server, "log"),
+        patch.object(server, "log_exception", side_effect=fake_log_exception),
         patch.object(server.mcp, "run", side_effect=RuntimeError("transport failed")),
         pytest.raises(RuntimeError, match="callback MCP stdio server crashed"),
     ):
@@ -197,7 +200,7 @@ def test_run_logs_crash_traceback_before_raising():
 
 
 def test_load_jd_rejects_missing_jd_input():
-    from callback.server import load_jd
+    from callback.tools.load_jd import load_jd
 
     result = load_jd()
     session_id = result["session_id"]
@@ -217,11 +220,11 @@ def test_load_jd_rejects_missing_jd_input():
 
 
 def test_load_jd_returns_handoff_envelope():
-    from callback.server import load_jd
+    from callback.tools.load_jd import load_jd
 
     jd_text = "Python engineer needed"
 
-    with patch("callback.server.list_resumes", return_value=["resume"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
         result = load_jd(jd_raw_text=jd_text)
     session_id = result["session_id"]
     uuid.UUID(session_id)
@@ -240,9 +243,9 @@ def test_load_jd_returns_handoff_envelope():
 
 
 def test_load_jd_returns_dict_envelope():
-    from callback.server import load_jd
+    from callback.tools.load_jd import load_jd
 
-    with patch("callback.server.list_resumes", return_value=["resume"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
         result = load_jd(jd_raw_text="Python engineer needed")
 
     assert isinstance(result, dict)
@@ -251,7 +254,7 @@ def test_load_jd_returns_dict_envelope():
 
 
 def test_load_jd_error_returns_dict_envelope():
-    from callback.server import load_jd
+    from callback.tools.load_jd import load_jd
 
     result = load_jd()
 
@@ -261,8 +264,7 @@ def test_load_jd_error_returns_dict_envelope():
 
 
 def test_load_jd_trace_payload_carries_jd_text_and_full_output_data(monkeypatch):
-    import callback.server as server
-    from callback.server import load_jd
+    from callback.tools.load_jd import load_jd
 
     captured: dict = {}
 
@@ -294,9 +296,9 @@ def test_load_jd_trace_payload_carries_jd_text_and_full_output_data(monkeypatch)
     monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2-secret")
 
     with (
-        patch.object(server, "list_resumes", return_value=["resume"]),
-        patch.object(server, "get_apply_graph", return_value=FakeGraph()),
-        patch("callback.observability._get_traceable", return_value=fake_traceable),
+        patch("callback.tools.resume_label.list_resumes", return_value=["resume"]),
+        patch("callback.graphs.apply.api.get_apply_graph", return_value=FakeGraph()),
+        patch("callback.config.observability._get_traceable", return_value=fake_traceable),
     ):
         result = load_jd(jd_raw_text="secret jd body")
 
@@ -319,15 +321,15 @@ def test_load_jd_trace_payload_carries_jd_text_and_full_output_data(monkeypatch)
 
 
 def test_load_jd_returns_error_when_session_store_is_readonly():
-    from callback.server import load_jd
+    from callback.tools.load_jd import load_jd
 
     class ReadonlyGraph:
         def invoke(self, initial_state, config):
             raise sqlite3.OperationalError("attempt to write a readonly database")
 
     with (
-        patch("callback.server.list_resumes", return_value=["resume"]),
-        patch("callback.server.get_apply_graph", return_value=ReadonlyGraph()),
+        patch("callback.tools.resume_label.list_resumes", return_value=["resume"]),
+        patch("callback.graphs.apply.api.get_apply_graph", return_value=ReadonlyGraph()),
     ):
         result = load_jd(jd_raw_text="Python engineer needed")
 
@@ -345,15 +347,15 @@ def test_load_jd_returns_error_when_session_store_is_readonly():
 
 
 def test_load_jd_returns_error_when_unexpected_exception_escapes_graph():
-    from callback.server import load_jd
+    from callback.tools.load_jd import load_jd
 
     class BrokenGraph:
         def invoke(self, initial_state, config):
             raise ValueError("boom")
 
     with (
-        patch("callback.server.list_resumes", return_value=["resume"]),
-        patch("callback.server.get_apply_graph", return_value=BrokenGraph()),
+        patch("callback.tools.resume_label.list_resumes", return_value=["resume"]),
+        patch("callback.graphs.apply.api.get_apply_graph", return_value=BrokenGraph()),
     ):
         result = load_jd(jd_raw_text="Python engineer needed")
 
@@ -373,7 +375,7 @@ def test_load_jd_returns_error_when_unexpected_exception_escapes_graph():
 def test_configure_logging_writes_server_log(tmp_path):
     import logging
 
-    from callback.server import configure_logging
+    from callback.config.logging import configure_logging
 
     log_path = tmp_path / "server.log"
     configure_logging(log_path)
@@ -386,13 +388,11 @@ def test_configure_logging_writes_server_log(tmp_path):
 def test_configure_logging_rotates_a_large_log_at_startup(tmp_path, monkeypatch):
     import logging
 
-    from callback import server
-
     log_path = tmp_path / "server.log"
     log_path.write_text("x" * 20, encoding="utf-8")
-    monkeypatch.setattr(server, "_LOG_ROTATE_BYTES", 10)
+    monkeypatch.setattr(config_logging, "_LOG_ROTATE_BYTES", 10)
     try:
-        server.configure_logging(log_path)
+        config_logging.configure_logging(log_path)
         actual = ((tmp_path / "server.log.1").read_text(encoding="utf-8"), log_path.exists())
     finally:
         root = logging.getLogger()
@@ -406,12 +406,10 @@ def test_configure_logging_rotates_a_large_log_at_startup(tmp_path, monkeypatch)
 def test_log_writes_one_line_per_event(tmp_path):
     import logging
 
-    import callback.server as server
-
     log_path = tmp_path / "server.log"
-    server.configure_logging(log_path)
+    config_logging.configure_logging(log_path)
     try:
-        server._log("INFO", {"event": "dedupe_probe"})
+        config_logging.log("INFO", {"event": "dedupe_probe"})
         for handler in logging.getLogger().handlers:
             handler.flush()
         lines = [
@@ -429,15 +427,15 @@ def test_log_writes_one_line_per_event(tmp_path):
 
 
 def test_load_jd_accepts_url_with_raw_text_fallback():
-    from callback.server import load_jd
+    from callback.tools.load_jd import load_jd
 
     jd_url = "https://example.test/job"
     jd_text = "# Python Engineer\n\nBuild Python services and own APIs."
     fetch_mock = AsyncMock(return_value=jd_text)
 
     with (
-        patch("callback.apply_nodes.fetch_url_to_markdown", fetch_mock),
-        patch("callback.server.list_resumes", return_value=["resume"]),
+        patch("callback.graphs.apply.nodes.jd_fetch.fetch_url_to_markdown", fetch_mock),
+        patch("callback.tools.resume_label.list_resumes", return_value=["resume"]),
     ):
         result = load_jd(
             jd_url=jd_url,
@@ -461,9 +459,10 @@ def test_load_jd_accepts_url_with_raw_text_fallback():
 
 
 def test_submit_keywords_stores_jddata_and_routes_missing_wiki_to_onboarding():
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
-    with patch("callback.server.list_resumes", return_value=["resume"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
         loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
 
@@ -503,7 +502,7 @@ def test_submit_keywords_stores_jddata_and_routes_missing_wiki_to_onboarding():
 
 
 def test_submit_keywords_rejects_invalid_jd_json():
-    from callback.server import submit_keywords
+    from callback.tools.submit_keywords import submit_keywords
 
     session_id = "session-123"
     expected = {
@@ -521,7 +520,7 @@ def test_submit_keywords_rejects_invalid_jd_json():
 
 
 def test_submit_keywords_rejects_empty_jd_json():
-    from callback.server import submit_keywords
+    from callback.tools.submit_keywords import submit_keywords
 
     session_id = "session-123"
     expected = {
@@ -539,7 +538,7 @@ def test_submit_keywords_rejects_empty_jd_json():
 
 
 def test_submit_keywords_rejects_unknown_session():
-    from callback.server import submit_keywords
+    from callback.tools.submit_keywords import submit_keywords
 
     session_id = "missing-session"
     result = submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
@@ -558,7 +557,7 @@ def test_submit_keywords_rejects_unknown_session():
 
 
 def test_submit_keywords_rejects_blank_session_with_session_id():
-    from callback.server import submit_keywords
+    from callback.tools.submit_keywords import submit_keywords
 
     session_id = ""
     result = submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
@@ -577,17 +576,21 @@ def test_submit_keywords_rejects_blank_session_with_session_id():
 
 
 def test_submit_keywords_returns_envelope_when_extractor_raises(tmp_path, monkeypatch):
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
-    with patch("callback.server.list_resumes", return_value=["resume"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
         loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
 
     def broken_extract(path):
         raise RuntimeError("extractor: PDF yielded no text")
 
-    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", broken_extract)
-    with patch("callback.apply_nodes.get_resume", return_value=str(tmp_path / "resume.pdf")):
+    monkeypatch.setattr("callback.services.extractor.extract", broken_extract)
+    with patch(
+        "callback.graphs.apply.nodes.parse_initial.get_resume",
+        return_value=str(tmp_path / "resume.pdf"),
+    ):
         result = submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
 
     expected = {
@@ -604,17 +607,21 @@ def test_submit_keywords_returns_envelope_when_extractor_raises(tmp_path, monkey
 
 
 def test_submit_keywords_reports_extractor_value_error_as_unexpected_error(tmp_path, monkeypatch):
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
-    with patch("callback.server.list_resumes", return_value=["resume"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
         loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
 
     def broken_extract(path):
         raise ValueError("extractor: unsupported format '.rtf' — expected .pdf, .docx, or .txt")
 
-    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", broken_extract)
-    with patch("callback.apply_nodes.get_resume", return_value=str(tmp_path / "resume.pdf")):
+    monkeypatch.setattr("callback.services.extractor.extract", broken_extract)
+    with patch(
+        "callback.graphs.apply.nodes.parse_initial.get_resume",
+        return_value=str(tmp_path / "resume.pdf"),
+    ):
         result = submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
 
     expected = {
@@ -631,9 +638,10 @@ def test_submit_keywords_reports_extractor_value_error_as_unexpected_error(tmp_p
 
 
 def test_submit_keywords_reports_checkpoint_value_error_as_invalid_session():
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
-    with patch("callback.server.list_resumes", return_value=["resume"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
         loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
 
@@ -648,7 +656,7 @@ def test_submit_keywords_reports_checkpoint_value_error_as_invalid_session():
         def update_state(self, config, values):
             raise ValueError("checkpoint missing")
 
-    with patch("callback.server.get_apply_graph", return_value=FakeGraph()):
+    with patch("callback.graphs.apply.api.get_apply_graph", return_value=FakeGraph()):
         result = submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
 
     expected = {
@@ -665,9 +673,10 @@ def test_submit_keywords_reports_checkpoint_value_error_as_invalid_session():
 
 
 def test_submit_keywords_rejects_session_not_waiting_for_keywords():
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
-    with patch("callback.server.list_resumes", return_value=["resume"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
         loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
     submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
@@ -689,9 +698,10 @@ def test_submit_keywords_rejects_session_not_waiting_for_keywords():
 
 def test_submit_keywords_ats_format_gap_has_three_entries():
     """submit_keywords returns one ATS gap entry per required header."""
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
-    with patch("callback.server.list_resumes", return_value=["resume"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
         loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
 
@@ -709,11 +719,12 @@ def test_submit_keywords_ats_format_gap_has_three_entries():
 
 
 def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, monkeypatch):
-    from callback.server import load_jd, submit_keywords
-    from callback.wiki import WikiStore
+    from callback.repositories.wiki import WikiStore
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
     resume_label = "project_guidance_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -740,7 +751,7 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
     store.write_page(resume_label, "sections.json", json.dumps(sections))
     store.write_index(resume_label, "Python evidence in dated experience")
 
-    with patch("callback.server.list_resumes", return_value=[resume_label]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=[resume_label]):
         loaded = load_jd(jd_raw_text="Python engineer needed")
     result = submit_keywords(session_id=loaded["session_id"], jd_json=PARTIAL_JD_JSON)
 
@@ -796,13 +807,13 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
 
 
 def test_tailor_skill_and_eval_prompt_forbid_keyword_stuffing():
-    from callback.server import _TAILOR_INSTRUCTIONS
+    from callback.services.host_protocols import TAILOR_INSTRUCTIONS
     from evals.runner import tailor_prompt
     from evals.tailor_checks import TailorCase
 
     skill = Path("skills/tailor-resume/SKILL.md").read_text()
     skill_lower = skill.lower()
-    assert "Keyword mapping, not stuffing" in _TAILOR_INSTRUCTIONS
+    assert "Keyword mapping, not stuffing" in TAILOR_INSTRUCTIONS
     assert "keyword mapping" in skill_lower
     assert "keyword-stuff" in skill_lower or "do not keyword-stuff" in skill_lower
     assert (
@@ -818,22 +829,22 @@ def test_tailor_skill_and_eval_prompt_forbid_keyword_stuffing():
 
 
 def test_tailor_banned_lists_align_with_readability_filler_phrases():
-    from callback.server import _TAILOR_INSTRUCTIONS
+    from callback.services.host_protocols import TAILOR_INSTRUCTIONS
     from evals.tailor_checks import BANNED_TERMS
 
     skill = Path("skills/tailor-resume/SKILL.md").read_text().lower()
     for term in ("cross-functional", "operational excellence", "results-driven"):
-        assert term in _TAILOR_INSTRUCTIONS.lower()
+        assert term in TAILOR_INSTRUCTIONS.lower()
         assert term in skill
         assert term in BANNED_TERMS
 
 
 def test_tailor_instructions_prefer_evidenced_ai_outcomes():
     """#149: protocol-only AI skills guidance — outcomes over tool-name Skills."""
-    from callback.server import _TAILOR_INSTRUCTIONS
+    from callback.services.host_protocols import TAILOR_INSTRUCTIONS
 
     skill = Path("skills/tailor-resume/SKILL.md").read_text().lower()
-    instructions = _TAILOR_INSTRUCTIONS.lower()
+    instructions = TAILOR_INSTRUCTIONS.lower()
     assert "evidenced ai" in instructions
     assert (
         "tool name in skills" in instructions or "listing the tool name in skills" in instructions
@@ -844,10 +855,10 @@ def test_tailor_instructions_prefer_evidenced_ai_outcomes():
 
 def test_tailor_instructions_name_google_xyz_formula():
     """#158: Google XYZ named in protocol + skill; never invent/change numbers."""
-    from callback.server import _TAILOR_INSTRUCTIONS
+    from callback.services.host_protocols import TAILOR_INSTRUCTIONS
 
     skill = Path("skills/tailor-resume/SKILL.md").read_text().lower()
-    instructions = _TAILOR_INSTRUCTIONS.lower()
+    instructions = TAILOR_INSTRUCTIONS.lower()
     required = (
         "google xyz",
         "accomplished x",
@@ -868,10 +879,10 @@ def test_tailor_instructions_name_google_xyz_formula():
 
 def test_tailor_instructions_xyz_honesty_guards():
     """#159: XYZ field-note honesty guards in protocol + skill."""
-    from callback.server import _TAILOR_INSTRUCTIONS
+    from callback.services.host_protocols import TAILOR_INSTRUCTIONS
 
     skill = Path("skills/tailor-resume/SKILL.md").read_text().lower()
-    instructions = _TAILOR_INSTRUCTIONS.lower()
+    instructions = TAILOR_INSTRUCTIONS.lower()
     actual = {
         "scope_not_result": (
             "scope" in instructions
@@ -903,10 +914,10 @@ def test_tailor_instructions_xyz_honesty_guards():
 
 def test_tailor_instructions_missing_metric_handoff():
     """#160: when Y is missing, protocol+skill require missing_metric handoff."""
-    from callback.server import _TAILOR_INSTRUCTIONS
+    from callback.services.host_protocols import TAILOR_INSTRUCTIONS
 
     skill = Path("skills/tailor-resume/SKILL.md").read_text().lower()
-    instructions = _TAILOR_INSTRUCTIONS.lower()
+    instructions = TAILOR_INSTRUCTIONS.lower()
     required = (
         "missing_metric",
         "verifiable outcome",
@@ -932,11 +943,11 @@ def test_tailor_instructions_missing_metric_handoff():
 
 def test_skills_document_xyz_chat_fact_story_intake():
     """#162: skills persist chat-supplied XYZ facts via create_story."""
-    from callback.server import _TAILOR_INSTRUCTIONS
+    from callback.services.host_protocols import TAILOR_INSTRUCTIONS
 
     tailor = Path("skills/tailor-resume/SKILL.md").read_text().lower()
     onboard = Path("skills/onboard-profile/SKILL.md").read_text().lower()
-    instructions = _TAILOR_INSTRUCTIONS.lower()
+    instructions = TAILOR_INSTRUCTIONS.lower()
     # Lock real create_story args — not fictional title/tags.
     required_tailor = (
         "chat-supplied",
@@ -978,11 +989,12 @@ def test_skills_document_xyz_chat_fact_story_intake():
 
 
 def test_submit_keywords_returns_ranked_project_candidates(tmp_path, monkeypatch):
-    from callback.server import load_jd, submit_keywords
-    from callback.wiki import WikiStore
+    from callback.repositories.wiki import WikiStore
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
     resume_label = "project_candidate_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -1090,7 +1102,7 @@ story_type: SBI
         }
     )
 
-    with patch("callback.server.list_resumes", return_value=[resume_label]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=[resume_label]):
         loaded = load_jd(jd_raw_text="GenAI engineer needed")
         result = submit_keywords(session_id=loaded["session_id"], jd_json=jd_json)
 
@@ -1119,11 +1131,12 @@ story_type: SBI
 
 
 def test_submit_keywords_recommends_project_append_and_trim_candidates(tmp_path, monkeypatch):
-    from callback.server import load_jd, submit_keywords
-    from callback.wiki import WikiStore
+    from callback.repositories.wiki import WikiStore
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
     resume_label = "project_append_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -1188,7 +1201,7 @@ story_type: SBI
         }
     )
 
-    with patch("callback.server.list_resumes", return_value=[resume_label]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=[resume_label]):
         loaded = load_jd(jd_raw_text="GenAI engineer needed")
         result = submit_keywords(session_id=loaded["session_id"], jd_json=jd_json)
 
@@ -1220,11 +1233,12 @@ story_type: SBI
 def test_submit_keywords_recommends_project_replace_when_two_visible_projects(
     tmp_path, monkeypatch
 ):
-    from callback.server import load_jd, submit_keywords
-    from callback.wiki import WikiStore
+    from callback.repositories.wiki import WikiStore
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
     resume_label = "project_replace_layout_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -1291,7 +1305,7 @@ story_type: SBI
         }
     )
 
-    with patch("callback.server.list_resumes", return_value=[resume_label]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=[resume_label]):
         loaded = load_jd(jd_raw_text="GenAI engineer needed")
         result = submit_keywords(session_id=loaded["session_id"], jd_json=jd_json)
 
@@ -1312,11 +1326,12 @@ story_type: SBI
 
 
 def test_submit_keywords_orphaned_required_routes_to_create_story(tmp_path, monkeypatch):
-    from callback.server import load_jd, submit_keywords
-    from callback.wiki import WikiStore
+    from callback.repositories.wiki import WikiStore
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
     resume_label = "orphan_workflow_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     resume_path = tmp_path / "resume.txt"
     resume_path.write_text(
         "Jane Dev\nExperience\nBuilt backend APIs\nEducation\nBS Computer Science\n",
@@ -1338,8 +1353,10 @@ def test_submit_keywords_orphaned_required_routes_to_create_story(tmp_path, monk
 
     jd_json = json.dumps({"title": "Backend Engineer", "company": "Co", "required": ["Kafka"]})
     with (
-        patch("callback.server.list_resumes", return_value=[resume_label]),
-        patch("callback.apply_nodes.get_resume", return_value=str(resume_path)),
+        patch("callback.tools.resume_label.list_resumes", return_value=[resume_label]),
+        patch(
+            "callback.graphs.apply.nodes.parse_initial.get_resume", return_value=str(resume_path)
+        ),
     ):
         loaded = load_jd(jd_raw_text="Kafka engineer needed")
         result = submit_keywords(session_id=loaded["session_id"], jd_json=jd_json)
@@ -1365,11 +1382,13 @@ def test_submit_keywords_orphaned_required_routes_to_create_story(tmp_path, monk
 
 
 def test_get_wiki_pages_returns_submit_tailor_workflow(tmp_path, monkeypatch):
-    from callback.server import get_wiki_pages, load_jd, submit_keywords
-    from callback.wiki import WikiStore
+    from callback.repositories.wiki import WikiStore
+    from callback.tools.get_wiki_pages import get_wiki_pages
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
     resume_label = "wiki_pages_workflow_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -1385,7 +1404,7 @@ def test_get_wiki_pages_returns_submit_tailor_workflow(tmp_path, monkeypatch):
     store.write_index(resume_label, "- experience/acme.md")
     store.write_page(resume_label, "experience/acme.md", "Built Python services.")
 
-    with patch("callback.server.list_resumes", return_value=[resume_label]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=[resume_label]):
         loaded = load_jd(jd_raw_text="Python engineer needed")
     submit_keywords(session_id=loaded["session_id"], jd_json=PARTIAL_JD_JSON)
 
@@ -1411,11 +1430,13 @@ def test_get_wiki_pages_returns_submit_tailor_workflow(tmp_path, monkeypatch):
 
 
 def test_get_wiki_pages_rejects_page_id_outside_wiki_root(tmp_path, monkeypatch):
-    from callback.server import get_wiki_pages, load_jd, submit_keywords
-    from callback.wiki import WikiStore
+    from callback.repositories.wiki import WikiStore
+    from callback.tools.get_wiki_pages import get_wiki_pages
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
     resume_label = "wiki_pages_traversal_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -1432,7 +1453,7 @@ def test_get_wiki_pages_rejects_page_id_outside_wiki_root(tmp_path, monkeypatch)
     secret = tmp_path / "secret.txt"
     secret.write_text("hunter2", encoding="utf-8")
 
-    with patch("callback.server.list_resumes", return_value=[resume_label]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=[resume_label]):
         loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
     submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
@@ -1453,11 +1474,13 @@ def test_get_wiki_pages_rejects_page_id_outside_wiki_root(tmp_path, monkeypatch)
 
 
 def test_get_wiki_pages_rejects_embedded_nul(tmp_path, monkeypatch):
-    from callback.server import get_wiki_pages, load_jd, submit_keywords
-    from callback.wiki import WikiStore
+    from callback.repositories.wiki import WikiStore
+    from callback.tools.get_wiki_pages import get_wiki_pages
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
     resume_label = "wiki_pages_nul_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -1472,7 +1495,7 @@ def test_get_wiki_pages_rejects_embedded_nul(tmp_path, monkeypatch):
     store.write_page(resume_label, "sections.json", json.dumps(sections))
     store.write_index(resume_label, "- experience/acme.md")
 
-    with patch("callback.server.list_resumes", return_value=[resume_label]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=[resume_label]):
         loaded = load_jd(jd_raw_text="Python engineer needed")
     session_id = loaded["session_id"]
     submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
@@ -1493,11 +1516,11 @@ def test_get_wiki_pages_rejects_embedded_nul(tmp_path, monkeypatch):
 
 
 def test_rank_project_candidates_skips_invalid_index_links(tmp_path, monkeypatch):
-    from callback.server import _rank_project_candidates
-    from callback.wiki import WikiStore
+    from callback.repositories.wiki import WikiStore
+    from callback.services.project_ranking import rank_project_candidates
 
     resume_label = "invalid_link_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     store = WikiStore()
     store.write_page(
         resume_label,
@@ -1530,9 +1553,9 @@ story_type: SBI
     keywords = {"required": ["Python", "RAG"], "preferred": []}
 
     mock_log = Mock()
-    monkeypatch.setattr("callback.server._log", mock_log)
+    monkeypatch.setattr("callback.services.project_ranking.log", mock_log)
 
-    candidates = _rank_project_candidates(resume_label, keywords, wiki_index)
+    candidates = rank_project_candidates(resume_label, keywords, wiki_index)
 
     assert candidates == [
         {
@@ -1561,11 +1584,11 @@ story_type: SBI
 def test_rank_project_candidates_skips_pages_without_frontmatter_and_warns(
     tmp_path, monkeypatch, caplog
 ):
-    from callback.server import _rank_project_candidates
-    from callback.wiki import WikiStore
+    from callback.repositories.wiki import WikiStore
+    from callback.services.project_ranking import rank_project_candidates
 
     caplog.set_level("WARNING", logger="callback.server")
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     store = WikiStore()
     store.write_page(
         "r", "experience/story-001.md", "# old render\n\n**Job Title:** Project\n\nSkills: Python\n"
@@ -1578,7 +1601,7 @@ def test_rank_project_candidates_skips_pages_without_frontmatter_and_warns(
     )
     wiki_index = "- [old](experience/story-001.md)\n- [Real](experience/story-002.md)\n"
     keywords = {"required": ["Python"], "preferred": []}
-    candidates = _rank_project_candidates("r", keywords, wiki_index)
+    candidates = rank_project_candidates("r", keywords, wiki_index)
     actual = {
         "names": [c["name"] for c in candidates],
         "warned": any("story-001.md" in r.message for r in caplog.records),
@@ -1588,10 +1611,10 @@ def test_rank_project_candidates_skips_pages_without_frontmatter_and_warns(
 
 
 def test_rank_project_candidates_matches_body_and_tags_not_raw_frontmatter(tmp_path, monkeypatch):
-    from callback.server import _rank_project_candidates
-    from callback.wiki import WikiStore
+    from callback.repositories.wiki import WikiStore
+    from callback.services.project_ranking import rank_project_candidates
 
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     store = WikiStore()
     store.write_page(
         "r",
@@ -1601,7 +1624,7 @@ def test_rank_project_candidates_matches_body_and_tags_not_raw_frontmatter(tmp_p
     )
     wiki_index = "- [Site](experience/story-001.md)\n"
     keywords = {"required": ["accessibility WCAG"], "preferred": ["accessibility"]}
-    candidates = _rank_project_candidates("r", keywords, wiki_index)
+    candidates = rank_project_candidates("r", keywords, wiki_index)
     actual = {
         "required_matched": candidates[0]["required_matched"],
         "preferred_matched": candidates[0]["preferred_matched"],
@@ -1621,7 +1644,7 @@ class TestOrphanDetection:
     """Tests for _detect_orphaned_required orphan classification logic."""
 
     def test_orphan_detected_when_skill_in_sections_not_in_wiki(self):
-        from callback.server import _detect_orphaned_required
+        from callback.services.keyword_coverage import detect_orphaned_required
 
         sections = {
             "skills": {
@@ -1631,12 +1654,12 @@ class TestOrphanDetection:
         }
         wiki_index = "# Stories\n\n## Docker\n- Built containers\n"
 
-        result = _detect_orphaned_required(["Python", "Docker"], sections, wiki_index)
+        result = detect_orphaned_required(["Python", "Docker"], sections, wiki_index)
 
         assert result == ["Python"]
 
     def test_genuine_gap_not_flagged_as_orphan(self):
-        from callback.server import _detect_orphaned_required
+        from callback.services.keyword_coverage import detect_orphaned_required
 
         sections = {
             "skills": {
@@ -1646,12 +1669,12 @@ class TestOrphanDetection:
         }
         wiki_index = "# Stories\n\n## Docker\n- Built containers\n"
 
-        result = _detect_orphaned_required(["Kubernetes"], sections, wiki_index)
+        result = detect_orphaned_required(["Kubernetes"], sections, wiki_index)
 
         assert result == []
 
     def test_skill_covered_in_wiki_not_flagged(self):
-        from callback.server import _detect_orphaned_required
+        from callback.services.keyword_coverage import detect_orphaned_required
 
         sections = {
             "skills": {
@@ -1661,25 +1684,23 @@ class TestOrphanDetection:
         }
         wiki_index = "# Stories\n\n## Python\n- Built services in python\n"
 
-        result = _detect_orphaned_required(["Python"], sections, wiki_index)
+        result = detect_orphaned_required(["Python"], sections, wiki_index)
 
         assert result == []
 
     def test_none_skills_values_tolerated_like_empty_section(self):
-        from callback.server import _detect_orphaned_required
+        from callback.services.keyword_coverage import detect_orphaned_required
 
         wiki_index = "# Stories\n\n## Docker\n- Built containers\n"
         required_missing = ["Python"]
 
         actual = {
-            "none_values": _detect_orphaned_required(
+            "none_values": detect_orphaned_required(
                 required_missing,
                 {"skills": {"flat": None, "categorized": None}},
                 wiki_index,
             ),
-            "empty_section": _detect_orphaned_required(
-                required_missing, {"skills": {}}, wiki_index
-            ),
+            "empty_section": detect_orphaned_required(required_missing, {"skills": {}}, wiki_index),
         }
         expected = {"none_values": [], "empty_section": []}
         assert actual == expected
@@ -1699,11 +1720,13 @@ class TestSubmitTailorNoCoverage:
 
     def test_submit_tailor_no_coverage_sets_outcome(self, tmp_path, monkeypatch):
         """no_coverage=True skips edits, runs graph to finalize, and returns no_coverage outcome."""
-        from callback.server import load_jd, submit_keywords, submit_tailor
+        from callback.tools.load_jd import load_jd
+        from callback.tools.submit_keywords import submit_keywords
+        from callback.tools.submit_tailor import submit_tailor
 
         monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
 
-        with patch("callback.server.list_resumes", return_value=["resume"]):
+        with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
             session_id = load_jd(jd_raw_text="Python engineer needed")["session_id"]
         submit_keywords(session_id=session_id, jd_json=_NO_COVERAGE_JD_JSON)
 
@@ -1746,11 +1769,13 @@ class TestSubmitTailorNoCoverage:
 
     def test_submit_tailor_no_coverage_report_notes_is_list(self, tmp_path, monkeypatch):
         """submit_tailor report.notes is present and is a list."""
-        from callback.server import load_jd, submit_keywords, submit_tailor
+        from callback.tools.load_jd import load_jd
+        from callback.tools.submit_keywords import submit_keywords
+        from callback.tools.submit_tailor import submit_tailor
 
         monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
 
-        with patch("callback.server.list_resumes", return_value=["resume"]):
+        with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
             session_id = load_jd(jd_raw_text="Python engineer needed")["session_id"]
         submit_keywords(session_id=session_id, jd_json=_NO_COVERAGE_JD_JSON)
 
@@ -1780,10 +1805,10 @@ class TestSubmitTailorNoCoverage:
 
 def test_load_jd_auto_selects_single_registered_resume():
     """Single registered resume is auto-selected when resume_label is omitted."""
-    from callback.apply_graph import get_apply_graph, make_config
-    from callback.server import load_jd
+    from callback.graphs.apply.graph import get_apply_graph, make_config
+    from callback.tools.load_jd import load_jd
 
-    with patch("callback.server.list_resumes", return_value=["default"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["default"]):
         result = load_jd(jd_raw_text="Python engineer needed")
 
     session_id = result["session_id"]
@@ -1802,10 +1827,10 @@ def test_load_jd_auto_selects_single_registered_resume():
 
 def test_load_jd_stores_first_registered_resume_when_several():
     """Two registered resumes without a label stores the first one on the graph state."""
-    from callback.apply_graph import get_apply_graph, make_config
-    from callback.server import load_jd
+    from callback.graphs.apply.graph import get_apply_graph, make_config
+    from callback.tools.load_jd import load_jd
 
-    with patch("callback.server.list_resumes", return_value=["a", "b"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["a", "b"]):
         result = load_jd(jd_raw_text="Python engineer needed")
 
     session_id = result["session_id"]
@@ -1821,11 +1846,11 @@ def test_load_jd_stores_first_registered_resume_when_several():
 
 def test_load_jd_uses_first_registered_resume_and_warns_when_several(caplog):
     """Multiple resumes registered without a label takes the first and warns."""
-    import callback.server as server
+    from callback.tools.resume_label import resolve_resume_label
 
     caplog.set_level("WARNING", logger="callback.server")
-    with patch("callback.server.list_resumes", return_value=["a", "b"]):
-        resolved, err = server._resolve_resume_label("sess-1")
+    with patch("callback.tools.resume_label.list_resumes", return_value=["a", "b"]):
+        resolved, err = resolve_resume_label("sess-1")
     actual = {
         "resolved": resolved,
         "err": err,
@@ -1837,9 +1862,9 @@ def test_load_jd_uses_first_registered_resume_and_warns_when_several(caplog):
 
 def test_load_jd_returns_no_resume_registered_error_when_empty():
     """No registered resumes returns no_resume_registered error."""
-    from callback.server import load_jd
+    from callback.tools.load_jd import load_jd
 
-    with patch("callback.server.list_resumes", return_value=[]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=[]):
         result = load_jd(jd_raw_text="Python engineer needed")
 
     expected = {
@@ -1863,14 +1888,16 @@ def test_load_jd_returns_no_resume_registered_error_when_empty():
 
 def test_parse_initial_wiki_miss_calls_get_resume_and_extracts_text(tmp_path):
     """Wiki miss: get_resume is called and text is extracted from the returned path."""
-    from callback.apply_nodes import parse_initial
-    from callback.state import ApplyState
+    from callback.graphs.apply.nodes.parse_initial import parse_initial
+    from callback.models.state import ApplyState
 
     resume = tmp_path / "resume.txt"
     resume.write_text("Lead Engineer with Python and Kubernetes experience")
     state = ApplyState(session_id="s1", resume_label="lead")
 
-    with patch("callback.apply_nodes.get_resume", return_value=str(resume)) as mock_get:
+    with patch(
+        "callback.graphs.apply.nodes.parse_initial.get_resume", return_value=str(resume)
+    ) as mock_get:
         result = parse_initial(state)
 
     mock_get.assert_called_once_with("lead")
@@ -1879,13 +1906,16 @@ def test_parse_initial_wiki_miss_calls_get_resume_and_extracts_text(tmp_path):
 
 def test_parse_initial_wiki_miss_resume_not_found_returns_noop_sentinel():
     """Wiki miss with ResumeNotFoundError returns noop sentinel."""
-    from callback.apply_nodes import parse_initial
-    from callback.repository.resumes import ResumeNotFoundError
-    from callback.state import ApplyState
+    from callback.graphs.apply.nodes.parse_initial import parse_initial
+    from callback.models.state import ApplyState
+    from callback.repositories.resumes import ResumeNotFoundError
 
     state = ApplyState(session_id="s1", resume_label="ghost")
 
-    with patch("callback.apply_nodes.get_resume", side_effect=ResumeNotFoundError("ghost")):
+    with patch(
+        "callback.graphs.apply.nodes.parse_initial.get_resume",
+        side_effect=ResumeNotFoundError("ghost"),
+    ):
         result = parse_initial(state)
 
     assert result == {"parsed_initial": "<noop:parse:no-source>"}
@@ -1906,29 +1936,32 @@ MINIMAL_SECTIONS_JSON = json.dumps(
 
 
 def test_parse_initial_labels_the_resume_file_as_score_source(tmp_path, decisions):
-    from callback.apply_nodes import parse_initial
-    from callback.state import ApplyState
+    from callback.graphs.apply.nodes.parse_initial import parse_initial
+    from callback.models.state import ApplyState
 
     resume = tmp_path / "resume.txt"
     resume.write_text("Lead Engineer with Python and Kubernetes experience")
 
-    with patch("callback.apply_nodes.get_resume", return_value=str(resume)):
+    with patch("callback.graphs.apply.nodes.parse_initial.get_resume", return_value=str(resume)):
         parse_initial(ApplyState(session_id="s1", resume_label="lead"))
 
     assert decisions == {"initial_score_source": "resume_file"}
 
 
 def test_parse_initial_labels_sections_text_when_the_resume_file_is_missing(decisions):
-    from callback.apply_nodes import parse_initial
-    from callback.repository.resumes import ResumeNotFoundError
-    from callback.state import ApplyState
+    from callback.graphs.apply.nodes.parse_initial import parse_initial
+    from callback.models.state import ApplyState
+    from callback.repositories.resumes import ResumeNotFoundError
 
     with (
         patch(
-            "callback.apply_nodes._load_wiki_sections",
+            "callback.graphs.apply.nodes.parse_initial._load_wiki_sections",
             return_value=(MINIMAL_SECTIONS_JSON, "index", "sections text"),
         ),
-        patch("callback.apply_nodes.get_resume", side_effect=ResumeNotFoundError("ghost")),
+        patch(
+            "callback.graphs.apply.nodes.parse_initial.get_resume",
+            side_effect=ResumeNotFoundError("ghost"),
+        ),
     ):
         result = parse_initial(ApplyState(session_id="s1", resume_label="ghost"))
 
@@ -1941,14 +1974,17 @@ def test_parse_initial_labels_sections_text_when_the_resume_file_is_missing(deci
 
 
 def test_parse_initial_labels_no_source_when_nothing_is_available(decisions):
-    from callback.apply_nodes import parse_initial
-    from callback.repository.resumes import ResumeNotFoundError
-    from callback.state import ApplyState
+    from callback.graphs.apply.nodes.parse_initial import parse_initial
+    from callback.models.state import ApplyState
+    from callback.repositories.resumes import ResumeNotFoundError
 
     parse_initial(ApplyState(session_id="s1"))
     no_label = dict(decisions)
     decisions.clear()
-    with patch("callback.apply_nodes.get_resume", side_effect=ResumeNotFoundError("ghost")):
+    with patch(
+        "callback.graphs.apply.nodes.parse_initial.get_resume",
+        side_effect=ResumeNotFoundError("ghost"),
+    ):
         parse_initial(ApplyState(session_id="s1", resume_label="ghost"))
 
     actual = {"no_label": no_label, "resume_not_found": decisions}
@@ -1960,13 +1996,13 @@ def test_parse_initial_labels_no_source_when_nothing_is_available(decisions):
 
 
 def test_resolve_resume_label_labels_the_pick(decisions):
-    import callback.server as server
+    from callback.tools.resume_label import resolve_resume_label
 
-    with patch("callback.server.list_resumes", return_value=["a"]):
-        server._resolve_resume_label("sess-1")
+    with patch("callback.tools.resume_label.list_resumes", return_value=["a"]):
+        resolve_resume_label("sess-1")
     one = dict(decisions)
-    with patch("callback.server.list_resumes", return_value=["a", "b"]):
-        server._resolve_resume_label("sess-1")
+    with patch("callback.tools.resume_label.list_resumes", return_value=["a", "b"]):
+        resolve_resume_label("sess-1")
 
     actual = {"one": one, "several": decisions}
     expected = {"one": {"resume_pick": "only_one"}, "several": {"resume_pick": "first_of_many"}}
@@ -1986,13 +2022,14 @@ class _FakeApplyGraph:
 
 
 def test_tailor_retry_update_labels_the_attempt(decisions):
-    import callback.server as server
+    from callback.graphs.apply.api import queue_tailor
 
-    server._tailor_retry_update(_FakeApplyGraph({}), {}, {"no_coverage": True}, "sess-1")
+    with patch("callback.graphs.apply.api.get_apply_graph", return_value=_FakeApplyGraph({})):
+        queue_tailor("sess-1", {"no_coverage": True})
     first = dict(decisions)
-    server._tailor_retry_update(
-        _FakeApplyGraph({"error": "render: boom"}), {}, {"no_coverage": True}, "sess-1"
-    )
+    graph = _FakeApplyGraph({"error": "render: boom"})
+    with patch("callback.graphs.apply.api.get_apply_graph", return_value=graph):
+        queue_tailor("sess-1", {"no_coverage": True})
 
     actual = {"first": first, "retry": decisions}
     expected = {
@@ -2004,16 +2041,16 @@ def test_tailor_retry_update_labels_the_attempt(decisions):
 
 def test_parse_initial_wiki_hit_uses_pdf_for_parsed_initial(tmp_path):
     """Wiki hit: parsed_initial comes from PDF, sections/wiki_index from wiki."""
-    from callback.apply_nodes import parse_initial
-    from callback.state import ApplyState
+    from callback.graphs.apply.nodes.parse_initial import parse_initial
+    from callback.models.state import ApplyState
 
     resume = tmp_path / "resume.txt"
     resume.write_text("Experience\nBuilt Python services.\n\nSkills\nPython")
     state = ApplyState(session_id="s1", resume_label="eng")
 
     with (
-        patch("callback.apply_nodes._load_wiki_sections") as mock_wiki,
-        patch("callback.apply_nodes.get_resume", return_value=str(resume)),
+        patch("callback.graphs.apply.nodes.parse_initial._load_wiki_sections") as mock_wiki,
+        patch("callback.graphs.apply.nodes.parse_initial.get_resume", return_value=str(resume)),
     ):
         mock_wiki.return_value = (
             MINIMAL_SECTIONS_JSON,
@@ -2037,16 +2074,19 @@ def test_parse_initial_wiki_hit_uses_pdf_for_parsed_initial(tmp_path):
 
 def test_parse_initial_wiki_hit_pdf_missing_falls_back_to_sections_text():
     """Wiki hit + ResumeNotFoundError: falls back to _sections_to_text, emits warning."""
-    from callback.apply_nodes import parse_initial
-    from callback.repository.resumes import ResumeNotFoundError
-    from callback.state import ApplyState
+    from callback.graphs.apply.nodes.parse_initial import parse_initial
+    from callback.models.state import ApplyState
+    from callback.repositories.resumes import ResumeNotFoundError
 
     state = ApplyState(session_id="s1", resume_label="eng")
     sections_text = "Python ACME Engineer built things"
 
     with (
-        patch("callback.apply_nodes._load_wiki_sections") as mock_wiki,
-        patch("callback.apply_nodes.get_resume", side_effect=ResumeNotFoundError("eng")),
+        patch("callback.graphs.apply.nodes.parse_initial._load_wiki_sections") as mock_wiki,
+        patch(
+            "callback.graphs.apply.nodes.parse_initial.get_resume",
+            side_effect=ResumeNotFoundError("eng"),
+        ),
     ):
         mock_wiki.return_value = (MINIMAL_SECTIONS_JSON, "index", sections_text)
         result = parse_initial(state)
@@ -2071,7 +2111,7 @@ def test_parse_initial_wiki_hit_pdf_missing_falls_back_to_sections_text():
 
 class TestTailorDiagnostics:
     def test_matched_skill_present_in_rendered_text(self):
-        from callback.apply_nodes import _compute_tailor_diagnostics
+        from callback.graphs.apply.nodes.report import _compute_tailor_diagnostics
 
         result = _compute_tailor_diagnostics(
             ["machine learning"],
@@ -2087,7 +2127,7 @@ class TestTailorDiagnostics:
         ]
 
     def test_hyphen_dropped_by_pdf_extraction_not_present(self):
-        from callback.apply_nodes import _compute_tailor_diagnostics
+        from callback.graphs.apply.nodes.report import _compute_tailor_diagnostics
 
         result = _compute_tailor_diagnostics(
             ["agent-based workflows"],
@@ -2103,7 +2143,7 @@ class TestTailorDiagnostics:
         ]
 
     def test_suggested_alternatives_uses_normalization(self):
-        from callback.apply_nodes import _compute_tailor_diagnostics
+        from callback.graphs.apply.nodes.report import _compute_tailor_diagnostics
 
         result = _compute_tailor_diagnostics(
             ["retrieval-augmented generation (RAG)"],
@@ -2119,13 +2159,13 @@ class TestTailorDiagnostics:
         ]
 
     def test_no_applied_skill_values_returns_empty(self):
-        from callback.apply_nodes import _compute_tailor_diagnostics
+        from callback.graphs.apply.nodes.report import _compute_tailor_diagnostics
 
         assert _compute_tailor_diagnostics(None, "some text") == []
         assert _compute_tailor_diagnostics([], "some text") == []
 
     def test_case_insensitive_match(self):
-        from callback.apply_nodes import _compute_tailor_diagnostics
+        from callback.graphs.apply.nodes.report import _compute_tailor_diagnostics
 
         result = _compute_tailor_diagnostics(["Python"], "built with PYTHON and Django")
         actual = {
@@ -2139,7 +2179,7 @@ class TestTailorDiagnostics:
         assert actual == expected
 
     def test_all_matched_returns_empty_alternatives(self):
-        from callback.apply_nodes import _compute_tailor_diagnostics
+        from callback.graphs.apply.nodes.report import _compute_tailor_diagnostics
 
         result = _compute_tailor_diagnostics(["Python", "Go"], "Python and Go are used.")
         actual = {
@@ -2154,24 +2194,27 @@ class TestTailorDiagnostics:
 
 
 def test_onboard_user_returns_envelope_when_extractor_raises(tmp_path, monkeypatch):
-    from callback import server
-    from callback.profile_graph import build_profile_graph
+    import callback.tools.onboard_user as onboard_tool
+    from callback.graphs.profile import api as profile_api
+    from callback.graphs.profile.graph import build_profile_graph
 
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
     db_path = tmp_path / "profile-sessions.db"
-    monkeypatch.setattr(server, "get_profile_graph", lambda: build_profile_graph(db_path=db_path))
+    monkeypatch.setattr(
+        profile_api, "get_profile_graph", lambda: build_profile_graph(db_path=db_path)
+    )
 
     def broken_extract(path):
         raise ValueError("boom")
 
-    monkeypatch.setattr("callback.profile_nodes.extractor.extract", broken_extract)
+    monkeypatch.setattr("callback.services.extractor.extract", broken_extract)
 
     resume = tmp_path / "jane.txt"
     resume.write_text("Jane Doe\n", encoding="utf-8")
 
     session_id = "onboard-extractor-raises"
-    result = server._onboard_user_impl(session_id, str(resume))
+    result = onboard_tool._onboard_user_impl(session_id, str(resume))
 
     expected = {
         "status": "error",
@@ -2192,7 +2235,7 @@ def test_onboard_user_returns_envelope_when_extractor_raises(tmp_path, monkeypat
 @pytest.mark.anyio
 async def test_check_update_tool_returns_update_available():
     import callback.server as server
-    import callback.version_check as vc
+    import callback.services.version_check as vc
 
     vc._cached = None
     check_result = {
@@ -2213,7 +2256,7 @@ async def test_check_update_tool_returns_update_available():
 @pytest.mark.anyio
 async def test_check_update_tool_returns_already_current():
     import callback.server as server
-    import callback.version_check as vc
+    import callback.services.version_check as vc
 
     vc._cached = None
     check_result = {
@@ -2257,7 +2300,8 @@ class TestSearchPreferencesTools:
         }
 
     def test_set_then_get_round_trip(self):
-        from callback.server import get_search_preferences, set_search_preferences
+        from callback.tools.get_search_preferences import get_search_preferences
+        from callback.tools.set_search_preferences import set_search_preferences
 
         set_env = set_search_preferences(self._valid_payload())
         assert set_env["status"] == "ok"
@@ -2268,7 +2312,7 @@ class TestSearchPreferencesTools:
         assert get_env["data"]["preferences"] == stored
 
     def test_set_persists_scan_source_and_pii(self):
-        from callback.server import set_search_preferences
+        from callback.tools.set_search_preferences import set_search_preferences
 
         prefs = set_search_preferences(self._valid_payload())["data"]["preferences"]
 
@@ -2289,13 +2333,13 @@ class TestSearchPreferencesTools:
         }
 
     def test_set_stamps_updated_at(self):
-        from callback.server import set_search_preferences
+        from callback.tools.set_search_preferences import set_search_preferences
 
         set_env = set_search_preferences(self._valid_payload())
         assert set_env["data"]["preferences"]["updated_at"]  # non-empty ISO string
 
     def test_get_when_missing_returns_next_action(self):
-        from callback.server import get_search_preferences
+        from callback.tools.get_search_preferences import get_search_preferences
 
         get_env = get_search_preferences()
         assert get_env["status"] == "ok"
@@ -2303,7 +2347,7 @@ class TestSearchPreferencesTools:
         assert "data" not in get_env
 
     def test_set_invalid_payload_returns_error(self):
-        from callback.server import set_search_preferences
+        from callback.tools.set_search_preferences import set_search_preferences
 
         env = set_search_preferences({"work_types": ["remote"]})  # no home_location
         assert env["status"] == "error"
@@ -2314,11 +2358,11 @@ class TestSearchPreferencesTools:
 def test_rank_project_candidates_skips_project_pages_with_non_list_tags(
     tmp_path, monkeypatch, caplog
 ):
-    from callback.server import _rank_project_candidates
-    from callback.wiki import WikiStore
+    from callback.repositories.wiki import WikiStore
+    from callback.services.project_ranking import rank_project_candidates
 
     caplog.set_level("WARNING", logger="callback.server")
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     store = WikiStore()
     store.write_page(
         "r",
@@ -2340,9 +2384,7 @@ def test_rank_project_candidates_skips_project_pages_with_non_list_tags(
         "- [b](experience/story-002.md)\n"
         "- [c](experience/story-003.md)\n"
     )
-    candidates = _rank_project_candidates(
-        "r", {"required": ["Python"], "preferred": []}, wiki_index
-    )
+    candidates = rank_project_candidates("r", {"required": ["Python"], "preferred": []}, wiki_index)
     warned = sorted(
         pid
         for pid in ("story-001.md", "story-002.md")
@@ -2362,16 +2404,16 @@ def test_rank_project_candidates_skips_project_pages_with_non_list_tags(
 
 
 def test_rank_project_candidates_matches_the_frontmatter_title(tmp_path, monkeypatch):
-    from callback.server import _rank_project_candidates
-    from callback.wiki import WikiStore
+    from callback.repositories.wiki import WikiStore
+    from callback.services.project_ranking import rank_project_candidates
 
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     page = (
         "---\ntype: project\ntitle: Kubernetes\ntags:\n- Docker\n---\n"
         "# old heading\n\n**Situation:** Ran containers.\n"
     )
     WikiStore().write_page("r", "experience/story-001.md", page)
-    candidates = _rank_project_candidates(
+    candidates = rank_project_candidates(
         "r", {"required": ["Kubernetes"], "preferred": []}, "- [k](experience/story-001.md)\n"
     )
     actual = {
@@ -2383,28 +2425,28 @@ def test_rank_project_candidates_matches_the_frontmatter_title(tmp_path, monkeyp
 
 
 def test_rank_project_candidates_ignores_a_stale_body_heading(tmp_path, monkeypatch):
-    from callback.server import _rank_project_candidates
-    from callback.wiki import WikiStore
+    from callback.repositories.wiki import WikiStore
+    from callback.services.project_ranking import rank_project_candidates
 
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     page = (
         "---\ntype: project\ntitle: Azure\ntags:\n- Terraform\n---\n"
         "# AWS\n\n**Situation:** Moved the platform to Azure.\n"
     )
     WikiStore().write_page("r", "experience/story-001.md", page)
     keywords = {"required": ["AWS"], "preferred": ["Azure"]}
-    candidates = _rank_project_candidates("r", keywords, "- [a](experience/story-001.md)\n")
+    candidates = rank_project_candidates("r", keywords, "- [a](experience/story-001.md)\n")
     actual = [(c["name"], c["required_matched"], c["preferred_matched"]) for c in candidates]
     expected = [("Azure", [], ["Azure"])]
     assert actual == expected
 
 
 def test_rank_project_candidates_skips_an_undecodable_page(tmp_path, monkeypatch, caplog):
-    from callback.server import _rank_project_candidates
-    from callback.wiki import WikiStore
+    from callback.repositories.wiki import WikiStore
+    from callback.services.project_ranking import rank_project_candidates
 
     caplog.set_level("WARNING", logger="callback.server")
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     store = WikiStore()
     store.write_page(
         "r", "experience/story-002.md", "---\ntype: project\ntitle: Good\ntags:\n- Python\n---\n"
@@ -2412,9 +2454,7 @@ def test_rank_project_candidates_skips_an_undecodable_page(tmp_path, monkeypatch
     bad = tmp_path / "wiki" / "r" / "experience" / "story-001.md"
     bad.write_bytes("---\ntype: project\ntitle: caf\xe9\n---\n".encode("latin-1"))
     wiki_index = "- [a](experience/story-001.md)\n- [b](experience/story-002.md)\n"
-    candidates = _rank_project_candidates(
-        "r", {"required": ["Python"], "preferred": []}, wiki_index
-    )
+    candidates = rank_project_candidates("r", {"required": ["Python"], "preferred": []}, wiki_index)
     actual = {
         "names": [c["name"] for c in candidates],
         "warned": any("story-001.md" in r.message for r in caplog.records),
@@ -2433,14 +2473,19 @@ def test_rank_project_candidates_skips_an_undecodable_page(tmp_path, monkeypatch
     ids=["suspect", "normal", "legacy-score"],
 )
 def test_submit_keywords_propagates_ats_input_suspect(score, expected_suspect):
-    from callback.server import submit_keywords
+    from callback.graphs.apply.api import ApplySession
+    from callback.tools.submit_keywords import submit_keywords
 
     state = {"keywords": EXPECTED_PARTIAL_KEYWORDS, "score_initial": score}
     original_score = score.copy()
     with (
-        patch("callback.server.get_apply_graph"),
-        patch("callback.server._submit_keywords_state_error", return_value=None),
-        patch("callback.server._submit_keywords_invoke", return_value=(state, None)),
+        patch("callback.graphs.apply.api.ensure_ready"),
+        patch(
+            "callback.graphs.apply.api.read",
+            return_value=ApplySession({"resume_label": "r"}, "keywords", None),
+        ),
+        patch("callback.graphs.apply.api.accept_keywords"),
+        patch("callback.graphs.apply.api.resume", return_value=state),
     ):
         result = submit_keywords(session_id="session-123", jd_json=PARTIAL_JD_JSON)
 
@@ -2463,9 +2508,10 @@ _RESP_JD_JSON = json.dumps(
 
 
 def _session_at_tailor() -> str:
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
-    with patch("callback.server.list_resumes", return_value=["resume"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
         session_id = load_jd(jd_raw_text="Swift engineer needed")["session_id"]
     submit_keywords(session_id=session_id, jd_json=_RESP_JD_JSON)
     return session_id
@@ -2479,8 +2525,9 @@ def _logged(caplog, event: str) -> list[dict]:
 def test_submit_responsibilities_replaces_trims_and_keeps_tailor_pending(
     tmp_path, monkeypatch, caplog
 ):
-    from callback.apply_graph import TAILOR_NODE, get_apply_graph, make_config
-    from callback.server import submit_responsibilities, submit_tailor
+    from callback.graphs.apply.graph import TAILOR_NODE, get_apply_graph, make_config
+    from callback.tools.submit_responsibilities import submit_responsibilities
+    from callback.tools.submit_tailor import submit_tailor
 
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
     caplog.set_level("INFO", logger="callback.server")
@@ -2525,7 +2572,7 @@ def test_submit_responsibilities_replaces_trims_and_keeps_tailor_pending(
 
 
 def test_submit_responsibilities_twice_replaces_list():
-    from callback.server import submit_responsibilities
+    from callback.tools.submit_responsibilities import submit_responsibilities
 
     session_id = _session_at_tailor()
     submit_responsibilities(session_id=session_id, key_responsibilities=["agent loop"])
@@ -2535,7 +2582,7 @@ def test_submit_responsibilities_twice_replaces_list():
 
 
 def test_submit_responsibilities_warns_on_sentences(caplog):
-    from callback.server import submit_responsibilities
+    from callback.tools.submit_responsibilities import submit_responsibilities
 
     caplog.set_level("WARNING", logger="callback.server")
     session_id = _session_at_tailor()
@@ -2552,7 +2599,7 @@ def test_submit_responsibilities_warns_on_sentences(caplog):
 
 
 def test_submit_responsibilities_rejects_non_string_terms():
-    from callback.server import submit_responsibilities
+    from callback.tools.submit_responsibilities import submit_responsibilities
 
     session_id = _session_at_tailor()
     result = submit_responsibilities(session_id=session_id, key_responsibilities=["ok", 5])  # type: ignore[list-item]  # bad host input
@@ -2562,7 +2609,8 @@ def test_submit_responsibilities_rejects_non_string_terms():
 
 
 def test_submit_responsibilities_rejects_finished_session(tmp_path, monkeypatch):
-    from callback.server import submit_responsibilities, submit_tailor
+    from callback.tools.submit_responsibilities import submit_responsibilities
+    from callback.tools.submit_tailor import submit_tailor
 
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
     session_id = _session_at_tailor()
@@ -2575,7 +2623,7 @@ def test_submit_responsibilities_rejects_finished_session(tmp_path, monkeypatch)
 
 
 def test_submit_responsibilities_rejects_unknown_session():
-    from callback.server import submit_responsibilities
+    from callback.tools.submit_responsibilities import submit_responsibilities
 
     result = submit_responsibilities(session_id=str(uuid.uuid4()), key_responsibilities=["x"])
 
@@ -2675,13 +2723,13 @@ async def test_export_ledger_defuses_formulas_and_replaces_existing_file(tmp_pat
 
 
 def test_export_ledger_returns_invalid_path_when_path_expansion_fails(tmp_path, caplog):
-    import callback.server as server
+    import callback.tools.export_ledger as export_tool
 
     with (
-        patch.object(server, "_output_path_error", side_effect=RuntimeError("bad path check")),
+        patch.object(export_tool, "_output_path_error", side_effect=RuntimeError("bad path check")),
         caplog.at_level("WARNING", logger="callback.server"),
     ):
-        result = server.export_ledger(str(tmp_path / "x.csv"))
+        result = export_tool.export_ledger(str(tmp_path / "x.csv"))
 
     error = result["error"]
     logged = any("invalid_output_path" in record.getMessage() for record in caplog.records)
@@ -2759,7 +2807,7 @@ async def test_find_job_returns_ledger_error_when_ledger_path_has_no_home():
 
     with (
         patch.object(paths, "ledger_path", side_effect=RuntimeError("no home directory")),
-        patch.object(server, "_ensure_browsers"),
+        patch.object(server, "ensure_browsers"),
     ):
         async with Client(FastMCPTransport(server.mcp)) as client:
             result = await client.call_tool("find_job", {"url": "https://a.com/1"})
@@ -2776,9 +2824,9 @@ async def test_find_job_returns_ledger_error_when_ledger_path_has_no_home():
 
 
 def test_export_ledger_rejects_an_output_path_with_a_lone_surrogate():
-    import callback.server as server
+    from callback.tools.export_ledger import export_ledger
 
-    result = server.export_ledger(output_path="/tmp/\ud800.csv")
+    result = export_ledger(output_path="/tmp/\ud800.csv")
 
     assert result == {
         "status": "error",
@@ -2792,9 +2840,9 @@ def test_export_ledger_rejects_an_output_path_with_a_lone_surrogate():
 
 
 def test_record_status_returns_ledger_error_for_a_lone_surrogate():
-    import callback.server as server
+    from callback.tools.record_status import record_status
 
-    result = server.record_status(status="\ud800", url="https://a.com/1")
+    result = record_status(status="\ud800", url="https://a.com/1")
 
     assert result == {
         "status": "error",
@@ -3021,9 +3069,8 @@ async def test_export_ledger_contacts_mode_keeps_only_reportable_events(tmp_path
     ],
 )
 def test_contact_note_keeps_the_contact_method_first(url, note, expected):
-    import callback.server as server
 
-    assert server._contact_note(url, note) == expected
+    assert contact_note(url, note) == expected
 
 
 @pytest.mark.anyio

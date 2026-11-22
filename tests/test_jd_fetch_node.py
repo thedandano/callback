@@ -7,9 +7,10 @@ from unittest.mock import ANY
 
 import pytest
 
-import callback.apply_nodes as apply_nodes
-from callback.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError
-from callback.state import ApplyState
+import callback.graphs.apply.nodes.jd_fetch as jd_fetch_node
+from callback.graphs.apply.nodes.jd_fetch import jd_fetch
+from callback.models.state import ApplyState
+from callback.services.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError
 
 
 @pytest.fixture
@@ -23,7 +24,7 @@ def fake_fetch(monkeypatch):
             raise result["value"]
         return result["value"]
 
-    monkeypatch.setattr(apply_nodes, "fetch_url_to_markdown", fetch_url_to_markdown)
+    monkeypatch.setattr(jd_fetch_node, "fetch_url_to_markdown", fetch_url_to_markdown)
     return calls, result
 
 
@@ -47,7 +48,7 @@ def test_jd_fetch_url_success_returns_markdown_and_logs(caplog, fake_fetch):
     jd_url = "https://example.com/job"
     state = make_state(jd_url=jd_url)
 
-    result = apply_nodes.jd_fetch(state)
+    result = jd_fetch(state)
 
     assert result == {"jd_text": result_value["value"]}
     assert calls == [jd_url]
@@ -75,7 +76,7 @@ def test_jd_fetch_raw_text_passthrough_unchanged(caplog, fake_fetch):
     raw_text = "Python engineer needed\nRemote role"
     state = make_state(jd_raw_text=raw_text)
 
-    result = apply_nodes.jd_fetch(state)
+    result = jd_fetch(state)
 
     assert result == {"jd_text": raw_text}
     assert calls == []
@@ -94,7 +95,7 @@ def test_jd_fetch_io_failure_with_raw_text_falls_back_and_logs_warning(caplog, f
     jd_url = "https://example.com/job"
     state = make_state(jd_url=jd_url, jd_raw_text="Fallback JD")
 
-    result = apply_nodes.jd_fetch(state)
+    result = jd_fetch(state)
 
     assert result == {"jd_text": "Fallback JD"}
     assert jd_log_payloads(caplog) == [
@@ -124,7 +125,7 @@ def test_jd_fetch_io_failure_without_raw_text_raises_and_logs_error(caplog, fake
     state = make_state(jd_url=jd_url)
 
     with pytest.raises(JDFetchError) as exc_info:
-        apply_nodes.jd_fetch(state)
+        jd_fetch(state)
 
     assert exc_info.value.reason == "fetch_failed"
     assert exc_info.value.url == jd_url
@@ -156,7 +157,7 @@ def test_jd_fetch_empty_result_with_raw_text_still_raises(caplog, fake_fetch):
     state = make_state(jd_url=jd_url, jd_raw_text="Fallback JD")
 
     with pytest.raises(JDFetchError) as exc_info:
-        apply_nodes.jd_fetch(state)
+        jd_fetch(state)
 
     assert exc_info.value.reason == "empty_result"
     assert exc_info.value.url == jd_url
@@ -186,7 +187,7 @@ def test_jd_fetch_empty_result_without_raw_text_raises(caplog, fake_fetch):
     state = make_state(jd_url=jd_url)
 
     with pytest.raises(JDFetchError) as exc_info:
-        apply_nodes.jd_fetch(state)
+        jd_fetch(state)
 
     assert exc_info.value.reason == "empty_result"
     assert exc_info.value.url == jd_url
@@ -213,7 +214,7 @@ def test_jd_fetch_no_input_raises_value_error_and_logs(caplog, fake_fetch):
     state = make_state()
 
     with pytest.raises(ValueError, match="neither jd_url nor jd_raw_text provided"):
-        apply_nodes.jd_fetch(state)
+        jd_fetch(state)
 
     logs = jd_log_payloads(caplog)
     assert len(logs) == 1
@@ -222,13 +223,13 @@ def test_jd_fetch_no_input_raises_value_error_and_logs(caplog, fake_fetch):
 
 
 def test_jd_fetch_labels_a_fetched_source(fake_fetch, decisions):
-    apply_nodes.jd_fetch(make_state(jd_url="https://example.com/job"))
+    jd_fetch(make_state(jd_url="https://example.com/job"))
 
     assert decisions == {"jd_source": "fetched"}
 
 
 def test_jd_fetch_labels_a_pasted_source(fake_fetch, decisions):
-    apply_nodes.jd_fetch(make_state(jd_raw_text="Python engineer needed"))
+    jd_fetch(make_state(jd_raw_text="Python engineer needed"))
 
     assert decisions == {"jd_source": "pasted"}
 
@@ -237,9 +238,7 @@ def test_jd_fetch_labels_pasted_text_used_after_a_failed_fetch(fake_fetch, decis
     _, result = fake_fetch
     result["value"] = OSError("network down")
 
-    apply_nodes.jd_fetch(
-        make_state(jd_url="https://example.com/job", jd_raw_text="Python engineer needed")
-    )
+    jd_fetch(make_state(jd_url="https://example.com/job", jd_raw_text="Python engineer needed"))
 
     assert decisions == {"jd_source": "pasted_after_fetch_failed"}
 
@@ -249,6 +248,6 @@ def test_jd_fetch_failure_without_raw_text_writes_no_source_label(fake_fetch, de
     result["value"] = OSError("network down")
 
     with pytest.raises(JDFetchError):
-        apply_nodes.jd_fetch(make_state(jd_url="https://example.com/job"))
+        jd_fetch(make_state(jd_url="https://example.com/job"))
 
     assert decisions == {}

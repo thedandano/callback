@@ -1,9 +1,9 @@
-"""Unit tests for callback.repository.preferences."""
+"""Unit tests for callback.repositories.preferences."""
 
 import json
 
-from callback.preferences import ScanSource, SearchPreferences, WorkType
-from callback.repository.preferences import PreferencesStore
+from callback.models.preferences import ScanSource, SearchPreferences, WorkType
+from callback.repositories.preferences import PreferencesStore
 
 
 def _make_prefs(**overrides) -> SearchPreferences:

@@ -4,16 +4,15 @@ from __future__ import annotations
 
 import json
 
-from callback.section_map import (
+from callback.models.section_map import (
     ContactInfo,
-    EditResult,
     EducationEntry,
     ExperienceEntry,
     ProjectEntry,
     SectionMap,
     SkillsSection,
-    apply_edit,
 )
+from callback.services.section_edits import EditResult, apply_edit
 
 
 def make_full_section_map() -> SectionMap:

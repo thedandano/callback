@@ -5,19 +5,19 @@ import logging
 
 import pytest
 
-from callback.apply_graph import build_apply_graph, make_config
-from callback.state import ApplyState
+from callback.graphs.apply.graph import build_apply_graph, make_config
+from callback.models.state import ApplyState
 
 
 def test_get_apply_graph_returns_the_same_instance():
-    from callback.apply_graph import get_apply_graph
+    from callback.graphs.apply.graph import get_apply_graph
 
     assert get_apply_graph() is get_apply_graph()
 
 
 def test_render_error_routes_back_to_tailor():
-    from callback.apply_graph import TAILOR_NODE, _route_or_retry
-    from callback.state import ApplyState
+    from callback.graphs.apply.graph import TAILOR_NODE, _route_or_retry
+    from callback.models.state import ApplyState
 
     router = _route_or_retry("parse_final")
     assert router(ApplyState(session_id="s", error="render: boom")) == TAILOR_NODE
@@ -27,8 +27,8 @@ def test_render_error_routes_back_to_tailor():
 def test_finalize_error_routes_back_to_tailor():
     from langgraph.graph import END
 
-    from callback.apply_graph import TAILOR_NODE, _route_or_retry
-    from callback.state import ApplyState
+    from callback.graphs.apply.graph import TAILOR_NODE, _route_or_retry
+    from callback.models.state import ApplyState
 
     router = _route_or_retry(END)
     assert router(ApplyState(session_id="s", error="finalize: boom")) == TAILOR_NODE
@@ -68,7 +68,7 @@ def tmp_apps_dir(tmp_path, monkeypatch):
 @pytest.fixture
 def tmp_resume(tmp_path, monkeypatch):
     """Register a temporary resume in the local registry and return its path."""
-    from callback.repository.resumes import save_resume
+    from callback.repositories.resumes import save_resume
 
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     resume_file = tmp_path / "resume.txt"

@@ -9,9 +9,13 @@ import pytest
 from langgraph.checkpoint.base import empty_checkpoint
 from langgraph.types import RunnableConfig  # pyright: ignore[reportPrivateImportUsage]
 
-from callback import paths
-from callback.session_store import _delete_if_still_stale, checkpoint_time, open_checkpointer
-from callback.state import TailoredResume
+from callback.config import paths
+from callback.models.tailored_resume import TailoredResume
+from callback.repositories.session_store import (
+    _delete_if_still_stale,
+    checkpoint_time,
+    open_checkpointer,
+)
 
 
 def _cfg(thread_id: str) -> RunnableConfig:
@@ -83,6 +87,45 @@ def test_tailored_resume_round_trips_without_unregistered_type_warning(tmp_path,
 
     warnings = [r.getMessage() for r in caplog.records if "unregistered type" in r.getMessage()]
     assert (loaded, warnings) == (resume, [])
+
+
+def test_checkpoint_with_new_tailored_resume_path_round_trips(tmp_path):
+    saver = open_checkpointer(tmp_path / "s.db")
+    resume = TailoredResume(name="Jane Doe", title="Engineer")
+    checkpoint = empty_checkpoint()
+    checkpoint["channel_values"] = {"tailored": resume}
+    saver.put(_cfg("t1"), checkpoint, {}, {})
+
+    stored = saver.get_tuple(_cfg("t1"))
+
+    assert stored is not None
+    assert stored.checkpoint["channel_values"] == {"tailored": resume}
+
+
+def test_checkpoint_with_old_module_path_loads_as_plain_dict_and_warns(tmp_path, caplog):
+    # LangGraph blocks the unlisted type: it logs a warning and hands back the fields as a dict.
+    old_path_type = type("TailoredResume", (TailoredResume,), {"__module__": "callback.state"})
+    saver = open_checkpointer(tmp_path / "s.db")
+    resume = old_path_type(name="Jane Doe")
+    checkpoint = empty_checkpoint()
+    checkpoint["channel_values"] = {"tailored": resume}
+    saver.put(_cfg("t1"), checkpoint, {}, {})
+
+    with caplog.at_level(logging.WARNING):
+        stored = saver.get_tuple(_cfg("t1"))
+    assert stored is not None
+
+    blocked = [
+        r.getMessage() for r in caplog.records if "Blocked deserialization" in r.getMessage()
+    ]
+    assert (stored.checkpoint["channel_values"], blocked) == (
+        {"tailored": resume.model_dump()},
+        [
+            "Blocked deserialization of callback.state.TailoredResume - not in "
+            "allowed_msgpack_modules. Add to allowed_msgpack_modules to allow: "
+            "[('callback.state', 'TailoredResume')]"
+        ],
+    )
 
 
 @pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX only")

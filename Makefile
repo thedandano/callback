@@ -1,4 +1,4 @@
-.PHONY: install build check test-unit test-integration fmt lint type clean
+.PHONY: install build check test-unit test-integration fmt lint type imports clean
 
 BUILD_VERSION ?= $(shell scripts/build-version.sh)
 
@@ -17,7 +17,7 @@ build:
 	@printf 'Build version: %s\n' '$(BUILD_VERSION)'
 	CALLBACK_BUILD_VERSION="$(BUILD_VERSION)" uv build
 
-check: fmt lint type test-unit
+check: fmt lint imports type test-unit
 
 test-unit:
 	uv run pytest tests/ -m "not integration"
@@ -33,6 +33,9 @@ lint:
 
 type:
 	uv run pyright
+
+imports:
+	uv run lint-imports
 
 clean:
 	rm -rf build dist .ruff_cache

@@ -1,0 +1,485 @@
+{
+  "load_jd": {
+    "description": "Load a job description and return host extraction instructions.\n\nTakes a job description via jd_url, jd_raw_text, or both. At least one is\nrequired. When both are supplied, the graph attempts jd_url first and keeps\njd_raw_text as fallback only for URL fetch failures. Empty URL content is\nreported as an error and does not fall back to pasted text.\n\nThe resume is resolved from the internal registry: the first registered\nresume is used. If more than one is registered, a warning is logged and\nthe first one wins.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "jd_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "URL to a job description."
+        },
+        "jd_raw_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Raw job description text."
+        }
+      },
+      "type": "object"
+    }
+  },
+  "submit_keywords": {
+    "description": "Accept host-extracted JDData and return score gaps plus tailor handoff guidance.\n\nWhen profile wiki project stories exist, the response also includes ranked\nproject_candidates and an optional project_swap_recommendation for the host\nto consider during tailoring.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "jd_json": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "jd_json"
+      ],
+      "type": "object"
+    }
+  },
+  "submit_responsibilities": {
+    "description": "Store pass 2 of keyword extraction: the key_responsibilities list.\n\nCall after submit_keywords and before submit_tailor. The list replaces the one\nfrom submit_keywords. Terms already in a scored list are dropped. Scoring is unchanged.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "key_responsibilities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "session_id",
+        "key_responsibilities"
+      ],
+      "type": "object"
+    }
+  },
+  "submit_tailor": {
+    "description": "Apply host-submitted edits to the resume SectionMap and run the graph to finalize.\n\nAccepts a list of port.Edit-style dicts. Each edit must have:\n  section: str (summary | skills | experience | projects)\n  op: str (add | replace | remove)\n  target: str (required for experience/projects; use proj-N to replace a whole project,\n    proj-end to append one project, exp-N-bM/proj-N-bM to remove bullets)\n  value: str | dict (required for add/replace; project add/replacement uses a ProjectEntry dict)\n  category: str (optional, for categorized skills)\n\noutput_dir (optional): an absolute directory to write the final PDF into\ninstead of callback's default dated folder. Recommended for sandboxed hosts (Claude/Codex)\nwhose filesystem cannot reach callback's default output. The PDF is written there\ndirectly (a redirect, not a copy); data.pdf_path points inside it; the run is recorded in\ncallback's ledger regardless. An\nunwritable path returns an invalid_output_dir error rather than silently falling back.\n\nWhen no_coverage=True, skips edit application entirely, sets no_coverage in\ngraph state, and runs the graph directly to finalize.\n\nApplies valid edits (or skips on no_coverage), runs the graph through finalize,\nand returns real score_final and report from final graph state.\n\nReturns envelope dict (structured content) with edits_applied, edits_rejected, uncovered_skills,\npdf_path, ledger_path, score_final, report, outcome, and tailor_diagnostics.\ntailor_diagnostics is a per-skill-edit list of {value, applied_to_map,\npresent_in_rendered_text, suggested_alternatives} entries; empty for\nnon-skill edits.\nreport.notes is a list of plain-text messages for ATS format issues in the\nrendered PDF that tailoring cannot fix (closeable_by != \"tailor\").",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "edits": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "no_coverage": {
+          "default": false,
+          "type": "boolean"
+        },
+        "output_dir": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "session_id",
+        "edits"
+      ],
+      "type": "object"
+    }
+  },
+  "onboard_user": {
+    "description": "Onboard a new user: register resume, skills, and accomplishments.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "resume_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Path to the resume file (PDF, DOCX, or TXT)."
+        },
+        "skills_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional path to a plain-text skills file."
+        },
+        "accomplishments_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional path to a plain-text accomplishments file."
+        }
+      },
+      "type": "object"
+    }
+  },
+  "compile_profile": {
+    "description": "Recompile the user profile from all stored stories.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "story_tags": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional JSON string. Accepts a dict (keys become host_tags)\nor a list of skill strings."
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional profile session to resume (from onboard_user). Omit to\nstart a new profile session."
+        }
+      },
+      "type": "object"
+    }
+  },
+  "create_story": {
+    "description": "Create and persist a behavioral story for a skill, then recompile the profile.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "primary_skill": {
+          "type": "string",
+          "description": "The main skill this story demonstrates."
+        },
+        "skills": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "All skills this story demonstrates (must include primary_skill)."
+        },
+        "story_type": {
+          "type": "string",
+          "description": "Story format (e.g., STAR, CAR, PAR)."
+        },
+        "job_title": {
+          "type": "string",
+          "description": "Role title for this story."
+        },
+        "situation": {
+          "type": "string",
+          "description": "Context / problem statement."
+        },
+        "behavior": {
+          "type": "string",
+          "description": "Actions taken."
+        },
+        "impact": {
+          "type": "string",
+          "description": "Quantified outcome."
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional profile session paused before create_story (from\ncompile_profile or a previous create_story). Omit to start a new session."
+        }
+      },
+      "required": [
+        "primary_skill",
+        "skills",
+        "story_type",
+        "job_title",
+        "situation",
+        "behavior",
+        "impact"
+      ],
+      "type": "object"
+    }
+  },
+  "set_search_preferences": {
+    "description": "Persist the user's job-search preferences.\n\nThis call fully replaces any stored preferences \u2014 omitted optional fields\nrevert to their defaults.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "preferences": {
+          "additionalProperties": true,
+          "type": "object",
+          "description": "SearchPreferences fields. home_location and work_types are\nrequired; updated_at is stamped server-side."
+        }
+      },
+      "required": [
+        "preferences"
+      ],
+      "type": "object"
+    }
+  },
+  "get_search_preferences": {
+    "description": "Return the user's job-search preferences (slim slice; no profile data).\n\nReturns:\n    Envelope dict (structured content) with data.preferences, or\n    next_action=set_search_preferences when none are stored.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "get_wiki_pages": {
+    "description": "Batch-fetch wiki pages for a session's resume.\n\nThis tool exists because the wiki lives on the server's local filesystem and\nthe host LLM has no direct file access in an MCP context \u2014 it can only reach\nfiles through tools the server exposes. The host reads the index returned by\nsubmit_keywords, picks the relevant page paths, and fetches their content here.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "description": "Apply session ID (used to resolve the resume_label)."
+        },
+        "page_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Page paths relative to wiki root (e.g., ['experience/acme.md'])."
+        }
+      },
+      "required": [
+        "session_id",
+        "page_ids"
+      ],
+      "type": "object"
+    }
+  },
+  "check_update": {
+    "description": "Return current version, latest GitHub release tag, and update_available flag.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "find_job": {
+    "description": "Check whether a job is already in callback's ledger (for dedupe before scoring or applying).\n\nPass the posting URL, or company and title for a pasted job description with no URL. A\nurl without http:// or https:// (e.g. a recruiter thread) is ignored for the lookup. A job\nseen under a different URL is still found when company and title match, but that is a\nweaker match (the same title can be two real postings): check matched_by ('key',\n'key_title_mismatch' when the URL matches but the stored title differs or is missing,\n'company_title', or\nnull) and confirm anything but 'key' before skipping. Returns found, job_key, company,\ntitle, stored URL, latest status with its date, and ever_applied (whether any status proves\nsubmission). To record a status on the job found by company+title, pass its job_key to\nrecord_status. When not found or the match is weak,\nand a company is given, company_jobs lists that company's other jobs (up to 20, newest\nfirst; each with job_key, url, title, status, status_date, ever_applied) so you can spot a\nsimilar title or a requisition id in a job_key URL.\nError codes: missing_job_identity, ledger_error.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "company": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    }
+  },
+  "record_status": {
+    "description": "Add a status event (e.g. 'Applied', 'Rejected', 'Skipped - not fit') to a job in the ledger.\n\nGive a URL, or a company and title. Creates the job if it is new. A url without http://\nor https:// (e.g. a recruiter thread) is not a URL: it goes into the note as\n'Contact: <value>' and the job is keyed by company and title (or job_key). To record on a\njob that find_job found by company+title, pass its job_key instead (URL, company, title\nare then not needed); an unknown job_key is an error. With job_key, salary_range only\nfills empty fields. History is never overwritten; only an exact repeat (same job, status,\ndate, source, and note) is ignored (recorded: false). date is YYYY-MM-DD and defaults to\ntoday.\nError codes: missing_job_identity, invalid_status, invalid_date, unknown_job, ledger_error.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "company": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "salary_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "job_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    }
+  },
+  "export_ledger": {
+    "description": "Write the ledger as CSV to output_path.\n\nmode \"jobs\" (default): one row per job with its latest status and latest scores; status\nand since keep jobs with ANY matching event. mode \"events\": one row per status event\n(Date, Company, Title, URL, Status, Notes, Source), newest first; status and since filter\nthe event itself, so each application keeps its own date. mode \"contacts\": same columns,\nonly EDD-reportable events: notes starting \"Contact method:\" and statuses starting\n\"Applied\" or \"Already applied\". Use \"contacts\" for an EDD work-search log.\n\noutput_path must be absolute and end in .csv. status matches the start of the status\ntext (empty means no filter); since is YYYY-MM-DD (on or after). Text that a spreadsheet\nwould run as a formula is prefixed with '.\nError codes: invalid_mode, invalid_output_path, invalid_date, ledger_error.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "output_path": {
+          "type": "string"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "since": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "mode": {
+          "default": "jobs",
+          "type": "string"
+        }
+      },
+      "required": [
+        "output_path"
+      ],
+      "type": "object"
+    }
+  }
+}

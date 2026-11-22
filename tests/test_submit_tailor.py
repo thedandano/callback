@@ -8,15 +8,16 @@ from pathlib import Path
 
 import pytest
 
-from callback import ledger, paths
-from callback.section_map import (
+from callback.config import paths
+from callback.models.section_map import (
     ContactInfo,
     ExperienceEntry,
     ProjectEntry,
     SectionMap,
     SkillsSection,
 )
-from callback.wiki import WikiStore
+from callback.repositories import ledger
+from callback.repositories.wiki import WikiStore
 
 
 def _find_ledger_run(result: dict) -> dict | None:
@@ -70,12 +71,12 @@ def fake_pdf_renderer(monkeypatch):
     def fake_extract(path):
         return rendered_text.get(str(path), "")
 
-    monkeypatch.setattr("callback.apply_nodes.render_resume", fake_render_resume)
-    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", fake_extract)
+    monkeypatch.setattr("callback.graphs.apply.nodes.render.render_resume", fake_render_resume)
+    monkeypatch.setattr("callback.services.extractor.extract", fake_extract)
 
 
 def test_submit_tailor_rejects_unknown_session():
-    from callback.server import submit_tailor
+    from callback.tools.submit_tailor import submit_tailor
 
     result = submit_tailor(session_id="no-such-session", edits=[])
     expected = {
@@ -95,10 +96,11 @@ def test_submit_tailor_rejects_session_not_at_tailor(tmp_path, monkeypatch):
     """Session that has only completed load_jd (at keywords_accept, not tailor) is rejected."""
     from unittest.mock import patch
 
-    from callback.server import load_jd, submit_tailor
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_tailor import submit_tailor
 
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
-    with patch("callback.server.list_resumes", return_value=["resume"]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=["resume"]):
         loaded = load_jd(jd_raw_text="Python engineer")
     session_id = loaded["session_id"]
 
@@ -149,14 +151,15 @@ def _run_to_tailor(
     """Run load_jd + submit_keywords and return the session_id at TAILOR_NODE."""
     from unittest.mock import patch
 
-    from callback.server import load_jd, submit_keywords
+    from callback.tools.load_jd import load_jd
+    from callback.tools.submit_keywords import submit_keywords
 
     apps_dir = str(tmp_path / "applications")
     if monkeypatch is not None:
         monkeypatch.setenv("CALLBACK_APPS_DIR", apps_dir)
     else:
         os.environ["CALLBACK_APPS_DIR"] = apps_dir
-    with patch("callback.server.list_resumes", return_value=[resume_label]):
+    with patch("callback.tools.resume_label.list_resumes", return_value=[resume_label]):
         loaded = load_jd(jd_raw_text="Sample JD")
     session_id = loaded["session_id"]
     submit_keywords(session_id=session_id, jd_json=jd_json_str)
@@ -165,10 +168,10 @@ def _run_to_tailor(
 
 def test_submit_tailor_applies_valid_edits_and_rescores(tmp_path, monkeypatch):
     """Happy path: valid edits are applied, score_final and report returned from final state."""
-    from callback.server import submit_tailor
+    from callback.tools.submit_tailor import submit_tailor
 
     resume_label = "test_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python", "Kubernetes"]})
@@ -221,10 +224,10 @@ def test_submit_tailor_pipeline_error_marks_artifacts_null(tmp_path, monkeypatch
     """A pipeline_error must state explicitly that score_final/pdf_path/ledger_path
     do not exist and direct the host not to synthesize them
     (host_action=report_and_wait)."""
-    from callback.server import submit_tailor
+    from callback.tools.submit_tailor import submit_tailor
 
     resume_label = "null_artifacts_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
@@ -233,7 +236,7 @@ def test_submit_tailor_pipeline_error_marks_artifacts_null(tmp_path, monkeypatch
     def broken_render(tailored, output_path):
         return {"success": False, "error": "chromium crashed"}
 
-    monkeypatch.setattr("callback.apply_nodes.render_resume", broken_render)
+    monkeypatch.setattr("callback.graphs.apply.nodes.render.render_resume", broken_render)
 
     result = submit_tailor(
         session_id=session_id,
@@ -251,11 +254,11 @@ def test_submit_tailor_pipeline_error_marks_artifacts_null(tmp_path, monkeypatch
 
 def test_submit_tailor_can_be_retried_after_render_failure(tmp_path, monkeypatch):
     """A render failure leaves the session at the tailor interrupt for a retry."""
-    import callback.apply_nodes
-    from callback.server import submit_tailor
+    import callback.graphs.apply.nodes.render as render_node
+    from callback.tools.submit_tailor import submit_tailor
 
     resume_label = "test_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python", "Kubernetes"]})
@@ -273,7 +276,7 @@ def test_submit_tailor_can_be_retried_after_render_failure(tmp_path, monkeypatch
     ]
 
     calls = {"n": 0}
-    real_render = callback.apply_nodes.render_resume
+    real_render = render_node.render_resume
 
     def flaky_render(tailored, output_path):
         calls["n"] += 1
@@ -281,7 +284,7 @@ def test_submit_tailor_can_be_retried_after_render_failure(tmp_path, monkeypatch
             return {"success": False, "error": "chromium crashed"}
         return real_render(tailored, output_path)
 
-    monkeypatch.setattr("callback.apply_nodes.render_resume", flaky_render)
+    monkeypatch.setattr("callback.graphs.apply.nodes.render.render_resume", flaky_render)
 
     first = submit_tailor(session_id=session_id, edits=edits)
     assert first == {
@@ -308,10 +311,10 @@ def test_submit_tailor_can_be_retried_after_render_failure(tmp_path, monkeypatch
 def test_submit_tailor_no_coverage_retry_clears_stale_render_outputs(tmp_path, monkeypatch):
     """A no_coverage retry after a rendered-then-failed edits attempt must not leak
     the abandoned attempt's pdf_path into the no_coverage envelope."""
-    from callback.server import submit_tailor
+    from callback.tools.submit_tailor import submit_tailor
 
     resume_label = "stale_leak_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python", "Kubernetes"]})
@@ -322,7 +325,7 @@ def test_submit_tailor_no_coverage_retry_clears_stale_render_outputs(tmp_path, m
     ]
 
     # render succeeds and sets pdf_path, but parse_final fails (empty extracted text)
-    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", lambda path: "")
+    monkeypatch.setattr("callback.services.extractor.extract", lambda path: "")
 
     first = submit_tailor(session_id=session_id, edits=edits)
     assert first == {
@@ -485,10 +488,10 @@ def test_submit_tailor_no_coverage_retry_clears_stale_render_outputs(tmp_path, m
 
 
 def test_submit_tailor_replaces_project_entry(tmp_path, monkeypatch):
-    from callback.server import submit_tailor
+    from callback.tools.submit_tailor import submit_tailor
 
     resume_label = "project_replace_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     section_map = SectionMap(
         contact=ContactInfo(name="Jane Dev"),
         summary="Python engineer",
@@ -548,10 +551,10 @@ def test_submit_tailor_replaces_project_entry(tmp_path, monkeypatch):
 
 
 def test_submit_tailor_removes_weak_bullet_and_adds_second_project(tmp_path, monkeypatch):
-    from callback.server import submit_tailor
+    from callback.tools.submit_tailor import submit_tailor
 
     resume_label = "project_add_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     section_map = SectionMap(
         contact=ContactInfo(name="Jane Dev"),
         summary="Python engineer",
@@ -621,10 +624,10 @@ def test_submit_tailor_removes_weak_bullet_and_adds_second_project(tmp_path, mon
 
 def test_submit_tailor_rejects_out_of_bounds_target(tmp_path, monkeypatch):
     """Out-of-bounds experience target is rejected; in-bounds edits still applied."""
-    from callback.server import submit_tailor
+    from callback.tools.submit_tailor import submit_tailor
 
     resume_label = "oob_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     section_map = SectionMap(
         contact=ContactInfo(name="Jane Dev"),
         summary="Engineer",
@@ -674,10 +677,10 @@ def test_submit_tailor_rejects_out_of_bounds_target(tmp_path, monkeypatch):
 
 def test_submit_tailor_flags_uncovered_skill(tmp_path, monkeypatch):
     """Skill added to skills section but absent from all bullets appears in uncovered_skills."""
-    from callback.server import submit_tailor
+    from callback.tools.submit_tailor import submit_tailor
 
     resume_label = "uncovered_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     section_map = SectionMap(
         contact=ContactInfo(name="Jane Dev"),
         summary="Engineer",
@@ -710,10 +713,10 @@ def test_submit_tailor_flags_uncovered_skill(tmp_path, monkeypatch):
 
 def test_submit_tailor_does_not_flag_covered_skill(tmp_path, monkeypatch):
     """Skill present in experience bullets is NOT flagged as uncovered."""
-    from callback.server import submit_tailor
+    from callback.tools.submit_tailor import submit_tailor
 
     resume_label = "covered_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     section_map = SectionMap(
         contact=ContactInfo(name="Jane Dev"),
         summary="Engineer",
@@ -749,10 +752,10 @@ def test_submit_tailor_does_not_flag_covered_skill(tmp_path, monkeypatch):
 
 
 def test_submit_tailor_project_bullet_replacement_can_match_required_keyword(tmp_path, monkeypatch):
-    from callback.server import submit_tailor
+    from callback.tools.submit_tailor import submit_tailor
 
     resume_label = "project_keyword_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     rendered = {}
 
     def fake_render_resume(tailored, output_path):
@@ -767,8 +770,8 @@ def test_submit_tailor_project_bullet_replacement_can_match_required_keyword(tmp
     def fake_extract(_path):
         return rendered["text"]
 
-    monkeypatch.setattr("callback.apply_nodes.render_resume", fake_render_resume)
-    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", fake_extract)
+    monkeypatch.setattr("callback.graphs.apply.nodes.render.render_resume", fake_render_resume)
+    monkeypatch.setattr("callback.services.extractor.extract", fake_extract)
 
     section_map = SectionMap(
         contact=ContactInfo(name="Jane Dev"),
@@ -821,10 +824,10 @@ def test_submit_tailor_project_bullet_replacement_can_match_required_keyword(tmp
 
 def test_submit_tailor_redirects_pdf_to_output_dir(tmp_path, monkeypatch):
     """output_dir redirects the PDF there; the run goes to the ledger, not into output_dir."""
-    from callback.server import submit_tailor
+    from callback.tools.submit_tailor import submit_tailor
 
     resume_label = "redirect_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
@@ -856,10 +859,10 @@ def test_submit_tailor_redirects_pdf_to_output_dir(tmp_path, monkeypatch):
 
 def test_submit_tailor_no_coverage_accepts_output_dir_without_error(tmp_path, monkeypatch):
     """no_coverage skips render (no PDF to produce), so output_dir is accepted but unused."""
-    from callback.server import submit_tailor
+    from callback.tools.submit_tailor import submit_tailor
 
     resume_label = "no_cov_redirect_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
@@ -887,10 +890,10 @@ def test_submit_tailor_no_coverage_accepts_output_dir_without_error(tmp_path, mo
 
 def test_submit_tailor_rejects_relative_output_dir(tmp_path, monkeypatch):
     """A relative output_dir is rejected up front (contract is an absolute path)."""
-    from callback.server import submit_tailor
+    from callback.tools.submit_tailor import submit_tailor
 
     resume_label = "rel_dir_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
@@ -917,10 +920,10 @@ def test_submit_tailor_rejects_relative_output_dir(tmp_path, monkeypatch):
 
 def test_submit_tailor_without_output_dir_writes_to_apps_dir(tmp_path, monkeypatch):
     """Default (no output_dir): PDF lands in apps_dir/<date>/<slug>/."""
-    from callback.server import submit_tailor
+    from callback.tools.submit_tailor import submit_tailor
 
     resume_label = "default_dir_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
@@ -941,10 +944,10 @@ def test_submit_tailor_without_output_dir_writes_to_apps_dir(tmp_path, monkeypat
 
 def test_submit_tailor_rejects_unwritable_output_dir(tmp_path, monkeypatch):
     """An output_dir that cannot be created returns invalid_output_dir, not a silent fallback."""
-    from callback.server import submit_tailor
+    from callback.tools.submit_tailor import submit_tailor
 
     resume_label = "bad_dir_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
@@ -980,10 +983,10 @@ def test_submit_tailor_returns_envelope_when_extractor_raises(tmp_path, monkeypa
     """parse_final catches a raising extractor and lands the session back at
     the tailor interrupt with a retriable pipeline_error, instead of stranding
     the thread at parse_final behind an unexpected_error."""
-    from callback.server import submit_tailor
+    from callback.tools.submit_tailor import submit_tailor
 
     resume_label = "test_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python"]})
     session_id = _run_to_tailor(tmp_path, jd_json, resume_label, monkeypatch)
@@ -991,7 +994,7 @@ def test_submit_tailor_returns_envelope_when_extractor_raises(tmp_path, monkeypa
     def broken_extract(path):
         raise RuntimeError("extractor: PDF yielded no text")
 
-    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", broken_extract)
+    monkeypatch.setattr("callback.services.extractor.extract", broken_extract)
 
     result = submit_tailor(session_id=session_id, edits=[])
 
@@ -1012,10 +1015,10 @@ def test_submit_tailor_returns_envelope_when_extractor_raises(tmp_path, monkeypa
 
 def test_submit_tailor_can_be_retried_after_finalize_ledger_write_failure(tmp_path, monkeypatch):
     """A finalize OSError leaves the session at the tailor interrupt for a retry."""
-    from callback.server import submit_tailor
+    from callback.tools.submit_tailor import submit_tailor
 
     resume_label = "test_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     _make_section_map_and_write(resume_label)
 
     jd_json = json.dumps({"title": "SWE", "company": "Co", "required": ["Python", "Kubernetes"]})
@@ -1060,11 +1063,11 @@ def test_submit_tailor_can_be_retried_after_finalize_ledger_write_failure(tmp_pa
 
 
 def test_submit_tailor_artifacts_report_the_ledger_path(tmp_path):
-    from callback import server
+    from callback.tools.submit_tailor import _submit_tailor_artifacts
 
     final = {"artifact_dir": str(tmp_path / "old"), "output_dir": str(tmp_path / "new")}
 
-    assert server._submit_tailor_artifacts(final) == {
+    assert _submit_tailor_artifacts(final) == {
         "pdf_path": None,
         "ledger_path": str(paths.ledger_path()),
     }

@@ -7,14 +7,15 @@ from unittest.mock import patch
 
 import pytest
 
-from callback import ledger
+from callback.models.ledger import RunRecord, StatusUpdate
+from callback.repositories import ledger, ledger_keys
 from scripts import build_fetch_fixtures
 
 
 def _run(
     session_id: str = "s1", url: str | None = "https://jobs.example.com/a", pdf: str = "/p.pdf"
-) -> ledger.RunRecord:
-    return ledger.RunRecord(
+) -> RunRecord:
+    return RunRecord(
         session_id=session_id,
         timestamp="2026-10-12T10:00:00+00:00",
         jd_url=url,
@@ -63,12 +64,12 @@ def _run(
     ],
 )
 def test_normalize_url_drops_tracking_noise_but_keeps_job_ids(raw, expected):
-    assert ledger.normalize_url(raw) == expected
+    assert ledger_keys.normalize_url(raw) == expected
 
 
 def test_gmail_style_fragments_give_different_keys():
     keys = [
-        ledger.job_key(f"https://mail.google.com/mail/#all/{m}", None, None)
+        ledger_keys.job_key(f"https://mail.google.com/mail/#all/{m}", None, None)
         for m in ("19e8b9f6", "19e8b9f7")
     ]
     assert keys == [
@@ -99,18 +100,18 @@ def test_gmail_style_fragments_give_different_keys():
     ],
 )
 def test_job_identifying_params_are_kept_in_normalized_url(raw, expected):
-    assert ledger.normalize_url(raw) == expected
+    assert ledger_keys.normalize_url(raw) == expected
 
 
 def test_tracking_params_are_dropped_case_insensitively_and_the_rest_sorted():
     raw = "https://jobs.example.com/v?UTM_Source=x&TrackingId=9&b=2&Lever-Source=y&a=1&FBCLID=z"
-    assert ledger.normalize_url(raw) == "https://jobs.example.com/v?a=1&b=2"
+    assert ledger_keys.normalize_url(raw) == "https://jobs.example.com/v?a=1&b=2"
 
 
 def test_normalize_url_checks_the_outer_url_before_adding_https():
     raw = "jobs.example.com/view?next=https://apply.example/id"
     assert (
-        ledger.normalize_url(raw)
+        ledger_keys.normalize_url(raw)
         == "https://jobs.example.com/view?next=https%3A%2F%2Fapply.example%2Fid"
     )
 
@@ -123,13 +124,15 @@ def test_normalize_url_checks_the_outer_url_before_adding_https():
     ],
 )
 def test_normalize_url_normalizes_route_fragments(raw, expected):
-    assert ledger.normalize_url(raw) == expected
+    assert ledger_keys.normalize_url(raw) == expected
 
 
 def test_protocol_relative_url_matches_the_absolute_url():
-    actual = ledger.normalize_url("//jobs.example.com/a")
+    actual = ledger_keys.normalize_url("//jobs.example.com/a")
     assert (
-        actual == ledger.normalize_url("https://jobs.example.com/a") == "https://jobs.example.com/a"
+        actual
+        == ledger_keys.normalize_url("https://jobs.example.com/a")
+        == "https://jobs.example.com/a"
     )
 
 
@@ -165,12 +168,12 @@ def test_expected_keywords_falls_back_to_archive_when_ledger_dir_is_unreadable(
     ],
 )
 def test_normalize_url_drops_unrecognized_fragments(raw):
-    assert ledger.normalize_url(raw) == "https://jobs.example.com/1"
+    assert ledger_keys.normalize_url(raw) == "https://jobs.example.com/1"
 
 
 def test_normalize_url_keeps_ref_values_that_identify_distinct_jobs():
-    first = ledger.normalize_url("https://jobs.example.com/view?ref=REQ-1")
-    second = ledger.normalize_url("https://jobs.example.com/view?ref=REQ-2")
+    first = ledger_keys.normalize_url("https://jobs.example.com/view?ref=REQ-1")
+    second = ledger_keys.normalize_url("https://jobs.example.com/view?ref=REQ-2")
     assert (first, second) == (
         "https://jobs.example.com/view?ref=REQ-1",
         "https://jobs.example.com/view?ref=REQ-2",
@@ -188,7 +191,7 @@ def test_normalize_url_keeps_ref_values_that_identify_distinct_jobs():
     ],
 )
 def test_job_key_uses_url_or_falls_back_to_company_and_title(args, expected):
-    assert ledger.job_key(*args) == expected
+    assert ledger_keys.job_key(*args) == expected
 
 
 def _jd_hash(text: str) -> str:
@@ -205,7 +208,7 @@ def _jd_hash(text: str) -> str:
     ],
 )
 def test_job_key_hashes_jd_text_when_company_or_title_is_missing(company, title, jd_text, expected):
-    assert ledger.job_key(None, company, title, jd_text) == expected
+    assert ledger_keys.job_key(None, company, title, jd_text) == expected
 
 
 def test_unlabeled_pasted_runs_with_different_jd_text_get_separate_jobs(tmp_path):
@@ -450,8 +453,8 @@ def test_add_status_rejects_null_source_but_ignores_an_exact_repeat(tmp_path):
 
 def test_job_key_uses_jd_text_when_labels_are_whitespace_only():
     keys = [
-        ledger.job_key(None, " ", "\t", "First pasted job"),
-        ledger.job_key(None, " ", "\t", "Second pasted job"),
+        ledger_keys.job_key(None, " ", "\t", "First pasted job"),
+        ledger_keys.job_key(None, " ", "\t", "Second pasted job"),
     ]
     assert keys == [
         f"pasted:job-{_jd_hash('First pasted job')}",
@@ -486,8 +489,8 @@ def test_expected_keywords_reads_the_matching_ledger_run_before_legacy_archive(
 
 
 def test_unparseable_url_is_logged_and_kept_as_typed(caplog):
-    with caplog.at_level(logging.WARNING, logger="callback.ledger"):
-        actual = ledger.normalize_url("  http://[bad  ")
+    with caplog.at_level(logging.WARNING, logger="callback.repositories.ledger_keys"):
+        actual = ledger_keys.normalize_url("  http://[bad  ")
     messages = [r.getMessage() for r in caplog.records]
     assert (actual, len(messages), '"ledger_url_unparsed"' in messages[0]) == (
         "http://[bad",
@@ -529,7 +532,7 @@ def test_connect_closes_and_logs_when_setup_fails(tmp_path, caplog):
     path = tmp_path / "l.db"
     path.write_bytes(b"this is not a sqlite database" * 100)
     with (
-        caplog.at_level(logging.WARNING, logger="callback.ledger"),
+        caplog.at_level(logging.WARNING, logger="callback.repositories.ledger"),
         pytest.raises(sqlite3.DatabaseError),
     ):
         ledger.connect(path)
@@ -552,13 +555,13 @@ def test_add_status_for_an_unknown_job_is_rejected(tmp_path):
     ],
 )
 def test_pasted_job_key_ignores_case_and_spacing_for_lossy_titles(first, second):
-    assert ledger.job_key(None, *first) == ledger.job_key(None, *second)
+    assert ledger_keys.job_key(None, *first) == ledger_keys.job_key(None, *second)
 
 
 def test_pasted_job_key_keeps_the_company_title_boundary():
     keys = (
-        ledger.job_key(None, "Meta Platforms", "Engineer"),
-        ledger.job_key(None, "Meta", "Platforms Engineer"),
+        ledger_keys.job_key(None, "Meta Platforms", "Engineer"),
+        ledger_keys.job_key(None, "Meta", "Platforms Engineer"),
     )
     assert keys == (
         "pasted:meta-platforms-engineer-be6a1bae",
@@ -568,9 +571,9 @@ def test_pasted_job_key_keeps_the_company_title_boundary():
 
 def test_normalize_url_keeps_a_blank_valued_param_that_names_the_posting():
     actual = [
-        ledger.normalize_url("https://jobs.example.com/opening?R1234"),
-        ledger.normalize_url("https://jobs.example.com/opening?R9999"),
-        ledger.normalize_url("https://jobs.example.com/opening?R1234&utm_source=x"),
+        ledger_keys.normalize_url("https://jobs.example.com/opening?R1234"),
+        ledger_keys.normalize_url("https://jobs.example.com/opening?R9999"),
+        ledger_keys.normalize_url("https://jobs.example.com/opening?R1234&utm_source=x"),
     ]
     assert actual == [
         "https://jobs.example.com/opening?R1234=",
@@ -598,13 +601,13 @@ def test_first_seen_is_the_earliest_moment_across_offsets(tmp_path):
     ],
 )
 def test_canonical_timestamp_converts_to_utc_and_keeps_plain_dates(raw, expected):
-    assert ledger.canonical_timestamp(raw) == expected
+    assert ledger_keys.canonical_timestamp(raw) == expected
 
 
 @pytest.mark.parametrize("raw", ["oops", "2026-02-31", "2026-00-01", "0001-01-01T00:00:00+23:59"])
 def test_canonical_timestamp_warns_on_malformed_text(caplog, raw):
-    with caplog.at_level("WARNING", logger="callback.ledger"):
-        result = ledger.canonical_timestamp(raw)
+    with caplog.at_level("WARNING", logger="callback.repositories.ledger_keys"):
+        result = ledger_keys.canonical_timestamp(raw)
     assert (result, [r.getMessage() for r in caplog.records]) == (
         raw,
         [f'{{"event": "ledger_timestamp_unparsed", "value": "{raw}"}}'],
@@ -639,7 +642,7 @@ def test_blank_labels_and_seen_at_never_block_later_values(tmp_path):
             conn, url="https://a.com/1", company="Acme", title="Engineer", seen_at="2026-10-01"
         )
         row = conn.execute("SELECT company, title, first_seen FROM jobs").fetchone()
-    assert (tuple(row), ledger.canonical_timestamp("  2026-10-01 ")) == (
+    assert (tuple(row), ledger_keys.canonical_timestamp("  2026-10-01 ")) == (
         ("Acme", "Engineer", "2026-10-01"),
         "2026-10-01",
     )
@@ -685,7 +688,7 @@ def test_urlless_run_joins_the_one_runless_job_with_the_same_name(tmp_path):
 def test_urlless_run_name_match_is_logged(tmp_path, caplog):
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
         scanned = _scanned_job(conn)
-        with caplog.at_level(logging.INFO, logger="callback.ledger"):
+        with caplog.at_level(logging.INFO, logger="callback.repositories.ledger"):
             ledger.record_run(conn, _run(url=None))
 
     assert [json.loads(record.message) for record in caplog.records] == [
@@ -697,8 +700,8 @@ def test_urlless_run_keeps_its_own_key_when_the_same_name_job_has_runs(tmp_path,
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
         scanned = _scanned_job(conn)
         ledger.record_run(conn, _run(session_id="s0", url=None))
-        own = ledger.job_key(None, "Acme", "Engineer", "JD")
-        with caplog.at_level(logging.WARNING, logger="callback.ledger"):
+        own = ledger_keys.job_key(None, "Acme", "Engineer", "JD")
+        with caplog.at_level(logging.WARNING, logger="callback.repositories.ledger"):
             ledger.record_run(conn, _run(session_id="s1", url=None))
         keys = conn.execute("SELECT session_id, job_key FROM runs ORDER BY 1").fetchall()
 
@@ -728,7 +731,7 @@ def test_urlless_run_with_multiple_same_name_jobs_creates_and_logs_its_own_job(t
             title="Engineer",
             seen_at="2026-10-01",
         )
-        with caplog.at_level(logging.WARNING, logger="callback.ledger"):
+        with caplog.at_level(logging.WARNING, logger="callback.repositories.ledger"):
             ledger.record_run(conn, _run(url=None))
         actual = {
             "jobs": [
@@ -741,7 +744,7 @@ def test_urlless_run_with_multiple_same_name_jobs_creates_and_logs_its_own_job(t
             "warnings": [json.loads(record.message) for record in caplog.records],
         }
 
-    own = ledger.job_key(None, "Acme", "Engineer", "JD")
+    own = ledger_keys.job_key(None, "Acme", "Engineer", "JD")
     assert actual == {
         "jobs": [(first,), (second,), (own,)],
         "runs": [("s1", own)],
@@ -790,7 +793,7 @@ def test_placeholder_salary_is_stored_as_no_salary(tmp_path):
 
 def test_url_run_joins_pasted_job_that_already_carries_that_url(tmp_path):
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
-        pasted = ledger.job_key(None, "Acme", "Engineer")
+        pasted = ledger_keys.job_key(None, "Acme", "Engineer")
         ledger.upsert_job(
             conn,
             url=None,
@@ -1139,12 +1142,12 @@ def test_export_rows_status_filter_ignores_empty_and_escapes_wildcards(tmp_path)
     ],
 )
 def test_url_or_none_accepts_only_http_urls(value, expected):
-    assert ledger.url_or_none(value) == expected
+    assert ledger_keys.url_or_none(value) == expected
 
 
-def _update(**fields) -> ledger.StatusUpdate:
+def _update(**fields) -> StatusUpdate:
     base = {"status": "Applied", "recorded_at": "2026-10-01", "source": "t"}
-    return ledger.StatusUpdate(**{**base, **fields})
+    return StatusUpdate(**{**base, **fields})
 
 
 def test_record_status_writes_job_and_event_in_one_transaction(tmp_path):
@@ -1197,12 +1200,12 @@ def test_export_events_filters_on_the_event_itself_newest_first(tmp_path):
     ],
 )
 def test_canonical_timestamp_is_utc_iso(raw, expected):
-    assert ledger.canonical_timestamp(raw) == expected
+    assert ledger_keys.canonical_timestamp(raw) == expected
 
 
 def test_canonical_timestamp_keeps_unparseable_value_and_warns(caplog):
-    with caplog.at_level(logging.WARNING, logger="callback.ledger"):
-        result = ledger.canonical_timestamp("not a time")
+    with caplog.at_level(logging.WARNING, logger="callback.repositories.ledger_keys"):
+        result = ledger_keys.canonical_timestamp("not a time")
     assert (result, [json.loads(r.message)["event"] for r in caplog.records]) == (
         "not a time",
         ["ledger_timestamp_unparsed"],
@@ -1321,7 +1324,7 @@ def test_record_status_with_url_reuses_same_name_job_without_url(tmp_path):
         by_url = ledger.find_job(conn, url="https://jobs.acme.com/1", company=None, title=None)
         by_name = ledger.find_job(conn, url="https://other.com/9", company="Acme", title="Engineer")
 
-    pasted = ledger.job_key(None, "Acme", "Engineer")
+    pasted = ledger_keys.job_key(None, "Acme", "Engineer")
     assert (jobs, by_url["job_key"], by_name["job_key"], by_url["status"], by_name["status"]) == (
         [(pasted, "https://jobs.acme.com/1")],
         pasted,
@@ -1348,7 +1351,7 @@ def test_record_run_with_url_joins_same_name_pasted_job(tmp_path):
         jobs = [tuple(r) for r in conn.execute("SELECT job_key, url FROM jobs")]
         found = ledger.find_job(conn, url="https://jobs.acme.com/1", company=None, title=None)
 
-    pasted = ledger.job_key(None, "Acme", "Engineer")
+    pasted = ledger_keys.job_key(None, "Acme", "Engineer")
     assert (jobs, found["job_key"], found["status"], found["score_after"]) == (
         [(pasted, "https://jobs.acme.com/1")],
         pasted,
@@ -1638,7 +1641,7 @@ def test_record_status_by_job_key_ignores_a_placeholder_salary(tmp_path):
 
 def test_record_status_by_pasted_job_key_fills_blank_job_metadata(tmp_path):
     with closing(ledger.connect(tmp_path / "l.db")) as conn:
-        key = ledger.job_key(None, "Acme", "Engineer")
+        key = ledger_keys.job_key(None, "Acme", "Engineer")
         ledger.record_status(
             conn,
             _update(company="Acme", title="Engineer", recorded_at="2026-10-01"),
