@@ -1,7 +1,7 @@
 import pytest
 
-from callback import paths
 from callback.apply_graph import get_apply_graph
+from callback.config import paths
 from callback.profile_graph import get_profile_graph
 
 

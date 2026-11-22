@@ -18,14 +18,12 @@ import csv
 import datetime
 import io
 import json
-import logging
 import os
 import re
 import sqlite3
 import subprocess
 import sys
 import time
-import traceback
 import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, closing
@@ -37,7 +35,7 @@ from pydantic import ValidationError
 
 import callback.scorer as scorer
 import callback.version_check as version_check
-from callback import ledger, paths, settings
+from callback import ledger
 from callback.apply_graph import (
     FINALIZE_NODE,
     KEYWORDS_ACCEPT_NODE,
@@ -53,6 +51,13 @@ from callback.apply_graph import (
     make_config as make_apply_config,
 )
 from callback.apply_nodes import _detect_uncovered_skills
+from callback.config import paths, settings
+from callback.config.logging import configure_logging, current_log_path, log, log_exception
+from callback.config.observability import (
+    invoke_graph_without_native_tracing,
+    record_decision,
+    trace_tool,
+)
 from callback.jd_data import (
     EXTRACTION_PROTOCOL,
     RESPONSIBILITIES_PROTOCOL,
@@ -63,7 +68,6 @@ from callback.jd_data import (
     parse_jd_json,
 )
 from callback.jd_fetcher import JDFetchError
-from callback.observability import invoke_graph_without_native_tracing, record_decision, trace_tool
 from callback.preferences import SearchPreferences
 from callback.profile_graph import get_profile_graph, story_pending
 from callback.profile_graph import make_config as make_profile_config
@@ -89,84 +93,7 @@ except ValueError as exc:
         file=sys.stderr,
     )
 
-LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
-_LOG_FORMAT = "%(message)s"  # messages are already JSON strings
-_LOG_ROTATE_BYTES = 10 * 1024 * 1024  # 10 MB; one previous log is kept as server.log.1
-_LOG_PATH: Path | None = None
-
-
-def _rotate_if_large(path: Path) -> None:
-    """Move an oversized log aside before opening it.
-
-    ponytail: rotates only at startup, not mid-run, because several `callback serve`
-    processes can share one log and RotatingFileHandler breaks when they do. A process
-    that runs for weeks can still grow its log; switch to a per-process log if that happens.
-    A second server started after the log passes 10 MB renames the file while the first still
-    writes to it, so the first server's lines go to server.log.1 until it restarts. The
-    upgrade path is per-process log files.
-    """
-    if path.exists() and path.stat().st_size > _LOG_ROTATE_BYTES:
-        path.replace(path.with_name(f"{path.name}.1"))
-
-
-def configure_logging(log_path: str | Path | None = None) -> None:
-    """Configure stderr logging plus an optional server log file."""
-    global _LOG_PATH
-    logging.basicConfig(
-        level=LOG_LEVEL,
-        format=_LOG_FORMAT,
-        stream=sys.stderr,
-    )
-    if log_path is None:
-        return
-
-    path = Path(log_path).expanduser()
-    root = logging.getLogger()
-    root.setLevel(LOG_LEVEL)
-    for handler in root.handlers:
-        if getattr(handler, "_callback_log_path", None) == str(path):
-            _LOG_PATH = path
-            return
-
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        _rotate_if_large(path)
-        handler = logging.FileHandler(path, encoding="utf-8")
-    except OSError as exc:
-        _LOG_PATH = None
-        root.warning(
-            json.dumps(
-                {
-                    "event": "file_logging_disabled",
-                    "path": str(path),
-                    "error": str(exc),
-                }
-            )
-        )
-        return
-
-    handler.setFormatter(logging.Formatter(_LOG_FORMAT))
-    handler.setLevel(LOG_LEVEL)
-    handler._callback_log_path = str(path)  # type: ignore[attr-defined]
-    root.addHandler(handler)
-    _LOG_PATH = path
-
-
 configure_logging(os.environ.get("CALLBACK_LOG_PATH"))
-logger = logging.getLogger(__name__)
-
-
-def _log(level: str, payload: dict) -> None:
-    """Log a structured JSON message."""
-    payload["timestamp"] = datetime.datetime.now(datetime.UTC).isoformat()
-    payload["level"] = level
-    logger.log(getattr(logging, level, logging.INFO), json.dumps(payload))
-
-
-def _log_exception(payload: dict) -> None:
-    """Log an exception payload plus traceback to stderr and the server log file."""
-    payload["traceback"] = traceback.format_exc()
-    logger.exception(json.dumps(payload))
 
 
 def _ensure_browsers() -> None:
@@ -175,13 +102,13 @@ def _ensure_browsers() -> None:
         capture_output=True,
     )
     if result.returncode != 0:
-        _log("WARNING", {"event": "browser_install_failed", "returncode": result.returncode})
+        log("WARNING", {"event": "browser_install_failed", "returncode": result.returncode})
 
 
 async def _startup_version_check() -> None:
     info = await asyncio.to_thread(version_check.check_update)
     if info.get("update_available"):
-        _log(
+        log(
             "INFO",
             {
                 "event": "update_available",
@@ -192,7 +119,7 @@ async def _startup_version_check() -> None:
 
 
 async def _startup_ensure_browsers() -> None:
-    _log("INFO", {"event": "browser_ensure_start"})
+    log("INFO", {"event": "browser_ensure_start"})
     await asyncio.to_thread(_ensure_browsers)
 
 
@@ -314,7 +241,7 @@ def _read_project_page(resume_label: str, page_id: str) -> str | None:
     try:
         return WikiStore().read_pages(resume_label, [page_id])[page_id]
     except (UnicodeDecodeError, OSError) as exc:
-        _log(
+        log(
             "WARNING",
             {
                 "tool": "submit_keywords",
@@ -331,7 +258,7 @@ def _project_page_meta(page_id: str, content: str) -> dict | None:
     try:
         meta, _ = split_frontmatter(content)
     except WikiPageError as exc:
-        _log(
+        log(
             "WARNING",
             {
                 "tool": "submit_keywords",
@@ -342,7 +269,7 @@ def _project_page_meta(page_id: str, content: str) -> dict | None:
         )
         return None
     if not meta:
-        _log(
+        log(
             "WARNING",
             {
                 "tool": "submit_keywords",
@@ -356,7 +283,7 @@ def _project_page_meta(page_id: str, content: str) -> dict | None:
     try:
         meta["tags"] = tags_from_meta(meta)
     except WikiPageError as exc:
-        _log(
+        log(
             "WARNING",
             {
                 "tool": "submit_keywords",
@@ -403,7 +330,7 @@ def _valid_project_page_ids(resume_label: str, page_ids: list[str]) -> list[str]
         if store.is_valid_page_id(resume_label, page_id):
             valid_ids.append(page_id)
         else:
-            _log(
+            log(
                 "WARNING",
                 {
                     "tool": "submit_keywords",
@@ -656,7 +583,7 @@ def _graph_or_err(factory: Callable[[], Any], session_id: str | None) -> tuple[A
     try:
         return factory(), None
     except PermissionError as exc:
-        _log_exception({"event": "unsafe_session_dir", "session_id": session_id})
+        log_exception({"event": "unsafe_session_dir", "session_id": session_id})
         return None, _err(
             stage="session_store",
             code="unsafe_session_dir",
@@ -666,7 +593,7 @@ def _graph_or_err(factory: Callable[[], Any], session_id: str | None) -> tuple[A
         )
     except (sqlite3.Error, OSError) as exc:
         # Locked, corrupt, read-only, or full session store: report it, don't leak a raw error.
-        _log_exception({"event": "session_store_error", "session_id": session_id})
+        log_exception({"event": "session_store_error", "session_id": session_id})
         return None, _err(
             stage="session_store",
             code="session_store_error",
@@ -678,7 +605,7 @@ def _graph_or_err(factory: Callable[[], Any], session_id: str | None) -> tuple[A
 
 def _unexpected_error(stage: str, session_id: str) -> dict:
     """Log the active exception with traceback and return an unexpected_error envelope."""
-    _log_exception({"tool": stage, "session_id": session_id, "event": "unexpected_error"})
+    log_exception({"tool": stage, "session_id": session_id, "event": "unexpected_error"})
     return _err(
         stage=stage,
         code="unexpected_error",
@@ -730,7 +657,7 @@ def _resolve_resume_label(session_id: str) -> tuple[str | None, dict | None]:
             retriable=False,
         )
     if len(registered) > 1:
-        _log(
+        log(
             "WARNING",
             {
                 "tool": "load_jd",
@@ -795,7 +722,7 @@ def _load_jd_impl(  # noqa: C901
     if err:
         return err
 
-    _log("INFO", {"tool": "load_jd", "session_id": session_id, "resume_label": resolved_label})
+    log("INFO", {"tool": "load_jd", "session_id": session_id, "resume_label": resolved_label})
 
     initial_state = ApplyState(
         session_id=session_id,
@@ -837,7 +764,7 @@ def _load_jd_impl(  # noqa: C901
             )
         raise RuntimeError(f"unknown jd_fetch error reason: {reason}") from exc
     except sqlite3.OperationalError:
-        _log_exception(
+        log_exception(
             {
                 "tool": "load_jd",
                 "session_id": session_id,
@@ -852,7 +779,7 @@ def _load_jd_impl(  # noqa: C901
             retriable=True,
         )
     except Exception:
-        _log_exception(
+        log_exception(
             {
                 "tool": "load_jd",
                 "session_id": session_id,
@@ -1016,7 +943,7 @@ def _resolve_output_dir(output_dir: str | None, session_id: str) -> tuple[str | 
     try:
         resolved.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        _log(
+        log(
             "ERROR",
             {
                 "tool": "submit_tailor",
@@ -1077,7 +1004,7 @@ def _submit_keywords_session(session_id: str) -> tuple[Any, Any, dict | None]:
 
 @trace_tool("submit_keywords", graph_name="apply")
 def _submit_keywords_impl(session_id: str, jd_json: str) -> dict:
-    _log("INFO", {"tool": "submit_keywords", "session_id": session_id})
+    log("INFO", {"tool": "submit_keywords", "session_id": session_id})
 
     try:
         keywords = parse_jd_json(jd_json)
@@ -1198,10 +1125,10 @@ def _trim_responsibilities(keywords: dict, session_id: str) -> dict:
     trimmed, dropped = drop_scored_duplicates(keywords)
     base = {"tool": "submit_responsibilities", "session_id": session_id}
     if dropped:
-        _log("INFO", {**base, "event": "responsibilities_deduped", "dropped": dropped})
+        log("INFO", {**base, "event": "responsibilities_deduped", "dropped": dropped})
     sentences = non_atomic_responsibilities(trimmed["key_responsibilities"])
     if sentences:
-        _log(
+        log(
             "WARNING",
             {
                 **base,
@@ -1215,7 +1142,7 @@ def _trim_responsibilities(keywords: dict, session_id: str) -> dict:
 
 @trace_tool("submit_responsibilities", graph_name="apply")
 def _submit_responsibilities_impl(session_id: str, key_responsibilities: list[str]) -> dict:
-    _log("INFO", {"tool": "submit_responsibilities", "session_id": session_id})
+    log("INFO", {"tool": "submit_responsibilities", "session_id": session_id})
     graph, graph_error = _graph_or_err(get_apply_graph, session_id)
     if graph_error is not None:
         return graph_error
@@ -1319,7 +1246,7 @@ def _tailor_retry_update(graph, config, values: dict, session_id: str) -> None:
     retrying = bool(snapshot.values.get("error"))
     record_decision("tailor_attempt", "retry_after_error" if retrying else "first")
     if retrying:
-        _log(
+        log(
             "INFO",
             {"tool": "submit_tailor", "session_id": session_id, "event": "retry_after_error"},
         )
@@ -1402,7 +1329,7 @@ def _submit_tailor_impl(
     no_coverage: bool = False,
     output_dir: str | None = None,
 ) -> dict:
-    _log("INFO", {"tool": "submit_tailor", "session_id": session_id, "edit_count": len(edits)})
+    log("INFO", {"tool": "submit_tailor", "session_id": session_id, "edit_count": len(edits)})
 
     graph, graph_error = _graph_or_err(get_apply_graph, session_id)
     if graph_error is not None:
@@ -1602,7 +1529,7 @@ def _onboard_user_impl(
     skills_path: str | None = None,
     accomplishments_path: str | None = None,
 ) -> dict:
-    _log(
+    log(
         "INFO",
         {
             "tool": "onboard_user",
@@ -1675,7 +1602,7 @@ def _profile_failure_error(graph, config, session_id: str, stage: str) -> dict:
     try:
         snapshot = graph.get_state(config)
     except Exception:
-        _log_exception({"tool": stage, "session_id": session_id, "event": "checkpoint_error"})
+        log_exception({"tool": stage, "session_id": session_id, "event": "checkpoint_error"})
         snapshot = None
     pending = snapshot.next if snapshot is not None else ()
     intake = snapshot.values.get("intake") if snapshot is not None else None
@@ -1715,7 +1642,7 @@ def _run_profile_thread(graph, config, graph_input, session_id: str, stage: str)
             invoke_graph_without_native_tracing(graph, None, config)
             snapshot = graph.get_state(config)
     except Exception:
-        _log_exception({"tool": stage, "session_id": session_id, "event": "unexpected_error"})
+        log_exception({"tool": stage, "session_id": session_id, "event": "unexpected_error"})
         return None, _profile_failure_error(graph, config, session_id, stage)
     if (snapshot.values.get("intake") or {}).get("status") == "no_resume":
         return None, _err(
@@ -1770,7 +1697,7 @@ def _resume_profile_thread(
         if update is not None:
             graph.update_state(config, update)
     except Exception:
-        _log_exception({"tool": stage, "session_id": session_id, "event": "checkpoint_error"})
+        log_exception({"tool": stage, "session_id": session_id, "event": "checkpoint_error"})
         return _err(
             stage,
             "checkpoint_error",
@@ -1798,7 +1725,7 @@ def compile_profile(story_tags: str | None = None, session_id: str | None = None
     """
     resumed = session_id is not None
     session_id = session_id or str(uuid.uuid4())
-    _log(
+    log(
         "INFO",
         {
             "tool": "compile_profile",
@@ -1829,7 +1756,7 @@ def _resolve_new_thread_resume_label(stage: str, session_id: str) -> str | None:
     """
     resume_label, label_error = _resolve_resume_label(session_id)
     if label_error is not None:
-        _log(
+        log(
             "INFO",
             {"tool": stage, "session_id": session_id, "event": "resume_label_unresolved"},
         )
@@ -1897,7 +1824,7 @@ def create_story(
     """
     resumed = session_id is not None
     session_id = session_id or str(uuid.uuid4())
-    _log(
+    log(
         "INFO",
         {
             "tool": "create_story",
@@ -1960,7 +1887,7 @@ def _create_story_impl(session_id: str, intake: dict, *, resumed: bool) -> dict:
     assert snapshot is not None
     values = snapshot.values
     if not (values.get("intake") or {}).get("story_id"):
-        _log(
+        log(
             "ERROR",
             {"tool": "create_story", "session_id": session_id, "event": "story_not_saved"},
         )
@@ -1996,7 +1923,7 @@ def set_search_preferences(preferences: dict) -> dict:
         Envelope dict (structured content) echoing the stored preferences under data.preferences.
     """
     session_id = str(uuid.uuid4())
-    _log("INFO", {"tool": "set_search_preferences", "session_id": session_id})
+    log("INFO", {"tool": "set_search_preferences", "session_id": session_id})
 
     stamped = {**preferences, "updated_at": datetime.datetime.now(datetime.UTC).isoformat()}
     try:
@@ -2023,7 +1950,7 @@ def get_search_preferences() -> dict:
         next_action=set_search_preferences when none are stored.
     """
     session_id = str(uuid.uuid4())
-    _log("INFO", {"tool": "get_search_preferences", "session_id": session_id})
+    log("INFO", {"tool": "get_search_preferences", "session_id": session_id})
 
     prefs = PreferencesStore().load()
     if prefs is None:
@@ -2053,7 +1980,7 @@ def get_wiki_pages(session_id: str, page_ids: list[str]) -> dict:
 
 @trace_tool("get_wiki_pages", graph_name="apply")
 def _get_wiki_pages_impl(session_id: str, page_ids: list[str]) -> dict:
-    _log("INFO", {"tool": "get_wiki_pages", "session_id": session_id, "page_count": len(page_ids)})
+    log("INFO", {"tool": "get_wiki_pages", "session_id": session_id, "page_count": len(page_ids)})
 
     graph, graph_error = _graph_or_err(get_apply_graph, session_id)
     if graph_error is not None:
@@ -2082,7 +2009,7 @@ def _get_wiki_pages_impl(session_id: str, page_ids: list[str]) -> dict:
     try:
         pages = WikiStore().read_pages(resume_label, page_ids)
     except WikiPageIdError as exc:
-        _log(
+        log(
             "WARNING",
             {"tool": "get_wiki_pages", "session_id": session_id, "event": "invalid_page_id"},
         )
@@ -2193,7 +2120,7 @@ def _split_note_markers(note: str | None) -> tuple[str | None, str | None, str |
 
 def _ledger_error(exc: Exception) -> dict:
     """Envelope for a ledger that cannot be opened, read, or written. Call from an except."""
-    _log_exception({"tool": "ledger", "event": "ledger_error", "error": str(exc)})
+    log_exception({"tool": "ledger", "event": "ledger_error", "error": str(exc)})
     return _err(
         "ledger", "ledger_error", f"could not read or write the ledger: {exc}", retriable=True
     )
@@ -2331,7 +2258,7 @@ def _output_path_error(target: Path) -> dict | None:
 
 def _invalid_output_path_error(exc: OSError | RuntimeError) -> dict:
     """Log output-path handling failures and return the stable tool error."""
-    _log("WARNING", {"event": "invalid_output_path", "error": str(exc)})
+    log("WARNING", {"event": "invalid_output_path", "error": str(exc)})
     return _err("ledger", "invalid_output_path", f"cannot use output_path: {exc}")
 
 
@@ -2379,23 +2306,24 @@ def export_ledger(
 
 def run() -> None:
     """Run the FastMCP stdio server."""
-    if _LOG_PATH is None:
+    if current_log_path() is None:
         configure_logging(os.environ.get("CALLBACK_LOG_PATH") or paths.log_path())
+    log_path = current_log_path()
     started_at = time.monotonic()
-    _log(
+    log(
         "INFO",
         {
             "event": "server_start",
             "transport": "stdio",
             "pid": os.getpid(),
             "cwd": str(Path.cwd()),
-            "log_path": str(_LOG_PATH) if _LOG_PATH is not None else None,
+            "log_path": str(log_path) if log_path is not None else None,
         },
     )
     try:
         mcp.run(transport="stdio", show_banner=False)
     except Exception as exc:
-        _log_exception(
+        log_exception(
             {
                 "event": "server_crash",
                 "transport": "stdio",
@@ -2405,7 +2333,7 @@ def run() -> None:
         )
         raise RuntimeError("callback MCP stdio server crashed") from exc
     finally:
-        _log(
+        log(
             "INFO",
             {
                 "event": "server_stop",

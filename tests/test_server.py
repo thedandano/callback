@@ -12,7 +12,9 @@ import pytest
 from fastmcp import Client
 from fastmcp.client.transports import FastMCPTransport
 
-from callback import ledger, paths
+from callback import ledger
+from callback.config import logging as config_logging
+from callback.config import paths
 from callback.jd_data import EXTRACTION_PROTOCOL, RESPONSIBILITIES_PROTOCOL
 
 PARTIAL_JD_JSON = """
@@ -122,7 +124,7 @@ def test_run_starts_mcp_without_browser_install():
 
     with (
         patch.object(server, "_ensure_browsers") as ensure_browsers,
-        patch.object(server, "_log") as log,
+        patch.object(server, "log") as log,
         patch.object(server.mcp, "run") as mcp_run,
     ):
         server.run()
@@ -141,7 +143,7 @@ async def test_startup_ensure_browsers_invokes_ensure_browsers():
 
     with (
         patch.object(server, "_ensure_browsers") as ensure_browsers,
-        patch.object(server, "_log"),
+        patch.object(server, "log"),
     ):
         await server._startup_ensure_browsers()
 
@@ -153,8 +155,8 @@ def test_run_logs_crash_before_raising_explicit_error():
 
     error = RuntimeError("transport failed")
     with (
-        patch.object(server, "_log") as log,
-        patch.object(server, "_log_exception") as log_exception,
+        patch.object(server, "log") as log,
+        patch.object(server, "log_exception") as log_exception,
         patch.object(server.mcp, "run", side_effect=error),
         pytest.raises(RuntimeError, match="callback MCP stdio server crashed") as exc_info,
     ):
@@ -178,16 +180,16 @@ def test_run_logs_crash_traceback_before_raising():
     import callback.server as server
 
     captured_payloads: list[dict] = []
-    original_log_exception = server._log_exception
+    original_log_exception = server.log_exception
 
     def fake_log_exception(payload: dict) -> None:
         original_log_exception(payload)
         captured_payloads.append(payload)
 
     with (
-        patch.object(server.logger, "exception"),
-        patch.object(server, "_log"),
-        patch.object(server, "_log_exception", side_effect=fake_log_exception),
+        patch.object(config_logging.logger, "exception"),
+        patch.object(server, "log"),
+        patch.object(server, "log_exception", side_effect=fake_log_exception),
         patch.object(server.mcp, "run", side_effect=RuntimeError("transport failed")),
         pytest.raises(RuntimeError, match="callback MCP stdio server crashed"),
     ):
@@ -296,7 +298,7 @@ def test_load_jd_trace_payload_carries_jd_text_and_full_output_data(monkeypatch)
     with (
         patch.object(server, "list_resumes", return_value=["resume"]),
         patch.object(server, "get_apply_graph", return_value=FakeGraph()),
-        patch("callback.observability._get_traceable", return_value=fake_traceable),
+        patch("callback.config.observability._get_traceable", return_value=fake_traceable),
     ):
         result = load_jd(jd_raw_text="secret jd body")
 
@@ -373,7 +375,7 @@ def test_load_jd_returns_error_when_unexpected_exception_escapes_graph():
 def test_configure_logging_writes_server_log(tmp_path):
     import logging
 
-    from callback.server import configure_logging
+    from callback.config.logging import configure_logging
 
     log_path = tmp_path / "server.log"
     configure_logging(log_path)
@@ -386,13 +388,11 @@ def test_configure_logging_writes_server_log(tmp_path):
 def test_configure_logging_rotates_a_large_log_at_startup(tmp_path, monkeypatch):
     import logging
 
-    from callback import server
-
     log_path = tmp_path / "server.log"
     log_path.write_text("x" * 20, encoding="utf-8")
-    monkeypatch.setattr(server, "_LOG_ROTATE_BYTES", 10)
+    monkeypatch.setattr(config_logging, "_LOG_ROTATE_BYTES", 10)
     try:
-        server.configure_logging(log_path)
+        config_logging.configure_logging(log_path)
         actual = ((tmp_path / "server.log.1").read_text(encoding="utf-8"), log_path.exists())
     finally:
         root = logging.getLogger()
@@ -406,12 +406,10 @@ def test_configure_logging_rotates_a_large_log_at_startup(tmp_path, monkeypatch)
 def test_log_writes_one_line_per_event(tmp_path):
     import logging
 
-    import callback.server as server
-
     log_path = tmp_path / "server.log"
-    server.configure_logging(log_path)
+    config_logging.configure_logging(log_path)
     try:
-        server._log("INFO", {"event": "dedupe_probe"})
+        config_logging.log("INFO", {"event": "dedupe_probe"})
         for handler in logging.getLogger().handlers:
             handler.flush()
         lines = [
@@ -713,7 +711,7 @@ def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, 
     from callback.wiki import WikiStore
 
     resume_label = "project_guidance_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -982,7 +980,7 @@ def test_submit_keywords_returns_ranked_project_candidates(tmp_path, monkeypatch
     from callback.wiki import WikiStore
 
     resume_label = "project_candidate_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -1123,7 +1121,7 @@ def test_submit_keywords_recommends_project_append_and_trim_candidates(tmp_path,
     from callback.wiki import WikiStore
 
     resume_label = "project_append_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -1224,7 +1222,7 @@ def test_submit_keywords_recommends_project_replace_when_two_visible_projects(
     from callback.wiki import WikiStore
 
     resume_label = "project_replace_layout_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -1316,7 +1314,7 @@ def test_submit_keywords_orphaned_required_routes_to_create_story(tmp_path, monk
     from callback.wiki import WikiStore
 
     resume_label = "orphan_workflow_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     resume_path = tmp_path / "resume.txt"
     resume_path.write_text(
         "Jane Dev\nExperience\nBuilt backend APIs\nEducation\nBS Computer Science\n",
@@ -1369,7 +1367,7 @@ def test_get_wiki_pages_returns_submit_tailor_workflow(tmp_path, monkeypatch):
     from callback.wiki import WikiStore
 
     resume_label = "wiki_pages_workflow_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -1415,7 +1413,7 @@ def test_get_wiki_pages_rejects_page_id_outside_wiki_root(tmp_path, monkeypatch)
     from callback.wiki import WikiStore
 
     resume_label = "wiki_pages_traversal_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -1457,7 +1455,7 @@ def test_get_wiki_pages_rejects_embedded_nul(tmp_path, monkeypatch):
     from callback.wiki import WikiStore
 
     resume_label = "wiki_pages_nul_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     sections = {
         "summary": "Python engineer",
         "skills": {"flat": ["Python"], "categorized": {}},
@@ -1497,7 +1495,7 @@ def test_rank_project_candidates_skips_invalid_index_links(tmp_path, monkeypatch
     from callback.wiki import WikiStore
 
     resume_label = "invalid_link_resume"
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     store = WikiStore()
     store.write_page(
         resume_label,
@@ -1530,7 +1528,7 @@ story_type: SBI
     keywords = {"required": ["Python", "RAG"], "preferred": []}
 
     mock_log = Mock()
-    monkeypatch.setattr("callback.server._log", mock_log)
+    monkeypatch.setattr("callback.server.log", mock_log)
 
     candidates = _rank_project_candidates(resume_label, keywords, wiki_index)
 
@@ -1565,7 +1563,7 @@ def test_rank_project_candidates_skips_pages_without_frontmatter_and_warns(
     from callback.wiki import WikiStore
 
     caplog.set_level("WARNING", logger="callback.server")
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     store = WikiStore()
     store.write_page(
         "r", "experience/story-001.md", "# old render\n\n**Job Title:** Project\n\nSkills: Python\n"
@@ -1591,7 +1589,7 @@ def test_rank_project_candidates_matches_body_and_tags_not_raw_frontmatter(tmp_p
     from callback.server import _rank_project_candidates
     from callback.wiki import WikiStore
 
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     store = WikiStore()
     store.write_page(
         "r",
@@ -2158,7 +2156,7 @@ def test_onboard_user_returns_envelope_when_extractor_raises(tmp_path, monkeypat
     from callback.profile_graph import build_profile_graph
 
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
     db_path = tmp_path / "profile-sessions.db"
     monkeypatch.setattr(server, "get_profile_graph", lambda: build_profile_graph(db_path=db_path))
 
@@ -2318,7 +2316,7 @@ def test_rank_project_candidates_skips_project_pages_with_non_list_tags(
     from callback.wiki import WikiStore
 
     caplog.set_level("WARNING", logger="callback.server")
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     store = WikiStore()
     store.write_page(
         "r",
@@ -2365,7 +2363,7 @@ def test_rank_project_candidates_matches_the_frontmatter_title(tmp_path, monkeyp
     from callback.server import _rank_project_candidates
     from callback.wiki import WikiStore
 
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     page = (
         "---\ntype: project\ntitle: Kubernetes\ntags:\n- Docker\n---\n"
         "# old heading\n\n**Situation:** Ran containers.\n"
@@ -2386,7 +2384,7 @@ def test_rank_project_candidates_ignores_a_stale_body_heading(tmp_path, monkeypa
     from callback.server import _rank_project_candidates
     from callback.wiki import WikiStore
 
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     page = (
         "---\ntype: project\ntitle: Azure\ntags:\n- Terraform\n---\n"
         "# AWS\n\n**Situation:** Moved the platform to Azure.\n"
@@ -2404,7 +2402,7 @@ def test_rank_project_candidates_skips_an_undecodable_page(tmp_path, monkeypatch
     from callback.wiki import WikiStore
 
     caplog.set_level("WARNING", logger="callback.server")
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     store = WikiStore()
     store.write_page(
         "r", "experience/story-002.md", "---\ntype: project\ntitle: Good\ntags:\n- Python\n---\n"

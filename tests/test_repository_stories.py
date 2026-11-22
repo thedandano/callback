@@ -23,7 +23,7 @@ _TS = "2026-09-06T21:00:00+00:00"
 
 @pytest.fixture
 def wiki(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path)
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path)
     return tmp_path
 
 

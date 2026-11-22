@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from callback import ledger, paths
+from callback import ledger
+from callback.config import paths
 from callback.state import TailoredResume
 
 FIXTURES = Path(__file__).parent / "fixtures"

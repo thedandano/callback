@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import logging
-import sys
 
 import pytest
 
-from callback import paths, settings
+from callback.config import paths, settings
+from callback.config.logging import configure_logging
 
 
 @pytest.fixture(autouse=True)
@@ -129,16 +129,23 @@ def test_apply_env_file_never_relocates_itself_via_bootstrap_variables(caplog):
     assert actual == expected
 
 
-def test_log_level_from_env_file_applies_before_server_module_reads_it(monkeypatch):
-    """callback.server reads LOG_LEVEL into a module-level constant at import time.
+def test_log_level_from_env_file_applies_to_logging(monkeypatch):
+    """LOG_LEVEL set only in env.json must reach the logging setup.
 
-    Settings must be loaded before that import happens (not deep inside run()), or a
-    LOG_LEVEL set only in env.json is silently ignored for every server invocation.
+    Settings load first, then configure_logging reads LOG_LEVEL; reading it at import
+    time instead would silently ignore the settings file for every server invocation.
     """
-    monkeypatch.delenv("LOG_LEVEL", raising=False)
+    root = logging.getLogger()
+    monkeypatch.setattr(root, "handlers", [])  # basicConfig is a no-op when handlers exist
+    monkeypatch.setenv("LOG_LEVEL", "placeholder")  # undo apply_env_file after
+    monkeypatch.delenv("LOG_LEVEL")
     paths.write_json_atomic(paths.env_file(), {"LOG_LEVEL": "DEBUG"})
+    original_level = root.level
+    try:
+        settings.apply_env_file()
+        configure_logging()
+        actual = root.level
+    finally:
+        root.setLevel(original_level)
 
-    sys.modules.pop("callback.server", None)
-    import callback.server
-
-    assert callback.server.LOG_LEVEL == "DEBUG"
+    assert actual == logging.DEBUG

@@ -12,8 +12,8 @@ from unittest.mock import ANY, MagicMock, Mock, patch
 import pytest
 from typer.testing import CliRunner
 
-from callback import paths
 from callback.cli import ConfigError, app
+from callback.config import paths
 
 runner = CliRunner()
 
@@ -120,7 +120,7 @@ def test_serve_without_flags_uses_home_state_log(monkeypatch):
 
     with (
         patch("callback.cli._write_startup_log_event", side_effect=fake_write_startup_event),
-        patch("callback.server.configure_logging", configure_logging),
+        patch("callback.cli.configure_logging", configure_logging),
         patch("callback.server.run", run),
     ):
         result = runner.invoke(app, ["serve"])
@@ -153,7 +153,7 @@ def test_serve_respects_callback_log_path_already_set_by_settings(monkeypatch, t
 
     with (
         patch("callback.cli._write_startup_log_event", side_effect=fake_write_startup_event),
-        patch("callback.server.configure_logging", Mock()),
+        patch("callback.cli.configure_logging", Mock()),
         patch("callback.server.run", Mock()),
     ):
         result = runner.invoke(app, ["serve"])
@@ -198,7 +198,7 @@ def test_serve_project_logs_uses_project_log(tmp_path, monkeypatch):
 
     with (
         patch("callback.cli._write_startup_log_event", side_effect=fake_write_startup_event),
-        patch("callback.server.configure_logging", configure_logging),
+        patch("callback.cli.configure_logging", configure_logging),
         patch("callback.server.run", run),
     ):
         result = runner.invoke(app, ["serve", "--project-logs"], catch_exceptions=False)
@@ -220,7 +220,7 @@ def test_serve_unwritable_log_path_still_runs(tmp_path):
 
     with (
         patch("callback.cli._write_startup_log_event", side_effect=OSError("blocked")),
-        patch("callback.server.configure_logging"),
+        patch("callback.cli.configure_logging"),
         patch("callback.server.run", run),
     ):
         result = runner.invoke(app, ["serve", "--log-path", str(blocked_path)])
@@ -752,8 +752,8 @@ def test_uninstall_without_purge_preserves_data_dir(tmp_path):
 
     state_dir = tmp_path / "state"
     with (
-        patch("callback.paths.data_dir", lambda: data_dir),
-        patch("callback.paths.state_dir", lambda: state_dir),
+        patch("callback.config.paths.data_dir", lambda: data_dir),
+        patch("callback.config.paths.state_dir", lambda: state_dir),
         patch("callback.cli._remove_server_from_claude"),
         patch("callback.cli._remove_server_from_codex"),
     ):
@@ -774,10 +774,10 @@ def test_uninstall_purge_deletes_data_state_and_config_dirs(tmp_path):
     session_dir.mkdir()
 
     with (
-        patch("callback.paths.data_dir", lambda: data_dir),
-        patch("callback.paths.state_dir", lambda: state_dir),
-        patch("callback.paths.config_dir", lambda: config_dir),
-        patch("callback.paths.session_dir", lambda: session_dir),
+        patch("callback.config.paths.data_dir", lambda: data_dir),
+        patch("callback.config.paths.state_dir", lambda: state_dir),
+        patch("callback.config.paths.config_dir", lambda: config_dir),
+        patch("callback.config.paths.session_dir", lambda: session_dir),
         patch("callback.cli._remove_server_from_claude"),
         patch("callback.cli._remove_server_from_codex"),
     ):
@@ -800,10 +800,10 @@ def test_uninstall_purge_deletes_data_when_legacy_config_removal_fails(tmp_path)
     config_dir.mkdir()
 
     with (
-        patch("callback.paths.data_dir", lambda: data_dir),
-        patch("callback.paths.state_dir", lambda: state_dir),
-        patch("callback.paths.config_dir", lambda: config_dir),
-        patch("callback.paths.session_dir", lambda: session_dir),
+        patch("callback.config.paths.data_dir", lambda: data_dir),
+        patch("callback.config.paths.state_dir", lambda: state_dir),
+        patch("callback.config.paths.config_dir", lambda: config_dir),
+        patch("callback.config.paths.session_dir", lambda: session_dir),
         patch(
             "callback.cli._remove_server_from_claude",
             side_effect=ConfigError("invalid Claude config"),
@@ -832,10 +832,10 @@ def test_uninstall_purge_deletes_data_when_codex_config_cannot_be_read(
     codex_path.mkdir(parents=True)
 
     with (
-        patch("callback.paths.data_dir", lambda: data_dir),
-        patch("callback.paths.state_dir", lambda: state_dir),
-        patch("callback.paths.config_dir", lambda: config_dir),
-        patch("callback.paths.session_dir", lambda: session_dir),
+        patch("callback.config.paths.data_dir", lambda: data_dir),
+        patch("callback.config.paths.state_dir", lambda: state_dir),
+        patch("callback.config.paths.config_dir", lambda: config_dir),
+        patch("callback.config.paths.session_dir", lambda: session_dir),
     ):
         result = runner.invoke(app, ["uninstall", "--purge"])
 
@@ -864,10 +864,10 @@ def test_uninstall_purge_skips_absent_dirs(tmp_path):
     session_dir = tmp_path / "sessions"
 
     with (
-        patch("callback.paths.data_dir", lambda: data_dir),
-        patch("callback.paths.state_dir", lambda: state_dir),
-        patch("callback.paths.config_dir", lambda: config_dir),
-        patch("callback.paths.session_dir", lambda: session_dir),
+        patch("callback.config.paths.data_dir", lambda: data_dir),
+        patch("callback.config.paths.state_dir", lambda: state_dir),
+        patch("callback.config.paths.config_dir", lambda: config_dir),
+        patch("callback.config.paths.session_dir", lambda: session_dir),
         patch("callback.cli._remove_server_from_claude"),
         patch("callback.cli._remove_server_from_codex"),
     ):

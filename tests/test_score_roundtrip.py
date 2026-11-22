@@ -4,8 +4,9 @@ import json
 import re
 from contextlib import closing
 
-from callback import ledger, paths
+from callback import ledger
 from callback.apply_nodes import _sections_to_text, finalize, report
+from callback.config import paths
 from callback.scorer import ATS_SECTION_PATTERNS
 from callback.section_map import EducationEntry, ExperienceEntry, SectionMap, SkillsSection
 from callback.state import ApplyState, TailoredResume

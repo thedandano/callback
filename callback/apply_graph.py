@@ -21,7 +21,6 @@ from langgraph.graph import END, StateGraph
 # langgraph re-exports langchain_core's RunnableConfig but leaves it out of __all__.
 from langgraph.types import RunnableConfig  # pyright: ignore[reportPrivateImportUsage]
 
-from callback import paths
 from callback.apply_nodes import (
     finalize,
     jd_fetch,
@@ -34,7 +33,8 @@ from callback.apply_nodes import (
     score_initial,
     tailor,
 )
-from callback.observability import build_graph_config
+from callback.config import paths
+from callback.config.observability import build_graph_config
 from callback.session_store import open_checkpointer
 from callback.state import ApplyState
 
@@ -93,7 +93,7 @@ def build_apply_graph(db_path: Path | None = None):
 
     Args:
         db_path: Path to the SQLite checkpointer DB.
-                 Defaults to callback.paths.apply_db_path()
+                 Defaults to callback.config.paths.apply_db_path()
 
     Returns:
         Compiled LangGraph StateGraph for ApplyState. The graph interrupts after

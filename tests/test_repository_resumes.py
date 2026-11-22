@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from callback import paths
+from callback.config import paths
 from callback.repository.resumes import (
     ResumeNotFoundError,
     clear_resumes,

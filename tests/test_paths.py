@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from callback import paths
+from callback.config import paths
 
 
 def test_data_dir_defaults_under_home(monkeypatch, tmp_path: Path):

@@ -38,7 +38,7 @@ def _make_profile(stories: list[CreatedStory], orphans: list[str] | None = None)
 
 class TestIndexPage:
     def test_index_written(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path)
+        monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path)
         story = _make_story()
         profile = _make_profile([story])
         render_index("backend", profile)
@@ -46,7 +46,7 @@ class TestIndexPage:
         assert (tmp_path / "backend" / "index.md").exists()
 
     def test_index_links_covered_skills(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path)
+        monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path)
         story = _make_story(primary_skill="Python", skills=["FastAPI"])
         profile = _make_profile([story])
         render_index("backend", profile)
@@ -58,7 +58,7 @@ class TestIndexPage:
     def test_index_links_point_to_experience_pages(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path)
+        monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path)
         story = _make_story(id="story-001", primary_skill="Python", skills=[])
         profile = _make_profile([story])
         render_index("backend", profile)
@@ -69,7 +69,7 @@ class TestIndexPage:
     def test_index_has_orphaned_skills_section(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path)
+        monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path)
         story = _make_story(primary_skill="Python", skills=[])
         profile = _make_profile([story], orphans=["Rust"])
         render_index("backend", profile)
@@ -81,7 +81,7 @@ class TestIndexPage:
     def test_index_no_orphan_section_when_empty(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path)
+        monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path)
         story = _make_story(primary_skill="Python", skills=[])
         profile = _make_profile([story])
         render_index("backend", profile)
@@ -90,7 +90,7 @@ class TestIndexPage:
         assert "## Orphaned Skills" not in content
 
     def test_index_deterministic(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path)
+        monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path)
         story = _make_story()
         profile = _make_profile([story])
         render_index("backend", profile)

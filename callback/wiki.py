@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from callback import paths
+from callback.config import paths
 
 
 class WikiPageIdError(ValueError):

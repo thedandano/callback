@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from callback import apply_nodes, ledger, paths
+from callback import apply_nodes, ledger
 from callback.apply_nodes import (
     _candidate_experience_years,
     finalize,
@@ -22,6 +22,7 @@ from callback.apply_nodes import (
     score_initial,
     tailor,
 )
+from callback.config import paths
 from callback.repository import stories
 from callback.section_map import ContactInfo, ExperienceEntry, SectionMap
 from callback.state import ApplyState, CreatedStory, TailoredResume
@@ -461,7 +462,7 @@ class TestCandidateExperienceYears:
 def test_parse_initial_migrates_legacy_stories_before_reading_the_wiki(tmp_path, monkeypatch):
 
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     monkeypatch.setattr("callback.repository.stories.list_resumes", lambda: ["primary"])
     data_dir = tmp_path / "callback"
     data_dir.mkdir(parents=True, exist_ok=True)

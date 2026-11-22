@@ -9,7 +9,7 @@ import pytest
 import callback.profile_nodes as pnodes
 import callback.server as server_module
 import callback.wiki as wiki_module
-from callback import paths
+from callback.config import paths
 from callback.profile_graph import get_profile_graph
 from callback.profilecompiler import save_compiled_profile
 from callback.repository.resumes import save_resume
@@ -35,7 +35,7 @@ def _fake_graph(state_values: dict):
 
 def _isolate_profile(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
 
 
 def _resume_txt(tmp_path: Path) -> Path:
@@ -273,7 +273,7 @@ class TestCompileProfile:
 
         _isolate_profile(tmp_path, monkeypatch)
         mock_log = Mock()
-        monkeypatch.setattr(server_module, "_log", mock_log)
+        monkeypatch.setattr(server_module, "log", mock_log)
 
         result = compile_profile()
 

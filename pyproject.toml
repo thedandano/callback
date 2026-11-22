@@ -53,6 +53,36 @@ source_modules = ["callback"]
 forbidden_modules = ["callback.server"]
 ignore_imports = ["callback.cli -> callback.server"]
 
+[[tool.importlinter.contracts]]
+name = "config sits below everything but models"
+type = "forbidden"
+source_modules = ["callback.config"]
+forbidden_modules = [
+    "callback.server",
+    "callback.cli",
+    "callback.apply_graph",
+    "callback.apply_nodes",
+    "callback.extractor",
+    "callback.jd_data",
+    "callback.jd_fetcher",
+    "callback.ledger",
+    "callback.ledger_import",
+    "callback.plugin_install",
+    "callback.preferences",
+    "callback.profile_graph",
+    "callback.profile_nodes",
+    "callback.profilecompiler",
+    "callback.render",
+    "callback.repository",
+    "callback.scorer",
+    "callback.section_map",
+    "callback.session_store",
+    "callback.state",
+    "callback.version_check",
+    "callback.wiki",
+    "callback.wikirenderer",
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

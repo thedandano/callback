@@ -26,9 +26,10 @@ from time import perf_counter
 from pydantic import ValidationError
 
 from callback import extractor as resume_extractor
-from callback import ledger, paths, scorer
+from callback import ledger, scorer
+from callback.config import paths
+from callback.config.observability import record_decision, trace_node
 from callback.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError, fetch_url_to_markdown
-from callback.observability import record_decision, trace_node
 from callback.render import render_resume
 from callback.repository import stories
 from callback.repository.resumes import ResumeNotFoundError, get_resume

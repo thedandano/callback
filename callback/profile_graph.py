@@ -24,8 +24,8 @@ from langgraph.graph import END, StateGraph
 # langgraph re-exports langchain_core's RunnableConfig but leaves it out of __all__.
 from langgraph.types import RunnableConfig  # pyright: ignore[reportPrivateImportUsage]
 
-from callback import paths
-from callback.observability import build_graph_config
+from callback.config import paths
+from callback.config.observability import build_graph_config
 from callback.profile_nodes import (
     check_orphans,
     check_profile,
@@ -82,7 +82,7 @@ def build_profile_graph(db_path: Path | None = None):
 
     Args:
         db_path: Path to the SQLite checkpointer DB.
-                 Defaults to callback.paths.profile_db_path()
+                 Defaults to callback.config.paths.profile_db_path()
 
     Returns:
         Compiled LangGraph StateGraph for ProfileState with an interrupt

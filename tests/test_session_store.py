@@ -9,7 +9,7 @@ import pytest
 from langgraph.checkpoint.base import empty_checkpoint
 from langgraph.types import RunnableConfig  # pyright: ignore[reportPrivateImportUsage]
 
-from callback import paths
+from callback.config import paths
 from callback.session_store import _delete_if_still_stale, checkpoint_time, open_checkpointer
 from callback.state import TailoredResume
 

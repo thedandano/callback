@@ -21,7 +21,7 @@ from typing import Any
 
 from playwright.async_api import ViewportSize, async_playwright
 
-from callback.observability import record_decision
+from callback.config.observability import record_decision
 
 logger = logging.getLogger("callback.jd_fetcher")
 

@@ -21,7 +21,7 @@ def test_langsmith_is_declared_as_direct_dependency():
 
 
 def test_build_graph_config_noops_without_trace_backend(monkeypatch):
-    from callback.observability import build_graph_config
+    from callback.config.observability import build_graph_config
 
     monkeypatch.delenv("CALLBACK_TRACE_BACKEND", raising=False)
     monkeypatch.delenv("LANGSMITH_TRACING", raising=False)
@@ -38,12 +38,12 @@ def test_build_graph_config_noops_without_trace_backend(monkeypatch):
 
 
 def test_build_graph_config_noops_and_warns_when_langsmith_key_missing(monkeypatch, caplog):
-    from callback.observability import build_graph_config
+    from callback.config.observability import build_graph_config
 
     monkeypatch.setenv("CALLBACK_TRACE_BACKEND", "langsmith")
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
-    caplog.set_level(logging.WARNING, logger="callback.observability")
+    caplog.set_level(logging.WARNING, logger="callback.config.observability")
 
     config = build_graph_config(
         session_id="session-1",
@@ -57,7 +57,7 @@ def test_build_graph_config_noops_and_warns_when_langsmith_key_missing(monkeypat
 
 
 def test_build_graph_config_adds_langsmith_metadata(monkeypatch):
-    from callback.observability import build_graph_config
+    from callback.config.observability import build_graph_config
 
     monkeypatch.setenv("CALLBACK_TRACE_BACKEND", "langsmith")
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
@@ -103,14 +103,14 @@ def test_build_graph_config_adds_langsmith_metadata(monkeypatch):
 
 
 def test_trace_tool_noops_when_backend_disabled(monkeypatch):
-    from callback.observability import trace_tool
+    from callback.config.observability import trace_tool
 
     monkeypatch.delenv("CALLBACK_TRACE_BACKEND", raising=False)
 
     def fail_get_traceable():
         raise AssertionError("traceable should not be imported")
 
-    monkeypatch.setattr("callback.observability._get_traceable", fail_get_traceable)
+    monkeypatch.setattr("callback.config.observability._get_traceable", fail_get_traceable)
 
     @trace_tool("load_jd", graph_name="apply")
     def sample_tool(session_id: str, jd_raw_text: str) -> dict:
@@ -125,7 +125,7 @@ def test_trace_tool_noops_when_backend_disabled(monkeypatch):
 
 def test_trace_tool_uses_traceable_with_full_redacted_payload(monkeypatch):
     """Sanitized inputs/outputs carry real business content; contact PII is replaced."""
-    from callback.observability import trace_tool
+    from callback.config.observability import trace_tool
 
     captured: dict[str, Any] = {}
 
@@ -151,7 +151,7 @@ def test_trace_tool_uses_traceable_with_full_redacted_payload(monkeypatch):
     monkeypatch.setenv("CALLBACK_TRACE_BACKEND", "langsmith")
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2-secret")
-    monkeypatch.setattr("callback.observability._get_traceable", lambda: fake_traceable)
+    monkeypatch.setattr("callback.config.observability._get_traceable", lambda: fake_traceable)
 
     @trace_tool("submit_tailor", graph_name="apply")
     def sample_tool(
@@ -200,7 +200,7 @@ def test_trace_tool_uses_traceable_with_full_redacted_payload(monkeypatch):
 
 def test_trace_tool_redacts_contact_pii_in_payload(monkeypatch):
     """Contact fields in inputs/outputs are replaced with typed placeholders."""
-    from callback.observability import trace_tool
+    from callback.config.observability import trace_tool
 
     captured: dict[str, Any] = {}
 
@@ -223,7 +223,7 @@ def test_trace_tool_redacts_contact_pii_in_payload(monkeypatch):
     monkeypatch.setenv("CALLBACK_TRACE_BACKEND", "langsmith")
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2-secret")
-    monkeypatch.setattr("callback.observability._get_traceable", lambda: fake_traceable)
+    monkeypatch.setattr("callback.config.observability._get_traceable", lambda: fake_traceable)
 
     @trace_tool("submit_tailor", graph_name="apply")
     def sample_tool(session_id: str, *, jd_raw_text: str) -> str:
@@ -247,7 +247,7 @@ def test_trace_tool_redacts_contact_pii_in_payload(monkeypatch):
 
 
 def test_trace_tool_emits_sanitized_error_output_when_wrapped_function_raises(monkeypatch):
-    from callback.observability import trace_tool
+    from callback.config.observability import trace_tool
 
     captured: dict[str, Any] = {}
 
@@ -265,7 +265,7 @@ def test_trace_tool_emits_sanitized_error_output_when_wrapped_function_raises(mo
     monkeypatch.setenv("CALLBACK_TRACE_BACKEND", "langsmith")
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2-secret")
-    monkeypatch.setattr("callback.observability._get_traceable", lambda: fake_traceable)
+    monkeypatch.setattr("callback.config.observability._get_traceable", lambda: fake_traceable)
 
     @trace_tool("load_jd", graph_name="apply")
     def sample_tool() -> dict:
@@ -286,7 +286,7 @@ def test_trace_tool_emits_sanitized_error_output_when_wrapped_function_raises(mo
 
 
 def test_trace_tool_forces_enabled_for_explicit_span(monkeypatch):
-    from callback.observability import trace_tool
+    from callback.config.observability import trace_tool
 
     captured: dict[str, Any] = {}
 
@@ -301,7 +301,7 @@ def test_trace_tool_forces_enabled_for_explicit_span(monkeypatch):
     monkeypatch.setenv("CALLBACK_TRACE_BACKEND", "langsmith")
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2-secret")
-    monkeypatch.setattr("callback.observability._get_traceable", lambda: fake_traceable)
+    monkeypatch.setattr("callback.config.observability._get_traceable", lambda: fake_traceable)
 
     @trace_tool("load_jd", graph_name="apply")
     def sample_tool() -> dict:
@@ -314,7 +314,7 @@ def test_trace_tool_forces_enabled_for_explicit_span(monkeypatch):
 
 def test_trace_node_summarizes_state_and_update_to_counts_and_keys(monkeypatch):
     """Node inputs/outputs carry only key names, counts, and booleans — never content."""
-    from callback.observability import trace_node
+    from callback.config.observability import trace_node
 
     captured: dict[str, Any] = {}
 
@@ -348,7 +348,7 @@ def test_trace_node_summarizes_state_and_update_to_counts_and_keys(monkeypatch):
     monkeypatch.setenv("CALLBACK_TRACE_BACKEND", "langsmith")
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2-secret")
-    monkeypatch.setattr("callback.observability._get_traceable", lambda: fake_traceable)
+    monkeypatch.setattr("callback.config.observability._get_traceable", lambda: fake_traceable)
 
     @trace_node("apply", "jd_fetch")
     def sample_node(state: FakeState) -> dict:
@@ -385,7 +385,7 @@ def test_trace_node_summarizes_state_and_update_to_counts_and_keys(monkeypatch):
 
 
 def test_trace_node_marks_error_updates_as_status_error(monkeypatch):
-    from callback.observability import trace_node
+    from callback.config.observability import trace_node
 
     captured: dict[str, Any] = {}
 
@@ -410,7 +410,7 @@ def test_trace_node_marks_error_updates_as_status_error(monkeypatch):
     monkeypatch.setenv("CALLBACK_TRACE_BACKEND", "langsmith")
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2-secret")
-    monkeypatch.setattr("callback.observability._get_traceable", lambda: fake_traceable)
+    monkeypatch.setattr("callback.config.observability._get_traceable", lambda: fake_traceable)
 
     @trace_node("apply", "render")
     def sample_node(state: FakeState) -> dict:
@@ -426,7 +426,7 @@ def test_trace_node_marks_error_updates_as_status_error(monkeypatch):
 
 
 def test_trace_node_emits_sanitized_error_output_when_node_raises(monkeypatch):
-    from callback.observability import trace_node
+    from callback.config.observability import trace_node
 
     captured: dict[str, Any] = {}
 
@@ -451,7 +451,7 @@ def test_trace_node_emits_sanitized_error_output_when_node_raises(monkeypatch):
     monkeypatch.setenv("CALLBACK_TRACE_BACKEND", "langsmith")
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2-secret")
-    monkeypatch.setattr("callback.observability._get_traceable", lambda: fake_traceable)
+    monkeypatch.setattr("callback.config.observability._get_traceable", lambda: fake_traceable)
 
     @trace_node("apply", "jd_fetch")
     def sample_node(state: FakeState) -> dict:
@@ -472,7 +472,7 @@ def test_trace_node_emits_sanitized_error_output_when_node_raises(monkeypatch):
 
 
 def test_trace_node_forces_enabled_for_explicit_span(monkeypatch):
-    from callback.observability import trace_node
+    from callback.config.observability import trace_node
 
     captured: dict[str, Any] = {}
 
@@ -487,7 +487,7 @@ def test_trace_node_forces_enabled_for_explicit_span(monkeypatch):
     monkeypatch.setenv("CALLBACK_TRACE_BACKEND", "langsmith")
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2-secret")
-    monkeypatch.setattr("callback.observability._get_traceable", lambda: fake_traceable)
+    monkeypatch.setattr("callback.config.observability._get_traceable", lambda: fake_traceable)
 
     @trace_node("apply", "jd_fetch")
     def sample_node(state: object) -> dict:
@@ -500,7 +500,7 @@ def test_trace_node_forces_enabled_for_explicit_span(monkeypatch):
 
 def test_trace_tool_stamps_thread_from_args_session_id(monkeypatch):
     """Tool span with session_id as first arg (submit_keywords style) stamps run metadata."""
-    from callback.observability import trace_tool
+    from callback.config.observability import trace_tool
 
     fake_rt_metadata: dict[str, Any] = {}
 
@@ -520,7 +520,7 @@ def test_trace_tool_stamps_thread_from_args_session_id(monkeypatch):
     monkeypatch.setenv("CALLBACK_TRACE_BACKEND", "langsmith")
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2-secret")
-    monkeypatch.setattr("callback.observability._get_traceable", lambda: fake_traceable)
+    monkeypatch.setattr("callback.config.observability._get_traceable", lambda: fake_traceable)
     monkeypatch.setattr("langsmith.run_helpers.get_current_run_tree", lambda: FakeRunTree())
 
     @trace_tool("submit_keywords", graph_name="apply")
@@ -534,7 +534,7 @@ def test_trace_tool_stamps_thread_from_args_session_id(monkeypatch):
 
 def test_trace_tool_stamps_thread_from_kwargs_session_id(monkeypatch):
     """Tool span with session_id passed as a keyword arg stamps run metadata."""
-    from callback.observability import trace_tool
+    from callback.config.observability import trace_tool
 
     fake_rt_metadata: dict[str, Any] = {}
 
@@ -554,7 +554,7 @@ def test_trace_tool_stamps_thread_from_kwargs_session_id(monkeypatch):
     monkeypatch.setenv("CALLBACK_TRACE_BACKEND", "langsmith")
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2-secret")
-    monkeypatch.setattr("callback.observability._get_traceable", lambda: fake_traceable)
+    monkeypatch.setattr("callback.config.observability._get_traceable", lambda: fake_traceable)
     monkeypatch.setattr("langsmith.run_helpers.get_current_run_tree", lambda: FakeRunTree())
 
     @trace_tool("get_wiki_pages", graph_name="apply")
@@ -568,7 +568,7 @@ def test_trace_tool_stamps_thread_from_kwargs_session_id(monkeypatch):
 
 def test_trace_node_stamps_thread_from_state_session_id(monkeypatch):
     """Node span stamps session_id from state.session_id onto run metadata."""
-    from callback.observability import trace_node
+    from callback.config.observability import trace_node
 
     fake_rt_metadata: dict[str, Any] = {}
 
@@ -595,7 +595,7 @@ def test_trace_node_stamps_thread_from_state_session_id(monkeypatch):
     monkeypatch.setenv("CALLBACK_TRACE_BACKEND", "langsmith")
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2-secret")
-    monkeypatch.setattr("callback.observability._get_traceable", lambda: fake_traceable)
+    monkeypatch.setattr("callback.config.observability._get_traceable", lambda: fake_traceable)
     monkeypatch.setattr("langsmith.run_helpers.get_current_run_tree", lambda: FakeRunTree())
 
     @trace_node("apply", "jd_fetch")
@@ -609,7 +609,7 @@ def test_trace_node_stamps_thread_from_state_session_id(monkeypatch):
 
 def test_stamp_thread_noop_when_no_run_tree(monkeypatch):
     """No active run tree: _stamp_thread is a no-op and does not raise."""
-    from callback.observability import _stamp_thread
+    from callback.config.observability import _stamp_thread
 
     monkeypatch.setattr("langsmith.run_helpers.get_current_run_tree", lambda: None)
 
@@ -618,7 +618,7 @@ def test_stamp_thread_noop_when_no_run_tree(monkeypatch):
 
 def test_stamp_thread_noop_when_session_id_absent(monkeypatch):
     """Empty/None session_id short-circuits before touching the run tree."""
-    from callback.observability import _stamp_thread
+    from callback.config.observability import _stamp_thread
 
     def fail_get_current_run_tree():
         raise AssertionError("run tree should not be fetched when session_id is absent")
@@ -632,7 +632,7 @@ def test_stamp_thread_noop_when_session_id_absent(monkeypatch):
 def test_invoke_graph_suppresses_native_langchain_tracing(monkeypatch):
     from langsmith import utils
 
-    from callback.observability import invoke_graph_without_native_tracing
+    from callback.config.observability import invoke_graph_without_native_tracing
 
     class FakeGraph:
         def invoke(self, graph_input: dict, config: dict) -> dict:
@@ -665,7 +665,7 @@ def test_invoke_graph_suppresses_native_langchain_tracing(monkeypatch):
 
 
 def test_redact_pii_replaces_contact_fields_with_placeholders():
-    from callback.observability import _redact_pii
+    from callback.config.observability import _redact_pii
 
     actual = _redact_pii(
         {
@@ -692,7 +692,7 @@ def test_redact_pii_replaces_contact_fields_with_placeholders():
 
 
 def test_redact_pii_passes_non_pii_values_unchanged():
-    from callback.observability import _redact_pii
+    from callback.config.observability import _redact_pii
 
     actual = _redact_pii(
         {
@@ -713,7 +713,7 @@ def test_redact_pii_passes_non_pii_values_unchanged():
 
 
 def test_redact_pii_regex_backstop_cleans_free_text_strings():
-    from callback.observability import _redact_pii
+    from callback.config.observability import _redact_pii
 
     actual = _redact_pii("Contact us at support@example.com or call 800-555-1234")
     expected = "Contact us at [email] or call [phone]"
@@ -722,7 +722,7 @@ def test_redact_pii_regex_backstop_cleans_free_text_strings():
 
 
 def test_redact_pii_regex_backstop_no_false_positives_on_metrics():
-    from callback.observability import _redact_pii
+    from callback.config.observability import _redact_pii
 
     cases = [
         "reduced costs 40% across 12000 users in 2024",
@@ -735,7 +735,7 @@ def test_redact_pii_regex_backstop_no_false_positives_on_metrics():
 
 
 def test_redact_pii_recurses_into_nested_structures():
-    from callback.observability import _redact_pii
+    from callback.config.observability import _redact_pii
 
     actual = _redact_pii(
         {
@@ -767,7 +767,7 @@ def test_redact_pii_preserves_business_content_outside_contact_block():
     are business content the user wants to see, so they must survive a realistic
     SectionMap dump.
     """
-    from callback.observability import _redact_pii
+    from callback.config.observability import _redact_pii
 
     actual = _redact_pii(
         {
@@ -798,7 +798,7 @@ def test_redact_pii_preserves_business_content_outside_contact_block():
 
 
 def test_redact_pii_does_not_mutate_input():
-    from callback.observability import _redact_pii
+    from callback.config.observability import _redact_pii
 
     # Input that genuinely gets redacted (email key), so a mutating impl would be caught.
     original = {"email": "jane@example.com", "score": 72}
@@ -809,7 +809,7 @@ def test_redact_pii_does_not_mutate_input():
 
 
 def test_redact_pii_skips_empty_string_pii_values():
-    from callback.observability import _redact_pii
+    from callback.config.observability import _redact_pii
 
     # Empty strings in PII fields should pass through (nothing to redact).
     actual = _redact_pii({"email": "", "name": "", "score": 90})
@@ -825,7 +825,7 @@ def test_redact_pii_skips_empty_string_pii_values():
 
 def test_sanitize_tool_inputs_jd_raw_text_and_edits_survive():
     """Real jd_raw_text and edits values are present in sanitized tool inputs."""
-    from callback.observability import _sanitize_tool_inputs
+    from callback.config.observability import _sanitize_tool_inputs
 
     processor = _sanitize_tool_inputs("submit_tailor", "apply")
     result = processor(
@@ -850,7 +850,7 @@ def test_sanitize_tool_inputs_jd_raw_text_and_edits_survive():
 
 def test_sanitize_node_inputs_summarizes_state_to_counts_and_keys():
     """Node inputs carry key names, counts, and booleans only — no state content."""
-    from callback.observability import _sanitize_node_inputs
+    from callback.config.observability import _sanitize_node_inputs
 
     class FakeState:
         def model_dump(self):
@@ -893,7 +893,7 @@ def test_sanitize_node_inputs_profile_state_no_story_or_tag_content_leaks():
     """A ProfileState with story narratives and skill tags summarizes to counts/keys
     only — the exact-dict result must not contain the secret narrative or skill name.
     """
-    from callback.observability import _sanitize_node_inputs
+    from callback.config.observability import _sanitize_node_inputs
     from callback.state import ProfileState
 
     state = ProfileState(
@@ -931,7 +931,7 @@ def test_sanitize_node_output_profile_compiled_profile_no_story_content_leaks():
     """A compile_profile update carrying compiled_profile summarizes to key names
     only — the exact-dict result must not contain the secret narrative.
     """
-    from callback.observability import _sanitize_node_output
+    from callback.config.observability import _sanitize_node_output
 
     processor = _sanitize_node_output("compile_profile")
     result = processor({"compiled_profile": {"stories": [{"situation": "secret"}]}})
@@ -950,7 +950,7 @@ def test_sanitize_tool_output_summarizes_compiled_profile():
     fields (skills_index, orphaned_skills, skill_coverage_warnings) to counts too —
     no skill names leave the span.
     """
-    from callback.observability import _sanitize_tool_output
+    from callback.config.observability import _sanitize_tool_output
 
     envelope = {
         "session_id": "sess-1",
@@ -1000,7 +1000,7 @@ def test_sanitize_tool_output_summarizes_primary_skill():
     """create_story envelope: primary_skill (a skill name) and story_id are redacted;
     needs_compile and the orphaned_skills count survive.
     """
-    from callback.observability import _sanitize_tool_output
+    from callback.config.observability import _sanitize_tool_output
 
     envelope = {
         "session_id": "sess-1",
@@ -1031,7 +1031,7 @@ def test_sanitize_tool_output_summarizes_primary_skill():
 
 def test_sanitize_tool_output_summarizes_sections():
     """sections is reduced to its sorted key names; section body content is dropped."""
-    from callback.observability import _sanitize_tool_output
+    from callback.config.observability import _sanitize_tool_output
 
     envelope = {
         "session_id": "sess-1",
@@ -1059,7 +1059,7 @@ def test_sanitize_tool_output_summarizes_sections():
 
 def test_sanitize_tool_output_summarizes_intake():
     """intake narratives (stories, onboard_text) are summarized to counts/placeholders."""
-    from callback.observability import _sanitize_tool_output
+    from callback.config.observability import _sanitize_tool_output
 
     envelope = {
         "session_id": "sess-1",
@@ -1103,7 +1103,7 @@ def test_sanitize_tool_output_summarizes_intake():
 
 
 def test_record_decision_stamps_labels_on_the_open_span(decisions):
-    from callback.observability import record_decision
+    from callback.config.observability import record_decision
 
     record_decision("jd_source", "fetched")
     record_decision("jd_truncated", True)
@@ -1112,9 +1112,9 @@ def test_record_decision_stamps_labels_on_the_open_span(decisions):
 
 
 def test_record_decision_does_nothing_without_an_open_span(monkeypatch, caplog):
-    from callback.observability import record_decision
+    from callback.config.observability import record_decision
 
-    caplog.set_level(logging.WARNING, logger="callback.observability")
+    caplog.set_level(logging.WARNING, logger="callback.config.observability")
     monkeypatch.setattr("langsmith.run_helpers.get_current_run_tree", lambda: None)
 
     record_decision("jd_source", "fetched")
@@ -1131,9 +1131,9 @@ def test_record_decision_does_nothing_without_an_open_span(monkeypatch, caplog):
     ],
 )
 def test_record_decision_rejects_anything_that_is_not_a_token(decisions, caplog, key, value):
-    from callback.observability import record_decision
+    from callback.config.observability import record_decision
 
-    caplog.set_level(logging.WARNING, logger="callback.observability")
+    caplog.set_level(logging.WARNING, logger="callback.config.observability")
 
     record_decision(key, value)
 
@@ -1148,7 +1148,7 @@ def test_record_decision_rejects_anything_that_is_not_a_token(decisions, caplog,
 
 def test_sanitize_tool_output_sends_wiki_pages_as_text():
     """get_wiki_pages replies pass through: page content is not cut to counts."""
-    from callback.observability import _sanitize_tool_output
+    from callback.config.observability import _sanitize_tool_output
 
     envelope = {
         "session_id": "s1",
@@ -1168,7 +1168,7 @@ def test_sanitize_tool_output_sends_wiki_pages_as_text():
 
 def test_sanitize_tool_output_sends_resume_bullets_outside_the_cut_fields():
     """Only the named profile fields are cut; trim_candidates and the wiki index pass through."""
-    from callback.observability import _sanitize_tool_output
+    from callback.config.observability import _sanitize_tool_output
 
     envelope = {
         "session_id": "s1",
@@ -1196,7 +1196,7 @@ def test_sanitize_tool_output_sends_resume_bullets_outside_the_cut_fields():
 
 def test_record_decision_leaves_a_span_callback_did_not_open_alone(monkeypatch):
     """A host program's own LangSmith run must not receive callback labels."""
-    from callback.observability import record_decision
+    from callback.config.observability import record_decision
 
     foreign_metadata: dict[str, Any] = {"owner": "host-app"}
 

@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from callback import paths
+from callback.config import paths
 from callback.preferences import SearchPreferences
 
 

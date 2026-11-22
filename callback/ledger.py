@@ -18,7 +18,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import BaseModel, ConfigDict
 
-from callback import paths
+from callback.config import paths
 
 _log = logging.getLogger(__name__)
 

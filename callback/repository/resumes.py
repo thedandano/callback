@@ -1,7 +1,7 @@
 import shutil
 from pathlib import Path
 
-from callback import paths
+from callback.config import paths
 
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".text", ".markdown"}
 

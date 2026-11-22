@@ -8,7 +8,7 @@ import json
 import logging
 
 import callback.extractor as extractor
-from callback.observability import trace_node
+from callback.config.observability import trace_node
 from callback.profilecompiler import (
     ProfileMissingError,
     load_compiled_profile,

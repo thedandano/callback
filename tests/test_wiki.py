@@ -11,7 +11,7 @@ from callback.wiki import (
 
 
 def store(tmp_path, monkeypatch):
-    monkeypatch.setattr("callback.paths.wiki_dir", lambda: tmp_path)
+    monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path)
     return WikiStore()
 
 

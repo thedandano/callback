@@ -15,7 +15,8 @@ from pathlib import Path
 # Add current directory to path for running via uv
 sys.path.insert(0, os.getcwd())
 
-from callback import ledger, paths
+from callback import ledger
+from callback.config import paths
 from callback.jd_data import EXTRACTION_PROTOCOL
 from callback.jd_fetcher import MIN_MARKDOWN_CHARS
 from callback.repository.resumes import save_resume
@@ -58,7 +59,7 @@ def main():
 
     # Run under isolated data and state roots so the temp resume is the only one
     # registered and nothing here touches the real wiki, ledger, or session
-    # checkpoint DBs (callback.paths).
+    # checkpoint DBs (callback.config.paths).
     data_root = tempfile.mkdtemp(prefix="callback-smoke-")
     state_root = tempfile.mkdtemp(prefix="callback-smoke-state-")
     os.environ["XDG_DATA_HOME"] = data_root

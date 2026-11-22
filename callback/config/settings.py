@@ -12,7 +12,7 @@ import os
 import re
 from collections.abc import MutableMapping
 
-from callback import paths
+from callback.config import paths
 
 logger = logging.getLogger(__name__)
 ENV_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")

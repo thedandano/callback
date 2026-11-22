@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.getcwd())
 
-from callback import paths  # noqa: E402
+from callback.config import paths  # noqa: E402
 
 
 def main() -> int:

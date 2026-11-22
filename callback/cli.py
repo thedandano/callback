@@ -20,14 +20,16 @@ from typing import Annotated, Any
 
 import typer
 
-from callback import ledger, ledger_import, paths, settings
-from callback.observability import (
+from callback import ledger, ledger_import
+from callback.config import paths, settings
+from callback.config.logging import configure_logging
+from callback.config.observability import (
     DEFAULT_LANGSMITH_ENDPOINT,
     DEFAULT_LANGSMITH_PROJECT,
     emit_trace_check_probe,
 )
+from callback.config.settings import ENV_NAME_RE
 from callback.plugin_install import PluginInstallError, install, resolve_targets
-from callback.settings import ENV_NAME_RE
 
 app = typer.Typer(no_args_is_help=True)
 config_app = typer.Typer(no_args_is_help=True)
@@ -470,7 +472,7 @@ def serve(
             err=True,
         )
 
-    from callback.server import configure_logging, run
+    from callback.server import run
 
     configure_logging(str(resolved_log_path))
 
