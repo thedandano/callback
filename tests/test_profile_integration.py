@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 import callback.server as server_module
-from callback.profile_graph import build_profile_graph
+from callback.graphs.profile.graph import build_profile_graph
 from callback.server import compile_profile, create_story, onboard_user
 
 RESUME_TEXT = """\

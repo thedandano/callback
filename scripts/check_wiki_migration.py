@@ -27,8 +27,10 @@ def main() -> int:
     os.environ["XDG_DATA_HOME"] = str(scratch)
     os.environ.pop("CALLBACK_APPS_DIR", None)
 
+    from callback.graphs.profile.nodes.compile_profile import (
+        compile_profile,  # noqa: E402  (after env is set)
+    )
     from callback.models.state import ProfileState  # noqa: E402
-    from callback.profile_nodes import compile_profile  # noqa: E402  (after env is set)
     from callback.repositories import stories, story_migration  # noqa: E402
 
     label = "primary"

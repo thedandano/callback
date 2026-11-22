@@ -6,8 +6,8 @@ import os
 import shutil
 from pathlib import Path
 
+from callback.graphs.profile.nodes.compile_profile import compile_profile
 from callback.models.state import ProfileState
-from callback.profile_nodes import compile_profile
 
 
 def install_case(case_dir: Path, data_root: Path, label: str = "primary") -> Path:

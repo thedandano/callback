@@ -1,13 +1,13 @@
 """Apply graph: application pipeline with host keyword handoff interrupts.
 
-The apply graph currently advances through the host keyword handoff:
+The graph runs:
 jd_fetch → keywords_accept → parse_initial → score_initial → tailor → render
 → parse_final → score_final → report → finalize
 
 Entry point: jd_fetch
 Finish point: finalize
-Interrupts after jd_fetch and keywords_accept so the host can extract and
-submit JDData before later milestones parse and score resumes.
+Interrupts after jd_fetch (so the host can extract and submit JDData) and
+before tailor (so the host can submit its resume edits).
 
 State is persisted in a SQLite checkpointer at paths.apply_db_path() (the per-user temp
 folder); sessions idle more than 24 h are pruned when the DB is opened.
@@ -21,20 +21,18 @@ from langgraph.graph import END, StateGraph
 # langgraph re-exports langchain_core's RunnableConfig but leaves it out of __all__.
 from langgraph.types import RunnableConfig  # pyright: ignore[reportPrivateImportUsage]
 
-from callback.apply_nodes import (
-    finalize,
-    jd_fetch,
-    keywords_accept,
-    parse_final,
-    parse_initial,
-    render,
-    report,
-    score_final,
-    score_initial,
-    tailor,
-)
 from callback.config import paths
 from callback.config.observability import build_graph_config
+from callback.graphs.apply.nodes.finalize import finalize
+from callback.graphs.apply.nodes.jd_fetch import jd_fetch
+from callback.graphs.apply.nodes.keywords_accept import keywords_accept
+from callback.graphs.apply.nodes.parse_final import parse_final
+from callback.graphs.apply.nodes.parse_initial import parse_initial
+from callback.graphs.apply.nodes.render import render
+from callback.graphs.apply.nodes.report import report
+from callback.graphs.apply.nodes.score_final import score_final
+from callback.graphs.apply.nodes.score_initial import score_initial
+from callback.graphs.apply.nodes.tailor import tailor
 from callback.models.state import ApplyState
 from callback.repositories.session_store import open_checkpointer
 
@@ -97,7 +95,7 @@ def build_apply_graph(db_path: Path | None = None):
 
     Returns:
         Compiled LangGraph StateGraph for ApplyState. The graph interrupts after
-        jd_fetch and keywords_accept for host-owned keyword extraction.
+        jd_fetch (host extracts keywords) and before tailor (host submits edits).
     """
     if db_path is None:
         default = paths.apply_db_path()

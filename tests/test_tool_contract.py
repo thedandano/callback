@@ -9,11 +9,11 @@ from unittest.mock import patch
 import pytest
 
 import callback.server as server
-from callback.apply_graph import get_apply_graph
-from callback.apply_nodes import resume_extractor
 from callback.config import paths
+from callback.graphs.apply.graph import get_apply_graph
 from callback.models.section_map import ContactInfo, ExperienceEntry, SectionMap, SkillsSection
 from callback.repositories.wiki import WikiStore
+from callback.services import extractor as resume_extractor
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 UUID_PATTERN = re.compile(
@@ -44,8 +44,8 @@ def fake_pdf_renderer(monkeypatch):
             return rendered_text[str(path)]
         return real_extract(path)
 
-    monkeypatch.setattr("callback.apply_nodes.render_resume", fake_render_resume)
-    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", fake_extract)
+    monkeypatch.setattr("callback.graphs.apply.nodes.render.render_resume", fake_render_resume)
+    monkeypatch.setattr("callback.services.extractor.extract", fake_extract)
 
 
 def _write_sections(resume_label: str) -> None:
@@ -119,7 +119,7 @@ def _reply_cases(tmp_path: Path, monkeypatch) -> dict[str, dict]:
         failed_loaded = server.load_jd(jd_raw_text="Python engineer needed")
     server.submit_keywords(failed_loaded["session_id"], jd_json)
     monkeypatch.setattr(
-        "callback.apply_nodes.render_resume",
+        "callback.graphs.apply.nodes.render.render_resume",
         lambda tailored, output_path: {"success": False, "error": "chromium crashed"},
     )
     replies["submit_tailor_pipeline_error"] = server.submit_tailor(

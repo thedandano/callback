@@ -434,7 +434,7 @@ def test_load_jd_accepts_url_with_raw_text_fallback():
     fetch_mock = AsyncMock(return_value=jd_text)
 
     with (
-        patch("callback.apply_nodes.fetch_url_to_markdown", fetch_mock),
+        patch("callback.graphs.apply.nodes.jd_fetch.fetch_url_to_markdown", fetch_mock),
         patch("callback.server.list_resumes", return_value=["resume"]),
     ):
         result = load_jd(
@@ -584,8 +584,11 @@ def test_submit_keywords_returns_envelope_when_extractor_raises(tmp_path, monkey
     def broken_extract(path):
         raise RuntimeError("extractor: PDF yielded no text")
 
-    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", broken_extract)
-    with patch("callback.apply_nodes.get_resume", return_value=str(tmp_path / "resume.pdf")):
+    monkeypatch.setattr("callback.services.extractor.extract", broken_extract)
+    with patch(
+        "callback.graphs.apply.nodes.parse_initial.get_resume",
+        return_value=str(tmp_path / "resume.pdf"),
+    ):
         result = submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
 
     expected = {
@@ -611,8 +614,11 @@ def test_submit_keywords_reports_extractor_value_error_as_unexpected_error(tmp_p
     def broken_extract(path):
         raise ValueError("extractor: unsupported format '.rtf' — expected .pdf, .docx, or .txt")
 
-    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", broken_extract)
-    with patch("callback.apply_nodes.get_resume", return_value=str(tmp_path / "resume.pdf")):
+    monkeypatch.setattr("callback.services.extractor.extract", broken_extract)
+    with patch(
+        "callback.graphs.apply.nodes.parse_initial.get_resume",
+        return_value=str(tmp_path / "resume.pdf"),
+    ):
         result = submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
 
     expected = {
@@ -1337,7 +1343,9 @@ def test_submit_keywords_orphaned_required_routes_to_create_story(tmp_path, monk
     jd_json = json.dumps({"title": "Backend Engineer", "company": "Co", "required": ["Kafka"]})
     with (
         patch("callback.server.list_resumes", return_value=[resume_label]),
-        patch("callback.apply_nodes.get_resume", return_value=str(resume_path)),
+        patch(
+            "callback.graphs.apply.nodes.parse_initial.get_resume", return_value=str(resume_path)
+        ),
     ):
         loaded = load_jd(jd_raw_text="Kafka engineer needed")
         result = submit_keywords(session_id=loaded["session_id"], jd_json=jd_json)
@@ -1778,7 +1786,7 @@ class TestSubmitTailorNoCoverage:
 
 def test_load_jd_auto_selects_single_registered_resume():
     """Single registered resume is auto-selected when resume_label is omitted."""
-    from callback.apply_graph import get_apply_graph, make_config
+    from callback.graphs.apply.graph import get_apply_graph, make_config
     from callback.server import load_jd
 
     with patch("callback.server.list_resumes", return_value=["default"]):
@@ -1800,7 +1808,7 @@ def test_load_jd_auto_selects_single_registered_resume():
 
 def test_load_jd_stores_first_registered_resume_when_several():
     """Two registered resumes without a label stores the first one on the graph state."""
-    from callback.apply_graph import get_apply_graph, make_config
+    from callback.graphs.apply.graph import get_apply_graph, make_config
     from callback.server import load_jd
 
     with patch("callback.server.list_resumes", return_value=["a", "b"]):
@@ -1861,14 +1869,16 @@ def test_load_jd_returns_no_resume_registered_error_when_empty():
 
 def test_parse_initial_wiki_miss_calls_get_resume_and_extracts_text(tmp_path):
     """Wiki miss: get_resume is called and text is extracted from the returned path."""
-    from callback.apply_nodes import parse_initial
+    from callback.graphs.apply.nodes.parse_initial import parse_initial
     from callback.models.state import ApplyState
 
     resume = tmp_path / "resume.txt"
     resume.write_text("Lead Engineer with Python and Kubernetes experience")
     state = ApplyState(session_id="s1", resume_label="lead")
 
-    with patch("callback.apply_nodes.get_resume", return_value=str(resume)) as mock_get:
+    with patch(
+        "callback.graphs.apply.nodes.parse_initial.get_resume", return_value=str(resume)
+    ) as mock_get:
         result = parse_initial(state)
 
     mock_get.assert_called_once_with("lead")
@@ -1877,13 +1887,16 @@ def test_parse_initial_wiki_miss_calls_get_resume_and_extracts_text(tmp_path):
 
 def test_parse_initial_wiki_miss_resume_not_found_returns_noop_sentinel():
     """Wiki miss with ResumeNotFoundError returns noop sentinel."""
-    from callback.apply_nodes import parse_initial
+    from callback.graphs.apply.nodes.parse_initial import parse_initial
     from callback.models.state import ApplyState
     from callback.repositories.resumes import ResumeNotFoundError
 
     state = ApplyState(session_id="s1", resume_label="ghost")
 
-    with patch("callback.apply_nodes.get_resume", side_effect=ResumeNotFoundError("ghost")):
+    with patch(
+        "callback.graphs.apply.nodes.parse_initial.get_resume",
+        side_effect=ResumeNotFoundError("ghost"),
+    ):
         result = parse_initial(state)
 
     assert result == {"parsed_initial": "<noop:parse:no-source>"}
@@ -1904,29 +1917,32 @@ MINIMAL_SECTIONS_JSON = json.dumps(
 
 
 def test_parse_initial_labels_the_resume_file_as_score_source(tmp_path, decisions):
-    from callback.apply_nodes import parse_initial
+    from callback.graphs.apply.nodes.parse_initial import parse_initial
     from callback.models.state import ApplyState
 
     resume = tmp_path / "resume.txt"
     resume.write_text("Lead Engineer with Python and Kubernetes experience")
 
-    with patch("callback.apply_nodes.get_resume", return_value=str(resume)):
+    with patch("callback.graphs.apply.nodes.parse_initial.get_resume", return_value=str(resume)):
         parse_initial(ApplyState(session_id="s1", resume_label="lead"))
 
     assert decisions == {"initial_score_source": "resume_file"}
 
 
 def test_parse_initial_labels_sections_text_when_the_resume_file_is_missing(decisions):
-    from callback.apply_nodes import parse_initial
+    from callback.graphs.apply.nodes.parse_initial import parse_initial
     from callback.models.state import ApplyState
     from callback.repositories.resumes import ResumeNotFoundError
 
     with (
         patch(
-            "callback.apply_nodes._load_wiki_sections",
+            "callback.graphs.apply.nodes.parse_initial._load_wiki_sections",
             return_value=(MINIMAL_SECTIONS_JSON, "index", "sections text"),
         ),
-        patch("callback.apply_nodes.get_resume", side_effect=ResumeNotFoundError("ghost")),
+        patch(
+            "callback.graphs.apply.nodes.parse_initial.get_resume",
+            side_effect=ResumeNotFoundError("ghost"),
+        ),
     ):
         result = parse_initial(ApplyState(session_id="s1", resume_label="ghost"))
 
@@ -1939,14 +1955,17 @@ def test_parse_initial_labels_sections_text_when_the_resume_file_is_missing(deci
 
 
 def test_parse_initial_labels_no_source_when_nothing_is_available(decisions):
-    from callback.apply_nodes import parse_initial
+    from callback.graphs.apply.nodes.parse_initial import parse_initial
     from callback.models.state import ApplyState
     from callback.repositories.resumes import ResumeNotFoundError
 
     parse_initial(ApplyState(session_id="s1"))
     no_label = dict(decisions)
     decisions.clear()
-    with patch("callback.apply_nodes.get_resume", side_effect=ResumeNotFoundError("ghost")):
+    with patch(
+        "callback.graphs.apply.nodes.parse_initial.get_resume",
+        side_effect=ResumeNotFoundError("ghost"),
+    ):
         parse_initial(ApplyState(session_id="s1", resume_label="ghost"))
 
     actual = {"no_label": no_label, "resume_not_found": decisions}
@@ -2002,7 +2021,7 @@ def test_tailor_retry_update_labels_the_attempt(decisions):
 
 def test_parse_initial_wiki_hit_uses_pdf_for_parsed_initial(tmp_path):
     """Wiki hit: parsed_initial comes from PDF, sections/wiki_index from wiki."""
-    from callback.apply_nodes import parse_initial
+    from callback.graphs.apply.nodes.parse_initial import parse_initial
     from callback.models.state import ApplyState
 
     resume = tmp_path / "resume.txt"
@@ -2010,8 +2029,8 @@ def test_parse_initial_wiki_hit_uses_pdf_for_parsed_initial(tmp_path):
     state = ApplyState(session_id="s1", resume_label="eng")
 
     with (
-        patch("callback.apply_nodes._load_wiki_sections") as mock_wiki,
-        patch("callback.apply_nodes.get_resume", return_value=str(resume)),
+        patch("callback.graphs.apply.nodes.parse_initial._load_wiki_sections") as mock_wiki,
+        patch("callback.graphs.apply.nodes.parse_initial.get_resume", return_value=str(resume)),
     ):
         mock_wiki.return_value = (
             MINIMAL_SECTIONS_JSON,
@@ -2035,7 +2054,7 @@ def test_parse_initial_wiki_hit_uses_pdf_for_parsed_initial(tmp_path):
 
 def test_parse_initial_wiki_hit_pdf_missing_falls_back_to_sections_text():
     """Wiki hit + ResumeNotFoundError: falls back to _sections_to_text, emits warning."""
-    from callback.apply_nodes import parse_initial
+    from callback.graphs.apply.nodes.parse_initial import parse_initial
     from callback.models.state import ApplyState
     from callback.repositories.resumes import ResumeNotFoundError
 
@@ -2043,8 +2062,11 @@ def test_parse_initial_wiki_hit_pdf_missing_falls_back_to_sections_text():
     sections_text = "Python ACME Engineer built things"
 
     with (
-        patch("callback.apply_nodes._load_wiki_sections") as mock_wiki,
-        patch("callback.apply_nodes.get_resume", side_effect=ResumeNotFoundError("eng")),
+        patch("callback.graphs.apply.nodes.parse_initial._load_wiki_sections") as mock_wiki,
+        patch(
+            "callback.graphs.apply.nodes.parse_initial.get_resume",
+            side_effect=ResumeNotFoundError("eng"),
+        ),
     ):
         mock_wiki.return_value = (MINIMAL_SECTIONS_JSON, "index", sections_text)
         result = parse_initial(state)
@@ -2069,7 +2091,7 @@ def test_parse_initial_wiki_hit_pdf_missing_falls_back_to_sections_text():
 
 class TestTailorDiagnostics:
     def test_matched_skill_present_in_rendered_text(self):
-        from callback.apply_nodes import _compute_tailor_diagnostics
+        from callback.graphs.apply.nodes.report import _compute_tailor_diagnostics
 
         result = _compute_tailor_diagnostics(
             ["machine learning"],
@@ -2085,7 +2107,7 @@ class TestTailorDiagnostics:
         ]
 
     def test_hyphen_dropped_by_pdf_extraction_not_present(self):
-        from callback.apply_nodes import _compute_tailor_diagnostics
+        from callback.graphs.apply.nodes.report import _compute_tailor_diagnostics
 
         result = _compute_tailor_diagnostics(
             ["agent-based workflows"],
@@ -2101,7 +2123,7 @@ class TestTailorDiagnostics:
         ]
 
     def test_suggested_alternatives_uses_normalization(self):
-        from callback.apply_nodes import _compute_tailor_diagnostics
+        from callback.graphs.apply.nodes.report import _compute_tailor_diagnostics
 
         result = _compute_tailor_diagnostics(
             ["retrieval-augmented generation (RAG)"],
@@ -2117,13 +2139,13 @@ class TestTailorDiagnostics:
         ]
 
     def test_no_applied_skill_values_returns_empty(self):
-        from callback.apply_nodes import _compute_tailor_diagnostics
+        from callback.graphs.apply.nodes.report import _compute_tailor_diagnostics
 
         assert _compute_tailor_diagnostics(None, "some text") == []
         assert _compute_tailor_diagnostics([], "some text") == []
 
     def test_case_insensitive_match(self):
-        from callback.apply_nodes import _compute_tailor_diagnostics
+        from callback.graphs.apply.nodes.report import _compute_tailor_diagnostics
 
         result = _compute_tailor_diagnostics(["Python"], "built with PYTHON and Django")
         actual = {
@@ -2137,7 +2159,7 @@ class TestTailorDiagnostics:
         assert actual == expected
 
     def test_all_matched_returns_empty_alternatives(self):
-        from callback.apply_nodes import _compute_tailor_diagnostics
+        from callback.graphs.apply.nodes.report import _compute_tailor_diagnostics
 
         result = _compute_tailor_diagnostics(["Python", "Go"], "Python and Go are used.")
         actual = {
@@ -2153,7 +2175,7 @@ class TestTailorDiagnostics:
 
 def test_onboard_user_returns_envelope_when_extractor_raises(tmp_path, monkeypatch):
     from callback import server
-    from callback.profile_graph import build_profile_graph
+    from callback.graphs.profile.graph import build_profile_graph
 
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
@@ -2163,7 +2185,7 @@ def test_onboard_user_returns_envelope_when_extractor_raises(tmp_path, monkeypat
     def broken_extract(path):
         raise ValueError("boom")
 
-    monkeypatch.setattr("callback.profile_nodes.extractor.extract", broken_extract)
+    monkeypatch.setattr("callback.services.extractor.extract", broken_extract)
 
     resume = tmp_path / "jane.txt"
     resume.write_text("Jane Doe\n", encoding="utf-8")
@@ -2477,7 +2499,7 @@ def _logged(caplog, event: str) -> list[dict]:
 def test_submit_responsibilities_replaces_trims_and_keeps_tailor_pending(
     tmp_path, monkeypatch, caplog
 ):
-    from callback.apply_graph import TAILOR_NODE, get_apply_graph, make_config
+    from callback.graphs.apply.graph import TAILOR_NODE, get_apply_graph, make_config
     from callback.server import submit_responsibilities, submit_tailor
 
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))

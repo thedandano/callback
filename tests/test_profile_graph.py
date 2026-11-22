@@ -7,9 +7,9 @@ write to tmp_path rather than ~/.local/share/callback.
 from datetime import UTC, datetime
 from pathlib import Path
 
+from callback.graphs.profile.graph import _route_check_profile, build_profile_graph, make_config
 from callback.models.profile import CompiledProfile, OrphanedSkill
 from callback.models.state import ProfileState
-from callback.profile_graph import _route_check_profile, build_profile_graph, make_config
 from callback.repositories.compiled_profile import save_compiled_profile
 from callback.repositories.resumes import list_resumes, save_resume
 
@@ -24,7 +24,7 @@ def _tmp_graph(tmp_path):
 
 
 def test_get_profile_graph_returns_the_same_instance():
-    from callback.profile_graph import get_profile_graph
+    from callback.graphs.profile.graph import get_profile_graph
 
     assert get_profile_graph() is get_profile_graph()
 

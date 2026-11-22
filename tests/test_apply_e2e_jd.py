@@ -2,7 +2,7 @@
 
 from unittest.mock import AsyncMock, patch
 
-from callback.apply_graph import build_apply_graph
+from callback.graphs.apply.graph import build_apply_graph
 from callback.models.state import ApplyState
 
 FIXTURE_MD = """# Senior Python Engineer
@@ -34,7 +34,7 @@ def test_url_fetched_markdown_stops_before_keyword_acceptance(tmp_path, monkeypa
     )
 
     fetch_mock = AsyncMock(return_value=FIXTURE_MD)
-    with patch("callback.apply_nodes.fetch_url_to_markdown", fetch_mock):
+    with patch("callback.graphs.apply.nodes.jd_fetch.fetch_url_to_markdown", fetch_mock):
         result = graph.invoke(
             initial_state,
             {"configurable": {"thread_id": session_id}},

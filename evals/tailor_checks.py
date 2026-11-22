@@ -17,11 +17,11 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from callback.apply_nodes import _sections_to_text
 from callback.models.section_map import SectionMap
 from callback.services import scorer
 from callback.services.profilecompiler import token_sort_ratio
 from callback.services.section_edits import apply_edit
+from callback.services.section_text import sections_to_text
 from evals.checks import Check
 from evals.recall import all_terms, term_present
 
@@ -121,7 +121,7 @@ def _malformed_edit_reason(edits: list) -> str | None:
 
 
 def _score(sections: dict, keywords: dict) -> scorer.ScoreResult:
-    text = _sections_to_text(SectionMap.model_validate(sections))
+    text = sections_to_text(SectionMap.model_validate(sections))
     return scorer.score(
         text,
         keywords.get("required", []),

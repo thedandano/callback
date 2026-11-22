@@ -60,10 +60,7 @@ source_modules = ["callback.config"]
 forbidden_modules = [
     "callback.server",
     "callback.cli",
-    "callback.apply_graph",
-    "callback.apply_nodes",
-    "callback.profile_graph",
-    "callback.profile_nodes",
+    "callback.graphs",
     "callback.render",
     "callback.repositories",
     "callback.services",
@@ -77,11 +74,8 @@ forbidden_modules = [
     "callback._build_info",
     "callback.server",
     "callback.cli",
-    "callback.apply_graph",
-    "callback.apply_nodes",
     "callback.config",
-    "callback.profile_graph",
-    "callback.profile_nodes",
+    "callback.graphs",
     "callback.render",
     "callback.repositories",
     "callback.services",
@@ -94,10 +88,7 @@ source_modules = ["callback.repositories"]
 forbidden_modules = [
     "callback.server",
     "callback.cli",
-    "callback.apply_graph",
-    "callback.apply_nodes",
-    "callback.profile_graph",
-    "callback.profile_nodes",
+    "callback.graphs",
     "callback.render",
     "callback.services",
 ]
@@ -109,10 +100,16 @@ source_modules = ["callback.services", "callback.render"]
 forbidden_modules = [
     "callback.server",
     "callback.cli",
-    "callback.apply_graph",
-    "callback.apply_nodes",
-    "callback.profile_graph",
-    "callback.profile_nodes",
+    "callback.graphs",
+]
+
+[[tool.importlinter.contracts]]
+name = "graphs sit below server and cli"
+type = "forbidden"
+source_modules = ["callback.graphs"]
+forbidden_modules = [
+    "callback.server",
+    "callback.cli",
 ]
 
 [tool.ruff]

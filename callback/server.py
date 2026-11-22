@@ -35,7 +35,14 @@ from pydantic import ValidationError
 
 import callback.services.scorer as scorer
 import callback.services.version_check as version_check
-from callback.apply_graph import (
+from callback.config import paths, settings
+from callback.config.logging import configure_logging, current_log_path, log, log_exception
+from callback.config.observability import (
+    invoke_graph_without_native_tracing,
+    record_decision,
+    trace_tool,
+)
+from callback.graphs.apply.graph import (
     FINALIZE_NODE,
     KEYWORDS_ACCEPT_NODE,
     PARSE_FINAL_NODE,
@@ -46,25 +53,17 @@ from callback.apply_graph import (
     TAILOR_NODE,
     get_apply_graph,
 )
-from callback.apply_graph import (
+from callback.graphs.apply.graph import (
     make_config as make_apply_config,
 )
-from callback.apply_nodes import _detect_uncovered_skills
-from callback.config import paths, settings
-from callback.config.logging import configure_logging, current_log_path, log, log_exception
-from callback.config.observability import (
-    invoke_graph_without_native_tracing,
-    record_decision,
-    trace_tool,
-)
+from callback.graphs.profile.graph import get_profile_graph, story_pending
+from callback.graphs.profile.graph import make_config as make_profile_config
 from callback.models.jd_data import JDDataError
 from callback.models.ledger import StatusUpdate
 from callback.models.preferences import SearchPreferences
 from callback.models.profile import CreatedStory
 from callback.models.section_map import SectionMap, SkillsSection
 from callback.models.state import ApplyState, ProfileState
-from callback.profile_graph import get_profile_graph, story_pending
-from callback.profile_graph import make_config as make_profile_config
 from callback.repositories import ledger, ledger_keys
 from callback.repositories.atomic import write_text_atomic
 from callback.repositories.preferences import PreferencesStore
@@ -79,7 +78,7 @@ from callback.services.jd_parsing import (
     non_atomic_responsibilities,
     parse_jd_json,
 )
-from callback.services.section_edits import apply_edit
+from callback.services.section_edits import apply_edit, detect_uncovered_skills
 
 # Must run before any module-level os.environ read below (e.g. LOG_LEVEL): callback
 # owns its own settings file (~/.config/callback/env.json) independent of any MCP
@@ -1398,7 +1397,7 @@ def _apply_tailor_edits(
         and "value" in edit
     ]
 
-    uncovered_skills = _detect_uncovered_skills(section_map)
+    uncovered_skills = detect_uncovered_skills(section_map)
 
     _tailor_retry_update(
         graph,

@@ -9,16 +9,13 @@ import pytest
 import callback.repositories.resumes as resumes_module
 import callback.services.extractor as ext
 from callback.config import paths
+from callback.graphs.profile.nodes.check_orphans import check_orphans
+from callback.graphs.profile.nodes.check_profile import check_profile
+from callback.graphs.profile.nodes.compile_profile import _resume_skills, compile_profile
+from callback.graphs.profile.nodes.create_story import create_story
+from callback.graphs.profile.nodes.onboard import onboard
 from callback.models.profile import CompiledProfile, CreatedStory, OrphanedSkill
 from callback.models.state import ProfileState
-from callback.profile_nodes import (
-    _resume_skills,
-    check_orphans,
-    check_profile,
-    compile_profile,
-    create_story,
-    onboard,
-)
 from callback.repositories import stories
 from callback.repositories.accomplishments import AccomplishmentsStore
 from callback.repositories.compiled_profile import save_compiled_profile

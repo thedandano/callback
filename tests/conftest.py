@@ -1,8 +1,8 @@
 import pytest
 
-from callback.apply_graph import get_apply_graph
 from callback.config import paths
-from callback.profile_graph import get_profile_graph
+from callback.graphs.apply.graph import get_apply_graph
+from callback.graphs.profile.graph import get_profile_graph
 
 
 @pytest.fixture(autouse=True)

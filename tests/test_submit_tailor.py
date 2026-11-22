@@ -71,8 +71,8 @@ def fake_pdf_renderer(monkeypatch):
     def fake_extract(path):
         return rendered_text.get(str(path), "")
 
-    monkeypatch.setattr("callback.apply_nodes.render_resume", fake_render_resume)
-    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", fake_extract)
+    monkeypatch.setattr("callback.graphs.apply.nodes.render.render_resume", fake_render_resume)
+    monkeypatch.setattr("callback.services.extractor.extract", fake_extract)
 
 
 def test_submit_tailor_rejects_unknown_session():
@@ -234,7 +234,7 @@ def test_submit_tailor_pipeline_error_marks_artifacts_null(tmp_path, monkeypatch
     def broken_render(tailored, output_path):
         return {"success": False, "error": "chromium crashed"}
 
-    monkeypatch.setattr("callback.apply_nodes.render_resume", broken_render)
+    monkeypatch.setattr("callback.graphs.apply.nodes.render.render_resume", broken_render)
 
     result = submit_tailor(
         session_id=session_id,
@@ -252,7 +252,7 @@ def test_submit_tailor_pipeline_error_marks_artifacts_null(tmp_path, monkeypatch
 
 def test_submit_tailor_can_be_retried_after_render_failure(tmp_path, monkeypatch):
     """A render failure leaves the session at the tailor interrupt for a retry."""
-    import callback.apply_nodes
+    import callback.graphs.apply.nodes.render as render_node
     from callback.server import submit_tailor
 
     resume_label = "test_resume"
@@ -274,7 +274,7 @@ def test_submit_tailor_can_be_retried_after_render_failure(tmp_path, monkeypatch
     ]
 
     calls = {"n": 0}
-    real_render = callback.apply_nodes.render_resume
+    real_render = render_node.render_resume
 
     def flaky_render(tailored, output_path):
         calls["n"] += 1
@@ -282,7 +282,7 @@ def test_submit_tailor_can_be_retried_after_render_failure(tmp_path, monkeypatch
             return {"success": False, "error": "chromium crashed"}
         return real_render(tailored, output_path)
 
-    monkeypatch.setattr("callback.apply_nodes.render_resume", flaky_render)
+    monkeypatch.setattr("callback.graphs.apply.nodes.render.render_resume", flaky_render)
 
     first = submit_tailor(session_id=session_id, edits=edits)
     assert first == {
@@ -323,7 +323,7 @@ def test_submit_tailor_no_coverage_retry_clears_stale_render_outputs(tmp_path, m
     ]
 
     # render succeeds and sets pdf_path, but parse_final fails (empty extracted text)
-    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", lambda path: "")
+    monkeypatch.setattr("callback.services.extractor.extract", lambda path: "")
 
     first = submit_tailor(session_id=session_id, edits=edits)
     assert first == {
@@ -768,8 +768,8 @@ def test_submit_tailor_project_bullet_replacement_can_match_required_keyword(tmp
     def fake_extract(_path):
         return rendered["text"]
 
-    monkeypatch.setattr("callback.apply_nodes.render_resume", fake_render_resume)
-    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", fake_extract)
+    monkeypatch.setattr("callback.graphs.apply.nodes.render.render_resume", fake_render_resume)
+    monkeypatch.setattr("callback.services.extractor.extract", fake_extract)
 
     section_map = SectionMap(
         contact=ContactInfo(name="Jane Dev"),
@@ -992,7 +992,7 @@ def test_submit_tailor_returns_envelope_when_extractor_raises(tmp_path, monkeypa
     def broken_extract(path):
         raise RuntimeError("extractor: PDF yielded no text")
 
-    monkeypatch.setattr("callback.apply_nodes.resume_extractor.extract", broken_extract)
+    monkeypatch.setattr("callback.services.extractor.extract", broken_extract)
 
     result = submit_tailor(session_id=session_id, edits=[])
 

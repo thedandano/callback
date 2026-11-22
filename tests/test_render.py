@@ -14,7 +14,8 @@ from pdfminer.pdftypes import resolve1
 from pdfminer.psparser import PSLiteral
 
 import callback.render.html_builder as render_builder
-from callback.apply_nodes import parse_final, render
+from callback.graphs.apply.nodes.parse_final import parse_final
+from callback.graphs.apply.nodes.render import render
 from callback.models.state import ApplyState
 from callback.models.tailored_resume import TailoredResume
 from callback.render.html_builder import (
@@ -34,7 +35,7 @@ from callback.services.scorer import ScoringConfig, _score_ats
 
 def test_render_produces_real_pdf(tmp_path, monkeypatch):
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
-    monkeypatch.setattr("callback.apply_nodes._today", lambda: date(2026, 10, 12))
+    monkeypatch.setattr("callback.graphs.apply.nodes.render._today", lambda: date(2026, 10, 12))
     state = ApplyState(
         session_id="s1",
         keywords={"company": "Acme Corp"},
@@ -56,7 +57,7 @@ def test_render_produces_real_pdf(tmp_path, monkeypatch):
 def test_render_keyword_round_trip(tmp_path, monkeypatch):
     """skills_raw keyword survives render → extract round-trip."""
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path))
-    monkeypatch.setattr("callback.apply_nodes._today", lambda: date(2026, 10, 12))
+    monkeypatch.setattr("callback.graphs.apply.nodes.render._today", lambda: date(2026, 10, 12))
     state = ApplyState(
         session_id="s2",
         keywords={"company": "Kafka Systems"},

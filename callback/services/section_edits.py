@@ -210,3 +210,15 @@ def apply_edit(section_map: SectionMap, edit: dict[str, Any]) -> EditResult:
         _apply_project_edit(section_map.projects, target, value, op)
 
     return EditResult(applied=True)
+
+
+def detect_uncovered_skills(section_map: SectionMap) -> list[str]:
+    """Return skills added to skills section but absent from all experience bullets."""
+    all_skills = section_map.skills.all_skills()
+
+    bullet_text = " ".join(b for exp in section_map.experience for b in exp.bullets)
+
+    def _covered(skill: str) -> bool:
+        return bool(re.search(rf"\b{re.escape(skill)}\b", bullet_text, re.IGNORECASE))
+
+    return [s for s in all_skills if not _covered(s)]

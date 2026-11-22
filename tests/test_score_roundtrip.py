@@ -4,13 +4,15 @@ import json
 import re
 from contextlib import closing
 
-from callback.apply_nodes import _sections_to_text, finalize, report
 from callback.config import paths
+from callback.graphs.apply.nodes.finalize import finalize
+from callback.graphs.apply.nodes.report import report
 from callback.models.section_map import EducationEntry, ExperienceEntry, SectionMap, SkillsSection
 from callback.models.state import ApplyState
 from callback.models.tailored_resume import TailoredResume
 from callback.repositories import ledger
 from callback.services.scorer import ATS_SECTION_PATTERNS
+from callback.services.section_text import sections_to_text
 
 _SCORE_INITIAL = {
     "total": 35.0,
@@ -290,13 +292,13 @@ def test_finalize_ledger_outcome_field(tmp_path, monkeypatch):
 
 
 def test_sections_to_text_all_headers_injected():
-    """_sections_to_text with non-empty core sections matches all ATS headers."""
+    """sections_to_text with non-empty core sections matches all ATS headers."""
     section_map = SectionMap(
         skills=SkillsSection(flat=["Python"], categorized={}),
         experience=[ExperienceEntry(company="ACME", role="Engineer", bullets=["Built services"])],
         education=[EducationEntry(institution="State University")],
     )
-    text = _sections_to_text(section_map)
+    text = sections_to_text(section_map)
     assert (
         sum(1 for pat in ATS_SECTION_PATTERNS if any(pat.match(line) for line in text.splitlines()))
         == 3
@@ -304,13 +306,13 @@ def test_sections_to_text_all_headers_injected():
 
 
 def test_sections_to_text_empty_education_no_education_header():
-    """_sections_to_text with empty education list → no standalone Education header in output."""
+    """sections_to_text with empty education list → no standalone Education header in output."""
     section_map = SectionMap(
         skills=SkillsSection(flat=["Python"], categorized={}),
         experience=[ExperienceEntry(company="ACME", role="Engineer", bullets=["Built services"])],
         education=[],
     )
-    text = _sections_to_text(section_map)
+    text = sections_to_text(section_map)
     assert not any(
         re.compile(r"(?i)^\s*(?:academic\s+)?education\s*:?\s*$").match(line)
         for line in text.splitlines()

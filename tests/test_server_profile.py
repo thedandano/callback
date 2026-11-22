@@ -6,12 +6,13 @@ from pathlib import Path
 
 import pytest
 
-import callback.profile_nodes as pnodes
+import callback.graphs.profile.nodes.compile_profile as compile_node
 import callback.repositories.wiki as wiki_module
 import callback.server as server_module
 from callback.config import paths
+from callback.graphs.profile.graph import get_profile_graph
 from callback.models.profile import CompiledProfile, OrphanedSkill
-from callback.profile_graph import get_profile_graph
+from callback.repositories import stories
 from callback.repositories.compiled_profile import save_compiled_profile
 from callback.repositories.resumes import save_resume
 from callback.server import compile_profile, create_story, onboard_user
@@ -520,7 +521,7 @@ class TestCreateStory:
         def _raise(label, story):
             raise RuntimeError("disk")
 
-        monkeypatch.setattr(pnodes.stories, "save_story", _raise)
+        monkeypatch.setattr(stories, "save_story", _raise)
 
         result = create_story(
             primary_skill="Python",
@@ -679,7 +680,7 @@ class TestCreateStory:
         _isolate_profile(tmp_path, monkeypatch)
         _save_profile_with_resumes(tmp_path)
 
-        real_save = pnodes.stories.save_story
+        real_save = stories.save_story
         state = {"raised": False}
 
         def _save_then_fail(label, story):
@@ -689,7 +690,7 @@ class TestCreateStory:
                 raise RuntimeError("checkpoint write failed")
             return saved
 
-        monkeypatch.setattr(pnodes.stories, "save_story", _save_then_fail)
+        monkeypatch.setattr(stories, "save_story", _save_then_fail)
 
         first = create_story(primary_skill="Python", skills=["Python"], **_STORY_FIELDS)
         expected = {
@@ -716,7 +717,7 @@ class TestCreateStory:
         actual = {
             "status": retry["status"],
             "story_id": retry["data"]["story_id"],
-            "stored": len(pnodes.stories.list_stories("backend")[0]),
+            "stored": len(stories.list_stories("backend")[0]),
         }
         assert actual == {"status": "ok", "story_id": "story-001", "stored": 1}
 
@@ -724,7 +725,7 @@ class TestCreateStory:
         _isolate_profile(tmp_path, monkeypatch)
         _save_profile_with_resumes(tmp_path)
 
-        original_save = pnodes.save_compiled_profile
+        original_save = compile_node.save_compiled_profile
         state = {"raised": False}
 
         def _raise_once(*args, **kwargs):
@@ -733,7 +734,7 @@ class TestCreateStory:
                 raise RuntimeError("disk full")
             return original_save(*args, **kwargs)
 
-        monkeypatch.setattr(pnodes, "save_compiled_profile", _raise_once)
+        monkeypatch.setattr(compile_node, "save_compiled_profile", _raise_once)
 
         result = create_story(
             primary_skill="Python",
@@ -756,7 +757,7 @@ class TestCreateStory:
         compiled = compile_profile(session_id=result["session_id"])
         assert compiled["status"] == "ok"
 
-        stories_count = len(pnodes.stories.list_stories("backend")[0])
+        stories_count = len(stories.list_stories("backend")[0])
         assert stories_count == 1
 
 
