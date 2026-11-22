@@ -306,7 +306,7 @@ The host owns keyword extraction and tailoring judgment. callback owns state, va
 
 ### Apply graph (`graphs/apply/graph.py`, `graphs/apply/nodes/`)
 
-Linear graph with host handoff interrupts after `jd_fetch` and `keywords_accept`:
+Linear graph with host handoff interrupts after `jd_fetch` and before `tailor`:
 
 ```text
 jd_fetch -> keywords_accept -> parse_initial -> score_initial -> tailor -> render
