@@ -297,7 +297,7 @@ def test_load_jd_trace_payload_carries_jd_text_and_full_output_data(monkeypatch)
 
     with (
         patch("callback.tools.resume_label.list_resumes", return_value=["resume"]),
-        patch("callback.tools.load_jd.get_apply_graph", return_value=FakeGraph()),
+        patch("callback.graphs.apply.api.get_apply_graph", return_value=FakeGraph()),
         patch("callback.config.observability._get_traceable", return_value=fake_traceable),
     ):
         result = load_jd(jd_raw_text="secret jd body")
@@ -329,7 +329,7 @@ def test_load_jd_returns_error_when_session_store_is_readonly():
 
     with (
         patch("callback.tools.resume_label.list_resumes", return_value=["resume"]),
-        patch("callback.tools.load_jd.get_apply_graph", return_value=ReadonlyGraph()),
+        patch("callback.graphs.apply.api.get_apply_graph", return_value=ReadonlyGraph()),
     ):
         result = load_jd(jd_raw_text="Python engineer needed")
 
@@ -355,7 +355,7 @@ def test_load_jd_returns_error_when_unexpected_exception_escapes_graph():
 
     with (
         patch("callback.tools.resume_label.list_resumes", return_value=["resume"]),
-        patch("callback.tools.load_jd.get_apply_graph", return_value=BrokenGraph()),
+        patch("callback.graphs.apply.api.get_apply_graph", return_value=BrokenGraph()),
     ):
         result = load_jd(jd_raw_text="Python engineer needed")
 
@@ -656,7 +656,7 @@ def test_submit_keywords_reports_checkpoint_value_error_as_invalid_session():
         def update_state(self, config, values):
             raise ValueError("checkpoint missing")
 
-    with patch("callback.tools.submit_keywords.get_apply_graph", return_value=FakeGraph()):
+    with patch("callback.graphs.apply.api.get_apply_graph", return_value=FakeGraph()):
         result = submit_keywords(session_id=session_id, jd_json=PARTIAL_JD_JSON)
 
     expected = {
@@ -2022,13 +2022,14 @@ class _FakeApplyGraph:
 
 
 def test_tailor_retry_update_labels_the_attempt(decisions):
-    from callback.tools.submit_tailor import _tailor_retry_update
+    from callback.graphs.apply.api import queue_tailor
 
-    _tailor_retry_update(_FakeApplyGraph({}), {}, {"no_coverage": True}, "sess-1")
+    with patch("callback.graphs.apply.api.get_apply_graph", return_value=_FakeApplyGraph({})):
+        queue_tailor("sess-1", {"no_coverage": True})
     first = dict(decisions)
-    _tailor_retry_update(
-        _FakeApplyGraph({"error": "render: boom"}), {}, {"no_coverage": True}, "sess-1"
-    )
+    graph = _FakeApplyGraph({"error": "render: boom"})
+    with patch("callback.graphs.apply.api.get_apply_graph", return_value=graph):
+        queue_tailor("sess-1", {"no_coverage": True})
 
     actual = {"first": first, "retry": decisions}
     expected = {
@@ -2471,14 +2472,19 @@ def test_rank_project_candidates_skips_an_undecodable_page(tmp_path, monkeypatch
     ids=["suspect", "normal", "legacy-score"],
 )
 def test_submit_keywords_propagates_ats_input_suspect(score, expected_suspect):
+    from callback.graphs.apply.api import ApplySession
     from callback.tools.submit_keywords import submit_keywords
 
     state = {"keywords": EXPECTED_PARTIAL_KEYWORDS, "score_initial": score}
     original_score = score.copy()
     with (
-        patch("callback.tools.submit_keywords.get_apply_graph"),
-        patch("callback.tools.submit_keywords._submit_keywords_state_error", return_value=None),
-        patch("callback.tools.submit_keywords._submit_keywords_invoke", return_value=(state, None)),
+        patch("callback.graphs.apply.api.ensure_ready"),
+        patch(
+            "callback.graphs.apply.api.read",
+            return_value=ApplySession({"resume_label": "r"}, "keywords", None),
+        ),
+        patch("callback.graphs.apply.api.accept_keywords"),
+        patch("callback.graphs.apply.api.resume", return_value=state),
     ):
         result = submit_keywords(session_id="session-123", jd_json=PARTIAL_JD_JSON)
 

@@ -4,12 +4,7 @@ from callback.config.logging import log
 from callback.config.observability import (
     trace_tool,
 )
-from callback.graphs.apply.graph import (
-    get_apply_graph,
-)
-from callback.graphs.apply.graph import (
-    make_config as make_apply_config,
-)
+from callback.graphs.apply import api as apply_api
 from callback.models.envelope import err, ok
 from callback.repositories.wiki import WikiPageIdError, WikiStore
 from callback.tools.errors import graph_or_err
@@ -39,13 +34,12 @@ def get_wiki_pages(session_id: str, page_ids: list[str]) -> dict:
 def _get_wiki_pages_impl(session_id: str, page_ids: list[str]) -> dict:
     log("INFO", {"tool": "get_wiki_pages", "session_id": session_id, "page_count": len(page_ids)})
 
-    graph, graph_error = graph_or_err(get_apply_graph, session_id)
+    _, graph_error = graph_or_err(apply_api.ensure_ready, session_id)
     if graph_error is not None:
         return graph_error
-    config = make_apply_config(session_id, tool_name="get_wiki_pages")
-    snapshot = graph.get_state(config)
+    session = apply_api.read(session_id, tool_name="get_wiki_pages")
 
-    if not snapshot.values:
+    if not session.values:
         return err(
             stage="get_wiki_pages",
             code="invalid_session",
@@ -53,8 +47,7 @@ def _get_wiki_pages_impl(session_id: str, page_ids: list[str]) -> dict:
             session_id=session_id,
         )
 
-    state_values = snapshot.values
-    resume_label = state_values.get("resume_label")
+    resume_label = session.values.get("resume_label")
     if not resume_label:
         return err(
             stage="get_wiki_pages",

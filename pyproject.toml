@@ -126,6 +126,14 @@ forbidden_modules = [
     "callback.cli",
 ]
 
+[[tool.importlinter.contracts]]
+name = "Tools reach the apply graph only through its front door"
+type = "forbidden"
+source_modules = ["callback.tools"]
+forbidden_modules = ["callback.graphs.apply.graph", "callback.graphs.apply.nodes", "langgraph"]
+# Only direct imports count: the front door itself imports the graph.
+allow_indirect_imports = true
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

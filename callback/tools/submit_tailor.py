@@ -5,23 +5,9 @@ from pathlib import Path
 from callback.config import paths
 from callback.config.logging import log
 from callback.config.observability import (
-    invoke_graph_without_native_tracing,
-    record_decision,
     trace_tool,
 )
-from callback.graphs.apply.graph import (
-    FINALIZE_NODE,
-    PARSE_FINAL_NODE,
-    RENDER_NODE,
-    REPORT_NODE,
-    SCORE_FINAL_NODE,
-    SCORE_INITIAL_NODE,
-    TAILOR_NODE,
-    get_apply_graph,
-)
-from callback.graphs.apply.graph import (
-    make_config as make_apply_config,
-)
+from callback.graphs.apply import api as apply_api
 from callback.models.envelope import err, ok
 from callback.models.section_map import SectionMap
 from callback.services.section_edits import apply_edits, detect_uncovered_skills
@@ -113,75 +99,22 @@ def submit_tailor(
     return _submit_tailor_impl(session_id, edits, no_coverage=no_coverage, output_dir=output_dir)
 
 
-_STALE_RETRY_KEYS = (
-    "tailored",
-    "tailored_sections",
-    "pdf_path",
-    "render_page_count",
-    "render_warnings",
-    "parsed_final",
-    "score_final",
-    "report",
-    "tailor_diagnostics",
-    "uncovered_skills",
-    "applied_skill_values",
-    "no_coverage",
-)
-
-
-def _tailor_retry_update(graph, config, values: dict, session_id: str) -> None:
-    """Log a retry when the session previously errored, then apply the state update.
-
-    Writes as_node=SCORE_INITIAL_NODE explicitly: SCORE_INITIAL_NODE's outgoing
-    edge unconditionally targets TAILOR_NODE, so this always re-queues tailor
-    as the next pending task. Without an explicit as_node, LangGraph infers the
-    last node that wrote state — after an error that is tailor/render/parse_final
-    itself, whose outgoing (conditional) edge would re-evaluate against the
-    now-cleared error and route past tailor/render entirely instead of retrying
-    them.
-
-    On a retry (the session's prior state carries an error), also clear stale
-    outputs (_STALE_RETRY_KEYS) from an earlier attempt that got further than
-    this one before failing — e.g. an edits attempt that rendered a PDF and
-    then failed at parse_final, followed by a no_coverage retry that skips
-    render entirely. Without this, the stale pdf_path/tailored content would
-    survive into finalize alongside outcome.no_coverage: true. Caller-supplied
-    values always win over the stale-clearing defaults.
-    """
-    snapshot = graph.get_state(config)
-    update = values
-    retrying = bool(snapshot.values.get("error"))
-    record_decision("tailor_attempt", "retry_after_error" if retrying else "first")
-    if retrying:
-        log(
-            "INFO",
-            {"tool": "submit_tailor", "session_id": session_id, "event": "retry_after_error"},
-        )
-        stale = dict.fromkeys(_STALE_RETRY_KEYS)
-        update = {**stale, **values}
-    graph.update_state(config, update, as_node=SCORE_INITIAL_NODE)
-
-
 def _outcome(final: dict) -> dict:
     if (final.get("report") or {}).get("no_coverage"):
         return {"no_coverage": True, "reason": "no wiki stories cover required keywords"}
     return {"no_coverage": False, "reason": None}
 
 
-def _submit_tailor_no_coverage(session_id: str, graph, config, resolved_output_dir) -> dict:
+def _submit_tailor_no_coverage(session_id: str, resolved_output_dir) -> dict:
     """Run the graph for the no_coverage path and build its success/error envelope."""
-    _tailor_retry_update(
-        graph,
-        config,
-        {"no_coverage": True, "output_dir": resolved_output_dir, "error": None},
-        session_id,
+    apply_api.queue_tailor(
+        session_id, {"no_coverage": True, "output_dir": resolved_output_dir, "error": None}
     )
     try:
-        invoke_graph_without_native_tracing(graph, None, config)
+        apply_api.resume(session_id, tool_name="submit_tailor")
     except Exception:
         return unexpected_error("submit_tailor", session_id)
-    final_snapshot = graph.get_state(config)
-    final = final_snapshot.values
+    final = apply_api.read(session_id, tool_name="submit_tailor").values
     if final.get("error"):
         return err(
             "submit_tailor",
@@ -211,10 +144,7 @@ def _submit_tailor_no_coverage(session_id: str, graph, config, resolved_output_d
     )
 
 
-_HALTED_APPLY_NODES = (RENDER_NODE, PARSE_FINAL_NODE, SCORE_FINAL_NODE, REPORT_NODE, FINALIZE_NODE)
-
-
-def _tailor_invalid_state_message(next_nodes: tuple[str, ...]) -> str:
+def _tailor_invalid_state_message(halted_at: str | None) -> str:
     """Message for a submit_tailor call when the session isn't at the tailor interrupt.
 
     A session halted mid-pipeline by a raised (uncaught) node exception parks at
@@ -223,8 +153,8 @@ def _tailor_invalid_state_message(next_nodes: tuple[str, ...]) -> str:
     non-tailor state (never started, or still at keywords_accept) keeps the
     original message.
     """
-    if next_nodes and next_nodes[0] in _HALTED_APPLY_NODES:
-        return f"session halted at {next_nodes[0]}; start a new session with load_jd"
+    if halted_at:
+        return f"session halted at {halted_at}; start a new session with load_jd"
     return "session is not waiting for tailor edits"
 
 
@@ -238,20 +168,19 @@ def _submit_tailor_impl(
 ) -> dict:
     log("INFO", {"tool": "submit_tailor", "session_id": session_id, "edit_count": len(edits)})
 
-    graph, graph_error = graph_or_err(get_apply_graph, session_id)
+    _, graph_error = graph_or_err(apply_api.ensure_ready, session_id)
     if graph_error is not None:
         return graph_error
-    config = make_apply_config(session_id, tool_name="submit_tailor")
-    snapshot = graph.get_state(config)
+    session = apply_api.read(session_id, tool_name="submit_tailor")
 
-    if not snapshot.values:
+    if not session.values:
         return err("submit_tailor", "session_not_found", "session_id not found", session_id)
 
-    if snapshot.next != (TAILOR_NODE,):
+    if session.waiting_for != "tailor":
         return err(
             "submit_tailor",
             "invalid_state",
-            _tailor_invalid_state_message(snapshot.next),
+            _tailor_invalid_state_message(session.halted_at),
             session_id,
         )
 
@@ -260,10 +189,9 @@ def _submit_tailor_impl(
         return output_dir_error
 
     if no_coverage:
-        return _submit_tailor_no_coverage(session_id, graph, config, resolved_output_dir)
+        return _submit_tailor_no_coverage(session_id, resolved_output_dir)
 
-    state_values = snapshot.values
-    sections_dict = state_values.get("sections")
+    sections_dict = session.values.get("sections")
     if not sections_dict:
         return err(
             "submit_tailor",
@@ -272,23 +200,18 @@ def _submit_tailor_impl(
             session_id,
         )
 
-    return _apply_tailor_edits(
-        session_id, graph, config, state_values, sections_dict, edits, resolved_output_dir
-    )
+    return _apply_tailor_edits(session_id, sections_dict, edits, resolved_output_dir)
 
 
-def _apply_tailor_edits(
-    session_id, graph, config, state_values, sections_dict, edits, output_dir=None
-):
+def _apply_tailor_edits(session_id, sections_dict, edits, output_dir=None):
     """Apply edits to the SectionMap, run the graph to finalize, and return real scores."""
     section_map = SectionMap.model_validate(sections_dict)
     edits_applied, edits_rejected, applied_skill_values = apply_edits(section_map, edits)
 
     uncovered_skills = detect_uncovered_skills(section_map)
 
-    _tailor_retry_update(
-        graph,
-        config,
+    apply_api.queue_tailor(
+        session_id,
         {
             "tailored_sections": section_map.model_dump(),
             "uncovered_skills": uncovered_skills,
@@ -296,15 +219,13 @@ def _apply_tailor_edits(
             "output_dir": output_dir,
             "error": None,
         },
-        session_id,
     )
     try:
-        invoke_graph_without_native_tracing(graph, None, config)
+        apply_api.resume(session_id, tool_name="submit_tailor")
     except Exception:
         return unexpected_error("submit_tailor", session_id)
 
-    final_snapshot = graph.get_state(config)
-    final = final_snapshot.values
+    final = apply_api.read(session_id, tool_name="submit_tailor").values
     if final.get("error"):
         return err(
             "submit_tailor",

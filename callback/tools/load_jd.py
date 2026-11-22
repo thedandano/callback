@@ -5,15 +5,9 @@ import uuid
 
 from callback.config.logging import log, log_exception
 from callback.config.observability import (
-    invoke_graph_without_native_tracing,
     trace_tool,
 )
-from callback.graphs.apply.graph import (
-    get_apply_graph,
-)
-from callback.graphs.apply.graph import (
-    make_config as make_apply_config,
-)
+from callback.graphs.apply import api as apply_api
 from callback.models.envelope import err, ok
 from callback.models.state import ApplyState
 from callback.services.host_protocols import (
@@ -85,16 +79,11 @@ def _load_jd_impl(  # noqa: C901
         resume_label=resolved_label,
     )
 
-    graph, graph_error = graph_or_err(get_apply_graph, session_id)
+    _, graph_error = graph_or_err(apply_api.ensure_ready, session_id)
     if graph_error is not None:
         return graph_error
     try:
-        config = make_apply_config(
-            session_id,
-            tool_name="load_jd",
-            resume_label=resolved_label,
-        )
-        state = invoke_graph_without_native_tracing(graph, initial_state, config)
+        state = apply_api.start(initial_state, resume_label=resolved_label)
     except JDFetchError as exc:
         reason = getattr(exc, "reason", None)
         if reason == "fetch_failed":

@@ -1,19 +1,10 @@
 """MCP tool `submit_keywords`."""
 
-from typing import Any
-
 from callback.config.logging import log
 from callback.config.observability import (
-    invoke_graph_without_native_tracing,
     trace_tool,
 )
-from callback.graphs.apply.graph import (
-    KEYWORDS_ACCEPT_NODE,
-    get_apply_graph,
-)
-from callback.graphs.apply.graph import (
-    make_config as make_apply_config,
-)
+from callback.graphs.apply import api as apply_api
 from callback.models.envelope import err, ok
 from callback.models.jd_data import JDDataError
 from callback.services.host_protocols import (
@@ -39,10 +30,10 @@ from callback.tools.workflow import (
 )
 
 
-def _submit_keywords_state_error(graph, config, session_id: str) -> dict | None:
+def _submit_keywords_state_error(session_id: str) -> dict | None:
     """Return an error envelope if submit_keywords cannot resume safely."""
-    snapshot = graph.get_state(config)
-    if not snapshot.values:
+    session = apply_api.read(session_id, tool_name="submit_keywords")
+    if not session.values:
         return err(
             stage="submit_keywords",
             code="invalid_session",
@@ -51,8 +42,7 @@ def _submit_keywords_state_error(graph, config, session_id: str) -> dict | None:
             retriable=False,
         )
 
-    expected_next = (KEYWORDS_ACCEPT_NODE,)
-    if snapshot.next != expected_next:
+    if session.waiting_for != "keywords":
         return err(
             stage="submit_keywords",
             code="invalid_state",
@@ -81,11 +71,11 @@ def submit_keywords(session_id: str, jd_json: str) -> dict:
 
 
 def _submit_keywords_invoke(
-    graph, config, keywords: dict, session_id: str
+    keywords: dict, session_id: str
 ) -> tuple[dict, None] | tuple[None, dict]:
-    """Update graph state with keywords and invoke the graph, mapping raised errors to envelopes."""
+    """Store keywords and resume the graph, mapping raised errors to envelopes."""
     try:
-        graph.update_state(config, {"keywords": keywords})
+        apply_api.accept_keywords(session_id, keywords)
     except ValueError as exc:
         return None, err(
             stage="submit_keywords",
@@ -95,18 +85,17 @@ def _submit_keywords_invoke(
             retriable=False,
         )
     try:
-        return invoke_graph_without_native_tracing(graph, None, config), None
+        return apply_api.resume(session_id, tool_name="submit_keywords"), None
     except Exception:
         return None, unexpected_error("submit_keywords", session_id)
 
 
-def _submit_keywords_session(session_id: str) -> tuple[Any, Any, dict | None]:
+def _submit_keywords_session_error(session_id: str) -> dict | None:
     """Open the apply graph and check the session can take keywords; else return the error."""
-    graph, graph_error = graph_or_err(get_apply_graph, session_id)
+    _, graph_error = graph_or_err(apply_api.ensure_ready, session_id)
     if graph_error is not None:
-        return None, None, graph_error
-    config = make_apply_config(session_id, tool_name="submit_keywords")
-    return graph, config, _submit_keywords_state_error(graph, config, session_id)
+        return graph_error
+    return _submit_keywords_state_error(session_id)
 
 
 @trace_tool("submit_keywords", graph_name="apply")
@@ -124,11 +113,11 @@ def _submit_keywords_impl(session_id: str, jd_json: str) -> dict:
             retriable=True,
         )
 
-    graph, config, session_error = _submit_keywords_session(session_id)
+    session_error = _submit_keywords_session_error(session_id)
     if session_error is not None:
         return session_error
 
-    state, invoke_error = _submit_keywords_invoke(graph, config, keywords, session_id)
+    state, invoke_error = _submit_keywords_invoke(keywords, session_id)
     if invoke_error is not None:
         return invoke_error
     assert state is not None
