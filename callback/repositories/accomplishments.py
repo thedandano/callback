@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from callback.config import paths
+from callback.repositories.atomic import write_json_atomic
 
 _SCHEMA_VERSION_MIGRATED = "2"
 
@@ -21,7 +22,7 @@ class AccomplishmentsStore:
             return json.load(f)
 
     def _save(self, data: dict) -> None:
-        paths.write_json_atomic(self._file_path(), data)
+        write_json_atomic(self._file_path(), data)
 
     def save_onboard_text(self, text: str) -> None:
         data = self._load()

@@ -17,8 +17,8 @@ from typing import NamedTuple
 
 from pydantic import BaseModel, ValidationError
 
-from callback import ledger
 from callback.models.ledger import RunRecord
+from callback.repositories import ledger, ledger_keys
 
 logger = logging.getLogger(__name__)
 
@@ -216,7 +216,7 @@ def import_archives(conn: sqlite3.Connection, roots: Path | list[Path]) -> Impor
 
 
 def _import_archive(conn: sqlite3.Connection, archive: _Archive, report: ImportReport) -> None:
-    run = archive.run.model_copy(update={"jd_url": ledger.url_or_none(archive.run.jd_url)})
+    run = archive.run.model_copy(update={"jd_url": ledger_keys.url_or_none(archive.run.jd_url)})
     jobs_before = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
     relinked = _relink_pdf(archive._replace(run=run))
     if not ledger.record_imported_run_if_absent(conn, relinked):
@@ -270,7 +270,7 @@ def _undated_reason(bad_url: str | None) -> str:
 
 def _import_row(conn: sqlite3.Connection, row: dict, label: str, report: ImportReport) -> None:
     raw_url = _cell(row, "URL")
-    url = ledger.url_or_none(raw_url)
+    url = ledger_keys.url_or_none(raw_url)
     company, title = _cell(row, "Company"), _cell(row, "Title")
     if not (url or company or title):
         _skip(report, label, "row has no URL, company, or title")
@@ -406,9 +406,9 @@ def _contact_url(row: sqlite3.Row, extras: dict[str, str]) -> str | None:
     A contact detail can be a recruiter profile or a thread, so an explicit job URL wins; the
     detail is still kept in the note.
     """
-    candidates = (ledger.url_or_none(extras.get(key)) for key in _URL_KEYS)
+    candidates = (ledger_keys.url_or_none(extras.get(key)) for key in _URL_KEYS)
     job_url = next((c for c in candidates if c), None)
-    return job_url or ledger.url_or_none(_text(row["contact_detail"]))
+    return job_url or ledger_keys.url_or_none(_text(row["contact_detail"]))
 
 
 def _import_contact(
@@ -461,7 +461,7 @@ def _with_salary_note(
 
     The job keeps the first range it stored, so a later source's different range would vanish.
     """
-    cleaned = ledger.clean_salary(salary_range)
+    cleaned = ledger_keys.clean_salary(salary_range)
     stored = conn.execute("SELECT salary_range FROM jobs WHERE job_key = ?", (key,)).fetchone()
     if not cleaned or not stored or not stored[0] or stored[0] == cleaned:
         return note
@@ -571,7 +571,7 @@ def _apply_name_match(
     seen_at: str,
 ) -> None:
     """Fill empty metadata on a matched job and pull first_seen earlier when this row is older."""
-    seen = ledger.canonical_timestamp(seen_at)
+    seen = ledger_keys.canonical_timestamp(seen_at)
     with conn:
         conn.execute(
             "UPDATE jobs SET salary_range = COALESCE(NULLIF(salary_range, ''), ?),"
@@ -585,8 +585,8 @@ def _apply_name_match(
             " ELSE first_seen END"
             " WHERE job_key = ?",
             (
-                ledger.clean_salary(salary_range),
-                ledger.normalize_url(url) if url else None,
+                ledger_keys.clean_salary(salary_range),
+                ledger_keys.normalize_url(url) if url else None,
                 seen,
                 seen,
                 seen,
@@ -605,9 +605,9 @@ def _name_match(
     """The one same-name job a row joins: any job for a URL-less row, else a URL-less job
     or one already promoted to the row's URL when no job exists yet for that URL."""
     if url:
-        if _job_exists(conn, ledger.job_key(url, None, None)):
+        if _job_exists(conn, ledger_keys.job_key(url, None, None)):
             return None
-        normalized_url = ledger.normalize_url(url)
+        normalized_url = ledger_keys.normalize_url(url)
         # Look up a promoted pasted: job by stored URL before requiring company/title.
         by_url = conn.execute(
             "SELECT job_key FROM jobs WHERE url = ? ORDER BY first_seen DESC LIMIT 1",
@@ -637,7 +637,7 @@ def _upsert_import_job(
     seen_at: str,
     salary_range: str | None = None,
 ) -> str:
-    key = ledger.job_key(url, company, title)
+    key = ledger_keys.job_key(url, company, title)
     existed = _job_exists(conn, key)
     ledger.upsert_job(
         conn,

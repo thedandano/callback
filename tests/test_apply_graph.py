@@ -68,7 +68,7 @@ def tmp_apps_dir(tmp_path, monkeypatch):
 @pytest.fixture
 def tmp_resume(tmp_path, monkeypatch):
     """Register a temporary resume in the local registry and return its path."""
-    from callback.repository.resumes import save_resume
+    from callback.repositories.resumes import save_resume
 
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     resume_file = tmp_path / "resume.txt"

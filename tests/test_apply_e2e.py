@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from callback import ledger
 from callback.config import paths
 from callback.models.tailored_resume import TailoredResume
+from callback.repositories import ledger
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SAMPLE_JD = (FIXTURES / "sample_jd.txt").read_text()
@@ -96,7 +96,7 @@ MINIMAL_TAILORED_SECTIONS = {
 @pytest.fixture
 def setup_e2e_session(tmp_path, monkeypatch):
     """Setup e2e test session: return session_id at the tailor interrupt."""
-    from callback.repository.resumes import save_resume
+    from callback.repositories.resumes import save_resume
     from callback.server import load_jd, submit_keywords
 
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
@@ -253,7 +253,7 @@ class TestApplyGraphE2E:
 @pytest.fixture
 def setup_m3_session_with_graph(tmp_path, monkeypatch):
     """M3 fixture: pipeline run through finalize with Redis as extra required keyword."""
-    from callback.repository.resumes import save_resume
+    from callback.repositories.resumes import save_resume
     from callback.server import load_jd, submit_keywords
 
     monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
@@ -360,7 +360,7 @@ class TestRequiredAnyOrGroups:
     def test_submit_keywords_reports_required_missing_any_for_unmatched_group(
         self, tmp_path, monkeypatch
     ):
-        from callback.repository.resumes import save_resume
+        from callback.repositories.resumes import save_resume
         from callback.server import load_jd, submit_keywords
 
         monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
@@ -400,7 +400,7 @@ class TestPreferredAnyOrGroups:
     def test_submit_keywords_reports_preferred_missing_any_for_unmatched_group(
         self, tmp_path, monkeypatch
     ):
-        from callback.repository.resumes import save_resume
+        from callback.repositories.resumes import save_resume
         from callback.server import load_jd, submit_keywords
 
         monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))
@@ -446,7 +446,7 @@ class TestAtsInputSuspectHandoff:
         self, tmp_path, monkeypatch, resume_text, expected_suspect
     ):
         from callback.apply_graph import get_apply_graph, make_config
-        from callback.repository.resumes import save_resume
+        from callback.repositories.resumes import save_resume
         from callback.server import load_jd, submit_keywords
 
         monkeypatch.setenv("CALLBACK_APPS_DIR", str(tmp_path / "applications"))

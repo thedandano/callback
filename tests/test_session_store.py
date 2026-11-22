@@ -11,7 +11,11 @@ from langgraph.types import RunnableConfig  # pyright: ignore[reportPrivateImpor
 
 from callback.config import paths
 from callback.models.tailored_resume import TailoredResume
-from callback.session_store import _delete_if_still_stale, checkpoint_time, open_checkpointer
+from callback.repositories.session_store import (
+    _delete_if_still_stale,
+    checkpoint_time,
+    open_checkpointer,
+)
 
 
 def _cfg(thread_id: str) -> RunnableConfig:

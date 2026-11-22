@@ -1,18 +1,10 @@
-import json
 from datetime import UTC, datetime
 from difflib import SequenceMatcher
-from pathlib import Path
 
-from callback.config import paths
 from callback.models.profile import CompiledProfile, CreatedStory, OrphanedSkill
 
 _SCHEMA_VERSION = "1"
-_COMPILED_PROFILE_FILE = "compiled_profile.json"
 _FUZZY_THRESHOLD = 80
-
-
-class ProfileMissingError(Exception):
-    pass
 
 
 def _insert_skills(seen: dict[str, str], skills: list[str]) -> None:
@@ -86,17 +78,3 @@ def compile_profile(
         compiled_at=datetime.now(UTC).isoformat(),
     )
     return profile, warnings
-
-
-def save_compiled_profile(profile: CompiledProfile, base_dir: Path | None = None) -> None:
-    target_dir = base_dir if base_dir is not None else paths.data_dir()
-    paths.write_json_atomic(target_dir / _COMPILED_PROFILE_FILE, profile.model_dump())
-
-
-def load_compiled_profile(base_dir: Path | None = None) -> CompiledProfile:
-    target_dir = base_dir if base_dir is not None else paths.data_dir()
-    file_path = target_dir / _COMPILED_PROFILE_FILE
-    if not file_path.exists():
-        raise ProfileMissingError(f"No compiled profile at {file_path}")
-    with open(file_path) as f:
-        return CompiledProfile.model_validate(json.load(f))

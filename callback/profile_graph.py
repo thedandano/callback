@@ -34,7 +34,7 @@ from callback.profile_nodes import (
     create_story,
     onboard,
 )
-from callback.session_store import open_checkpointer
+from callback.repositories.session_store import open_checkpointer
 
 
 def make_config(

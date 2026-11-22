@@ -1,6 +1,6 @@
 from callback.models.profile import CompiledProfile, CreatedStory
-from callback.repository import stories
-from callback.wiki import WikiStore
+from callback.repositories import story_pages
+from callback.repositories.wiki import WikiStore
 
 
 def _skill_story_map(stories_: list[CreatedStory]) -> dict[str, CreatedStory]:
@@ -16,7 +16,7 @@ def _skill_lines(skills_index: list[str], skill_map: dict[str, CreatedStory]) ->
     lines = []
     for skill in skills_index:
         story = skill_map.get(skill.lower())
-        line = f"- [{skill}]({stories.story_page_id(story.id)})" if story else f"- {skill}"
+        line = f"- [{skill}]({story_pages.story_page_id(story.id)})" if story else f"- {skill}"
         lines.append(line)
     return lines
 

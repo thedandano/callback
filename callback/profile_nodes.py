@@ -12,16 +12,16 @@ from callback.config.observability import trace_node
 from callback.models.profile import CreatedStory
 from callback.models.section_map import SectionMap
 from callback.models.state import ProfileState
-from callback.profilecompiler import (
+from callback.profilecompiler import compile_profile as build_profile
+from callback.repositories import stories, story_migration
+from callback.repositories.accomplishments import AccomplishmentsStore
+from callback.repositories.compiled_profile import (
     ProfileMissingError,
     load_compiled_profile,
     save_compiled_profile,
 )
-from callback.profilecompiler import compile_profile as build_profile
-from callback.repository import stories
-from callback.repository.accomplishments import AccomplishmentsStore
-from callback.repository.resumes import list_resumes, replace_resume
-from callback.wiki import WikiStore
+from callback.repositories.resumes import list_resumes, replace_resume
+from callback.repositories.wiki import WikiStore
 from callback.wikirenderer import render_index
 
 logger = logging.getLogger(__name__)
@@ -90,7 +90,7 @@ def onboard(state: ProfileState) -> dict:
     intake = state.intake or {}
     _persist_onboard_text(intake)
     WikiStore().write_page(label, "sections.json", section_map.model_dump_json())
-    stories.migrate_legacy_stories(label)
+    story_migration.migrate_legacy_stories(label)
 
     story_list, _ = stories.list_stories(label)
     return {
@@ -109,7 +109,7 @@ def onboard(state: ProfileState) -> dict:
 def compile_profile(state: ProfileState) -> dict:
     _log_enter("compile_profile", state)
     label = _registered_label(state.resume_label)
-    stories.migrate_legacy_stories(label)
+    story_migration.migrate_legacy_stories(label)
     story_list, page_warnings = stories.list_stories(label)
     host_tags = list(state.host_tags or [])
     resume_skills = _resume_skills(label)
@@ -173,7 +173,7 @@ def create_story(state: ProfileState) -> dict:
         impact=intake.get("impact", ""),
     )
     label = _registered_label(state.resume_label)
-    stories.migrate_legacy_stories(label)  # before next_story_id can claim a legacy id
+    story_migration.migrate_legacy_stories(label)  # before next_story_id can claim a legacy id
     saved = stories.save_story(label, story)
     return {
         "current_story_target": saved.primary_skill,

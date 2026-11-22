@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from callback import ledger
 from callback.ledger_import import (
     ImportReport,
     _iso_date,
@@ -15,6 +14,7 @@ from callback.ledger_import import (
     import_record_csv,
 )
 from callback.models.ledger import RunRecord
+from callback.repositories import ledger
 
 _CSV = (
     "Company,Title,Recorded Date,Email Date,URL,Salary range,Status,Notes,"

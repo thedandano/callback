@@ -8,6 +8,7 @@ import pytest
 
 from callback.config import paths, settings
 from callback.config.logging import configure_logging
+from callback.repositories.atomic import write_json_atomic
 
 
 @pytest.fixture(autouse=True)
@@ -73,7 +74,7 @@ def test_read_env_file_raises_value_error_when_unreadable():
 
 
 def test_apply_env_file_sets_missing_key():
-    paths.write_json_atomic(paths.env_file(), {"FOO": "bar"})
+    write_json_atomic(paths.env_file(), {"FOO": "bar"})
     environ: dict[str, str] = {}
 
     settings.apply_env_file(environ)
@@ -82,7 +83,7 @@ def test_apply_env_file_sets_missing_key():
 
 
 def test_apply_env_file_does_not_override_existing_process_env():
-    paths.write_json_atomic(paths.env_file(), {"FOO": "bar"})
+    write_json_atomic(paths.env_file(), {"FOO": "bar"})
     environ = {"FOO": "existing"}
 
     settings.apply_env_file(environ)
@@ -91,7 +92,7 @@ def test_apply_env_file_does_not_override_existing_process_env():
 
 
 def test_apply_env_file_logs_key_names_but_never_values(caplog):
-    paths.write_json_atomic(paths.env_file(), {"LANGSMITH_API_KEY": "super-secret-value"})
+    write_json_atomic(paths.env_file(), {"LANGSMITH_API_KEY": "super-secret-value"})
     environ: dict[str, str] = {}
 
     with caplog.at_level(logging.INFO):
@@ -112,7 +113,7 @@ def test_apply_env_file_never_relocates_itself_via_bootstrap_variables(caplog):
     paths.env_file() resolve somewhere else than where this file was actually
     read from — splitting settings across two locations with no clear owner.
     """
-    paths.write_json_atomic(
+    write_json_atomic(
         paths.env_file(),
         {"HOME": "/should-be-ignored", "XDG_CONFIG_HOME": "/also-ignored", "FOO": "bar"},
     )
@@ -139,7 +140,7 @@ def test_log_level_from_env_file_applies_to_logging(monkeypatch):
     monkeypatch.setattr(root, "handlers", [])  # basicConfig is a no-op when handlers exist
     monkeypatch.setenv("LOG_LEVEL", "placeholder")  # undo apply_env_file after
     monkeypatch.delenv("LOG_LEVEL")
-    paths.write_json_atomic(paths.env_file(), {"LOG_LEVEL": "DEBUG"})
+    write_json_atomic(paths.env_file(), {"LOG_LEVEL": "DEBUG"})
     original_level = root.level
     try:
         settings.apply_env_file()

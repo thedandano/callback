@@ -15,14 +15,14 @@ from pathlib import Path
 # Add current directory to path for running via uv
 sys.path.insert(0, os.getcwd())
 
-from callback import ledger
 from callback.config import paths
 from callback.jd_data import EXTRACTION_PROTOCOL
 from callback.jd_fetcher import MIN_MARKDOWN_CHARS
 from callback.models.section_map import ContactInfo, ExperienceEntry, SectionMap, SkillsSection
-from callback.repository.resumes import save_resume
+from callback.repositories import ledger
+from callback.repositories.resumes import save_resume
+from callback.repositories.wiki import WikiStore
 from callback.server import load_jd, submit_keywords, submit_tailor
-from callback.wiki import WikiStore
 
 JD_JSON = json.dumps(
     {

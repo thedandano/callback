@@ -6,57 +6,25 @@ writer, and status events are append-only: a repeat of the same event is ignored
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
-import re
 import sqlite3
-from datetime import UTC, date, datetime
 from pathlib import Path
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from callback.config import paths
 from callback.models.ledger import JobNameMatch, RunRecord, StatusUpdate
+from callback.repositories.ledger_keys import (
+    canonical_timestamp,
+    clean_salary,
+    clean_url,
+    job_key,
+    norm_text,
+    optional_text,
+)
 
 _log = logging.getLogger(__name__)
 
 _BUSY_TIMEOUT_S = 5.0
-_DEFAULT_PORTS = {"http": ":80", "https": ":443"}
-# Query parameters that only say where a click came from, compared lowercase. Everything else in
-# the query string is kept, because boards name the posting in many different parameters
-# (Taleo `job`, SuccessFactors `career_job_req_id`, LinkedIn `currentJobId`, ...).
-_TRACKING_PARAM_PREFIXES = ("utm_",)
-_TRACKING_PARAMS = frozenset(
-    {
-        "gh_src",
-        "refid",
-        "ref_id",
-        "trk",
-        "trackingid",
-        "tracking_id",
-        "lever-source",
-        "lever-origin",
-        "fbclid",
-        "gclid",
-        "mc_cid",
-        "mc_eid",
-        "vjs",
-        "tk",
-        "_ga",
-        "igshid",
-        "si",
-        "refererurl",
-        "referrer",
-        "cmp",
-        "campaign",
-        "medium",
-        "sharedid",
-    }
-)
-_JD_HASH_CHARS = 8
-_NAME_SEPARATOR = "\x1f"
-_SALARY_PLACEHOLDERS = frozenset({"", "not listed", "n/a", "unknown", "ambiguous", "-", "tbd"})
-_PLAIN_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -166,138 +134,6 @@ class AmbiguousJobMatchError(Exception):
         super().__init__(f"ambiguous company+title match: {candidates}")
 
 
-def normalize_url(url: str) -> str:
-    """Canonical form of a posting URL: https, lowercase host, no default port, no trailing slash.
-
-    Drops the query parameters that only track the click (`_TRACKING_PARAMS`, any `utm_*`),
-    compared case-insensitively, and keeps the rest in sorted order. A board that adds a new
-    tracking parameter needs it added there, or its links split into two keys. Fragments are dropped
-    unless they hold a recognized route ("#/job/1", "#!/job/1", Gmail "#all/<id>").
-    A value that cannot be parsed is logged and kept as typed.
-
-    ponytail: `www.` is kept, so "www.x.com/a" and "x.com/a" get two keys. Strip it here if
-    that ever splits one posting in two.
-    """
-    stripped = url.strip()
-    try:
-        outer = urlsplit(stripped)
-        if outer.scheme.lower() in _DEFAULT_PORTS and outer.netloc:
-            candidate = stripped
-        elif stripped.startswith("//"):
-            candidate = f"https:{stripped}"
-        else:
-            candidate = f"https://{stripped}"
-        parts = urlsplit(candidate)
-    except ValueError as exc:
-        _log.warning(
-            json.dumps({"event": "ledger_url_unparsed", "url": stripped, "error": str(exc)})
-        )
-        return stripped
-    scheme = parts.scheme.lower()
-    netloc = parts.netloc.lower().removesuffix(_DEFAULT_PORTS.get(scheme, "\0"))
-    if scheme == "http":
-        scheme = "https"
-    query = _normalized_query(parts.query)
-    fragment = _normalized_route_fragment(parts.fragment, parts.hostname)
-    return urlunsplit((scheme, netloc, parts.path.rstrip("/"), query, fragment))
-
-
-def _normalized_query(query: str) -> str:
-    return urlencode(
-        sorted(
-            (key, value)
-            for key, value in parse_qsl(query, keep_blank_values=True)
-            if not _is_tracking(key)
-        )
-    )
-
-
-def _normalized_route_fragment(fragment: str, hostname: str | None) -> str:
-    """Keep hash routes (`#/x`, `#!/x`) and Gmail message ids; drop descriptive fragments."""
-    prefix, body = ("!", fragment[1:]) if fragment.startswith("!/") else ("", fragment)
-    route = urlsplit(body)
-    if body.startswith("/"):
-        path = route.path.rstrip("/")
-        return prefix + urlunsplit(("", "", path, _normalized_query(route.query), ""))
-    if hostname != "mail.google.com" or not _is_gmail_message_path(route.path):
-        return ""
-    return urlunsplit(("", "", route.path, _normalized_query(route.query), ""))
-
-
-def _is_gmail_message_path(path: str) -> bool:
-    mailbox, separator, message_id = path.partition("/")
-    return mailbox in {"all", "inbox"} and bool(separator and message_id and "/" not in message_id)
-
-
-def url_or_none(value: str | None) -> str | None:
-    """The stripped value if it is an http(s) URL with a host, else None (a thread descriptor)."""
-    text = (value or "").strip()
-    try:
-        parts = urlsplit(text)
-        hostname, _port = parts.hostname, parts.port
-    except ValueError as exc:
-        _log.warning(json.dumps({"event": "ledger_url_unparseable", "error": str(exc)}))
-        return None
-    if parts.scheme.lower() not in {"http", "https"} or not hostname:
-        return None
-    return text if not any(character.isspace() for character in hostname) else None
-
-
-def _is_tracking(param: str) -> bool:
-    name = param.lower()
-    return name.startswith(_TRACKING_PARAM_PREFIXES) or name in _TRACKING_PARAMS
-
-
-def _clean_url(url: str | None) -> str | None:
-    """Normalized URL, or None when there is no URL (missing or blank)."""
-    if url is None or not url.strip():
-        return None
-    return normalize_url(url)
-
-
-def _norm_text(value: str | None) -> str:
-    """Casefolded text with runs of whitespace collapsed, so case and spacing never split keys."""
-    return " ".join((value or "").casefold().split())
-
-
-def _short_hash(text: str) -> str:
-    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:_JD_HASH_CHARS]
-
-
-def _optional_text(value: str | None) -> str | None:
-    """Strip optional metadata, storing blank values as SQL NULL."""
-    text = (value or "").strip()
-    return text or None
-
-
-def job_key(
-    url: str | None, company: str | None, title: str | None, jd_text: str | None = None
-) -> str:
-    """URL postings key on the normalized URL; pasted job descriptions have none, so use
-    company + title, folded for case and spacing.
-
-    The key ends in a short hash of the folded pair joined by a separator that cannot be
-    typed in a name, so ("Meta Platforms", "Engineer") and ("Meta", "Platforms Engineer")
-    stay apart. When company or title is missing and the JD text is known, a short hash of
-    the text is used instead, so unlabeled pasted jobs do not all merge into one row.
-
-    ponytail: two different pasted postings with the same company and title share one job.
-    """
-    cleaned = _clean_url(url)
-    company = _optional_text(company)
-    title = _optional_text(title)
-    if cleaned:
-        return cleaned
-    folded_company, folded_title = _norm_text(company), _norm_text(title)
-    slug = paths.slug(folded_company, folded_title)
-    if (folded_company and folded_title) or not jd_text:
-        pair = f"{folded_company}{_NAME_SEPARATOR}{folded_title}"
-        return f"pasted:{slug}-{_short_hash(pair)}"
-    digest = _short_hash(jd_text)
-    _log.info(json.dumps({"event": "ledger_key_from_jd_text", "slug": slug, "hash": digest}))
-    return f"pasted:{slug}-{digest}"
-
-
 def connect(path: Path | None = None) -> sqlite3.Connection:
     """Open the ledger. WAL needs a local filesystem; a network drive will fail here."""
     path = path or paths.ledger_path()
@@ -322,33 +158,7 @@ def _sql_norm_text(value: object) -> str | None:
     """SQL `norm_text`: casefold and collapse text for company/title lookup; non-text gives NULL."""
     if not isinstance(value, str):
         return None
-    return _norm_text(value)
-
-
-def canonical_timestamp(value: str) -> str:
-    """UTC ISO form of a timestamp, so text and time order agree.
-
-    A time with no offset is read as UTC. Plain `YYYY-MM-DD` dates and blanks come back stripped;
-    text that is not ISO, or that overflows when converted to UTC, comes back as given and logs
-    a warning.
-    """
-    stripped = value.strip()
-    try:
-        if not stripped or (_PLAIN_DATE.fullmatch(stripped) and date.fromisoformat(stripped)):
-            return stripped
-        parsed = datetime.fromisoformat(stripped)
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=UTC)
-        return parsed.astimezone(UTC).isoformat()
-    except (ValueError, OverflowError):
-        _log.warning(json.dumps({"event": "ledger_timestamp_unparsed", "value": value}))
-        return value
-
-
-def clean_salary(value: str | None) -> str | None:
-    """The salary text, or None when it is blank or a placeholder such as `Not listed`."""
-    folded = _norm_text(value)
-    return None if folded in _SALARY_PLACEHOLDERS else (value or "").strip()
+    return norm_text(value)
 
 
 def _upsert_job(
@@ -367,15 +177,15 @@ def _upsert_job(
     `key` overrides the computed job key; the run recorders use it to attach to an existing job.
     Blank text and salary placeholders are stored as NULL so a later call can fill them.
     """
-    company = _optional_text(company)
-    title = _optional_text(title)
+    company = optional_text(company)
+    title = optional_text(title)
     salary_range = clean_salary(salary_range) or None
     key = key or job_key(url, company, title, jd_text)
     conn.execute(
         _UPSERT_JOB,
         (
             key,
-            _clean_url(url),
+            clean_url(url),
             company,
             title,
             salary_range,
@@ -473,7 +283,7 @@ def _upsert_run_job(conn: sqlite3.Connection, run: RunRecord) -> str:
     if existing:
         key = existing[0]
     else:
-        cleaned = _clean_url(run.jd_url)
+        cleaned = clean_url(run.jd_url)
         key = cleaned if cleaned and job_exists(conn, cleaned) else None
         if key is None:
             key = _same_name_job_key(conn, run)
@@ -502,7 +312,7 @@ def _same_name_job_key(conn: sqlite3.Connection, run: RunRecord) -> str | None:
     """
     if not (run.company and run.title):
         return None
-    cleaned = _clean_url(run.jd_url)
+    cleaned = clean_url(run.jd_url)
     match = job_key_by_name(conn, run.company, run.title)
     own = job_key(cleaned, run.company, run.title, run.jd_text)
     if len(match.candidates) > 1:
@@ -546,7 +356,7 @@ def _same_name_job_key(conn: sqlite3.Connection, run: RunRecord) -> str | None:
 def _url_compatible(conn: sqlite3.Connection, job_key: str, cleaned_url: str) -> bool:
     """True when the job has no URL yet, or already stores this cleaned URL."""
     row = conn.execute("SELECT url FROM jobs WHERE job_key = ?", (job_key,)).fetchone()
-    stored = _clean_url(row[0]) if row else None
+    stored = clean_url(row[0]) if row else None
     return stored is None or stored == cleaned_url
 
 
@@ -658,8 +468,8 @@ def _existing_job_key(conn: sqlite3.Connection, update: StatusUpdate) -> str | N
     """
     if update.job_key:
         return update.job_key
-    cleaned = _clean_url(update.url)
-    company, title = _optional_text(update.company), _optional_text(update.title)
+    cleaned = clean_url(update.url)
+    company, title = optional_text(update.company), optional_text(update.title)
     if cleaned:
         if job_exists(conn, cleaned):
             return cleaned
@@ -713,13 +523,13 @@ def record_status(conn: sqlite3.Connection, update: StatusUpdate) -> bool:
     """
     with conn:
         if key := _existing_job_key(conn, update):
-            cleaned_url = _clean_url(update.url)
+            cleaned_url = clean_url(update.url)
             if update.job_key and cleaned_url:
                 url_key = job_key(cleaned_url, None, None)
                 target_url = conn.execute(
                     "SELECT url FROM jobs WHERE job_key = ?", (key,)
                 ).fetchone()
-                stored_url = _clean_url(target_url[0]) if target_url else None
+                stored_url = clean_url(target_url[0]) if target_url else None
                 can_merge = target_url is not None and (
                     stored_url is None or stored_url == cleaned_url
                 )
@@ -743,8 +553,8 @@ def record_status(conn: sqlite3.Connection, update: StatusUpdate) -> bool:
                 "WHERE job_key = ?",
                 (
                     cleaned_url,
-                    _optional_text(update.company),
-                    _optional_text(update.title),
+                    optional_text(update.company),
+                    optional_text(update.title),
                     clean_salary(update.salary_range) or None,
                     key,
                 ),
@@ -970,9 +780,9 @@ def _key_match_kind(row: tuple | None, title: str | None) -> str:
     One careers page can hold several postings behind #anchors that the key drops, so a key
     match with another title may be a different job: callers confirm it like a name match.
     """
-    stored = _optional_text(row[_FIND_KEYS.index("title")]) if row else None
-    given = _optional_text(title)
-    if given and (not stored or _norm_text(stored) != _norm_text(given)):
+    stored = optional_text(row[_FIND_KEYS.index("title")]) if row else None
+    given = optional_text(title)
+    if given and (not stored or norm_text(stored) != norm_text(given)):
         return "key_title_mismatch"
     return "key"
 
@@ -1037,7 +847,7 @@ def find_job(
     company_jobs lists that company's other jobs (up to 20, newest first, the matched job left
     out) so the caller can spot a similar title or requisition id.
     """
-    cleaned = _clean_url(url)
+    cleaned = clean_url(url)
     derived = job_key(url, company, title)
     row = _find_row(conn, _BY_KEY, (derived,))
     # A pasted-key hit on a URL-less lookup can hide a same-name URL job; treat that as ambiguous.

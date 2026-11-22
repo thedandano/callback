@@ -3,6 +3,7 @@ from pathlib import Path
 
 from callback.config import paths
 from callback.models.preferences import SearchPreferences
+from callback.repositories.atomic import write_json_atomic
 
 
 class PreferencesStore:
@@ -20,4 +21,4 @@ class PreferencesStore:
             return SearchPreferences.model_validate(json.load(f))
 
     def save(self, prefs: SearchPreferences) -> None:
-        paths.write_json_atomic(self._file_path(), prefs.model_dump())
+        write_json_atomic(self._file_path(), prefs.model_dump())

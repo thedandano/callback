@@ -20,7 +20,7 @@ from typing import Annotated, Any
 
 import typer
 
-from callback import ledger, ledger_import
+from callback import ledger_import
 from callback.config import paths, settings
 from callback.config.logging import configure_logging
 from callback.config.observability import (
@@ -30,6 +30,8 @@ from callback.config.observability import (
 )
 from callback.config.settings import ENV_NAME_RE
 from callback.plugin_install import PluginInstallError, install, resolve_targets
+from callback.repositories import ledger
+from callback.repositories.atomic import write_json_atomic, write_text_atomic
 
 app = typer.Typer(no_args_is_help=True)
 config_app = typer.Typer(no_args_is_help=True)
@@ -418,7 +420,7 @@ def _remove_server_from_claude(path: Path) -> None:
     servers = config.get("mcpServers")
     if isinstance(servers, dict):
         servers.pop(SERVER_NAME, None)
-    paths.write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
+    write_text_atomic(path, json.dumps(config, indent=2, sort_keys=True) + "\n")
 
 
 def _remove_server_from_codex(path: Path) -> None:
@@ -429,7 +431,7 @@ def _remove_server_from_codex(path: Path) -> None:
     servers = config.get("mcp_servers")
     if isinstance(servers, dict):
         servers.pop(SERVER_NAME, None)
-    paths.write_text_atomic(path, _dump_toml(config))
+    write_text_atomic(path, _dump_toml(config))
 
 
 @app.command()
@@ -515,7 +517,7 @@ def config_langsmith(
     env["LANGSMITH_ENDPOINT"] = endpoint
     if workspace_id:
         env["LANGSMITH_WORKSPACE_ID"] = workspace_id
-    paths.write_json_atomic(paths.env_file(), env)
+    write_json_atomic(paths.env_file(), env)
 
     typer.echo(f"Updated LangSmith settings in {paths.env_file()}")
     typer.echo("Restart your MCP host so it reloads the new environment.")
@@ -553,7 +555,7 @@ def config_env_set(key: str, value: str) -> None:
         raise typer.Exit(1) from exc
 
     env[env_key] = value
-    paths.write_json_atomic(paths.env_file(), env)
+    write_json_atomic(paths.env_file(), env)
 
     typer.echo(f"Set {env_key} in {paths.env_file()}")
     typer.echo("Restart your MCP host so it reloads the new environment.")
@@ -570,7 +572,7 @@ def config_env_unset(key: str) -> None:
         raise typer.Exit(1) from exc
 
     env.pop(env_key, None)
-    paths.write_json_atomic(paths.env_file(), env)
+    write_json_atomic(paths.env_file(), env)
 
     typer.echo(f"Unset {env_key} in {paths.env_file()}")
     typer.echo("Restart your MCP host so it reloads the new environment.")

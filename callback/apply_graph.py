@@ -36,7 +36,7 @@ from callback.apply_nodes import (
 from callback.config import paths
 from callback.config.observability import build_graph_config
 from callback.models.state import ApplyState
-from callback.session_store import open_checkpointer
+from callback.repositories.session_store import open_checkpointer
 
 JD_FETCH_NODE = "jd_fetch"
 KEYWORDS_ACCEPT_NODE = "keywords_accept"

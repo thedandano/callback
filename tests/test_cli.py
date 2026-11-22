@@ -14,6 +14,7 @@ from typer.testing import CliRunner
 
 from callback.cli import ConfigError, app
 from callback.config import paths
+from callback.repositories.atomic import write_json_atomic
 
 runner = CliRunner()
 
@@ -66,7 +67,7 @@ def test_settings_load_before_any_command_runs():
     """
     marker = "CALLBACK_TEST_SETTINGS_LOAD_MARKER"
     os.environ.pop(marker, None)
-    paths.write_json_atomic(paths.env_file(), {marker: "loaded"})
+    write_json_atomic(paths.env_file(), {marker: "loaded"})
 
     try:
         result = runner.invoke(app, ["config", "status"])
@@ -339,7 +340,7 @@ def test_config_env_set_list_unset_round_trips_through_settings_file():
 
 
 def test_config_env_set_preserves_other_existing_keys():
-    paths.write_json_atomic(paths.env_file(), {"LANGSMITH_PROJECT": "Callback"})
+    write_json_atomic(paths.env_file(), {"LANGSMITH_PROJECT": "Callback"})
 
     result = runner.invoke(app, ["config", "env", "set", "CALLBACK_TRACE_BACKEND", "langsmith"])
 
@@ -364,7 +365,7 @@ def test_config_env_set_preserves_other_existing_keys():
 
 
 def test_config_env_list_prints_flat_key_value_pairs_without_target_headers():
-    paths.write_json_atomic(paths.env_file(), {"LANGSMITH_PROJECT": "Callback"})
+    write_json_atomic(paths.env_file(), {"LANGSMITH_PROJECT": "Callback"})
 
     result = runner.invoke(app, ["config", "env", "list"])
 
@@ -455,7 +456,7 @@ def test_config_status_does_not_warn_about_comments(_isolated_host_configs):
 
 
 def test_config_status_reports_settings_redacting_secrets(_isolated_host_configs):
-    paths.write_json_atomic(
+    write_json_atomic(
         paths.env_file(),
         {
             "CALLBACK_TRACE_BACKEND": "langsmith",
@@ -502,7 +503,7 @@ def test_config_status_warns_about_legacy_entry_for_claude_only(_isolated_host_c
 
 
 def test_config_status_show_secrets_reveals_secret_values(_isolated_host_configs):
-    paths.write_json_atomic(paths.env_file(), {"LANGSMITH_API_KEY": "lsv2-secret"})
+    write_json_atomic(paths.env_file(), {"LANGSMITH_API_KEY": "lsv2-secret"})
 
     result = runner.invoke(app, ["config", "status", "--show-secrets"])
 
@@ -580,7 +581,7 @@ def test_config_status_survives_malformed_legacy_host_config(_isolated_host_conf
     """A malformed legacy host config must not hide an otherwise-valid settings file."""
     claude_path, _codex_path = _isolated_host_configs
     claude_path.write_text("not valid json", encoding="utf-8")
-    paths.write_json_atomic(paths.env_file(), {"FOO": "bar"})
+    write_json_atomic(paths.env_file(), {"FOO": "bar"})
 
     result = runner.invoke(app, ["config", "status"])
 
@@ -599,7 +600,7 @@ def test_config_status_survives_unreadable_legacy_host_config(_isolated_host_con
     either — same as the malformed-JSON case above, but for OSError."""
     claude_path, _codex_path = _isolated_host_configs
     claude_path.mkdir()  # a directory at the config path, not a file
-    paths.write_json_atomic(paths.env_file(), {"FOO": "bar"})
+    write_json_atomic(paths.env_file(), {"FOO": "bar"})
 
     result = runner.invoke(app, ["config", "status"])
 
@@ -652,7 +653,7 @@ def test_trace_check_reads_settings_file_and_emits_safe_trace(monkeypatch):
     monkeypatch.delenv("LANGSMITH_TRACING", raising=False)
     monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
     monkeypatch.delenv("LANGSMITH_PROJECT", raising=False)
-    paths.write_json_atomic(
+    write_json_atomic(
         paths.env_file(),
         {
             "CALLBACK_TRACE_BACKEND": "langsmith",

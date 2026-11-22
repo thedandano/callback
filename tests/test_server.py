@@ -12,10 +12,10 @@ import pytest
 from fastmcp import Client
 from fastmcp.client.transports import FastMCPTransport
 
-from callback import ledger
 from callback.config import logging as config_logging
 from callback.config import paths
 from callback.jd_data import EXTRACTION_PROTOCOL, RESPONSIBILITIES_PROTOCOL
+from callback.repositories import ledger
 
 PARTIAL_JD_JSON = """
 {
@@ -707,8 +707,8 @@ def test_submit_keywords_ats_format_gap_has_three_entries():
 
 
 def test_submit_keywords_tailor_instructions_include_project_guidance(tmp_path, monkeypatch):
+    from callback.repositories.wiki import WikiStore
     from callback.server import load_jd, submit_keywords
-    from callback.wiki import WikiStore
 
     resume_label = "project_guidance_resume"
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -976,8 +976,8 @@ def test_skills_document_xyz_chat_fact_story_intake():
 
 
 def test_submit_keywords_returns_ranked_project_candidates(tmp_path, monkeypatch):
+    from callback.repositories.wiki import WikiStore
     from callback.server import load_jd, submit_keywords
-    from callback.wiki import WikiStore
 
     resume_label = "project_candidate_resume"
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -1117,8 +1117,8 @@ story_type: SBI
 
 
 def test_submit_keywords_recommends_project_append_and_trim_candidates(tmp_path, monkeypatch):
+    from callback.repositories.wiki import WikiStore
     from callback.server import load_jd, submit_keywords
-    from callback.wiki import WikiStore
 
     resume_label = "project_append_resume"
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -1218,8 +1218,8 @@ story_type: SBI
 def test_submit_keywords_recommends_project_replace_when_two_visible_projects(
     tmp_path, monkeypatch
 ):
+    from callback.repositories.wiki import WikiStore
     from callback.server import load_jd, submit_keywords
-    from callback.wiki import WikiStore
 
     resume_label = "project_replace_layout_resume"
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -1310,8 +1310,8 @@ story_type: SBI
 
 
 def test_submit_keywords_orphaned_required_routes_to_create_story(tmp_path, monkeypatch):
+    from callback.repositories.wiki import WikiStore
     from callback.server import load_jd, submit_keywords
-    from callback.wiki import WikiStore
 
     resume_label = "orphan_workflow_resume"
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -1363,8 +1363,8 @@ def test_submit_keywords_orphaned_required_routes_to_create_story(tmp_path, monk
 
 
 def test_get_wiki_pages_returns_submit_tailor_workflow(tmp_path, monkeypatch):
+    from callback.repositories.wiki import WikiStore
     from callback.server import get_wiki_pages, load_jd, submit_keywords
-    from callback.wiki import WikiStore
 
     resume_label = "wiki_pages_workflow_resume"
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -1409,8 +1409,8 @@ def test_get_wiki_pages_returns_submit_tailor_workflow(tmp_path, monkeypatch):
 
 
 def test_get_wiki_pages_rejects_page_id_outside_wiki_root(tmp_path, monkeypatch):
+    from callback.repositories.wiki import WikiStore
     from callback.server import get_wiki_pages, load_jd, submit_keywords
-    from callback.wiki import WikiStore
 
     resume_label = "wiki_pages_traversal_resume"
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -1451,8 +1451,8 @@ def test_get_wiki_pages_rejects_page_id_outside_wiki_root(tmp_path, monkeypatch)
 
 
 def test_get_wiki_pages_rejects_embedded_nul(tmp_path, monkeypatch):
+    from callback.repositories.wiki import WikiStore
     from callback.server import get_wiki_pages, load_jd, submit_keywords
-    from callback.wiki import WikiStore
 
     resume_label = "wiki_pages_nul_resume"
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -1491,8 +1491,8 @@ def test_get_wiki_pages_rejects_embedded_nul(tmp_path, monkeypatch):
 
 
 def test_rank_project_candidates_skips_invalid_index_links(tmp_path, monkeypatch):
+    from callback.repositories.wiki import WikiStore
     from callback.server import _rank_project_candidates
-    from callback.wiki import WikiStore
 
     resume_label = "invalid_link_resume"
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -1559,8 +1559,8 @@ story_type: SBI
 def test_rank_project_candidates_skips_pages_without_frontmatter_and_warns(
     tmp_path, monkeypatch, caplog
 ):
+    from callback.repositories.wiki import WikiStore
     from callback.server import _rank_project_candidates
-    from callback.wiki import WikiStore
 
     caplog.set_level("WARNING", logger="callback.server")
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -1586,8 +1586,8 @@ def test_rank_project_candidates_skips_pages_without_frontmatter_and_warns(
 
 
 def test_rank_project_candidates_matches_body_and_tags_not_raw_frontmatter(tmp_path, monkeypatch):
+    from callback.repositories.wiki import WikiStore
     from callback.server import _rank_project_candidates
-    from callback.wiki import WikiStore
 
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     store = WikiStore()
@@ -1879,7 +1879,7 @@ def test_parse_initial_wiki_miss_resume_not_found_returns_noop_sentinel():
     """Wiki miss with ResumeNotFoundError returns noop sentinel."""
     from callback.apply_nodes import parse_initial
     from callback.models.state import ApplyState
-    from callback.repository.resumes import ResumeNotFoundError
+    from callback.repositories.resumes import ResumeNotFoundError
 
     state = ApplyState(session_id="s1", resume_label="ghost")
 
@@ -1919,7 +1919,7 @@ def test_parse_initial_labels_the_resume_file_as_score_source(tmp_path, decision
 def test_parse_initial_labels_sections_text_when_the_resume_file_is_missing(decisions):
     from callback.apply_nodes import parse_initial
     from callback.models.state import ApplyState
-    from callback.repository.resumes import ResumeNotFoundError
+    from callback.repositories.resumes import ResumeNotFoundError
 
     with (
         patch(
@@ -1941,7 +1941,7 @@ def test_parse_initial_labels_sections_text_when_the_resume_file_is_missing(deci
 def test_parse_initial_labels_no_source_when_nothing_is_available(decisions):
     from callback.apply_nodes import parse_initial
     from callback.models.state import ApplyState
-    from callback.repository.resumes import ResumeNotFoundError
+    from callback.repositories.resumes import ResumeNotFoundError
 
     parse_initial(ApplyState(session_id="s1"))
     no_label = dict(decisions)
@@ -2037,7 +2037,7 @@ def test_parse_initial_wiki_hit_pdf_missing_falls_back_to_sections_text():
     """Wiki hit + ResumeNotFoundError: falls back to _sections_to_text, emits warning."""
     from callback.apply_nodes import parse_initial
     from callback.models.state import ApplyState
-    from callback.repository.resumes import ResumeNotFoundError
+    from callback.repositories.resumes import ResumeNotFoundError
 
     state = ApplyState(session_id="s1", resume_label="eng")
     sections_text = "Python ACME Engineer built things"
@@ -2312,8 +2312,8 @@ class TestSearchPreferencesTools:
 def test_rank_project_candidates_skips_project_pages_with_non_list_tags(
     tmp_path, monkeypatch, caplog
 ):
+    from callback.repositories.wiki import WikiStore
     from callback.server import _rank_project_candidates
-    from callback.wiki import WikiStore
 
     caplog.set_level("WARNING", logger="callback.server")
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
@@ -2360,8 +2360,8 @@ def test_rank_project_candidates_skips_project_pages_with_non_list_tags(
 
 
 def test_rank_project_candidates_matches_the_frontmatter_title(tmp_path, monkeypatch):
+    from callback.repositories.wiki import WikiStore
     from callback.server import _rank_project_candidates
-    from callback.wiki import WikiStore
 
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     page = (
@@ -2381,8 +2381,8 @@ def test_rank_project_candidates_matches_the_frontmatter_title(tmp_path, monkeyp
 
 
 def test_rank_project_candidates_ignores_a_stale_body_heading(tmp_path, monkeypatch):
+    from callback.repositories.wiki import WikiStore
     from callback.server import _rank_project_candidates
-    from callback.wiki import WikiStore
 
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
     page = (
@@ -2398,8 +2398,8 @@ def test_rank_project_candidates_ignores_a_stale_body_heading(tmp_path, monkeypa
 
 
 def test_rank_project_candidates_skips_an_undecodable_page(tmp_path, monkeypatch, caplog):
+    from callback.repositories.wiki import WikiStore
     from callback.server import _rank_project_candidates
-    from callback.wiki import WikiStore
 
     caplog.set_level("WARNING", logger="callback.server")
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")

@@ -29,11 +29,11 @@ def main() -> int:
 
     from callback.models.state import ProfileState  # noqa: E402
     from callback.profile_nodes import compile_profile  # noqa: E402  (after env is set)
-    from callback.repository import stories  # noqa: E402
+    from callback.repositories import stories, story_migration  # noqa: E402
 
     label = "primary"
     before = (scratch / "callback" / "profile-wiki" / label / "index.md").read_text()
-    written = stories.migrate_legacy_stories(label)
+    written = story_migration.migrate_legacy_stories(label)
     compile_profile(ProfileState(session_id="migration-check"))
     after = (scratch / "callback" / "profile-wiki" / label / "index.md").read_text()
     diff = list(

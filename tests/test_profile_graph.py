@@ -10,8 +10,8 @@ from pathlib import Path
 from callback.models.profile import CompiledProfile, OrphanedSkill
 from callback.models.state import ProfileState
 from callback.profile_graph import _route_check_profile, build_profile_graph, make_config
-from callback.profilecompiler import save_compiled_profile
-from callback.repository.resumes import list_resumes, save_resume
+from callback.repositories.compiled_profile import save_compiled_profile
+from callback.repositories.resumes import list_resumes, save_resume
 
 # ---------------------------------------------------------------------------
 # Fixtures

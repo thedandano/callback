@@ -13,7 +13,7 @@ from callback.apply_graph import get_apply_graph
 from callback.apply_nodes import resume_extractor
 from callback.config import paths
 from callback.models.section_map import ContactInfo, ExperienceEntry, SectionMap, SkillsSection
-from callback.wiki import WikiStore
+from callback.repositories.wiki import WikiStore
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 UUID_PATTERN = re.compile(

@@ -1,8 +1,8 @@
-"""Unit tests for callback.repository.accomplishments."""
+"""Unit tests for callback.repositories.accomplishments."""
 
 import json
 
-from callback.repository.accomplishments import AccomplishmentsStore
+from callback.repositories.accomplishments import AccomplishmentsStore
 
 _STORY_FIELDS = dict(
     primary_skill="Kubernetes",

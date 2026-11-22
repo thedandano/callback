@@ -24,9 +24,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from callback import ledger
 from callback.config import paths  # noqa: E402
 from callback.jd_fetcher import CHARS_PER_TOKEN, fetch_url_to_markdown  # noqa: E402
+from callback.repositories import ledger
 from evals.recall import recall  # noqa: E402
 
 EXTRACT_DIR = Path(__file__).resolve().parent.parent / "evals" / "extract"

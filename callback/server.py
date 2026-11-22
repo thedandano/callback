@@ -35,7 +35,6 @@ from pydantic import ValidationError
 
 import callback.scorer as scorer
 import callback.version_check as version_check
-from callback import ledger
 from callback.apply_graph import (
     FINALIZE_NODE,
     KEYWORDS_ACCEPT_NODE,
@@ -75,11 +74,13 @@ from callback.models.section_map import SectionMap, SkillsSection
 from callback.models.state import ApplyState, ProfileState
 from callback.profile_graph import get_profile_graph, story_pending
 from callback.profile_graph import make_config as make_profile_config
-from callback.repository.preferences import PreferencesStore
-from callback.repository.resumes import list_resumes
-from callback.repository.stories import label_line_field, tags_from_meta
+from callback.repositories import ledger, ledger_keys
+from callback.repositories.atomic import write_text_atomic
+from callback.repositories.preferences import PreferencesStore
+from callback.repositories.resumes import list_resumes
+from callback.repositories.story_pages import label_line_field, tags_from_meta
+from callback.repositories.wiki import WikiPageError, WikiPageIdError, WikiStore, split_frontmatter
 from callback.section_map import apply_edit
-from callback.wiki import WikiPageError, WikiPageIdError, WikiStore, split_frontmatter
 
 # Must run before any module-level os.environ read below (e.g. LOG_LEVEL): callback
 # owns its own settings file (~/.config/callback/env.json) independent of any MCP
@@ -2095,7 +2096,7 @@ def _contact_note(url: str | None, note: str | None) -> str | None:
     still excludes the event; `Contact method:` stays ahead of `Contact:`.
     """
     contact = (url or "").strip()
-    if not contact or ledger.url_or_none(contact):
+    if not contact or ledger_keys.url_or_none(contact):
         return note
     not_reportable, method, rest = _split_note_markers(note)
     return " | ".join(
@@ -2148,7 +2149,7 @@ def find_job(url: str | None = None, company: str | None = None, title: str | No
     similar title or a requisition id in a job_key URL.
     Error codes: missing_job_identity, ledger_error.
     """
-    url = ledger.url_or_none(url)
+    url = ledger_keys.url_or_none(url)
     if error := _identity_error(url, company, title):
         return error
     try:
@@ -2196,7 +2197,7 @@ def record_status(
     today.
     Error codes: missing_job_identity, invalid_status, invalid_date, unknown_job, ledger_error.
     """
-    web_url = ledger.url_or_none(url)
+    web_url = ledger_keys.url_or_none(url)
     if error := _record_status_error(status, web_url, company, title, date, job_key):
         return error
     update = StatusUpdate(
@@ -2301,7 +2302,7 @@ def export_ledger(
     except (sqlite3.Error, OSError, RuntimeError, UnicodeError) as exc:
         return _ledger_error(exc)
     try:
-        paths.write_text_atomic(target, _csv_text(rows, columns))
+        write_text_atomic(target, _csv_text(rows, columns))
     except OSError as exc:
         return _invalid_output_path_error(exc)
     return _ok("", data={"path": str(target), "rows": len(rows)})

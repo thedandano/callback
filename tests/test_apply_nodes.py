@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from callback import apply_nodes, ledger
+from callback import apply_nodes
 from callback.apply_nodes import (
     _candidate_experience_years,
     finalize,
@@ -27,8 +27,8 @@ from callback.models.profile import CreatedStory
 from callback.models.section_map import ContactInfo, ExperienceEntry, SectionMap
 from callback.models.state import ApplyState
 from callback.models.tailored_resume import TailoredResume
-from callback.repository import stories
-from callback.wiki import WikiStore
+from callback.repositories import ledger, stories
+from callback.repositories.wiki import WikiStore
 
 
 def test_parse_initial_falls_back_to_text_extraction(tmp_path):
@@ -465,7 +465,7 @@ def test_parse_initial_migrates_legacy_stories_before_reading_the_wiki(tmp_path,
 
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "wiki")
-    monkeypatch.setattr("callback.repository.stories.list_resumes", lambda: ["primary"])
+    monkeypatch.setattr("callback.repositories.story_migration.list_resumes", lambda: ["primary"])
     data_dir = tmp_path / "callback"
     data_dir.mkdir(parents=True, exist_ok=True)
     legacy = {

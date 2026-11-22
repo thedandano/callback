@@ -65,19 +65,16 @@ forbidden_modules = [
     "callback.extractor",
     "callback.jd_data",
     "callback.jd_fetcher",
-    "callback.ledger",
     "callback.ledger_import",
     "callback.plugin_install",
     "callback.profile_graph",
     "callback.profile_nodes",
     "callback.profilecompiler",
     "callback.render",
-    "callback.repository",
+    "callback.repositories",
     "callback.scorer",
     "callback.section_map",
-    "callback.session_store",
     "callback.version_check",
-    "callback.wiki",
     "callback.wikirenderer",
 ]
 
@@ -95,20 +92,41 @@ forbidden_modules = [
     "callback.extractor",
     "callback.jd_data",
     "callback.jd_fetcher",
-    "callback.ledger",
     "callback.ledger_import",
     "callback.plugin_install",
     "callback.profile_graph",
     "callback.profile_nodes",
     "callback.profilecompiler",
     "callback.render",
-    "callback.repository",
+    "callback.repositories",
     "callback.scorer",
     "callback.section_map",
-    "callback.session_store",
     "callback.version_check",
-    "callback.wiki",
     "callback.wikirenderer",
+]
+
+[[tool.importlinter.contracts]]
+name = "repositories sit below services, render, graphs, tools, server and cli"
+type = "forbidden"
+source_modules = ["callback.repositories"]
+forbidden_modules = [
+    "callback.server",
+    "callback.cli",
+    "callback.apply_graph",
+    "callback.apply_nodes",
+    "callback.profile_graph",
+    "callback.profile_nodes",
+    "callback.scorer",
+    "callback.extractor",
+    "callback.jd_fetcher",
+    "callback.profilecompiler",
+    "callback.section_map",
+    "callback.jd_data",
+    "callback.wikirenderer",
+    "callback.version_check",
+    "callback.plugin_install",
+    "callback.ledger_import",
+    "callback.render",
 ]
 
 [tool.ruff]

@@ -26,7 +26,7 @@ from time import perf_counter
 from pydantic import ValidationError
 
 from callback import extractor as resume_extractor
-from callback import ledger, scorer
+from callback import scorer
 from callback.config import paths
 from callback.config.observability import record_decision, trace_node
 from callback.jd_fetcher import MIN_MARKDOWN_CHARS, JDFetchError, fetch_url_to_markdown
@@ -35,10 +35,10 @@ from callback.models.section_map import SectionMap
 from callback.models.state import ApplyState
 from callback.models.tailored_resume import TailoredResume
 from callback.render import render_resume
-from callback.repository import stories
-from callback.repository.resumes import ResumeNotFoundError, get_resume
+from callback.repositories import ledger, story_migration
+from callback.repositories.resumes import ResumeNotFoundError, get_resume
+from callback.repositories.wiki import WikiStore
 from callback.scorer import normalize_for_match
-from callback.wiki import WikiStore
 
 logger = logging.getLogger(__name__)
 jd_fetcher_logger = logging.getLogger("callback.jd_fetcher")
@@ -256,7 +256,7 @@ def parse_initial(state: ApplyState) -> dict:
 
     # The apply path may be the first thing run after an upgrade; legacy story
     # pages must carry frontmatter before submit_keywords ranks them.
-    stories.migrate_legacy_stories(state.resume_label)
+    story_migration.migrate_legacy_stories(state.resume_label)
     sections_json, wiki_index, sections_text = _load_wiki_sections(state.resume_label)
     base: dict = {}
     if sections_json:

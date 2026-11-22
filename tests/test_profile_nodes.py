@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 import callback.extractor as ext
-import callback.repository.resumes as resumes_module
+import callback.repositories.resumes as resumes_module
 from callback.config import paths
 from callback.models.profile import CompiledProfile, CreatedStory, OrphanedSkill
 from callback.models.state import ProfileState
@@ -19,10 +19,10 @@ from callback.profile_nodes import (
     create_story,
     onboard,
 )
-from callback.profilecompiler import save_compiled_profile
-from callback.repository import stories
-from callback.repository.accomplishments import AccomplishmentsStore
-from callback.repository.resumes import (
+from callback.repositories import stories
+from callback.repositories.accomplishments import AccomplishmentsStore
+from callback.repositories.compiled_profile import save_compiled_profile
+from callback.repositories.resumes import (
     get_resume,
     list_resumes,
     replace_resume,
@@ -462,7 +462,9 @@ class TestCreateStoryMigratesFirst:
     def test_create_story_does_not_claim_a_legacy_story_id(self, tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
         monkeypatch.setattr("callback.config.paths.wiki_dir", lambda: tmp_path / "profile-wiki")
-        monkeypatch.setattr("callback.repository.stories.list_resumes", lambda: ["default"])
+        monkeypatch.setattr(
+            "callback.repositories.story_migration.list_resumes", lambda: ["default"]
+        )
         legacy = {"id": "story-001", **{**_STORY_FIELDS, "primary_skill": "Legacy"}}
         data_dir = tmp_path / "callback"
         data_dir.mkdir(parents=True, exist_ok=True)

@@ -5,10 +5,9 @@ from pathlib import Path
 import pytest
 
 from callback.models.profile import CompiledProfile, CreatedStory, OrphanedSkill
-from callback.profilecompiler import (
+from callback.profilecompiler import _token_sort_ratio, compile_profile
+from callback.repositories.compiled_profile import (
     ProfileMissingError,
-    _token_sort_ratio,
-    compile_profile,
     load_compiled_profile,
     save_compiled_profile,
 )

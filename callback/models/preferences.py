@@ -2,7 +2,7 @@
 
 Per-user job-search criteria captured at onboard and read as a slim slice by the
 scan/review skills. Pure schema — no I/O. Persistence lives in
-callback.repository.preferences.
+callback.repositories.preferences.
 """
 
 from enum import StrEnum

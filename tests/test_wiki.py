@@ -1,6 +1,6 @@
 import pytest
 
-from callback.wiki import (
+from callback.repositories.wiki import (
     WikiPageError,
     WikiPageIdError,
     WikiStore,

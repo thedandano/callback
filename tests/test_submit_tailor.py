@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-from callback import ledger
 from callback.config import paths
 from callback.models.section_map import (
     ContactInfo,
@@ -17,7 +16,8 @@ from callback.models.section_map import (
     SectionMap,
     SkillsSection,
 )
-from callback.wiki import WikiStore
+from callback.repositories import ledger
+from callback.repositories.wiki import WikiStore
 
 
 def _find_ledger_run(result: dict) -> dict | None:
