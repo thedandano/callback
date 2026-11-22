@@ -33,6 +33,7 @@ include = ["callback*"]
 
 [dependency-groups]
 dev = [
+    "import-linter>=2.17",
     "pre-commit>=4.0",
     "pyright>=1.1",
     "pytest>=9.0.3",
@@ -40,6 +41,17 @@ dev = [
     "pytest-mock>=3.14",
     "ruff>=0.8",
 ]
+
+[tool.importlinter]
+root_package = "callback"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Only the CLI may start the server"
+type = "forbidden"
+source_modules = ["callback"]
+forbidden_modules = ["callback.server"]
+ignore_imports = ["callback.cli -> callback.server"]
 
 [tool.ruff]
 line-length = 100

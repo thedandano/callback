@@ -21,6 +21,14 @@ repos:
         types: [python]
         stages: [pre-commit]
 
+      - id: import-linter
+        name: import-linter contracts
+        entry: uv run lint-imports
+        language: system
+        pass_filenames: false
+        types: [python]
+        stages: [pre-commit]
+
       - id: pytest-unit
         name: pytest unit tests
         entry: uv run pytest -m "not integration and not local" --tb=short -q
