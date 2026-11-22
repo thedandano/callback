@@ -32,6 +32,9 @@ from callback.config.observability import (
 from callback.config.settings import ENV_NAME_RE
 from callback.repositories import ledger
 from callback.repositories.atomic import write_json_atomic, write_text_atomic
+
+# TODO: upgrade to Python 3.15 and make this a `lazy import` (PEP 810) so CLI commands
+# other than `serve` stop loading FastMCP, LangGraph and Playwright at startup.
 from callback.server import run
 from callback.services import ledger_import
 from callback.services.plugin_install import PluginInstallError, install, resolve_targets
