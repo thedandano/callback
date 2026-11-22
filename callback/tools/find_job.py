@@ -3,8 +3,8 @@
 import sqlite3
 from contextlib import closing
 
+from callback.models.envelope import ok
 from callback.repositories import ledger, ledger_keys
-from callback.tools.envelope import ok
 from callback.tools.ledger_inputs import identity_error, ledger_error
 
 

@@ -12,13 +12,13 @@ from callback.graphs.apply.graph import (
 from callback.graphs.apply.graph import (
     make_config as make_apply_config,
 )
+from callback.models.envelope import err, ok
 from callback.models.jd_data import JDDataError
 from callback.services.jd_parsing import (
     clean_responsibilities,
     drop_scored_duplicates,
     non_atomic_responsibilities,
 )
-from callback.tools.envelope import err, ok
 from callback.tools.errors import graph_or_err
 from callback.tools.workflow import NEXT_FETCH_WIKI_THEN_TAILOR, submit_keywords_workflow
 

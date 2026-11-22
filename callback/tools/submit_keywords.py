@@ -14,6 +14,7 @@ from callback.graphs.apply.graph import (
 from callback.graphs.apply.graph import (
     make_config as make_apply_config,
 )
+from callback.models.envelope import err, ok
 from callback.models.jd_data import JDDataError
 from callback.services.host_protocols import (
     RESPONSIBILITIES_PROTOCOL,
@@ -29,7 +30,6 @@ from callback.services.project_ranking import (
     rank_project_candidates,
     trim_candidates,
 )
-from callback.tools.envelope import err, ok
 from callback.tools.errors import graph_or_err, unexpected_error
 from callback.tools.workflow import (
     NEXT_ADD_STORY_FIRST,

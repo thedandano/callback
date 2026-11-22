@@ -3,7 +3,7 @@
 import datetime
 
 from callback.config.logging import log_exception
-from callback.tools.envelope import err
+from callback.models.envelope import err
 
 
 def is_iso_date(value: str) -> bool:

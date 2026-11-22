@@ -8,10 +8,10 @@ from callback.config.observability import (
 )
 from callback.graphs.profile.graph import get_profile_graph
 from callback.graphs.profile.graph import make_config as make_profile_config
+from callback.models.envelope import err, ok
 from callback.models.profile import CreatedStory
 from callback.models.state import ProfileState
 from callback.repositories.story_pages import label_line_field
-from callback.tools.envelope import err, ok
 from callback.tools.errors import graph_or_err
 from callback.tools.profile_thread import (
     profile_thread_data,

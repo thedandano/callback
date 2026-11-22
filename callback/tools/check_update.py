@@ -1,7 +1,7 @@
 """MCP tool `check_update`."""
 
 import callback.services.version_check as version_check
-from callback.tools.envelope import ok
+from callback.models.envelope import ok
 
 
 def check_update() -> dict:

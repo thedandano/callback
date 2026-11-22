@@ -6,9 +6,9 @@ import uuid
 from pydantic import ValidationError
 
 from callback.config.logging import log
+from callback.models.envelope import err, ok
 from callback.models.preferences import SearchPreferences
 from callback.repositories.preferences import PreferencesStore
-from callback.tools.envelope import err, ok
 
 
 def set_search_preferences(preferences: dict) -> dict:

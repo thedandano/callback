@@ -3,8 +3,8 @@
 import uuid
 
 from callback.config.logging import log
+from callback.models.envelope import ok
 from callback.repositories.preferences import PreferencesStore
-from callback.tools.envelope import ok
 
 
 def get_search_preferences() -> dict:

@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Any
 
 from callback.config.logging import log_exception
-from callback.tools.envelope import err
+from callback.models.envelope import err
 
 
 def graph_or_err(factory: Callable[[], Any], session_id: str | None) -> tuple[Any, dict | None]:

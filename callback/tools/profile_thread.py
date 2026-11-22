@@ -5,7 +5,7 @@ from callback.config.observability import (
     invoke_graph_without_native_tracing,
 )
 from callback.graphs.profile.graph import story_pending
-from callback.tools.envelope import err
+from callback.models.envelope import err
 
 
 def _compile_failed_after_save_error(stage: str, session_id: str) -> dict:

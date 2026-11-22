@@ -4,10 +4,10 @@ import datetime
 import sqlite3
 from contextlib import closing
 
+from callback.models.envelope import err, ok
 from callback.models.ledger import StatusUpdate
 from callback.repositories import ledger, ledger_keys
 from callback.services.ledger_notes import contact_note
-from callback.tools.envelope import err, ok
 from callback.tools.ledger_inputs import date_error, identity_error, ledger_error
 
 

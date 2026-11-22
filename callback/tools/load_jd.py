@@ -14,12 +14,12 @@ from callback.graphs.apply.graph import (
 from callback.graphs.apply.graph import (
     make_config as make_apply_config,
 )
+from callback.models.envelope import err, ok
 from callback.models.state import ApplyState
 from callback.services.host_protocols import (
     EXTRACTION_PROTOCOL,
 )
 from callback.services.jd_fetcher import JDFetchError
-from callback.tools.envelope import err, ok
 from callback.tools.errors import graph_or_err
 from callback.tools.resume_label import resolve_resume_label
 from callback.tools.workflow import NEXT_EXTRACT_KEYWORDS, workflow

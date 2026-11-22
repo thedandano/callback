@@ -4,8 +4,8 @@ from callback.config.logging import log
 from callback.config.observability import (
     record_decision,
 )
+from callback.models.envelope import err
 from callback.repositories.resumes import list_resumes
-from callback.tools.envelope import err
 
 
 def resolve_resume_label(session_id: str) -> tuple[str | None, dict | None]:
