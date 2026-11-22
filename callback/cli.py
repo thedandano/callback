@@ -19,7 +19,9 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import typer
+from langsmith import Client
 
+import callback._build_info as build_info
 from callback.config import paths, settings
 from callback.config.logging import configure_logging
 from callback.config.observability import (
@@ -30,6 +32,7 @@ from callback.config.observability import (
 from callback.config.settings import ENV_NAME_RE
 from callback.repositories import ledger
 from callback.repositories.atomic import write_json_atomic, write_text_atomic
+from callback.server import run
 from callback.services import ledger_import
 from callback.services.plugin_install import PluginInstallError, install, resolve_targets
 
@@ -351,8 +354,6 @@ def _validate_trace_env(env: Mapping[str, str]) -> None:
 
 
 def _make_langsmith_client(env: Mapping[str, str]):
-    from langsmith import Client
-
     if endpoint := env.get("LANGSMITH_ENDPOINT"):
         return Client(api_key=env["LANGSMITH_API_KEY"], api_url=endpoint)
     return Client(api_key=env["LANGSMITH_API_KEY"])
@@ -473,8 +474,6 @@ def serve(
             ),
             err=True,
         )
-
-    from callback.server import run
 
     configure_logging(str(resolved_log_path))
 
@@ -721,11 +720,7 @@ def update() -> None:
 
 
 def _read_build_version() -> str | None:
-    try:
-        from callback._build_info import BUILD_VERSION
-    except ImportError:
-        return None
-    return BUILD_VERSION or None
+    return build_info.BUILD_VERSION or None
 
 
 def _display_version() -> str:

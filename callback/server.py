@@ -43,23 +43,6 @@ from callback.tools.submit_keywords import submit_keywords
 from callback.tools.submit_responsibilities import submit_responsibilities
 from callback.tools.submit_tailor import submit_tailor
 
-# Must run before any module-level os.environ read below (e.g. LOG_LEVEL): callback
-# owns its own settings file (~/.config/callback/env.json) independent of any MCP
-# host config, and env vars set only there would otherwise be invisible here.
-# A damaged env.json must not crash the import itself (both `callback serve` and
-# `python -m callback.server` import this module directly), so it's reported and
-# skipped here rather than raised, same as the CLI's own root-callback recovery.
-try:
-    settings.apply_env_file()
-except ValueError as exc:
-    print(
-        f"warning: {exc}; continuing without settings-file overrides. "
-        "Run `callback config status` to inspect it, or fix/remove it by hand.",
-        file=sys.stderr,
-    )
-
-configure_logging(os.environ.get("CALLBACK_LOG_PATH"))
-
 
 async def _startup_version_check() -> None:
     info = await asyncio.to_thread(version_check.check_update)
@@ -104,6 +87,22 @@ mcp.tool()(record_status)
 mcp.tool()(export_ledger)
 
 
+def _load_settings_file() -> None:
+    """Apply ~/.config/callback/env.json for `python -m callback.server`.
+
+    `callback serve` already does this in the CLI's root callback. A damaged
+    env.json is reported and skipped rather than raised, same as the CLI.
+    """
+    try:
+        settings.apply_env_file()
+    except ValueError as exc:
+        print(
+            f"warning: {exc}; continuing without settings-file overrides. "
+            "Run `callback config status` to inspect it, or fix/remove it by hand.",
+            file=sys.stderr,
+        )
+
+
 def run() -> None:
     """Run the FastMCP stdio server."""
     if current_log_path() is None:
@@ -145,4 +144,5 @@ def run() -> None:
 
 
 if __name__ == "__main__":
+    _load_settings_file()
     run()

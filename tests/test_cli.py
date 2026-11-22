@@ -101,7 +101,7 @@ def test_version_prefers_generated_build_version(monkeypatch):
 def test_serve_uses_server_runner():
     run = Mock()
 
-    with patch("callback.server.run", run):
+    with patch("callback.cli.run", run):
         result = runner.invoke(app, ["serve"])
 
     assert result.exit_code == 0
@@ -122,7 +122,7 @@ def test_serve_without_flags_uses_home_state_log(monkeypatch):
     with (
         patch("callback.cli._write_startup_log_event", side_effect=fake_write_startup_event),
         patch("callback.cli.configure_logging", configure_logging),
-        patch("callback.server.run", run),
+        patch("callback.cli.run", run),
     ):
         result = runner.invoke(app, ["serve"])
 
@@ -155,7 +155,7 @@ def test_serve_respects_callback_log_path_already_set_by_settings(monkeypatch, t
     with (
         patch("callback.cli._write_startup_log_event", side_effect=fake_write_startup_event),
         patch("callback.cli.configure_logging", Mock()),
-        patch("callback.server.run", Mock()),
+        patch("callback.cli.run", Mock()),
     ):
         result = runner.invoke(app, ["serve"])
 
@@ -200,7 +200,7 @@ def test_serve_project_logs_uses_project_log(tmp_path, monkeypatch):
     with (
         patch("callback.cli._write_startup_log_event", side_effect=fake_write_startup_event),
         patch("callback.cli.configure_logging", configure_logging),
-        patch("callback.server.run", run),
+        patch("callback.cli.run", run),
     ):
         result = runner.invoke(app, ["serve", "--project-logs"], catch_exceptions=False)
 
@@ -222,7 +222,7 @@ def test_serve_unwritable_log_path_still_runs(tmp_path):
     with (
         patch("callback.cli._write_startup_log_event", side_effect=OSError("blocked")),
         patch("callback.cli.configure_logging"),
-        patch("callback.server.run", run),
+        patch("callback.cli.run", run),
     ):
         result = runner.invoke(app, ["serve", "--log-path", str(blocked_path)])
 
