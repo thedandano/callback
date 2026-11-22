@@ -284,7 +284,7 @@ def test_render_html_embeds_each_static_inter_face():
     assert "font-weight: 100 900" not in html
     assert "InterVariable" not in html
 
-    font_dir = Path(__file__).parent.parent / "callback" / "render" / "fonts"
+    font_dir = Path(__file__).parent.parent / "src" / "callback" / "render" / "fonts"
     for name, weight in (
         ("Inter-Regular.ttf", 400),
         ("Inter-Medium.ttf", 500),
